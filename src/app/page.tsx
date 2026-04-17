@@ -14,17 +14,17 @@ import Maintenance from '@/components/maintenance/Maintenance'
 type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance'
 
 const navigationItems = [
-  { id: 'dashboard' as View, label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'calendar' as View, label: 'Dashboard', icon: Calendar },
   { id: 'yachts' as View, label: 'Yachts', icon: Anchor },
   { id: 'bookings' as View, label: 'Bookings', icon: Calendar },
   { id: 'customers' as View, label: 'Customers', icon: Users },
-  { id: 'calendar' as View, label: 'Calendar', icon: Calendar },
+  { id: 'dashboard' as View, label: 'Statistics', icon: LayoutDashboard },
   { id: 'expenses' as View, label: 'Expenses', icon: DollarSign },
   { id: 'maintenance' as View, label: 'Maintenance', icon: Wrench },
 ]
 
 export default function Home() {
-  const [currentView, setCurrentView] = useState<View>('dashboard')
+  const [currentView, setCurrentView] = useState<View>('calendar')
 
   const renderView = () => {
     switch (currentView) {
@@ -43,7 +43,7 @@ export default function Home() {
       case 'maintenance':
         return <Maintenance />
       default:
-        return <Dashboard />
+        return <CalendarView />
     }
   }
 
