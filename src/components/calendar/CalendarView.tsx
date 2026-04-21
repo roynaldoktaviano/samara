@@ -497,84 +497,81 @@ export default function CalendarView() {
                   dateInfo.day === todayDate &&
                   dateInfo.isCurrentMonth
 
+                // Calculate booking bars for this cell
+                const bookingBars = events.map((event) => {
+                  const eventStyle = getEventStyle(event.eventColor || 'green')
+                  const eventDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
+                  const isStart = event.startDate === eventDateStr
+                  const isEnd = event.endDate === eventDateStr
+                  
+                  // Calculate width and position
+                  let roundedClass = ''
+                  if (isStart && isEnd) {
+                    roundedClass = 'rounded-lg'
+                  } else if (isStart) {
+                    roundedClass = 'rounded-l-lg rounded-r-none'
+                  } else if (isEnd) {
+                    roundedClass = 'rounded-r-lg rounded-l-none'
+                  } else {
+                    roundedClass = 'rounded-none'
+                  }
+
+                  return {
+                    ...event,
+                    eventStyle,
+                    isStart,
+                    isEnd,
+                    roundedClass,
+                  }
+                })
+
                 return (
                   <div
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[140px] p-2 rounded-xl cursor-pointer transition-all duration-200 group relative overflow-hidden
-                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white shadow-sm hover:shadow-xl hover:-translate-y-1'}
-                      ${isToday ? 'ring-3 ring-purple-400 ring-offset-2 ring-offset-white' : ''}
-                      ${dateInfo.isCurrentMonth ? 'hover:border-purple-400 border-2 border-gray-100' : ''}
+                      min-h-[100px] p-1.5 rounded-lg cursor-pointer transition-all duration-200 group relative overflow-hidden
+                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white hover:bg-gray-50'}
+                      ${isToday ? 'ring-2 ring-purple-400 ring-offset-1' : ''}
+                      ${dateInfo.isCurrentMonth ? 'border border-gray-200' : ''}
                     `}
                   >
                     <div className={`
-                      text-sm font-bold mb-2 flex items-center justify-between relative z-10
-                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg' : 'text-gray-700'}
+                      text-xs font-bold mb-1.5 flex items-center justify-between
+                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-md' : 'text-gray-700'}
                     `}>
-                      {dateInfo.day}
-                      {events.length > 0 && (
-                        <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-white' : 'bg-purple-500'}`} />
+                      <span>{dateInfo.day}</span>
+                      {bookingBars.length > 0 && (
+                        <span className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-purple-500'}`} />
                       )}
                     </div>
-                    {events.length > 0 && (
-                      <div className="space-y-1.5 relative z-10">
-                        {events.slice(0, 3).map((event) => {
-                          const days = getDaysBetweenDates(event.startDate, event.endDate)
-                          const eventStyle = getEventStyle(event.eventColor || 'green')
-                          const isStart = event.startDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
-                          const isEnd = event.endDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
-                          const isMiddle = !isStart && !isEnd
-                          
-                          return (
-                            <div
-                              key={event.id}
-                              className={`
-                                rounded-lg px-2 py-1.5 shadow-md transition-all hover:scale-105 hover:shadow-lg cursor-pointer border-2
-                              `}
-                              style={{
-                                backgroundColor: eventStyle.backgroundColor,
-                                color: eventStyle.color,
-                                borderColor: eventStyle.hover,
-                              }}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="font-bold text-xs truncate flex-1">{event.yachtName}</div>
-                                {isMiddle && (
-                                  <span className="text-[10px] opacity-75 ml-1">→</span>
-                                )}
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1 text-[10px] opacity-90">
-                                  <Clock className="h-2.5 w-2.5" />
-                                  <span>{days}d</span>
-                                </div>
-                                <div 
-                                  className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase"
-                                  style={{
-                                    backgroundColor: statusColors[event.status]?.light,
-                                    color: statusColors[event.status]?.bg,
-                                  }}
-                                >
-                                  {event.status.charAt(0)}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                        {events.length > 3 && (
-                          <div className="text-xs font-bold text-center py-1.5 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg text-purple-700 border border-purple-200">
-                            +{events.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {dateInfo.isCurrentMonth && events.length === 0 && (
-                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 bg-gradient-to-br from-purple-50/50 to-pink-50/50 rounded-xl z-0">
-                        <div className="flex flex-col items-center gap-1">
-                          <Plus className="h-6 w-6 text-purple-400 group-hover:scale-110 transition-transform" />
-                          <span className="text-xs text-purple-400 font-medium">Add Booking</span>
+                    
+                    <div className="space-y-1">
+                      {bookingBars.map((bar) => (
+                        <div
+                          key={bar.id}
+                          className={`
+                            px-2 py-1.5 shadow-sm transition-all hover:shadow-md cursor-pointer border-l-4 border-r-4
+                            ${bar.roundedClass}
+                          `}
+                          style={{
+                            backgroundColor: bar.eventStyle.backgroundColor,
+                            color: bar.eventStyle.color,
+                            borderLeftColor: bar.isStart || (bar.isStart && bar.isEnd) ? bar.eventStyle.backgroundColor : 'transparent',
+                            borderRightColor: bar.isEnd || (bar.isStart && bar.isEnd) ? bar.eventStyle.backgroundColor : 'transparent',
+                          }}
+                        >
+                          <div className="font-semibold text-[10px] truncate">{bar.yachtName}</div>
+                          {!bar.isEnd && (
+                            <div className="text-[8px] opacity-75">→</div>
+                          )}
                         </div>
+                      ))}
+                    </div>
+
+                    {dateInfo.isCurrentMonth && bookingBars.length === 0 && (
+                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 top-8 bg-purple-50/50 rounded-lg z-0">
+                        <Plus className="h-4 w-4 text-purple-400" />
                       </div>
                     )}
                   </div>
