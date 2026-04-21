@@ -133,9 +133,27 @@ export default function CalendarView() {
       return
     }
 
-    const startDate = new Date(bookingForm.checkInDate)
-    const endDate = new Date(bookingForm.checkOutDate)
-    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    // Check for booking conflicts with the same yacht
+    const newStartDate = new Date(bookingForm.checkInDate)
+    const newEndDate = new Date(bookingForm.checkOutDate)
+    
+    const hasConflict = mockEvents.some(event => {
+      if (event.yachtName !== yacht.name) return false // Different yacht, no conflict
+      if (event.status === 'cancelled') return false // Cancelled bookings don't block
+      
+      const existingStart = new Date(event.startDate)
+      const existingEnd = new Date(event.endDate)
+      
+      // Check if date ranges overlap
+      return newStartDate <= existingEnd && newEndDate >= existingStart
+    })
+
+    if (hasConflict) {
+      alert(`"${yacht.name}" is already booked for some of these dates. Please choose different dates or a different yacht.`)
+      return
+    }
+
+    const days = Math.ceil((newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60 * 24))
     const totalPrice = days * yacht.dailyRate
 
     const newBooking: BookingEvent = {
@@ -174,6 +192,91 @@ export default function CalendarView() {
       return current >= start && current <= end
     })
   }
+
+  // Calculate booking bars that span across multiple days
+  const getBookingBars = () => {
+    const bars: any[] = []
+    const dayOffset = firstDay // 0 = Sunday, 1 = Monday, etc.
+    
+    mockEvents.forEach((event, index) => {
+      const start = new Date(event.startDate)
+      const end = new Date(event.endDate)
+      
+      // Check if booking is in current month view
+      const bookingStartMonth = start.getMonth()
+      const bookingStartYear = start.getFullYear()
+      const bookingEndMonth = end.getMonth()
+      const bookingEndYear = end.getFullYear()
+      
+      // Skip if booking doesn't overlap with current month at all
+      if ((bookingStartYear < year) || 
+          (bookingStartYear === year && bookingStartMonth < month && bookingEndMonth < month) ||
+          (bookingStartYear > year) ||
+          (bookingStartYear === year && bookingStartMonth > month)) {
+        return
+      }
+      
+      // Calculate display start date
+      let displayStart = new Date(start)
+      let displayEnd = new Date(end)
+      
+      if (bookingStartYear < year || (bookingStartYear === year && bookingStartMonth < month)) {
+        displayStart = new Date(year, month, 1)
+      }
+      
+      if (bookingEndYear > year || (bookingEndYear === year && bookingEndMonth > month)) {
+        displayEnd = new Date(year, month + 1, 0)
+      }
+      
+      const startDay = displayStart.getDate()
+      const endDay = displayEnd.getDate()
+      const span = endDay - startDay + 1
+      
+      // Calculate grid position
+      const gridStartIndex = dayOffset + startDay - 1
+      const gridEndIndex = dayOffset + endDay - 1
+      
+      // Only show if within the visible grid
+      if (gridStartIndex >= 0 && gridStartIndex < 42) {
+        bars.push({
+          ...event,
+          startDay,
+          endDay,
+          span,
+          gridStartIndex,
+          gridEndIndex,
+        })
+      }
+    })
+    
+    // Sort by start position and assign rows to avoid overlaps
+    const rows: any[] = []
+    bars.sort((a, b) => a.gridStartIndex - b.gridStartIndex)
+    
+    bars.forEach(bar => {
+      let placed = false
+      for (let i = 0; i < rows.length; i++) {
+        const canPlace = rows[i].every((existingBar: any) => 
+          bar.gridStartIndex > existingBar.gridEndIndex || 
+          bar.gridEndIndex < existingBar.gridStartIndex
+        )
+        if (canPlace) {
+          rows[i].push(bar)
+          bar.row = i
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        rows.push([bar])
+        bar.row = rows.length - 1
+      }
+    })
+    
+    return bars
+  }
+
+  const bookingBars = getBookingBars()
 
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
@@ -482,7 +585,7 @@ export default function CalendarView() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200">
+            <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200 relative">
               {/* Day names header */}
               {dayNames.map((day) => (
                 <div key={day} className="p-3 text-center text-xs font-semibold text-gray-600 bg-white">
@@ -492,7 +595,6 @@ export default function CalendarView() {
               
               {/* Calendar days */}
               {calendarDays.map((dateInfo, index) => {
-                const events = getEventsForDay(dateInfo.day, dateInfo.isCurrentMonth)
                 const isToday = isCurrentMonthToday && 
                   dateInfo.day === todayDate &&
                   dateInfo.isCurrentMonth
@@ -502,7 +604,7 @@ export default function CalendarView() {
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[140px] p-2 cursor-pointer transition-all duration-200 group bg-white
+                      min-h-[100px] p-2 cursor-pointer transition-all duration-200 bg-white relative
                       ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-300 opacity-50' : 'hover:bg-gray-50'}
                       ${isToday ? 'bg-purple-50/50' : ''}
                     `}
@@ -512,52 +614,54 @@ export default function CalendarView() {
                       ${isToday ? 'text-purple-600' : 'text-gray-700'}
                     `}>
                       <span>{dateInfo.day}</span>
-                      {events.length > 0 && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                      )}
-                    </div>
-                    
-                    <div className="space-y-1.5">
-                      {events.map((event) => {
-                        const days = getDaysBetweenDates(event.startDate, event.endDate)
-                        const eventStyle = getEventStyle(event.eventColor || 'green')
-                        
-                        return (
-                          <div
-                            key={event.id}
-                            className="rounded-lg p-2 border shadow-sm hover:shadow-md transition-all cursor-pointer"
-                            style={{
-                              backgroundColor: eventStyle.backgroundColor,
-                              color: eventStyle.color,
-                              borderColor: 'rgba(0,0,0,0.08)',
-                            }}
-                          >
-                            <div className="font-semibold text-xs truncate mb-1.5">
-                              {event.yachtName}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] mb-1.5 opacity-90">
-                              <Clock className="h-3 w-3" />
-                              <span>{days} {days === 1 ? 'day' : 'days'}</span>
-                            </div>
-                            <div
-                              className="inline-block px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide"
-                              style={{
-                                backgroundColor: statusColors[event.status]?.bg,
-                                color: statusColors[event.status]?.text,
-                              }}
-                            >
-                              {event.status}
-                            </div>
-                          </div>
-                        )
-                      })}
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
                     </div>
 
-                    {dateInfo.isCurrentMonth && events.length === 0 && (
+                    {dateInfo.isCurrentMonth && (
                       <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                        <Plus className="h-5 w-5 text-purple-400" />
+                        <Plus className="h-4 w-4 text-purple-400" />
                       </div>
                     )}
+                  </div>
+                )
+              })}
+
+              {/* Booking bars overlay */}
+              {bookingBars.map((bar) => {
+                const eventStyle = getEventStyle(bar.eventColor || 'green')
+                const days = getDaysBetweenDates(bar.startDate, bar.endDate)
+                const rowIndex = bar.row || 0
+                const topOffset = 36 + (rowIndex * 32) // Start below day numbers
+                
+                return (
+                  <div
+                    key={bar.id}
+                    className="absolute h-7 rounded-md shadow-sm hover:shadow-md transition-all cursor-pointer border z-10"
+                    style={{
+                      left: `calc(${bar.gridStartIndex} * (100% / 7) + 4px)`,
+                      width: `calc(${bar.span} * (100% / 7) - 8px)`,
+                      top: `${topOffset}px`,
+                      maxWidth: `calc(${bar.span} * (100% / 7) - 8px)`,
+                      backgroundColor: eventStyle.backgroundColor,
+                      color: eventStyle.text,
+                      borderColor: 'rgba(0,0,0,0.1)',
+                    }}
+                    title={`${bar.yachtName} (${days} days) - ${bar.status}`}
+                  >
+                    <div className="flex items-center justify-between h-full px-2">
+                      <div className="font-semibold text-[10px] truncate">
+                        {bar.yachtName}
+                      </div>
+                      <div
+                        className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase flex-shrink-0"
+                        style={{
+                          backgroundColor: statusColors[bar.status]?.bg,
+                          color: statusColors[bar.status]?.text,
+                        }}
+                      >
+                        {bar.status}
+                      </div>
+                    </div>
                   </div>
                 )
               })}
