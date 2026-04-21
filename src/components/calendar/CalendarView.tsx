@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Anchor, Clock, Users, Plus, TrendingUp } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Anchor, Clock, Users, Plus, TrendingUp, MapPin } from 'lucide-react'
 
 interface BookingEvent {
   id: string
@@ -17,41 +17,42 @@ interface BookingEvent {
   customerName?: string
   bookingCode?: string
   totalPrice?: number
+  eventColor?: string
 }
 
 const mockEvents: BookingEvent[] = [
   // January 2025 bookings
-  { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500 },
-  { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500 },
-  { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500 },
+  { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green' },
+  { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue' },
+  { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple' },
   
   // February 2025 bookings
-  { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500 },
-  { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000 },
-  { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500 },
-  { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500 },
-  { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200 },
-  { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500 },
-  { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500 },
+  { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'pink' },
+  { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'yellow' },
+  { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'teal' },
+  { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'green' },
+  { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue' },
+  { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple' },
+  { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink' },
   
   // March 2025 bookings
-  { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500 },
-  { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500 },
-  { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500 },
+  { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'yellow' },
+  { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal' },
+  { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green' },
   
   // April 2025 bookings
-  { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500 },
-  { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800 },
-  { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500 },
-  { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500 },
+  { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue' },
+  { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple' },
+  { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink' },
+  { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow' },
 ]
 
 const mockYachts = [
-  { id: '1', name: 'Sea Breeze', dailyRate: 3500 },
-  { id: '2', name: 'Ocean Pearl', dailyRate: 5500 },
-  { id: '3', name: 'Blue Horizon', dailyRate: 2500 },
-  { id: '4', name: 'Sunset Voyager', dailyRate: 4200 },
-  { id: '5', name: 'Starlight', dailyRate: 6500 },
+  { id: '1', name: 'Sea Breeze', dailyRate: 3500, color: 'green' },
+  { id: '2', name: 'Ocean Pearl', dailyRate: 5500, color: 'blue' },
+  { id: '3', name: 'Blue Horizon', dailyRate: 2500, color: 'purple' },
+  { id: '4', name: 'Sunset Voyager', dailyRate: 4200, color: 'pink' },
+  { id: '5', name: 'Starlight', dailyRate: 6500, color: 'yellow' },
 ]
 
 const mockCustomers = [
@@ -74,6 +75,22 @@ const mockCustomers = [
   { id: '17', name: 'Alex Johnson' },
 ]
 
+const colorPalette = {
+  green: { bg: '#a8e6cf', text: '#1e3a5f', hover: '#92d5e7' },
+  blue: { bg: '#b8e6f7', text: '#1e3a5f', hover: '#9ed0f7' },
+  purple: { bg: '#c084fc', text: '#1e3a5f', hover: '#d4a3f7' },
+  pink: { bg: '#ffb3ba', text: '#1e3a5f', hover: '#ffcad5' },
+  yellow: { bg: '#ffd3a5', text: '#1e3a5f', hover: '#ffdfb8' },
+  teal: { bg: '#2dd4bf', text: '#1e3a5f', hover: '#54e0c9' },
+}
+
+const statusColors = {
+  confirmed: { bg: '#2dd4bf', text: 'white' },
+  pending: { bg: '#ffd89b', text: '#1e3a5f' },
+  completed: { bg: '#e0e0e0', text: '#666666' },
+  cancelled: { bg: '#ffaaa5', text: '#1e3a5f' },
+}
+
 export default function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [todayBookings, setTodayBookings] = useState<BookingEvent[]>([])
@@ -85,7 +102,7 @@ export default function CalendarView() {
     checkInDate: '',
     checkOutDate: '',
   })
-  
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear()
     const month = date.getMonth()
@@ -131,6 +148,7 @@ export default function CalendarView() {
       customerName: customer.name,
       bookingCode: `BK${String(mockEvents.length + 1).padStart(3, '0')}`,
       totalPrice,
+      eventColor: yacht.color,
     }
 
     mockEvents.push(newBooking)
@@ -142,7 +160,6 @@ export default function CalendarView() {
       checkOutDate: '',
     })
     
-    // Update today's bookings if the new booking is for today
     const today = new Date()
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
     if (bookingForm.checkInDate <= todayStr && bookingForm.checkOutDate >= todayStr) {
@@ -152,7 +169,7 @@ export default function CalendarView() {
 
   const { firstDay, daysInMonth, daysInPrevMonth, month, year } = getDaysInMonth(currentDate)
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 
   const getEventsForDay = (day: number, isCurrentMonth: boolean) => {
     if (!isCurrentMonth) return []
@@ -165,7 +182,6 @@ export default function CalendarView() {
     })
   }
 
-  // Get today's bookings
   useEffect(() => {
     const today = new Date()
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
@@ -178,16 +194,6 @@ export default function CalendarView() {
     setTodayBookings(bookingsToday)
   }, [month, year])
 
-  const getStatusColor = (status: string) => {
-    const colors = {
-      confirmed: 'bg-primary text-primary-foreground',
-      pending: 'bg-yellow-500 text-white',
-      completed: 'bg-green-500 text-white',
-      cancelled: 'bg-red-500 text-white',
-    }
-    return colors[status as keyof typeof colors] || 'bg-gray-500'
-  }
-
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
       const newDate = new Date(prev)
@@ -198,17 +204,14 @@ export default function CalendarView() {
 
   const calendarDays = []
   
-  // Previous month days
   for (let i = firstDay - 1; i >= 0; i--) {
     calendarDays.push({ day: daysInPrevMonth - i, isCurrentMonth: false })
   }
   
-  // Current month days
   for (let i = 1; i <= daysInMonth; i++) {
     calendarDays.push({ day: i, isCurrentMonth: true })
   }
   
-  // Next month days
   const remainingDays = 42 - calendarDays.length
   for (let i = 1; i <= remainingDays; i++) {
     calendarDays.push({ day: i, isCurrentMonth: false })
@@ -240,6 +243,20 @@ export default function CalendarView() {
     return Math.max(1, days) * yacht.dailyRate
   }
 
+  const getDaysBetweenDates = (start: string, end: string) => {
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    return Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  const getEventStyle = (color: string) => {
+    const style = colorPalette[color as keyof typeof colorPalette] || colorPalette.green
+    return {
+      backgroundColor: style.bg,
+      color: style.text,
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -248,16 +265,19 @@ export default function CalendarView() {
           <p className="text-muted-foreground">Manage your yacht bookings and schedule</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => {
-            setSelectedDate('')
-            setBookingForm({
-              yachtId: '',
-              customerId: '',
-              checkInDate: '',
-              checkOutDate: '',
-            })
-            setIsBookingDialogOpen(true)
-          }}>
+          <Button 
+            onClick={() => {
+              setSelectedDate('')
+              setBookingForm({
+                yachtId: '',
+                customerId: '',
+                checkInDate: '',
+                checkOutDate: '',
+              })
+              setIsBookingDialogOpen(true)
+            }}
+            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
+          >
             <Plus className="mr-2 h-4 w-4" />
             New Booking
           </Button>
@@ -268,7 +288,9 @@ export default function CalendarView() {
       <Dialog open={isBookingDialogOpen} onOpenChange={setIsBookingDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Create New Booking</DialogTitle>
+            <DialogTitle className="text-2xl bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
+              Create New Booking
+            </DialogTitle>
             <DialogDescription>
               {selectedDate ? `Starting date: ${new Date(selectedDate).toLocaleDateString()}` : 'Select dates and yacht'}
             </DialogDescription>
@@ -302,11 +324,21 @@ export default function CalendarView() {
                   <SelectValue placeholder="Select a yacht" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockYachts.map(yacht => (
-                    <SelectItem key={yacht.id} value={yacht.id}>
-                      {yacht.name} - ${yacht.dailyRate}/day
-                    </SelectItem>
-                  ))}
+                  {mockYachts.map(yacht => {
+                    const colorStyle = colorPalette[yacht.color as keyof typeof colorPalette] || colorPalette.green
+                    return (
+                      <SelectItem key={yacht.id} value={yacht.id}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: colorStyle.bg }}
+                          />
+                          <span>{yacht.name}</span>
+                          <span className="text-muted-foreground ml-auto">${yacht.dailyRate}/day</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -318,7 +350,7 @@ export default function CalendarView() {
                   type="date"
                   value={bookingForm.checkInDate}
                   onChange={(e) => setBookingForm({ ...bookingForm, checkInDate: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md text-sm"
+                  className="w-full px-3 py-2 border-2 rounded-lg text-sm border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                   min={new Date().toISOString().split('T')[0]}
                 />
               </div>
@@ -329,25 +361,38 @@ export default function CalendarView() {
                   type="date"
                   value={bookingForm.checkOutDate}
                   onChange={(e) => setBookingForm({ ...bookingForm, checkOutDate: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md text-sm"
+                  className="w-full px-3 py-2 border-2 rounded-lg text-sm border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200"
                   min={bookingForm.checkInDate || new Date().toISOString().split('T')[0]}
                 />
               </div>
             </div>
             {getEstimatedPrice() > 0 && (
-              <div className="p-4 bg-muted rounded-lg">
+              <div 
+                className="p-4 rounded-xl shadow-md"
+                style={{ 
+                  background: 'linear-gradient(135deg, #a8e6cf 0%, #ffb3ba 100%)',
+                  color: '#1e3a5f'
+                }}
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Estimated Total:</span>
-                  <span className="text-2xl font-bold">${getEstimatedPrice().toLocaleString()}</span>
+                  <span className="text-3xl font-bold">${getEstimatedPrice().toLocaleString()}</span>
                 </div>
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBookingDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsBookingDialogOpen(false)}
+              className="border-gray-300 hover:bg-gray-100"
+            >
               Cancel
             </Button>
-            <Button onClick={handleCreateBooking}>
+            <Button 
+              onClick={handleCreateBooking}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
+            >
               Create Booking
             </Button>
           </DialogFooter>
@@ -356,10 +401,12 @@ export default function CalendarView() {
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="border-2 border-green-300 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Bookings</CardTitle>
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.green.bg }}>
+              <CalendarIcon className="h-5 w-5" style={{ color: colorPalette.green.text }} />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{quickStats.activeBookings}</div>
@@ -367,10 +414,12 @@ export default function CalendarView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-2 border-blue-300 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Available Yachts</CardTitle>
-            <Anchor className="h-4 w-4 text-muted-foreground" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.blue.bg }}>
+              <Anchor className="h-5 w-5" style={{ color: colorPalette.blue.text }} />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{quickStats.availableYachts}</div>
@@ -378,10 +427,12 @@ export default function CalendarView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-2 border-pink-300 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Today's Activity</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
+              <Clock className="h-5 w-5" style={{ color: colorPalette.pink.text }} />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{todayBookings.length}</div>
@@ -389,10 +440,12 @@ export default function CalendarView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-2 border-yellow-300 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.yellow.bg }}>
+              <TrendingUp className="h-5 w-5" style={{ color: colorPalette.yellow.text }} />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${quickStats.monthlyRevenue.toLocaleString()}</div>
@@ -403,31 +456,45 @@ export default function CalendarView() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Calendar - Main Section */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 shadow-xl">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>{monthNames[month]} {year}</CardTitle>
+                <CardTitle className="text-2xl">{monthNames[month]} {year}</CardTitle>
                 <CardDescription>Calendar view of all bookings</CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="icon" onClick={() => navigateMonth('prev')}>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => navigateMonth('prev')}
+                  className="border-purple-300 hover:bg-purple-50 hover:border-purple-400"
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" onClick={() => setCurrentDate(new Date())}>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setCurrentDate(new Date())}
+                  className="border-pink-300 hover:bg-pink-50 hover:border-pink-400"
+                >
                   Today
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => navigateMonth('next')}>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => navigateMonth('next')}
+                  className="border-purple-300 hover:bg-purple-50 hover:border-purple-400"
+                >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-2">
               {/* Day names header */}
               {dayNames.map((day) => (
-                <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
+                <div key={day} className="p-3 text-center text-sm font-bold text-gray-700">
                   {day}
                 </div>
               ))}
@@ -444,41 +511,58 @@ export default function CalendarView() {
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[100px] p-2 border rounded-lg cursor-pointer hover:bg-accent hover:border-primary transition-all
-                      ${!dateInfo.isCurrentMonth ? 'bg-muted/30 text-muted-foreground opacity-50' : 'bg-background'}
-                      ${isToday ? 'ring-2 ring-primary font-bold' : ''}
-                      ${dateInfo.isCurrentMonth ? 'hover:shadow-md' : ''}
+                      min-h-[120px] p-2 rounded-xl cursor-pointer transition-all duration-200
+                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white shadow-sm hover:shadow-lg hover:-translate-y-1'}
+                      ${isToday ? 'ring-4 ring-purple-400 ring-offset-2' : ''}
+                      ${dateInfo.isCurrentMonth ? 'hover:border-purple-400 border-2 border-transparent' : ''}
                     `}
                   >
                     <div className={`
-                      text-sm mb-1 flex items-center justify-between
-                      ${isToday ? 'bg-primary text-primary-foreground w-7 h-7 rounded-full flex items-center justify-center' : ''}
+                      text-sm font-bold mb-2 flex items-center justify-between
+                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white w-8 h-8 rounded-full flex items-center justify-center shadow-md' : ''}
                     `}>
                       {dateInfo.day}
                       {events.length > 0 && (
-                        <span className="ml-1 h-2 w-2 rounded-full bg-primary" />
+                        <span className="w-2 h-2 rounded-full bg-purple-500" />
                       )}
                     </div>
                     {events.length > 0 && (
-                      <div className="space-y-1">
-                        {events.slice(0, 2).map((event) => (
-                          <div
-                            key={event.id}
-                            className={`
-                              text-[10px] p-1 rounded truncate flex items-center gap-1 cursor-pointer hover:opacity-80
-                              ${getStatusColor(event.status)}
-                            `}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              // Could open booking details here
-                            }}
-                          >
-                            <Anchor className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">{event.yachtName}</span>
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        {events.slice(0, 2).map((event) => {
+                          const days = getDaysBetweenDates(event.startDate, event.endDate)
+                          const eventStyle = getEventStyle(event.eventColor || 'green')
+                          return (
+                            <div
+                              key={event.id}
+                              className={`
+                                rounded-xl p-2.5 shadow-md transition-all hover:scale-105 hover:shadow-lg cursor-pointer
+                              `}
+                              style={{
+                                backgroundColor: eventStyle.backgroundColor,
+                                color: eventStyle.color,
+                              }}
+                            >
+                              <div className="font-semibold text-sm truncate mb-1">{event.yachtName}</div>
+                              <div className="flex items-center gap-1.5 text-xs opacity-90 mb-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{days} {days === 1 ? 'day' : 'days'}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div 
+                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                  style={{
+                                    backgroundColor: statusColors[event.status]?.bg,
+                                    color: statusColors[event.status]?.text,
+                                  }}
+                                >
+                                  {event.status}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                         {events.length > 2 && (
-                          <div className="text-[10px] text-muted-foreground pl-1">
+                          <div className="text-xs font-bold text-center py-2 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg">
                             +{events.length - 2} more
                           </div>
                         )}
@@ -486,7 +570,7 @@ export default function CalendarView() {
                     )}
                     {dateInfo.isCurrentMonth && events.length === 0 && (
                       <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Plus className="h-4 w-4 text-muted-foreground" />
+                        <Plus className="h-5 w-5 text-purple-400 group-hover:scale-110 transition-transform" />
                       </div>
                     )}
                   </div>
@@ -496,13 +580,15 @@ export default function CalendarView() {
           </CardContent>
         </Card>
 
-        {/* Sidebar with Today's Bookings */}
+        {/* Sidebar */}
         <div className="space-y-6">
           {/* Today's Bookings */}
-          <Card>
+          <Card className="shadow-xl">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
+                  <Clock className="h-5 w-5" style={{ color: colorPalette.pink.text }} />
+                </div>
                 Today's Schedule
               </CardTitle>
               <CardDescription>
@@ -512,40 +598,64 @@ export default function CalendarView() {
             <CardContent>
               <div className="space-y-3">
                 {todayBookings.length > 0 ? (
-                  todayBookings.map((booking) => (
-                    <div key={booking.id} className="p-3 rounded-lg border hover:bg-accent transition-colors cursor-pointer">
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-1 h-3 w-3 rounded-full flex-shrink-0 ${
-                          booking.status === 'confirmed' ? 'bg-green-500' :
-                          booking.status === 'pending' ? 'bg-yellow-500' :
-                          'bg-red-500'
-                        }`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{booking.yachtName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{booking.customerName}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusColor(booking.status)}`}>
-                              {booking.status}
+                  todayBookings.map((booking) => {
+                    const eventStyle = getEventStyle(booking.eventColor || 'green')
+                    const days = getDaysBetweenDates(booking.startDate, booking.endDate)
+                    return (
+                      <div 
+                        key={booking.id} 
+                        className="p-4 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer hover:-translate-y-1"
+                        style={{ backgroundColor: eventStyle.backgroundColor }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0" style={{ color: eventStyle.color }}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`w-2 h-2 rounded-full`} 
+                                style={{ 
+                                  backgroundColor: statusColors[booking.status]?.bg === '#e0e0e0' ? '#999999' : statusColors[booking.status]?.bg 
+                                }} 
+                              />
+                              <p className="font-bold text-sm truncate">{booking.yachtName}</p>
                             </div>
-                            {booking.bookingCode && (
-                              <span className="text-[10px] text-muted-foreground">
-                                {booking.bookingCode}
-                              </span>
-                            )}
+                            <p className="text-xs mb-2 opacity-90 truncate">{booking.customerName}</p>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div 
+                                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                style={{
+                                  backgroundColor: statusColors[booking.status]?.bg,
+                                  color: statusColors[booking.status]?.text,
+                                }}
+                              >
+                                {booking.status}
+                              </div>
+                              {booking.bookingCode && (
+                                <span className="text-[10px] opacity-80">
+                                  {booking.bookingCode}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs opacity-90">
+                                <Clock className="h-3 w-3" />
+                                <span>{days} {days === 1 ? 'day' : 'days'}</span>
+                              </div>
+                              {booking.totalPrice && (
+                                <p className="text-sm font-bold">
+                                  ${booking.totalPrice.toLocaleString()}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          {booking.totalPrice && (
-                            <p className="text-xs font-semibold mt-1">
-                              ${booking.totalPrice.toLocaleString()}
-                            </p>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No bookings scheduled for today</p>
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 opacity-50" style={{ backgroundColor: colorPalette.pink.bg }}>
+                      <Clock className="h-8 w-8" style={{ color: colorPalette.pink.text }} />
+                    </div>
+                    <p className="text-muted-foreground text-sm mb-4">No bookings scheduled for today</p>
                     <button
                       onClick={() => {
                         setSelectedDate('')
@@ -557,7 +667,7 @@ export default function CalendarView() {
                         })
                         setIsBookingDialogOpen(true)
                       }}
-                      className="mt-4 text-primary hover:underline text-sm"
+                      className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-2 rounded-xl font-medium shadow-md hover:shadow-lg transition-all"
                     >
                       Book a yacht for today
                     </button>
@@ -568,21 +678,24 @@ export default function CalendarView() {
           </Card>
 
           {/* Legend */}
-          <Card>
+          <Card className="shadow-xl">
             <CardHeader>
-              <CardTitle>Status Legend</CardTitle>
+              <CardTitle className="text-xl">Status Legend</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {[
-                  { status: 'confirmed', color: 'bg-primary', label: 'Confirmed' },
-                  { status: 'pending', color: 'bg-yellow-500', label: 'Pending' },
-                  { status: 'completed', color: 'bg-green-500', label: 'Completed' },
-                  { status: 'cancelled', color: 'bg-red-500', label: 'Cancelled' },
+                  { status: 'confirmed', color: '#2dd4bf' },
+                  { status: 'pending', color: '#ffd89b' },
+                  { status: 'completed', color: '#e0e0e0' },
+                  { status: 'cancelled', color: '#ffaaa5' },
                 ].map((item) => (
                   <div key={item.status} className="flex items-center gap-3">
-                    <div className={`h-3 w-3 rounded ${item.color}`} />
-                    <span className="text-sm capitalize">{item.label}</span>
+                    <div 
+                      className="h-4 w-4 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="text-sm font-medium capitalize">{item.status}</span>
                   </div>
                 ))}
               </div>
@@ -590,20 +703,39 @@ export default function CalendarView() {
           </Card>
 
           {/* Quick Actions */}
-          <Card>
+          <Card className="shadow-xl">
             <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
+              <CardTitle className="text-xl">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start border-2 border-green-300 hover:bg-green-50 hover:border-green-400"
+                onClick={() => {
+                  setSelectedDate('')
+                  setBookingForm({
+                    yachtId: '',
+                    customerId: '',
+                    checkInDate: '',
+                    checkOutDate: '',
+                  })
+                  setIsBookingDialogOpen(true)
+                }}
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 New Booking
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start border-2 border-blue-300 hover:bg-blue-50 hover:border-blue-400"
+              >
                 <Users className="mr-2 h-4 w-4" />
                 Add Customer
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start border-2 border-purple-300 hover:bg-purple-50 hover:border-purple-400"
+              >
                 <Anchor className="mr-2 h-4 w-4" />
                 Manage Yachts
               </Button>
