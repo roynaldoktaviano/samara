@@ -184,46 +184,61 @@ export default function CalendarView() {
   // Generate booking bars
   const bookingBars = useMemo(() => {
     const bars: any[] = []
-    
+
     mockEvents.forEach((event) => {
       const start = new Date(event.startDate)
       const end = new Date(event.endDate)
-      
-      const bookingMonth = start.getMonth()
-      const bookingYear = start.getFullYear()
-      
-      // Only show bookings that start in the current month
-      if (bookingYear !== year || bookingMonth !== month) {
+
+      const bookingStartMonth = start.getMonth()
+      const bookingStartYear = start.getFullYear()
+      const bookingEndMonth = end.getMonth()
+      const bookingEndYear = end.getFullYear()
+
+      // Check if booking overlaps with current month
+      const monthStart = new Date(year, month, 1)
+      const monthEnd = new Date(year, month + 1, 0)
+
+      // Skip if booking doesn't overlap with current month
+      if (end < monthStart || start > monthEnd) {
         return
       }
-      
-      const startDay = start.getDate()
-      const endDay = end.getDate()
-      
+
+      // Calculate the visible start and end days in current month
+      let visibleStartDay = 1
+      let visibleEndDay = daysInMonth
+
+      if (start >= monthStart && start <= monthEnd) {
+        visibleStartDay = start.getDate()
+      }
+
+      if (end >= monthStart && end <= monthEnd) {
+        visibleEndDay = end.getDate()
+      }
+
       // Calculate grid positions
-      const gridStart = firstDay + startDay - 1
-      const gridEnd = firstDay + endDay - 1
-      const span = endDay - startDay + 1
-      
+      const gridStart = firstDay + visibleStartDay - 1
+      const gridEnd = firstDay + visibleEndDay - 1
+      const span = visibleEndDay - visibleStartDay + 1
+
       bars.push({
         ...event,
-        startDay,
-        endDay,
+        startDay: visibleStartDay,
+        endDay: visibleEndDay,
         span,
         gridStart,
         gridEnd,
       })
     })
-    
+
     // Assign rows to avoid overlaps
     const rows: any[] = []
     bars.sort((a, b) => a.gridStart - b.gridStart)
-    
+
     bars.forEach(bar => {
       let placed = false
       for (let i = 0; i < rows.length; i++) {
-        const canPlace = rows[i].every((existingBar: any) => 
-          bar.gridStart > existingBar.gridEnd || 
+        const canPlace = rows[i].every((existingBar: any) =>
+          bar.gridStart > existingBar.gridEnd ||
           bar.gridEnd < existingBar.gridStart
         )
         if (canPlace) {
@@ -238,9 +253,9 @@ export default function CalendarView() {
         bar.row = rows.length - 1
       }
     })
-    
+
     return bars
-  }, [month, year, firstDay, mockEvents])
+  }, [month, year, firstDay, daysInMonth, mockEvents])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
