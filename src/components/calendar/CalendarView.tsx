@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -76,24 +76,23 @@ const mockCustomers = [
 ]
 
 const colorPalette = {
-  green: { bg: '#a8e6cf', text: '#1e3a5f', hover: '#92d5e7' },
-  blue: { bg: '#b8e6f7', text: '#1e3a5f', hover: '#9ed0f7' },
-  purple: { bg: '#c084fc', text: '#1e3a5f', hover: '#d4a3f7' },
-  pink: { bg: '#ffb3ba', text: '#1e3a5f', hover: '#ffcad5' },
-  yellow: { bg: '#ffd3a5', text: '#1e3a5f', hover: '#ffdfb8' },
-  teal: { bg: '#2dd4bf', text: '#1e3a5f', hover: '#54e0c9' },
+  green: { bg: '#10b981', text: 'white', hover: '#059669', light: '#d1fae5' },
+  blue: { bg: '#3b82f6', text: 'white', hover: '#2563eb', light: '#dbeafe' },
+  purple: { bg: '#8b5cf6', text: 'white', hover: '#7c3aed', light: '#ede9fe' },
+  pink: { bg: '#ec4899', text: 'white', hover: '#db2777', light: '#fce7f3' },
+  yellow: { bg: '#f59e0b', text: 'white', hover: '#d97706', light: '#fef3c7' },
+  teal: { bg: '#14b8a6', text: 'white', hover: '#0d9488', light: '#ccfbf1' },
 }
 
 const statusColors = {
-  confirmed: { bg: '#2dd4bf', text: 'white' },
-  pending: { bg: '#ffd89b', text: '#1e3a5f' },
-  completed: { bg: '#e0e0e0', text: '#666666' },
-  cancelled: { bg: '#ffaaa5', text: '#1e3a5f' },
+  confirmed: { bg: '#10b981', text: 'white', light: '#d1fae5' },
+  pending: { bg: '#f59e0b', text: 'white', light: '#fef3c7' },
+  completed: { bg: '#6b7280', text: 'white', light: '#e5e7eb' },
+  cancelled: { bg: '#ef4444', text: 'white', light: '#fee2e2' },
 }
 
 export default function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [todayBookings, setTodayBookings] = useState<BookingEvent[]>([])
   const [isBookingDialogOpen, setIsBookingDialogOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [bookingForm, setBookingForm] = useState({
@@ -159,12 +158,6 @@ export default function CalendarView() {
       checkInDate: '',
       checkOutDate: '',
     })
-    
-    const today = new Date()
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    if (bookingForm.checkInDate <= todayStr && bookingForm.checkOutDate >= todayStr) {
-      setTodayBookings([...todayBookings, newBooking])
-    }
   }
 
   const { firstDay, daysInMonth, daysInPrevMonth, month, year } = getDaysInMonth(currentDate)
@@ -182,17 +175,14 @@ export default function CalendarView() {
     })
   }
 
-  useEffect(() => {
-    const today = new Date()
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const bookingsToday = mockEvents.filter(event => {
-      const start = new Date(event.startDate)
-      const end = new Date(event.endDate)
-      const current = new Date(todayStr)
-      return current >= start && current <= end
-    })
-    setTodayBookings(bookingsToday)
-  }, [month, year])
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const todayBookings = mockEvents.filter(event => {
+    const start = new Date(event.startDate)
+    const end = new Date(event.endDate)
+    const current = new Date(todayStr)
+    return current >= start && current <= end
+  })
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
@@ -217,7 +207,6 @@ export default function CalendarView() {
     calendarDays.push({ day: i, isCurrentMonth: false })
   }
 
-  const today = new Date()
   const isCurrentMonthToday = today.getMonth() === month && today.getFullYear() === year
   const todayDate = today.getDate()
 
@@ -254,6 +243,7 @@ export default function CalendarView() {
     return {
       backgroundColor: style.bg,
       color: style.text,
+      hover: style.hover,
     }
   }
 
@@ -320,7 +310,7 @@ export default function CalendarView() {
                 value={bookingForm.yachtId}
                 onValueChange={(value) => setBookingForm({ ...bookingForm, yachtId: value })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-2">
                   <SelectValue placeholder="Select a yacht" />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,11 +320,11 @@ export default function CalendarView() {
                       <SelectItem key={yacht.id} value={yacht.id}>
                         <div className="flex items-center gap-2">
                           <div 
-                            className="w-3 h-3 rounded-full"
+                            className="w-3 h-3 rounded-full shadow-sm"
                             style={{ backgroundColor: colorStyle.bg }}
                           />
-                          <span>{yacht.name}</span>
-                          <span className="text-muted-foreground ml-auto">${yacht.dailyRate}/day</span>
+                          <span className="font-medium">{yacht.name}</span>
+                          <span className="text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-2 py-0.5 rounded-full font-bold ml-auto">${yacht.dailyRate}/day</span>
                         </div>
                       </SelectItem>
                     )
@@ -368,14 +358,15 @@ export default function CalendarView() {
             </div>
             {getEstimatedPrice() > 0 && (
               <div 
-                className="p-4 rounded-xl shadow-md"
+                className="p-4 rounded-xl shadow-lg border-2"
                 style={{ 
-                  background: 'linear-gradient(135deg, #a8e6cf 0%, #ffb3ba 100%)',
-                  color: '#1e3a5f'
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+                  color: 'white',
+                  borderColor: '#a78bfa'
                 }}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Estimated Total:</span>
+                  <span className="text-sm font-bold">Estimated Total:</span>
                   <span className="text-3xl font-bold">${getEstimatedPrice().toLocaleString()}</span>
                 </div>
               </div>
@@ -401,55 +392,55 @@ export default function CalendarView() {
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-2 border-green-300 hover:shadow-lg transition-shadow">
+        <Card className="border-2 border-green-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Bookings</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.green.bg }}>
+            <CardTitle className="text-sm font-bold text-green-700">Active Bookings</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.green.bg }}>
               <CalendarIcon className="h-5 w-5" style={{ color: colorPalette.green.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{quickStats.activeBookings}</div>
-            <p className="text-xs text-muted-foreground">Current month</p>
+            <div className="text-2xl font-bold text-green-700">{quickStats.activeBookings}</div>
+            <p className="text-xs text-green-600 font-medium">Current month</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-blue-300 hover:shadow-lg transition-shadow">
+        <Card className="border-2 border-blue-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available Yachts</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.blue.bg }}>
+            <CardTitle className="text-sm font-bold text-blue-700">Available Yachts</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.blue.bg }}>
               <Anchor className="h-5 w-5" style={{ color: colorPalette.blue.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{quickStats.availableYachts}</div>
-            <p className="text-xs text-muted-foreground">Ready to book</p>
+            <div className="text-2xl font-bold text-blue-700">{quickStats.availableYachts}</div>
+            <p className="text-xs text-blue-600 font-medium">Ready to book</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-pink-300 hover:shadow-lg transition-shadow">
+        <Card className="border-2 border-pink-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Activity</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
+            <CardTitle className="text-sm font-bold text-pink-700">Today's Activity</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.pink.bg }}>
               <Clock className="h-5 w-5" style={{ color: colorPalette.pink.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{todayBookings.length}</div>
-            <p className="text-xs text-muted-foreground">Bookings today</p>
+            <div className="text-2xl font-bold text-pink-700">{todayBookings.length}</div>
+            <p className="text-xs text-pink-600 font-medium">Bookings today</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-yellow-300 hover:shadow-lg transition-shadow">
+        <Card className="border-2 border-yellow-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.yellow.bg }}>
+            <CardTitle className="text-sm font-bold text-yellow-700">Monthly Revenue</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.yellow.bg }}>
               <TrendingUp className="h-5 w-5" style={{ color: colorPalette.yellow.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${quickStats.monthlyRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Projected</p>
+            <div className="text-2xl font-bold text-yellow-700">${quickStats.monthlyRevenue.toLocaleString()}</div>
+            <p className="text-xs text-yellow-600 font-medium">Projected</p>
           </CardContent>
         </Card>
       </div>
@@ -511,66 +502,79 @@ export default function CalendarView() {
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[120px] p-2 rounded-xl cursor-pointer transition-all duration-200
-                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white shadow-sm hover:shadow-lg hover:-translate-y-1'}
-                      ${isToday ? 'ring-4 ring-purple-400 ring-offset-2' : ''}
-                      ${dateInfo.isCurrentMonth ? 'hover:border-purple-400 border-2 border-transparent' : ''}
+                      min-h-[140px] p-2 rounded-xl cursor-pointer transition-all duration-200 group relative overflow-hidden
+                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white shadow-sm hover:shadow-xl hover:-translate-y-1'}
+                      ${isToday ? 'ring-3 ring-purple-400 ring-offset-2 ring-offset-white' : ''}
+                      ${dateInfo.isCurrentMonth ? 'hover:border-purple-400 border-2 border-gray-100' : ''}
                     `}
                   >
                     <div className={`
-                      text-sm font-bold mb-2 flex items-center justify-between
-                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white w-8 h-8 rounded-full flex items-center justify-center shadow-md' : ''}
+                      text-sm font-bold mb-2 flex items-center justify-between relative z-10
+                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg' : 'text-gray-700'}
                     `}>
                       {dateInfo.day}
                       {events.length > 0 && (
-                        <span className="w-2 h-2 rounded-full bg-purple-500" />
+                        <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-white' : 'bg-purple-500'}`} />
                       )}
                     </div>
                     {events.length > 0 && (
-                      <div className="space-y-2">
-                        {events.slice(0, 2).map((event) => {
+                      <div className="space-y-1.5 relative z-10">
+                        {events.slice(0, 3).map((event) => {
                           const days = getDaysBetweenDates(event.startDate, event.endDate)
                           const eventStyle = getEventStyle(event.eventColor || 'green')
+                          const isStart = event.startDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
+                          const isEnd = event.endDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
+                          const isMiddle = !isStart && !isEnd
+                          
                           return (
                             <div
                               key={event.id}
                               className={`
-                                rounded-xl p-2.5 shadow-md transition-all hover:scale-105 hover:shadow-lg cursor-pointer
+                                rounded-lg px-2 py-1.5 shadow-md transition-all hover:scale-105 hover:shadow-lg cursor-pointer border-2
                               `}
                               style={{
                                 backgroundColor: eventStyle.backgroundColor,
                                 color: eventStyle.color,
+                                borderColor: eventStyle.hover,
                               }}
                             >
-                              <div className="font-semibold text-sm truncate mb-1">{event.yachtName}</div>
-                              <div className="flex items-center gap-1.5 text-xs opacity-90 mb-1">
-                                <Clock className="h-3 w-3" />
-                                <span>{days} {days === 1 ? 'day' : 'days'}</span>
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="font-bold text-xs truncate flex-1">{event.yachtName}</div>
+                                {isMiddle && (
+                                  <span className="text-[10px] opacity-75 ml-1">→</span>
+                                )}
                               </div>
                               <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1 text-[10px] opacity-90">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  <span>{days}d</span>
+                                </div>
                                 <div 
-                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                  className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase"
                                   style={{
-                                    backgroundColor: statusColors[event.status]?.bg,
-                                    color: statusColors[event.status]?.text,
+                                    backgroundColor: statusColors[event.status]?.light,
+                                    color: statusColors[event.status]?.bg,
                                   }}
                                 >
-                                  {event.status}
+                                  {event.status.charAt(0)}
                                 </div>
                               </div>
                             </div>
                           )
                         })}
-                        {events.length > 2 && (
-                          <div className="text-xs font-bold text-center py-2 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg">
-                            +{events.length - 2} more
+                        {events.length > 3 && (
+                          <div className="text-xs font-bold text-center py-1.5 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg text-purple-700 border border-purple-200">
+                            +{events.length - 3} more
                           </div>
                         )}
                       </div>
                     )}
                     {dateInfo.isCurrentMonth && events.length === 0 && (
-                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Plus className="h-5 w-5 text-purple-400 group-hover:scale-110 transition-transform" />
+                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 bg-gradient-to-br from-purple-50/50 to-pink-50/50 rounded-xl z-0">
+                        <div className="flex flex-col items-center gap-1">
+                          <Plus className="h-6 w-6 text-purple-400 group-hover:scale-110 transition-transform" />
+                          <span className="text-xs text-purple-400 font-medium">Add Booking</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -604,32 +608,37 @@ export default function CalendarView() {
                     return (
                       <div 
                         key={booking.id} 
-                        className="p-4 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer hover:-translate-y-1"
-                        style={{ backgroundColor: eventStyle.backgroundColor }}
+                        className="p-4 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer hover:-translate-y-1 border-2"
+                        style={{ 
+                          backgroundColor: eventStyle.backgroundColor,
+                          borderColor: eventStyle.hover,
+                          color: eventStyle.text
+                        }}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0" style={{ color: eventStyle.color }}>
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
                               <div className={`w-2 h-2 rounded-full`} 
                                 style={{ 
-                                  backgroundColor: statusColors[booking.status]?.bg === '#e0e0e0' ? '#999999' : statusColors[booking.status]?.bg 
+                                  backgroundColor: 'white',
+                                  opacity: 0.9
                                 }} 
                               />
                               <p className="font-bold text-sm truncate">{booking.yachtName}</p>
                             </div>
                             <p className="text-xs mb-2 opacity-90 truncate">{booking.customerName}</p>
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <div 
-                                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
                                 style={{
-                                  backgroundColor: statusColors[booking.status]?.bg,
-                                  color: statusColors[booking.status]?.text,
+                                  backgroundColor: statusColors[booking.status]?.light,
+                                  color: statusColors[booking.status]?.bg,
                                 }}
                               >
                                 {booking.status}
                               </div>
                               {booking.bookingCode && (
-                                <span className="text-[10px] opacity-80">
+                                <span className="text-[10px] opacity-80 bg-white/20 px-2 py-0.5 rounded-full">
                                   {booking.bookingCode}
                                 </span>
                               )}
