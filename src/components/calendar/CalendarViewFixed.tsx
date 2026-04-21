@@ -36,7 +36,7 @@ const mockEvents: BookingEvent[] = [
   { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink' },
   
   // March 2025 bookings
-  { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'yellow' },
+  { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal' },
   { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal' },
   { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green' },
   
@@ -240,7 +240,7 @@ export default function CalendarView() {
     })
     
     return bars
-  }, [month, year, firstDay])
+  }, [month, year, firstDay, mockEvents])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
@@ -561,12 +561,19 @@ export default function CalendarView() {
                   dateInfo.day === todayDate &&
                   dateInfo.isCurrentMonth
 
+                // Find bookings for this day (any booking that covers this day)
+                const dayBookings = bookingBars.filter(bar => {
+                  if (!dateInfo.isCurrentMonth) return false
+                  if (dateInfo.day < bar.startDay || dateInfo.day > bar.endDay) return false
+                  return true
+                })
+
                 return (
                   <div
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[100px] p-2 cursor-pointer transition-all duration-200 bg-white relative
+                      min-h-[120px] p-2 cursor-pointer transition-all duration-200 bg-white relative
                       ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-300 opacity-50' : 'hover:bg-gray-50'}
                       ${isToday ? 'bg-purple-50/50' : ''}
                     `}
@@ -579,7 +586,44 @@ export default function CalendarView() {
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
                     </div>
 
-                    {dateInfo.isCurrentMonth && dateInfo.day > 0 && (
+                    <div className="space-y-1">
+                      {dayBookings.map((bar) => {
+                        const eventStyle = getEventStyle(bar.eventColor || 'green')
+                        const days = getDaysBetweenDates(bar.startDate, bar.endDate)
+                        const isStart = dateInfo.day === bar.startDay
+                        const isEnd = dateInfo.day === bar.endDay
+                        
+                        return (
+                          <div
+                            key={bar.id}
+                            className="h-7 rounded-md shadow-sm hover:shadow-md transition-all cursor-pointer border flex items-center px-2"
+                            style={{
+                              backgroundColor: eventStyle.backgroundColor,
+                              color: eventStyle.text,
+                              borderColor: 'rgba(0,0,0,0.1)',
+                            }}
+                            title={`${bar.yachtName} (${days} days) - ${bar.status}`}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className="font-semibold text-[10px] truncate">
+                                {isStart && `${bar.yachtName}`}
+                              </div>
+                              <div
+                                className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase flex-shrink-0"
+                                style={{
+                                  backgroundColor: statusColors[bar.status]?.bg,
+                                  color: statusColors[bar.status]?.text,
+                                }}
+                              >
+                                {bar.status}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {dateInfo.isCurrentMonth && dateInfo.day > 0 && dayBookings.length === 0 && (
                       <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                         <Plus className="h-4 w-4 text-purple-400" />
                       </div>
@@ -588,45 +632,7 @@ export default function CalendarView() {
                 )
               })}
 
-              {/* Booking bars overlay */}
-              {bookingBars.map((bar) => {
-                const eventStyle = getEventStyle(bar.eventColor || 'green')
-                const days = getDaysBetweenDates(bar.startDate, bar.endDate)
-                const rowIndex = bar.row || 0
-                const topOffset = 36 + (rowIndex * 32)
-                
-                return (
-                  <div
-                    key={bar.id}
-                    className="absolute h-7 rounded-md shadow-sm hover:shadow-md transition-all cursor-pointer border z-10"
-                    style={{
-                      left: `calc(${bar.gridStart} * (100% / 7) + 4px)`,
-                      width: `calc(${bar.span} * (100% / 7) - 8px)`,
-                      top: `${topOffset}px`,
-                      maxWidth: `calc(${bar.span} * (100% / 7) - 8px)`,
-                      backgroundColor: eventStyle.backgroundColor,
-                      color: eventStyle.color,
-                      borderColor: 'rgba(0,0,0,0.1)',
-                    }}
-                    title={`${bar.yachtName} (${days} days) - ${bar.status}`}
-                  >
-                    <div className="flex items-center justify-between h-full px-2">
-                      <div className="font-semibold text-[10px] truncate">
-                        {bar.yachtName}
-                      </div>
-                      <div
-                        className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase flex-shrink-0"
-                        style={{
-                          backgroundColor: statusColors[bar.status]?.bg,
-                          color: statusColors[bar.status]?.text,
-                        }}
-                      >
-                        {bar.status}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+              {/* Bars render inside day cells, showing for each day in booking range */}
             </div>
           </CardContent>
         </Card>
