@@ -76,19 +76,19 @@ const mockCustomers = [
 ]
 
 const colorPalette = {
-  green: { bg: '#10b981', text: 'white', hover: '#059669', light: '#d1fae5' },
-  blue: { bg: '#3b82f6', text: 'white', hover: '#2563eb', light: '#dbeafe' },
-  purple: { bg: '#8b5cf6', text: 'white', hover: '#7c3aed', light: '#ede9fe' },
-  pink: { bg: '#ec4899', text: 'white', hover: '#db2777', light: '#fce7f3' },
-  yellow: { bg: '#f59e0b', text: 'white', hover: '#d97706', light: '#fef3c7' },
-  teal: { bg: '#14b8a6', text: 'white', hover: '#0d9488', light: '#ccfbf1' },
+  green: { bg: '#d1fae5', text: '#065f46', hover: '#a7f3d0', light: '#ecfdf5' },
+  blue: { bg: '#dbeafe', text: '#1e40af', hover: '#bfdbfe', light: '#eff6ff' },
+  purple: { bg: '#ede9fe', text: '#5b21b6', hover: '#ddd6fe', light: '#f5f3ff' },
+  pink: { bg: '#fce7f3', text: '#9d174d', hover: '#fbcfe8', light: '#fdf2f8' },
+  yellow: { bg: '#fef3c7', text: '#92400e', hover: '#fde68a', light: '#fffbeb' },
+  teal: { bg: '#ccfbf1', text: '#115e59', hover: '#99f6e4', light: '#f0fdfa' },
 }
 
 const statusColors = {
-  confirmed: { bg: '#10b981', text: 'white', light: '#d1fae5' },
-  pending: { bg: '#f59e0b', text: 'white', light: '#fef3c7' },
-  completed: { bg: '#6b7280', text: 'white', light: '#e5e7eb' },
-  cancelled: { bg: '#ef4444', text: 'white', light: '#fee2e2' },
+  confirmed: { bg: '#0d9488', text: 'white', light: '#ccfbf1' },
+  pending: { bg: '#d97706', text: 'white', light: '#fef3c7' },
+  completed: { bg: '#9ca3af', text: 'white', light: '#f3f4f6' },
+  cancelled: { bg: '#dc2626', text: 'white', light: '#fee2e2' },
 }
 
 export default function CalendarView() {
@@ -392,55 +392,55 @@ export default function CalendarView() {
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-2 border-green-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
+        <Card className="border border-gray-200 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-green-700">Active Bookings</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.green.bg }}>
+            <CardTitle className="text-sm font-medium text-gray-700">Active Bookings</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.green.bg }}>
               <CalendarIcon className="h-5 w-5" style={{ color: colorPalette.green.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-700">{quickStats.activeBookings}</div>
-            <p className="text-xs text-green-600 font-medium">Current month</p>
+            <div className="text-2xl font-bold text-gray-900">{quickStats.activeBookings}</div>
+            <p className="text-xs text-muted-foreground">Current month</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-blue-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
+        <Card className="border border-gray-200 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-blue-700">Available Yachts</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.blue.bg }}>
+            <CardTitle className="text-sm font-medium text-gray-700">Available Yachts</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.blue.bg }}>
               <Anchor className="h-5 w-5" style={{ color: colorPalette.blue.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-700">{quickStats.availableYachts}</div>
-            <p className="text-xs text-blue-600 font-medium">Ready to book</p>
+            <div className="text-2xl font-bold text-gray-900">{quickStats.availableYachts}</div>
+            <p className="text-xs text-muted-foreground">Ready to book</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-pink-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
+        <Card className="border border-gray-200 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-pink-700">Today's Activity</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.pink.bg }}>
+            <CardTitle className="text-sm font-medium text-gray-700">Today's Activity</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
               <Clock className="h-5 w-5" style={{ color: colorPalette.pink.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-pink-700">{todayBookings.length}</div>
-            <p className="text-xs text-pink-600 font-medium">Bookings today</p>
+            <div className="text-2xl font-bold text-gray-900">{todayBookings.length}</div>
+            <p className="text-xs text-muted-foreground">Bookings today</p>
           </CardContent>
         </Card>
 
-        <Card className="border-2 border-yellow-400/50 hover:shadow-xl transition-all hover:-translate-y-1">
+        <Card className="border border-gray-200 hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-yellow-700">Monthly Revenue</CardTitle>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: colorPalette.yellow.bg }}>
+            <CardTitle className="text-sm font-medium text-gray-700">Monthly Revenue</CardTitle>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.yellow.bg }}>
               <TrendingUp className="h-5 w-5" style={{ color: colorPalette.yellow.text }} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-700">${quickStats.monthlyRevenue.toLocaleString()}</div>
-            <p className="text-xs text-yellow-600 font-medium">Projected</p>
+            <div className="text-2xl font-bold text-gray-900">${quickStats.monthlyRevenue.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Projected</p>
           </CardContent>
         </Card>
       </div>
@@ -482,10 +482,10 @@ export default function CalendarView() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200">
               {/* Day names header */}
               {dayNames.map((day) => (
-                <div key={day} className="p-3 text-center text-sm font-bold text-gray-700">
+                <div key={day} className="p-3 text-center text-xs font-semibold text-gray-600 bg-white">
                   {day}
                 </div>
               ))}
@@ -497,81 +497,65 @@ export default function CalendarView() {
                   dateInfo.day === todayDate &&
                   dateInfo.isCurrentMonth
 
-                // Calculate booking bars for this cell
-                const bookingBars = events.map((event) => {
-                  const eventStyle = getEventStyle(event.eventColor || 'green')
-                  const eventDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
-                  const isStart = event.startDate === eventDateStr
-                  const isEnd = event.endDate === eventDateStr
-                  
-                  // Calculate width and position
-                  let roundedClass = ''
-                  if (isStart && isEnd) {
-                    roundedClass = 'rounded-lg'
-                  } else if (isStart) {
-                    roundedClass = 'rounded-l-lg rounded-r-none'
-                  } else if (isEnd) {
-                    roundedClass = 'rounded-r-lg rounded-l-none'
-                  } else {
-                    roundedClass = 'rounded-none'
-                  }
-
-                  return {
-                    ...event,
-                    eventStyle,
-                    isStart,
-                    isEnd,
-                    roundedClass,
-                  }
-                })
-
                 return (
                   <div
                     key={index}
                     onClick={() => handleDateClick(dateInfo.day, dateInfo.isCurrentMonth)}
                     className={`
-                      min-h-[100px] p-1.5 rounded-lg cursor-pointer transition-all duration-200 group relative overflow-hidden
-                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-400 opacity-50' : 'bg-white hover:bg-gray-50'}
-                      ${isToday ? 'ring-2 ring-purple-400 ring-offset-1' : ''}
-                      ${dateInfo.isCurrentMonth ? 'border border-gray-200' : ''}
+                      min-h-[140px] p-2 cursor-pointer transition-all duration-200 group bg-white
+                      ${!dateInfo.isCurrentMonth ? 'bg-gray-50 text-gray-300 opacity-50' : 'hover:bg-gray-50'}
+                      ${isToday ? 'bg-purple-50/50' : ''}
                     `}
                   >
                     <div className={`
-                      text-xs font-bold mb-1.5 flex items-center justify-between
-                      ${isToday ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-md' : 'text-gray-700'}
+                      text-sm font-semibold mb-2 flex items-center justify-between
+                      ${isToday ? 'text-purple-600' : 'text-gray-700'}
                     `}>
                       <span>{dateInfo.day}</span>
-                      {bookingBars.length > 0 && (
-                        <span className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-purple-500'}`} />
+                      {events.length > 0 && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
                       )}
                     </div>
                     
-                    <div className="space-y-1">
-                      {bookingBars.map((bar) => (
-                        <div
-                          key={bar.id}
-                          className={`
-                            px-2 py-1.5 shadow-sm transition-all hover:shadow-md cursor-pointer border-l-4 border-r-4
-                            ${bar.roundedClass}
-                          `}
-                          style={{
-                            backgroundColor: bar.eventStyle.backgroundColor,
-                            color: bar.eventStyle.color,
-                            borderLeftColor: bar.isStart || (bar.isStart && bar.isEnd) ? bar.eventStyle.backgroundColor : 'transparent',
-                            borderRightColor: bar.isEnd || (bar.isStart && bar.isEnd) ? bar.eventStyle.backgroundColor : 'transparent',
-                          }}
-                        >
-                          <div className="font-semibold text-[10px] truncate">{bar.yachtName}</div>
-                          {!bar.isEnd && (
-                            <div className="text-[8px] opacity-75">→</div>
-                          )}
-                        </div>
-                      ))}
+                    <div className="space-y-1.5">
+                      {events.map((event) => {
+                        const days = getDaysBetweenDates(event.startDate, event.endDate)
+                        const eventStyle = getEventStyle(event.eventColor || 'green')
+                        
+                        return (
+                          <div
+                            key={event.id}
+                            className="rounded-lg p-2 border shadow-sm hover:shadow-md transition-all cursor-pointer"
+                            style={{
+                              backgroundColor: eventStyle.backgroundColor,
+                              color: eventStyle.color,
+                              borderColor: 'rgba(0,0,0,0.08)',
+                            }}
+                          >
+                            <div className="font-semibold text-xs truncate mb-1.5">
+                              {event.yachtName}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] mb-1.5 opacity-90">
+                              <Clock className="h-3 w-3" />
+                              <span>{days} {days === 1 ? 'day' : 'days'}</span>
+                            </div>
+                            <div
+                              className="inline-block px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide"
+                              style={{
+                                backgroundColor: statusColors[event.status]?.bg,
+                                color: statusColors[event.status]?.text,
+                              }}
+                            >
+                              {event.status}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
 
-                    {dateInfo.isCurrentMonth && bookingBars.length === 0 && (
-                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 top-8 bg-purple-50/50 rounded-lg z-0">
-                        <Plus className="h-4 w-4 text-purple-400" />
+                    {dateInfo.isCurrentMonth && events.length === 0 && (
+                      <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                        <Plus className="h-5 w-5 text-purple-400" />
                       </div>
                     )}
                   </div>
@@ -584,11 +568,11 @@ export default function CalendarView() {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Today's Bookings */}
-          <Card className="shadow-xl">
+          <Card className="border border-gray-200">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
-                  <Clock className="h-5 w-5" style={{ color: colorPalette.pink.text }} />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: colorPalette.pink.bg }}>
+                  <Clock className="h-4 w-4" style={{ color: colorPalette.pink.text }} />
                 </div>
                 Today's Schedule
               </CardTitle>
@@ -597,7 +581,7 @@ export default function CalendarView() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {todayBookings.length > 0 ? (
                   todayBookings.map((booking) => {
                     const eventStyle = getEventStyle(booking.eventColor || 'green')
@@ -605,63 +589,50 @@ export default function CalendarView() {
                     return (
                       <div 
                         key={booking.id} 
-                        className="p-4 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer hover:-translate-y-1 border-2"
+                        className="p-3 rounded-lg border shadow-sm hover:shadow-md transition-all cursor-pointer"
                         style={{ 
                           backgroundColor: eventStyle.backgroundColor,
-                          borderColor: eventStyle.hover,
+                          borderColor: 'rgba(0,0,0,0.08)',
                           color: eventStyle.text
                         }}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className={`w-2 h-2 rounded-full`} 
-                                style={{ 
-                                  backgroundColor: 'white',
-                                  opacity: 0.9
-                                }} 
-                              />
-                              <p className="font-bold text-sm truncate">{booking.yachtName}</p>
-                            </div>
-                            <p className="text-xs mb-2 opacity-90 truncate">{booking.customerName}</p>
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <div 
-                                className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
-                                style={{
-                                  backgroundColor: statusColors[booking.status]?.light,
-                                  color: statusColors[booking.status]?.bg,
-                                }}
-                              >
-                                {booking.status}
-                              </div>
-                              {booking.bookingCode && (
-                                <span className="text-[10px] opacity-80 bg-white/20 px-2 py-0.5 rounded-full">
-                                  {booking.bookingCode}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-xs opacity-90">
-                                <Clock className="h-3 w-3" />
-                                <span>{days} {days === 1 ? 'day' : 'days'}</span>
-                              </div>
-                              {booking.totalPrice && (
-                                <p className="text-sm font-bold">
-                                  ${booking.totalPrice.toLocaleString()}
-                                </p>
-                              )}
-                            </div>
-                          </div>
+                        <div className="font-semibold text-xs mb-1 truncate">
+                          {booking.yachtName}
                         </div>
+                        <div className="flex items-center gap-1.5 text-[10px] mb-1.5 opacity-90">
+                          <Clock className="h-3 w-3" />
+                          <span>{days} {days === 1 ? 'day' : 'days'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase"
+                            style={{
+                              backgroundColor: statusColors[booking.status]?.bg,
+                              color: statusColors[booking.status]?.text,
+                            }}
+                          >
+                            {booking.status}
+                          </div>
+                          {booking.bookingCode && (
+                            <span className="text-[10px] opacity-75">
+                              {booking.bookingCode}
+                            </span>
+                          )}
+                        </div>
+                        {booking.totalPrice && (
+                          <div className="mt-1.5 text-[10px] font-bold opacity-90">
+                            ${booking.totalPrice.toLocaleString()}
+                          </div>
+                        )}
                       </div>
                     )
                   })
                 ) : (
-                  <div className="text-center py-12">
-                    <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 opacity-50" style={{ backgroundColor: colorPalette.pink.bg }}>
-                      <Clock className="h-8 w-8" style={{ color: colorPalette.pink.text }} />
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 opacity-50" style={{ backgroundColor: colorPalette.pink.bg }}>
+                      <Clock className="h-6 w-6" style={{ color: colorPalette.pink.text }} />
                     </div>
-                    <p className="text-muted-foreground text-sm mb-4">No bookings scheduled for today</p>
+                    <p className="text-muted-foreground text-xs mb-3">No bookings scheduled for today</p>
                     <button
                       onClick={() => {
                         setSelectedDate('')
@@ -673,7 +644,7 @@ export default function CalendarView() {
                         })
                         setIsBookingDialogOpen(true)
                       }}
-                      className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-2 rounded-xl font-medium shadow-md hover:shadow-lg transition-all"
+                      className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
                     >
                       Book a yacht for today
                     </button>
@@ -684,24 +655,24 @@ export default function CalendarView() {
           </Card>
 
           {/* Legend */}
-          <Card className="shadow-xl">
+          <Card className="border border-gray-200">
             <CardHeader>
-              <CardTitle className="text-xl">Status Legend</CardTitle>
+              <CardTitle className="text-lg">Status Legend</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[
-                  { status: 'confirmed', color: '#2dd4bf' },
-                  { status: 'pending', color: '#ffd89b' },
-                  { status: 'completed', color: '#e0e0e0' },
-                  { status: 'cancelled', color: '#ffaaa5' },
+                  { status: 'confirmed', color: '#0d9488' },
+                  { status: 'pending', color: '#d97706' },
+                  { status: 'completed', color: '#9ca3af' },
+                  { status: 'cancelled', color: '#dc2626' },
                 ].map((item) => (
-                  <div key={item.status} className="flex items-center gap-3">
+                  <div key={item.status} className="flex items-center gap-2">
                     <div 
-                      className="h-4 w-4 rounded-full"
+                      className="h-3 w-3 rounded-full"
                       style={{ backgroundColor: item.color }}
                     />
-                    <span className="text-sm font-medium capitalize">{item.status}</span>
+                    <span className="text-xs font-medium capitalize text-gray-700">{item.status}</span>
                   </div>
                 ))}
               </div>
@@ -709,14 +680,14 @@ export default function CalendarView() {
           </Card>
 
           {/* Quick Actions */}
-          <Card className="shadow-xl">
+          <Card className="border border-gray-200">
             <CardHeader>
-              <CardTitle className="text-xl">Quick Actions</CardTitle>
+              <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <Button 
                 variant="outline" 
-                className="w-full justify-start border-2 border-green-300 hover:bg-green-50 hover:border-green-400"
+                className="w-full justify-start border-gray-200 hover:bg-gray-50"
                 onClick={() => {
                   setSelectedDate('')
                   setBookingForm({
@@ -733,14 +704,14 @@ export default function CalendarView() {
               </Button>
               <Button 
                 variant="outline" 
-                className="w-full justify-start border-2 border-blue-300 hover:bg-blue-50 hover:border-blue-400"
+                className="w-full justify-start border-gray-200 hover:bg-gray-50"
               >
                 <Users className="mr-2 h-4 w-4" />
                 Add Customer
               </Button>
               <Button 
                 variant="outline" 
-                className="w-full justify-start border-2 border-purple-300 hover:bg-purple-50 hover:border-purple-400"
+                className="w-full justify-start border-gray-200 hover:bg-gray-50"
               >
                 <Anchor className="mr-2 h-4 w-4" />
                 Manage Yachts
