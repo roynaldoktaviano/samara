@@ -7,7 +7,7 @@ import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
 import Customers from '@/components/customers/Customers'
-import CalendarView from '@/components/calendar/CalendarView'
+import CalendarView from '@/components/calendar/CalendarViewFixed'
 import Expenses from '@/components/expenses/Expenses'
 import Maintenance from '@/components/maintenance/Maintenance'
 
