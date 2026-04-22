@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Anchor, Clock, Users, Plus, TrendingUp, DollarSign } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Anchor, Clock, Users, Plus, TrendingUp, DollarSign, Filter, X } from 'lucide-react'
 
 interface BookingEvent {
   id: string
@@ -25,6 +25,7 @@ interface BookingEvent {
   depositDueDate?: string
   balanceDueDate?: string
   notes?: string
+  tripType?: 'open-trip' | 'private-charter'
 }
 
 const mockCustomers = [
@@ -64,11 +65,15 @@ const statusColors = {
 }
 
 export default function CalendarView() {
-  const [currentDate, setCurrentDate] = useState(new Date('2025-01-01'))
+  const [currentDate, setCurrentDate] = useState(new Date())
   const [isBookingDialogOpen, setIsBookingDialogOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedBooking, setSelectedBooking] = useState<BookingEvent | null>(null)
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
+
+  // Filters
+  const [selectedYachtFilter, setSelectedYachtFilter] = useState<string>('all')
+  const [selectedTripTypeFilter, setSelectedTripTypeFilter] = useState<string>('all')
 
   const mockYachts = [
     { id: '1', name: 'Sea Breeze', dailyRate: 3500, color: 'green' },
@@ -80,29 +85,29 @@ export default function CalendarView() {
 
   const [bookings, setBookings] = useState<BookingEvent[]>([
     // January 2025 bookings
-    { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green' },
-    { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue' },
-    { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple' },
+    { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green', tripType: 'private-charter' },
+    { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue', tripType: 'open-trip' },
+    { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple', tripType: 'open-trip' },
 
     // February 2025 bookings
-    { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'pink' },
-    { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'yellow' },
-    { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'teal' },
-    { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'green' },
-    { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue' },
-    { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple' },
-    { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink' },
+    { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'green', tripType: 'private-charter' },
+    { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'blue', tripType: 'open-trip' },
+    { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'yellow', tripType: 'private-charter' },
+    { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'teal', tripType: 'open-trip' },
+    { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue', tripType: 'private-charter' },
+    { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple', tripType: 'open-trip' },
+    { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink', tripType: 'private-charter' },
 
     // March 2025 bookings
-    { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal' },
-    { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal' },
-    { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green' },
+    { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal', tripType: 'open-trip' },
+    { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal', tripType: 'private-charter' },
+    { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green', tripType: 'open-trip' },
 
     // April 2025 bookings
-    { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue' },
-    { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple' },
-    { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink' },
-    { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow' },
+    { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue', tripType: 'private-charter' },
+    { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple', tripType: 'open-trip' },
+    { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink', tripType: 'private-charter' },
+    { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow', tripType: 'open-trip' },
   ])
 
   const [bookingForm, setBookingForm] = useState({
@@ -111,6 +116,7 @@ export default function CalendarView() {
     checkInDate: '',
     checkOutDate: '',
     status: 'pending',
+    tripType: 'open-trip' as 'open-trip' | 'private-charter',
     price: '',
     depositAmount: '',
     depositDueDate: '',
@@ -188,6 +194,7 @@ export default function CalendarView() {
       totalPrice: price,
       eventColor: yacht.color,
       price,
+      tripType: bookingForm.tripType,
       depositAmount: bookingForm.depositAmount ? parseFloat(bookingForm.depositAmount) : undefined,
       depositDueDate: bookingForm.depositDueDate || undefined,
       balanceDueDate: bookingForm.balanceDueDate || undefined,
@@ -202,6 +209,7 @@ export default function CalendarView() {
       checkInDate: '',
       checkOutDate: '',
       status: 'pending',
+      tripType: 'open-trip' as 'open-trip' | 'private-charter',
       price: '',
       depositAmount: '',
       depositDueDate: '',
@@ -214,11 +222,20 @@ export default function CalendarView() {
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 
+  // Filter bookings based on selected filters
+  const filteredBookings = useMemo(() => {
+    return bookings.filter(booking => {
+      const yachtMatch = selectedYachtFilter === 'all' || booking.yachtName === selectedYachtFilter
+      const tripTypeMatch = selectedTripTypeFilter === 'all' || booking.tripType === selectedTripTypeFilter
+      return yachtMatch && tripTypeMatch
+    })
+  }, [bookings, selectedYachtFilter, selectedTripTypeFilter])
+
   // Generate booking bars
   const bookingBars = useMemo(() => {
     const bars: any[] = []
 
-    bookings.forEach((event) => {
+    filteredBookings.forEach((event) => {
       const start = new Date(event.startDate)
       const end = new Date(event.endDate)
 
@@ -288,7 +305,7 @@ export default function CalendarView() {
     })
 
     return bars
-  }, [month, year, firstDay, daysInMonth, bookings])
+  }, [month, year, firstDay, daysInMonth, filteredBookings])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
@@ -369,13 +386,13 @@ export default function CalendarView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Dashboard</h3>
           <p className="text-muted-foreground">Manage your yacht bookings and schedule</p>
         </div>
         <div className="flex gap-2">
-          <Button 
+          <Button
             onClick={() => {
               setSelectedDate('')
               setBookingForm({
@@ -393,6 +410,76 @@ export default function CalendarView() {
           </Button>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card className="border border-gray-200 shadow-sm">
+        <CardContent className="py-4">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">Filters:</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label htmlFor="yachtFilter" className="text-sm">Yacht:</Label>
+              <Select
+                value={selectedYachtFilter}
+                onValueChange={setSelectedYachtFilter}
+              >
+                <SelectTrigger className="w-[180px] h-9 border-gray-300">
+                  <SelectValue placeholder="All Yachts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Yachts</SelectItem>
+                  {mockYachts.map(yacht => (
+                    <SelectItem key={yacht.id} value={yacht.name}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: colorPalette[yacht.color as keyof typeof colorPalette]?.bg }}
+                        />
+                        <span>{yacht.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label htmlFor="tripTypeFilter" className="text-sm">Trip Type:</Label>
+              <Select
+                value={selectedTripTypeFilter}
+                onValueChange={setSelectedTripTypeFilter}
+              >
+                <SelectTrigger className="w-[180px] h-9 border-gray-300">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="open-trip">Open Trip</SelectItem>
+                  <SelectItem value="private-charter">Private Charter</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(selectedYachtFilter !== 'all' || selectedTripTypeFilter !== 'all') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedYachtFilter('all')
+                  setSelectedTripTypeFilter('all')
+                }}
+                className="h-9 px-3 text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-3 w-3" />
+                Clear Filters
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Booking Dialog */}
       <Dialog open={isBookingDialogOpen} onOpenChange={setIsBookingDialogOpen}>
@@ -471,6 +558,23 @@ export default function CalendarView() {
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Trip Type Section */}
+            <div className="space-y-2">
+              <Label htmlFor="tripType">Trip Type</Label>
+              <Select
+                value={bookingForm.tripType}
+                onValueChange={(value) => setBookingForm({ ...bookingForm, tripType: value as any })}
+              >
+                <SelectTrigger className="border-2">
+                  <SelectValue placeholder="Select trip type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open-trip">Open Trip</SelectItem>
+                  <SelectItem value="private-charter">Private Charter</SelectItem>
                 </SelectContent>
               </Select>
             </div>
