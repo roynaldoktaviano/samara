@@ -176,6 +176,16 @@ export default function CalendarView() {
     const days = Math.ceil((newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60 * 24))
     const price = bookingForm.price ? parseFloat(bookingForm.price) : days * yacht.dailyRate
 
+    console.log('Creating booking:', {
+      yacht: yacht.name,
+      startDate: bookingForm.checkInDate,
+      endDate: bookingForm.checkOutDate,
+      month: newStartDate.getMonth(),
+      year: newStartDate.getFullYear(),
+      currentMonth: month,
+      currentYear: year,
+    })
+
     const newBooking: BookingEvent = {
       id: String(mockEvents.length + 1),
       yachtName: yacht.name,
@@ -192,6 +202,9 @@ export default function CalendarView() {
       balanceDueDate: bookingForm.balanceDueDate || undefined,
       notes: bookingForm.notes || undefined,
     }
+
+    console.log('New booking created:', newBooking)
+    console.log('Total bookings after creation:', mockEvents.length)
 
     mockEvents.push(newBooking)
     setIsBookingDialogOpen(false)
@@ -217,6 +230,10 @@ export default function CalendarView() {
   const bookingBars = useMemo(() => {
     const bars: any[] = []
 
+    console.log('=== Calculating booking bars ===')
+    console.log('Current view:', { month, year })
+    console.log('Processing events:', mockEvents.length)
+
     mockEvents.forEach((event) => {
       const start = new Date(event.startDate)
       const end = new Date(event.endDate)
@@ -232,6 +249,12 @@ export default function CalendarView() {
 
       // Skip if booking doesn't overlap with current month
       if (end < monthStart || start > monthEnd) {
+        console.log(`Skipping booking ${event.id} - doesn't overlap`, {
+          start: event.startDate,
+          end: event.endDate,
+          monthStart,
+          monthEnd
+        })
         return
       }
 
@@ -251,6 +274,13 @@ export default function CalendarView() {
       const gridStart = firstDay + visibleStartDay - 1
       const gridEnd = firstDay + visibleEndDay - 1
       const span = visibleEndDay - visibleStartDay + 1
+
+      console.log(`Adding bar for ${event.id} (${event.yachtName})`, {
+        visibleStartDay,
+        visibleEndDay,
+        gridStart,
+        gridEnd
+      })
 
       bars.push({
         ...event,
@@ -285,6 +315,9 @@ export default function CalendarView() {
         bar.row = rows.length - 1
       }
     })
+
+    console.log('Final booking bars count:', bars.length)
+    console.log('===============================')
 
     return bars
   }, [month, year, firstDay, daysInMonth, mockEvents])
@@ -486,7 +519,6 @@ export default function CalendarView() {
                     value={bookingForm.checkInDate}
                     onChange={(e) => setBookingForm({ ...bookingForm, checkInDate: e.target.value })}
                     className="w-full pl-10 pr-3 py-2 border-2 rounded-lg text-sm border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                    min={new Date().toISOString().split('T')[0]}
                   />
                 </div>
               </div>
@@ -500,7 +532,6 @@ export default function CalendarView() {
                     value={bookingForm.checkOutDate}
                     onChange={(e) => setBookingForm({ ...bookingForm, checkOutDate: e.target.value })}
                     className="w-full pl-10 pr-3 py-2 border-2 rounded-lg text-sm border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-200"
-                    min={bookingForm.checkInDate || new Date().toISOString().split('T')[0]}
                   />
                 </div>
               </div>
