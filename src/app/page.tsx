@@ -53,13 +53,7 @@ export default function Home() {
         <Sidebar>
           <SidebarHeader className="p-6 border-b">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Ship className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="font-bold text-lg">YachtERP</h1>
-                <p className="text-xs text-muted-foreground">Booking System</p>
-              </div>
+              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png" alt="Samara liveaboard logo" />
             </div>
           </SidebarHeader>
           
@@ -87,7 +81,7 @@ export default function Home() {
 
           <SidebarFooter className="p-4 border-t">
             <div className="text-xs text-muted-foreground">
-              © 2025 YachtERP v1.0
+              © 2026 Samara Liveaboard.
             </div>
           </SidebarFooter>
         </Sidebar>

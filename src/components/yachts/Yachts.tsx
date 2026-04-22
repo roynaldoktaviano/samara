@@ -25,13 +25,11 @@ interface Yacht {
 }
 
 const mockYachts: Yacht[] = [
-  { id: '1', name: 'Sea Breeze', model: 'Azimut 55', year: 2021, capacity: 12, cabins: 3, length: 16.7, hourlyRate: 500, dailyRate: 3500, status: 'available' },
-  { id: '2', name: 'Ocean Pearl', model: 'Sunseeker 88', year: 2020, capacity: 10, cabins: 4, length: 26.8, hourlyRate: 750, dailyRate: 5500, status: 'booked' },
-  { id: '3', name: 'Blue Horizon', model: 'Princess V40', year: 2022, capacity: 8, cabins: 2, length: 12.2, hourlyRate: 350, dailyRate: 2500, status: 'available' },
-  { id: '4', name: 'Sunset Voyager', model: 'Ferretti 59', year: 2019, capacity: 14, cabins: 4, length: 18.1, hourlyRate: 600, dailyRate: 4200, status: 'maintenance' },
-  { id: '5', name: 'Starlight', model: 'Azimut 72', year: 2023, capacity: 16, cabins: 5, length: 22.2, hourlyRate: 900, dailyRate: 6500, status: 'available' },
-]
-
+  { id: '1', name: 'Samara I', model: 'Custom Phinisi', year: 2017, capacity: 12, cabins: 5, length: 27.0, hourlyRate: 350, dailyRate: 3500, status: 'available' },
+  { id: '2', name: 'Samara II', model: 'Custom Phinisi', year: 2018, capacity: 10, cabins: 4, length: 24.0, hourlyRate: 300, dailyRate: 3000, status: 'available' },
+  { id: '3', name: 'Mischief', model: 'Luxury Phinisi', year: 2015, capacity: 8, cabins: 3, length: 30.0, hourlyRate: 500, dailyRate: 5500, status: 'booked' },
+  { id: '4', name: 'Otium', model: 'Luxury Motor Yacht', year: 2022, capacity: 14, cabins: 5, length: 35.0, hourlyRate: 800, dailyRate: 7000, status: 'available' }
+];
 export default function Yachts() {
   const [yachts] = useState<Yacht[]>(mockYachts)
   const [searchTerm, setSearchTerm] = useState('')

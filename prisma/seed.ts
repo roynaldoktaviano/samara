@@ -58,72 +58,58 @@ async function main() {
   const yachts = await Promise.all([
     prisma.yacht.create({
       data: {
-        name: 'Sea Breeze',
-        model: 'Azimut 55',
-        year: 2021,
+        name: 'Samara I',
+        model: 'Custom Phinisi',
+        year: 2017,
         capacity: 12,
-        cabins: 3,
-        length: 16.7,
-        hourlyRate: 500,
+        cabins: 5,
+        length: 27.0,
+        hourlyRate: 350,
         dailyRate: 3500,
         status: 'available',
-        description: 'Luxury motor yacht perfect for day trips and overnight cruises'
+        description: 'Traditional luxury Phinisi perfect for intimate explorations and liveaboard experiences.'
       }
     }),
     prisma.yacht.create({
       data: {
-        name: 'Ocean Pearl',
-        model: 'Sunseeker 88',
-        year: 2020,
+        name: 'Samara II',
+        model: 'Custom Phinisi',
+        year: 2018,
         capacity: 10,
         cabins: 4,
-        length: 26.8,
-        hourlyRate: 750,
+        length: 24.0,
+        hourlyRate: 300,
+        dailyRate: 3000,
+        status: 'available',
+        description: 'Boutique Phinisi designed for unforgettable voyages and diving trips.'
+      }
+    }),
+    prisma.yacht.create({
+      data: {
+        name: 'Mischief',
+        model: 'Luxury Phinisi',
+        year: 2015,
+        capacity: 8,
+        cabins: 3,
+        length: 30.0,
+        hourlyRate: 500,
         dailyRate: 5500,
         status: 'booked',
-        description: 'Premium yacht for extended voyages and special events'
+        description: 'Eco-friendly luxury yacht blending traditional style with striking contemporary lines.'
       }
     }),
     prisma.yacht.create({
       data: {
-        name: 'Blue Horizon',
-        model: 'Princess V40',
+        name: 'Otium',
+        model: 'Luxury Motor Yacht',
         year: 2022,
-        capacity: 8,
-        cabins: 2,
-        length: 12.2,
-        hourlyRate: 350,
-        dailyRate: 2500,
-        status: 'available',
-        description: 'Sport cruiser ideal for weekend getaways'
-      }
-    }),
-    prisma.yacht.create({
-      data: {
-        name: 'Sunset Voyager',
-        model: 'Ferretti 59',
-        year: 2019,
         capacity: 14,
-        cabins: 4,
-        length: 18.1,
-        hourlyRate: 600,
-        dailyRate: 4200,
-        status: 'maintenance',
-        description: 'Family yacht with spacious accommodations'
-      }
-    }),
-    prisma.yacht.create({
-      data: {
-        name: 'Starlight',
-        model: 'Azimut 72',
-        year: 2023,
-        capacity: 16,
         cabins: 5,
-        length: 22.2,
-        hourlyRate: 900,
-        dailyRate: 6500,
+        length: 35.0,
+        hourlyRate: 800,
+        dailyRate: 7000,
         status: 'available',
-        description: 'Flagship yacht for luxury charters and events'
+        description: 'Premium modern luxury and comfort for the ultimate sea getaway.'
       }
     })
   ])

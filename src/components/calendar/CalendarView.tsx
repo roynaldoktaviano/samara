@@ -369,7 +369,7 @@ export default function CalendarView() {
               })
               setIsBookingDialogOpen(true)
             }}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
+            className="bg-[#bdac7e] hover:bg-black shadow-lg"
           >
             <Plus className="mr-2 h-4 w-4" />
             New Booking
@@ -381,7 +381,7 @@ export default function CalendarView() {
       <Dialog open={isBookingDialogOpen} onOpenChange={setIsBookingDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="text-2xl bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
+            <DialogTitle className="text-2xl bg-[#bdac7e] bg-clip-text text-transparent">
               Create New Booking
             </DialogTitle>
             <DialogDescription>
@@ -427,7 +427,7 @@ export default function CalendarView() {
                             style={{ backgroundColor: colorStyle.bg }}
                           />
                           <span className="font-medium">{yacht.name}</span>
-                          <span className="text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-2 py-0.5 rounded-full font-bold ml-auto">${yacht.dailyRate}/day</span>
+                          <span className="text-xs bg-[#bdac7e] from-purple-100 to-pink-100 text-purple-700 px-2 py-0.5 rounded-full font-bold ml-auto">${yacht.dailyRate}/day</span>
                         </div>
                       </SelectItem>
                     )
@@ -485,7 +485,7 @@ export default function CalendarView() {
             </Button>
             <Button 
               onClick={handleCreateBooking}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
+              className="bg-[#bdac7e] from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
             >
               Create Booking
             </Button>

@@ -113,9 +113,10 @@ export default function Expenses() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">None</SelectItem>
-                      <SelectItem value="1">Sea Breeze</SelectItem>
-                      <SelectItem value="2">Ocean Pearl</SelectItem>
-                      <SelectItem value="3">Blue Horizon</SelectItem>
+                      <SelectItem value="1">Samara I</SelectItem>
+                      <SelectItem value="2">Samara II</SelectItem>
+                      <SelectItem value="3">Mischief</SelectItem>
+                      <SelectItem value="4">Otium</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
