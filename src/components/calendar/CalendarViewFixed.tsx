@@ -27,41 +27,6 @@ interface BookingEvent {
   notes?: string
 }
 
-const mockEvents: BookingEvent[] = [
-  // January 2025 bookings
-  { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green' },
-  { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue' },
-  { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple' },
-  
-  // February 2025 bookings
-  { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'pink' },
-  { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'yellow' },
-  { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'teal' },
-  { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'green' },
-  { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue' },
-  { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple' },
-  { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink' },
-  
-  // March 2025 bookings
-  { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal' },
-  { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal' },
-  { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green' },
-  
-  // April 2025 bookings
-  { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue' },
-  { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple' },
-  { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink' },
-  { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow' },
-]
-
-const mockYachts = [
-  { id: '1', name: 'Sea Breeze', dailyRate: 3500, color: 'green' },
-  { id: '2', name: 'Ocean Pearl', dailyRate: 5500, color: 'blue' },
-  { id: '3', name: 'Blue Horizon', dailyRate: 2500, color: 'purple' },
-  { id: '4', name: 'Sunset Voyager', dailyRate: 4200, color: 'pink' },
-  { id: '5', name: 'Starlight', dailyRate: 6500, color: 'yellow' },
-]
-
 const mockCustomers = [
   { id: '1', name: 'John Smith' },
   { id: '2', name: 'Sarah Johnson' },
@@ -104,6 +69,42 @@ export default function CalendarView() {
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedBooking, setSelectedBooking] = useState<BookingEvent | null>(null)
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
+
+  const mockYachts = [
+    { id: '1', name: 'Sea Breeze', dailyRate: 3500, color: 'green' },
+    { id: '2', name: 'Ocean Pearl', dailyRate: 5500, color: 'blue' },
+    { id: '3', name: 'Blue Horizon', dailyRate: 2500, color: 'purple' },
+    { id: '4', name: 'Sunset Voyager', dailyRate: 4200, color: 'pink' },
+    { id: '5', name: 'Starlight', dailyRate: 6500, color: 'yellow' },
+  ]
+
+  const [bookings, setBookings] = useState<BookingEvent[]>([
+    // January 2025 bookings
+    { id: '1', yachtName: 'Sea Breeze', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green' },
+    { id: '2', yachtName: 'Ocean Pearl', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue' },
+    { id: '3', yachtName: 'Blue Horizon', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple' },
+
+    // February 2025 bookings
+    { id: '4', yachtName: 'Sea Breeze', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'pink' },
+    { id: '5', yachtName: 'Ocean Pearl', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'yellow' },
+    { id: '6', yachtName: 'Starlight', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'teal' },
+    { id: '7', yachtName: 'Blue Horizon', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'green' },
+    { id: '8', yachtName: 'Sunset Voyager', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue' },
+    { id: '9', yachtName: 'Sea Breeze', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple' },
+    { id: '10', yachtName: 'Ocean Pearl', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink' },
+
+    // March 2025 bookings
+    { id: '11', yachtName: 'Starlight', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal' },
+    { id: '12', yachtName: 'Blue Horizon', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal' },
+    { id: '13', yachtName: 'Sea Breeze', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green' },
+
+    // April 2025 bookings
+    { id: '14', yachtName: 'Ocean Pearl', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue' },
+    { id: '15', yachtName: 'Sunset Voyager', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple' },
+    { id: '16', yachtName: 'Starlight', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink' },
+    { id: '17', yachtName: 'Blue Horizon', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow' },
+  ])
+
   const [bookingForm, setBookingForm] = useState({
     yachtId: '',
     customerId: '',
@@ -158,7 +159,7 @@ export default function CalendarView() {
     const newStartDate = new Date(bookingForm.checkInDate)
     const newEndDate = new Date(bookingForm.checkOutDate)
 
-    const hasConflict = mockEvents.some(event => {
+    const hasConflict = bookings.some(event => {
       if (event.yachtName !== yacht.name) return false
       if (event.status === 'cancelled') return false
 
@@ -176,24 +177,14 @@ export default function CalendarView() {
     const days = Math.ceil((newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60 * 24))
     const price = bookingForm.price ? parseFloat(bookingForm.price) : days * yacht.dailyRate
 
-    console.log('Creating booking:', {
-      yacht: yacht.name,
-      startDate: bookingForm.checkInDate,
-      endDate: bookingForm.checkOutDate,
-      month: newStartDate.getMonth(),
-      year: newStartDate.getFullYear(),
-      currentMonth: month,
-      currentYear: year,
-    })
-
     const newBooking: BookingEvent = {
-      id: String(mockEvents.length + 1),
+      id: String(bookings.length + 1),
       yachtName: yacht.name,
       startDate: bookingForm.checkInDate,
       endDate: bookingForm.checkOutDate,
       status: bookingForm.status as any,
       customerName: customer.name,
-      bookingCode: `BK${String(mockEvents.length + 1).padStart(3, '0')}`,
+      bookingCode: `BK${String(bookings.length + 1).padStart(3, '0')}`,
       totalPrice: price,
       eventColor: yacht.color,
       price,
@@ -203,10 +194,7 @@ export default function CalendarView() {
       notes: bookingForm.notes || undefined,
     }
 
-    console.log('New booking created:', newBooking)
-    console.log('Total bookings after creation:', mockEvents.length)
-
-    mockEvents.push(newBooking)
+    setBookings([...bookings, newBooking])
     setIsBookingDialogOpen(false)
     setBookingForm({
       yachtId: '',
@@ -230,11 +218,7 @@ export default function CalendarView() {
   const bookingBars = useMemo(() => {
     const bars: any[] = []
 
-    console.log('=== Calculating booking bars ===')
-    console.log('Current view:', { month, year })
-    console.log('Processing events:', mockEvents.length)
-
-    mockEvents.forEach((event) => {
+    bookings.forEach((event) => {
       const start = new Date(event.startDate)
       const end = new Date(event.endDate)
 
@@ -249,12 +233,6 @@ export default function CalendarView() {
 
       // Skip if booking doesn't overlap with current month
       if (end < monthStart || start > monthEnd) {
-        console.log(`Skipping booking ${event.id} - doesn't overlap`, {
-          start: event.startDate,
-          end: event.endDate,
-          monthStart,
-          monthEnd
-        })
         return
       }
 
@@ -274,13 +252,6 @@ export default function CalendarView() {
       const gridStart = firstDay + visibleStartDay - 1
       const gridEnd = firstDay + visibleEndDay - 1
       const span = visibleEndDay - visibleStartDay + 1
-
-      console.log(`Adding bar for ${event.id} (${event.yachtName})`, {
-        visibleStartDay,
-        visibleEndDay,
-        gridStart,
-        gridEnd
-      })
 
       bars.push({
         ...event,
@@ -316,11 +287,8 @@ export default function CalendarView() {
       }
     })
 
-    console.log('Final booking bars count:', bars.length)
-    console.log('===============================')
-
     return bars
-  }, [month, year, firstDay, daysInMonth, mockEvents])
+  }, [month, year, firstDay, daysInMonth, bookings])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
@@ -348,7 +316,7 @@ export default function CalendarView() {
   const isCurrentMonthToday = today.getMonth() === month && today.getFullYear() === year
   const todayDate = today.getDate()
 
-  const todayBookings = mockEvents.filter(event => {
+  const todayBookings = bookings.filter(event => {
     const start = new Date(event.startDate)
     const end = new Date(event.endDate)
     const current = new Date(todayStr)
@@ -372,9 +340,9 @@ export default function CalendarView() {
 
   const quickStats = {
     totalYachts: 5,
-    activeBookings: mockEvents.filter(e => e.status === 'confirmed' || e.status === 'pending').length,
+    activeBookings: bookings.filter(e => e.status === 'confirmed' || e.status === 'pending').length,
     availableYachts: 2,
-    monthlyRevenue: mockEvents
+    monthlyRevenue: bookings
       .filter(e => {
         const eventDate = new Date(e.startDate)
         return eventDate.getMonth() === month && eventDate.getFullYear() === year && e.totalPrice
