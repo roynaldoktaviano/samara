@@ -607,27 +607,30 @@ export default function CalendarView() {
                         const days = getDaysBetweenDates(bar.startDate, bar.endDate)
                         const isStart = dateInfo.day === bar.startDay
                         const isEnd = dateInfo.day === bar.endDay
-                        
+
                         return (
                           <div
                             key={bar.id}
-                            className="h-7 rounded-md shadow-sm hover:shadow-md transition-all cursor-pointer border flex items-center px-2"
+                            className="h-8 rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer border flex items-center px-2.5 gap-2 overflow-hidden"
                             style={{
-                              backgroundColor: eventStyle.backgroundColor,
-                              color: eventStyle.text,
-                              borderColor: 'rgba(0,0,0,0.1)',
+                              backgroundColor: eventStyle.bg,
+                              borderColor: eventStyle.bg,
                             }}
                             title={`${bar.yachtName} (${days} days) - ${bar.status}`}
                           >
-                            <div className="flex items-center justify-between w-full">
-                              <div className="font-semibold text-[10px] truncate">
-                                {isStart && `${bar.yachtName}`}
+                            <div className="flex items-center justify-between w-full min-w-0">
+                              <div className="font-semibold text-[10px] truncate flex-1">
+                                {bar.yachtName}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[9px] text-gray-600 flex-shrink-0">
+                                <Clock className="h-3 w-3" />
+                                <span>{days}d</span>
                               </div>
                               <div
-                                className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase flex-shrink-0"
+                                className="px-2 py-0.5 rounded-full text-[8px] font-semibold uppercase flex-shrink-0"
                                 style={{
-                                  backgroundColor: statusColors[bar.status]?.bg,
-                                  color: statusColors[bar.status]?.text,
+                                  backgroundColor: statusColors[bar.status]?.light,
+                                  color: statusColors[bar.status]?.bg,
                                 }}
                               >
                                 {bar.status}
