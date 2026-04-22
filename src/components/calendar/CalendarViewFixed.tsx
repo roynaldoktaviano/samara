@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -92,7 +92,7 @@ const statusColors = {
 }
 
 export default function CalendarView() {
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState(new Date('2025-01-01'))
   const [isBookingDialogOpen, setIsBookingDialogOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [bookingForm, setBookingForm] = useState({
@@ -256,6 +256,17 @@ export default function CalendarView() {
 
     return bars
   }, [month, year, firstDay, daysInMonth, mockEvents])
+
+  // Debug logging
+  useEffect(() => {
+    console.log('=== DEBUG ===')
+    console.log('Current Date:', currentDate.toISOString())
+    console.log('Current Month:', month, 'Year:', year)
+    console.log('Total Booking Bars:', bookingBars.length)
+    console.log('Booking Bars:', bookingBars)
+    console.log('Mock Events:', mockEvents)
+    console.log('==============')
+  }, [bookingBars, month, year, currentDate])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
