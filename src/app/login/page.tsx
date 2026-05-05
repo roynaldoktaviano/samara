@@ -1,13 +1,36 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    // handle login logic here
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+
+    setLoading(false);
+
+    if (result?.error) {
+      setError("Email atau password salah. Silakan coba lagi.");
+      return;
+    }
+
+    router.push("/");
+    router.refresh();
   };
 
   return (
@@ -40,7 +63,10 @@ export default function LoginPage() {
             />
 
             {/* Form */}
-            <div className="flex flex-col justify-center flex-1 w-full max-w-sm mx-auto py-8 sm:py-10">
+            <form
+              onSubmit={handleLogin}
+              className="flex flex-col justify-center flex-1 w-full max-w-sm mx-auto py-8 sm:py-10"
+            >
               <h1
                 className="text-2xl sm:text-3xl font-bold tracking-[0.07em] text-center text-[#1b3a4b] mb-2"
                 style={{ fontFamily: "'Merriweather', serif" }}
@@ -50,6 +76,13 @@ export default function LoginPage() {
               <p className="text-xs sm:text-[13px] text-center text-[#7e9099] font-light mb-7 leading-relaxed">
                 Sign in to manage itineraries and client bookings.
               </p>
+
+              {/* Error message */}
+              {error && (
+                <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-[13px] text-red-600">
+                  {error}
+                </div>
+              )}
 
               {/* Email */}
               <div className="mb-4">
@@ -61,6 +94,7 @@ export default function LoginPage() {
                   placeholder="Input your Email..."
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  required
                   className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-[#1a6070] transition-colors"
                 />
               </div>
@@ -75,16 +109,18 @@ export default function LoginPage() {
                   placeholder="Input your Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  required
                   className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-[#1a6070] transition-colors"
                 />
               </div>
 
               {/* Button */}
               <button
-                onClick={handleLogin}
-                className="mt-6 py-3.5 w-full sm:w-[70%] rounded-md mx-auto block bg-[#1a5f6e] hover:bg-[#145260] active:bg-[#0f3f4a] text-white text-[13px] font-semibold tracking-wide transition-colors cursor-pointer"
+                type="submit"
+                disabled={loading}
+                className="mt-6 py-3.5 w-full sm:w-[70%] rounded-md mx-auto block bg-[#1a5f6e] hover:bg-[#145260] active:bg-[#0f3f4a] disabled:opacity-60 disabled:cursor-not-allowed text-white text-[13px] font-semibold tracking-wide transition-colors cursor-pointer"
               >
-                Log In to Dashboard
+                {loading ? "Logging in..." : "Log In to Dashboard"}
               </button>
 
               {/* Forgot */}
@@ -94,7 +130,7 @@ export default function LoginPage() {
                   Coba Ingat Lagi
                 </span>
               </p>
-            </div>
+            </form>
 
             {/* Footer */}
             <p className="text-[10.5px] text-[#aabbc4] font-light text-center md:text-left">

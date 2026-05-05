@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { useSession, signOut } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Ship, Menu } from 'lucide-react'
+import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -13,39 +15,77 @@ import Maintenance from '@/components/maintenance/Maintenance'
 
 type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance'
 
-const navigationItems = [
-  { id: 'calendar' as View, label: 'Dashboard', icon: Calendar },
-  { id: 'yachts' as View, label: 'Yachts', icon: Anchor },
-  { id: 'bookings' as View, label: 'Bookings', icon: Calendar },
-  { id: 'customers' as View, label: 'Customers', icon: Users },
-  { id: 'dashboard' as View, label: 'Statistics', icon: LayoutDashboard },
-  { id: 'expenses' as View, label: 'Expenses', icon: DollarSign },
-  { id: 'maintenance' as View, label: 'Maintenance', icon: Wrench },
+type NavItem = {
+  id: View
+  label: string
+  icon: React.ElementType
+  roles: string[]
+}
+
+const navigationItems: NavItem[] = [
+  { id: 'calendar',     label: 'Dashboard',    icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+  { id: 'yachts',       label: 'Yachts',       icon: Anchor,           roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { id: 'bookings',     label: 'Bookings',     icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+  { id: 'customers',    label: 'Customers',    icon: Users,            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { id: 'dashboard',    label: 'Statistics',   icon: LayoutDashboard,  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { id: 'expenses',     label: 'Expenses',     icon: DollarSign,       roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { id: 'maintenance',  label: 'Maintenance',  icon: Wrench,           roles: ['SUPER_ADMIN', 'ADMIN'] },
 ]
 
+const roleBadgeColor: Record<string, string> = {
+  SUPER_ADMIN: 'bg-purple-100 text-purple-700',
+  ADMIN:       'bg-blue-100 text-blue-700',
+  MANAGER:     'bg-teal-100 text-teal-700',
+  STAFF:       'bg-gray-100 text-gray-600',
+}
+
+const roleLabel: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  ADMIN:       'Admin',
+  MANAGER:     'Manager',
+  STAFF:       'Staff',
+}
+
 export default function Home() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
   const [currentView, setCurrentView] = useState<View>('calendar')
+  const [showUserMenu, setShowUserMenu] = useState(false)
+
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-sm text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    router.push('/login')
+    return null
+  }
+
+  const userRole = session.user.role
+  const visibleNavItems = navigationItems.filter((item) => item.roles.includes(userRole))
+
+  // If current view is not accessible for this role, reset to first accessible view
+  const isCurrentViewAllowed = visibleNavItems.some((item) => item.id === currentView)
+  const activeView = isCurrentViewAllowed ? currentView : visibleNavItems[0]?.id ?? 'calendar'
 
   const renderView = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard />
-      case 'yachts':
-        return <Yachts />
-      case 'bookings':
-        return <Bookings />
-      case 'customers':
-        return <Customers />
-      case 'calendar':
-        return <CalendarView />
-      case 'expenses':
-        return <Expenses />
-      case 'maintenance':
-        return <Maintenance />
-      default:
-        return <CalendarView />
+    switch (activeView) {
+      case 'dashboard':    return <Dashboard />
+      case 'yachts':       return <Yachts />
+      case 'bookings':     return <Bookings />
+      case 'customers':    return <Customers />
+      case 'calendar':     return <CalendarView />
+      case 'expenses':     return <Expenses />
+      case 'maintenance':  return <Maintenance />
+      default:             return <CalendarView />
     }
   }
+
+  const currentNavItem = visibleNavItems.find((item) => item.id === activeView)
 
   return (
     <SidebarProvider>
@@ -56,18 +96,18 @@ export default function Home() {
               <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png" alt="Samara liveaboard logo" />
             </div>
           </SidebarHeader>
-          
+
           <SidebarContent>
             <SidebarGroup>
               <SidebarGroupLabel>Main Menu</SidebarGroupLabel>
               <SidebarMenu>
-                {navigationItems.map((item) => {
+                {visibleNavItems.map((item) => {
                   const Icon = item.icon
                   return (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
                         onClick={() => setCurrentView(item.id)}
-                        isActive={currentView === item.id}
+                        isActive={activeView === item.id}
                       >
                         <Icon className="h-4 w-4" />
                         <span>{item.label}</span>
@@ -80,9 +120,42 @@ export default function Home() {
           </SidebarContent>
 
           <SidebarFooter className="p-4 border-t">
-            <div className="text-xs text-muted-foreground">
-              © 2026 Samara Liveaboard.
+            {/* User info + logout */}
+            <div className="relative">
+              <button
+                onClick={() => setShowUserMenu((v) => !v)}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2 hover:bg-muted transition-colors text-left"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-xs font-semibold uppercase">
+                  {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-foreground truncate">
+                    {session.user.name ?? session.user.email}
+                  </p>
+                  <span className={`inline-block mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {roleLabel[userRole] ?? userRole}
+                  </span>
+                </div>
+                <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 rounded-md border bg-background shadow-md z-50">
+                  <button
+                    onClick={() => signOut({ callbackUrl: '/login' })}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-md"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
+
+            <p className="mt-3 text-[10.5px] text-muted-foreground text-center">
+              © 2026 Samara Liveaboard.
+            </p>
           </SidebarFooter>
         </Sidebar>
 
@@ -92,7 +165,9 @@ export default function Home() {
               <Menu className="h-5 w-5" />
             </div>
             <div className="flex-1">
-              <h2 className="text-xl font-semibold capitalize">{currentView}</h2>
+              <h2 className="text-xl font-semibold capitalize">
+                {currentNavItem?.label ?? activeView}
+              </h2>
             </div>
           </header>
           <div className="p-6">

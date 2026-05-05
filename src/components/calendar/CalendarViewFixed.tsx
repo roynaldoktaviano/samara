@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -28,25 +28,13 @@ interface BookingEvent {
   tripType?: 'open-trip' | 'private-charter'
 }
 
-const mockCustomers = [
-  { id: '1', name: 'John Smith' },
-  { id: '2', name: 'Sarah Johnson' },
-  { id: '3', name: 'Mike Wilson' },
-  { id: '4', name: 'Emma Davis' },
-  { id: '5', name: 'Alice Chen' },
-  { id: '6', name: 'Robert Brown' },
-  { id: '7', name: 'James Wilson' },
-  { id: '8', name: 'Lisa Park' },
-  { id: '9', name: 'Tom Harris' },
-  { id: '10', name: 'Karen White' },
-  { id: '11', name: 'David Lee' },
-  { id: '12', name: 'Nina Martinez' },
-  { id: '13', name: 'Chris Anderson' },
-  { id: '14', name: 'Sophie Turner' },
-  { id: '15', name: 'Michael Brown' },
-  { id: '16', name: 'Rachel Green' },
-  { id: '17', name: 'Alex Johnson' },
-]
+const YACHT_COLOR_KEYS = ['green', 'blue', 'purple', 'pink', 'yellow', 'teal'] as const
+
+function assignYachtColor(yachtName: string): string {
+  let hash = 0
+  for (let i = 0; i < yachtName.length; i++) hash += yachtName.charCodeAt(i)
+  return YACHT_COLOR_KEYS[hash % YACHT_COLOR_KEYS.length]
+}
 
 const colorPalette = {
   green: { bg: '#d1fae5', text: '#065f46', hover: '#a7f3d0', light: '#ecfdf5' },
@@ -64,6 +52,9 @@ const statusColors = {
   cancelled: { bg: '#dc2626', text: 'white', light: '#fee2e2' },
 }
 
+type DbYacht = { id: string; name: string; dailyRate: number }
+type DbCustomer = { id: string; name: string }
+
 export default function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isBookingDialogOpen, setIsBookingDialogOpen] = useState(false)
@@ -75,39 +66,51 @@ export default function CalendarView() {
   const [selectedYachtFilter, setSelectedYachtFilter] = useState<string>('all')
   const [selectedTripTypeFilter, setSelectedTripTypeFilter] = useState<string>('all')
 
-  const mockYachts = [
-    { id: '1', name: 'Samara I', dailyRate: 3500, color: 'green' },
-    { id: '2', name: 'Samara II', dailyRate: 5500, color: 'blue' },
-    { id: '3', name: 'Mischief', dailyRate: 2500, color: 'purple' },
-    { id: '4', name: 'Otium', dailyRate: 4200, color: 'pink' },
-  ]
+  // DB data
+  const [bookings, setBookings] = useState<BookingEvent[]>([])
+  const [yachts, setYachts] = useState<DbYacht[]>([])
+  const [customers, setCustomers] = useState<DbCustomer[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const [bookings, setBookings] = useState<BookingEvent[]>([
-    // January 2025 bookings
-    { id: '1', yachtName: 'Samara I', startDate: '2025-01-15', endDate: '2025-01-18', status: 'completed', customerName: 'John Smith', bookingCode: 'BK001', totalPrice: 10500, eventColor: 'green', tripType: 'private-charter' },
-    { id: '2', yachtName: 'Samara II ', startDate: '2025-01-20', endDate: '2025-01-25', status: 'completed', customerName: 'Sarah Johnson', bookingCode: 'BK002', totalPrice: 27500, eventColor: 'blue', tripType: 'open-trip' },
-    { id: '3', yachtName: 'Mischief', startDate: '2025-01-28', endDate: '2025-01-30', status: 'completed', customerName: 'Mike Wilson', bookingCode: 'BK003', totalPrice: 7500, eventColor: 'purple', tripType: 'open-trip' },
+  const fetchBookings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/bookings')
+      const data = await res.json()
+      const mapped: BookingEvent[] = data.map((b: any) => ({
+        id: b.id,
+        yachtName: b.yacht.name,
+        startDate: b.startDate.split('T')[0],
+        endDate: b.endDate.split('T')[0],
+        status: b.status as BookingEvent['status'],
+        customerName: b.customer.name,
+        bookingCode: b.bookingCode,
+        totalPrice: b.totalPrice,
+        depositAmount: b.depositPaid,
+        notes: b.notes ?? undefined,
+        eventColor: assignYachtColor(b.yacht.name),
+      }))
+      setBookings(mapped)
+    } catch (e) {
+      console.error('Failed to fetch bookings', e)
+    }
+  }, [])
 
-    // February 2025 bookings
-    { id: '4', yachtName: 'Samara I', startDate: '2025-02-05', endDate: '2025-02-08', status: 'completed', customerName: 'Robert Brown', bookingCode: 'BK004', totalPrice: 10500, eventColor: 'green', tripType: 'private-charter' },
-    { id: '5', yachtName: 'Samara II ', startDate: '2025-02-10', endDate: '2025-02-14', status: 'confirmed', customerName: 'Emma Davis', bookingCode: 'BK005', totalPrice: 22000, eventColor: 'blue', tripType: 'open-trip' },
-    { id: '6', yachtName: 'Mischief', startDate: '2025-02-12', endDate: '2025-02-17', status: 'confirmed', customerName: 'Alice Chen', bookingCode: 'BK006', totalPrice: 32500, eventColor: 'yellow', tripType: 'private-charter' },
-    { id: '7', yachtName: 'Mischief', startDate: '2025-02-15', endDate: '2025-02-18', status: 'pending', customerName: 'James Wilson', bookingCode: 'BK007', totalPrice: 7500, eventColor: 'teal', tripType: 'open-trip' },
-    { id: '8', yachtName: 'Otium', startDate: '2025-02-20', endDate: '2025-02-26', status: 'confirmed', customerName: 'Lisa Park', bookingCode: 'BK008', totalPrice: 25200, eventColor: 'blue', tripType: 'private-charter' },
-    { id: '9', yachtName: 'Samara I', startDate: '2025-02-22', endDate: '2025-02-24', status: 'pending', customerName: 'Tom Harris', bookingCode: 'BK009', totalPrice: 10500, eventColor: 'purple', tripType: 'open-trip' },
-    { id: '10', yachtName: 'Samara II', startDate: '2025-02-27', endDate: '2025-03-03', status: 'confirmed', customerName: 'Karen White', bookingCode: 'BK010', totalPrice: 38500, eventColor: 'pink', tripType: 'private-charter' },
-
-    // March 2025 bookings
-    { id: '11', yachtName: 'Mischief', startDate: '2025-03-05', endDate: '2025-03-10', status: 'pending', customerName: 'David Lee', bookingCode: 'BK011', totalPrice: 32500, eventColor: 'teal', tripType: 'open-trip' },
-    { id: '12', yachtName: 'Mischief', startDate: '2025-03-12', endDate: '2025-03-15', status: 'pending', customerName: 'Nina Martinez', bookingCode: 'BK012', totalPrice: 7500, eventColor: 'teal', tripType: 'private-charter' },
-    { id: '13', yachtName: 'Samara I', startDate: '2025-03-18', endDate: '2025-03-23', status: 'pending', customerName: 'Chris Anderson', bookingCode: 'BK013', totalPrice: 17500, eventColor: 'green', tripType: 'open-trip' },
-
-    // April 2025 bookings
-    { id: '14', yachtName: 'Samara II', startDate: '2025-04-01', endDate: '2025-04-07', status: 'pending', customerName: 'Sophie Turner', bookingCode: 'BK014', totalPrice: 38500, eventColor: 'blue', tripType: 'private-charter' },
-    { id: '15', yachtName: 'Otium', startDate: '2025-04-10', endDate: '2025-04-14', status: 'pending', customerName: 'Michael Brown', bookingCode: 'BK015', totalPrice: 16800, eventColor: 'purple', tripType: 'open-trip' },
-    { id: '16', yachtName: 'Mischief', startDate: '2025-04-15', endDate: '2025-04-22', status: 'pending', customerName: 'Rachel Green', bookingCode: 'BK016', totalPrice: 45500, eventColor: 'pink', tripType: 'private-charter' },
-    { id: '17', yachtName: 'Mischief', startDate: '2025-04-25', endDate: '2025-04-30', status: 'pending', customerName: 'Alex Johnson', bookingCode: 'BK017', totalPrice: 12500, eventColor: 'yellow', tripType: 'open-trip' },
-  ])
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      await Promise.all([
+        fetchBookings(),
+        fetch('/api/yachts').then(r => r.json()).then((data: any[]) =>
+          setYachts(data.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })))
+        ),
+        fetch('/api/customers').then(r => r.json()).then((data: any[]) =>
+          setCustomers(data.map(c => ({ id: c.id, name: c.name })))
+        ),
+      ])
+      setLoading(false)
+    }
+    loadData()
+  }, [fetchBookings])
 
   const [bookingForm, setBookingForm] = useState({
     yachtId: '',
@@ -151,70 +154,60 @@ export default function CalendarView() {
     setIsDetailDialogOpen(true)
   }
 
-  const handleCreateBooking = () => {
-    const yacht = mockYachts.find(y => y.id === bookingForm.yachtId)
-    const customer = mockCustomers.find(c => c.id === bookingForm.customerId)
+  const handleCreateBooking = async () => {
+    const yacht = yachts.find(y => y.id === bookingForm.yachtId)
+    const customer = customers.find(c => c.id === bookingForm.customerId)
 
     if (!yacht || !customer || !bookingForm.checkInDate || !bookingForm.checkOutDate) {
       alert('Please fill in all required fields')
       return
     }
 
-    // Check for booking conflicts with same yacht
     const newStartDate = new Date(bookingForm.checkInDate)
     const newEndDate = new Date(bookingForm.checkOutDate)
-
-    const hasConflict = bookings.some(event => {
-      if (event.yachtName !== yacht.name) return false
-      if (event.status === 'cancelled') return false
-
-      const existingStart = new Date(event.startDate)
-      const existingEnd = new Date(event.endDate)
-
-      return newStartDate <= existingEnd && newEndDate >= existingStart
-    })
-
-    if (hasConflict) {
-      alert(`"${yacht.name}" is already booked for some of these dates. Please choose different dates or a different yacht.`)
-      return
-    }
-
     const days = Math.ceil((newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60 * 24))
-    const price = bookingForm.price ? parseFloat(bookingForm.price) : days * yacht.dailyRate
+    const price = bookingForm.price ? parseFloat(bookingForm.price) : Math.max(1, days) * yacht.dailyRate
 
-    const newBooking: BookingEvent = {
-      id: String(bookings.length + 1),
-      yachtName: yacht.name,
-      startDate: bookingForm.checkInDate,
-      endDate: bookingForm.checkOutDate,
-      status: bookingForm.status as any,
-      customerName: customer.name,
-      bookingCode: `BK${String(bookings.length + 1).padStart(3, '0')}`,
-      totalPrice: price,
-      eventColor: yacht.color,
-      price,
-      tripType: bookingForm.tripType,
-      depositAmount: bookingForm.depositAmount ? parseFloat(bookingForm.depositAmount) : undefined,
-      depositDueDate: bookingForm.depositDueDate || undefined,
-      balanceDueDate: bookingForm.balanceDueDate || undefined,
-      notes: bookingForm.notes || undefined,
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          yachtId: yacht.id,
+          customerId: customer.id,
+          startDate: bookingForm.checkInDate,
+          endDate: bookingForm.checkOutDate,
+          totalPrice: price,
+          depositPaid: bookingForm.depositAmount ? parseFloat(bookingForm.depositAmount) : 0,
+          notes: bookingForm.notes || null,
+          status: bookingForm.status,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error ?? 'Failed to create booking')
+        return
+      }
+
+      await fetchBookings()
+      setIsBookingDialogOpen(false)
+      setBookingForm({
+        yachtId: '',
+        customerId: '',
+        checkInDate: '',
+        checkOutDate: '',
+        status: 'pending',
+        tripType: 'open-trip' as 'open-trip' | 'private-charter',
+        price: '',
+        depositAmount: '',
+        depositDueDate: '',
+        balanceDueDate: '',
+        notes: '',
+      })
+    } catch (e) {
+      alert('Network error. Please try again.')
     }
-
-    setBookings([...bookings, newBooking])
-    setIsBookingDialogOpen(false)
-    setBookingForm({
-      yachtId: '',
-      customerId: '',
-      checkInDate: '',
-      checkOutDate: '',
-      status: 'pending',
-      tripType: 'open-trip' as 'open-trip' | 'private-charter',
-      price: '',
-      depositAmount: '',
-      depositDueDate: '',
-      balanceDueDate: '',
-      notes: '',
-    })
   }
 
   const { firstDay, daysInMonth, month, year } = getDaysInMonth(currentDate)
@@ -315,7 +308,7 @@ export default function CalendarView() {
   }
 
   // Build calendar grid
-  const calendarDays = []
+  const calendarDays: { day: number; isCurrentMonth: boolean }[] = []
   for (let i = firstDay - 1; i >= 0; i--) {
     calendarDays.push({ day: 0, isCurrentMonth: false })
   }
@@ -355,9 +348,9 @@ export default function CalendarView() {
   }
 
   const quickStats = {
-    totalYachts: 5,
+    totalYachts: yachts.length,
     activeBookings: bookings.filter(e => e.status === 'confirmed' || e.status === 'pending').length,
-    availableYachts: 2,
+    availableYachts: yachts.length,
     monthlyRevenue: bookings
       .filter(e => {
         const eventDate = new Date(e.startDate)
@@ -366,10 +359,18 @@ export default function CalendarView() {
       .reduce((sum, e) => sum + (e.totalPrice || 0), 0),
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-sm text-muted-foreground">Loading calendar...</div>
+      </div>
+    )
+  }
+
   const getEstimatedPrice = () => {
     if (!bookingForm.yachtId || !bookingForm.checkInDate || !bookingForm.checkOutDate) return 0
     if (bookingForm.price) return parseFloat(bookingForm.price) || 0
-    const yacht = mockYachts.find(y => y.id === bookingForm.yachtId)
+    const yacht = yachts.find(y => y.id === bookingForm.yachtId)
     if (!yacht) return 0
     const startDate = new Date(bookingForm.checkInDate)
     const endDate = new Date(bookingForm.checkOutDate)
@@ -394,12 +395,7 @@ export default function CalendarView() {
           <Button
             onClick={() => {
               setSelectedDate('')
-              setBookingForm({
-                yachtId: '',
-                customerId: '',
-                checkInDate: '',
-                checkOutDate: '',
-              })
+              setBookingForm({ yachtId: '', customerId: '', checkInDate: '', checkOutDate: '', status: 'pending', tripType: 'open-trip', price: '', depositAmount: '', depositDueDate: '', balanceDueDate: '', notes: '' })
               setIsBookingDialogOpen(true)
             }}
             className="bg-[#bdac7e] from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
@@ -437,7 +433,7 @@ export default function CalendarView() {
                     <SelectValue placeholder="Select a customer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockCustomers.map(customer => (
+                    {customers.map(customer => (
                       <SelectItem key={customer.id} value={customer.id}>
                         {customer.name}
                       </SelectItem>
@@ -455,8 +451,9 @@ export default function CalendarView() {
                     <SelectValue placeholder="Select a yacht" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockYachts.map(yacht => {
-                      const colorStyle = colorPalette[yacht.color as keyof typeof colorPalette] || colorPalette.green
+                    {yachts.map(yacht => {
+                      const colorKey = assignYachtColor(yacht.name)
+                      const colorStyle = colorPalette[colorKey as keyof typeof colorPalette] || colorPalette.green
                       return (
                         <SelectItem key={yacht.id} value={yacht.id}>
                           <div className="flex items-center gap-2">
@@ -907,17 +904,20 @@ export default function CalendarView() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Yachts</SelectItem>
-                  {mockYachts.map(yacht => (
-                    <SelectItem key={yacht.id} value={yacht.name}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: colorPalette[yacht.color as keyof typeof colorPalette]?.bg }}
-                        />
-                        <span>{yacht.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {yachts.map(yacht => {
+                    const colorKey = assignYachtColor(yacht.name)
+                    return (
+                      <SelectItem key={yacht.id} value={yacht.name}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: colorPalette[colorKey as keyof typeof colorPalette]?.bg }}
+                          />
+                          <span>{yacht.name}</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -1044,8 +1044,8 @@ export default function CalendarView() {
                             onClick={(e) => handleBookingClick(bar, e)}
                             className="h-8 rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer border flex items-center px-2.5 gap-2 overflow-hidden"
                             style={{
-                              backgroundColor: eventStyle.bg,
-                              borderColor: eventStyle.bg,
+                              backgroundColor: eventStyle.backgroundColor,
+                              borderColor: eventStyle.backgroundColor,
                             }}
                             title={`${bar.yachtName} (${days} days) - ${bar.status}`}
                           >
@@ -1114,7 +1114,7 @@ export default function CalendarView() {
                         style={{ 
                           backgroundColor: eventStyle.backgroundColor,
                           borderColor: 'rgba(0,0,0,0.08)',
-                          color: eventStyle.text
+                          color: eventStyle.color
                         }}
                       >
                         <div className="font-semibold text-xs mb-1 truncate">
@@ -1157,12 +1157,7 @@ export default function CalendarView() {
                     <button
                       onClick={() => {
                         setSelectedDate('')
-                        setBookingForm({
-                          yachtId: '',
-                          customerId: '',
-                          checkInDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
-                          checkOutDate: '',
-                        })
+                        setBookingForm({ yachtId: '', customerId: '', checkInDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`, checkOutDate: '', status: 'pending', tripType: 'open-trip', price: '', depositAmount: '', depositDueDate: '', balanceDueDate: '', notes: '' })
                         setIsBookingDialogOpen(true)
                       }}
                       className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -1211,12 +1206,7 @@ export default function CalendarView() {
                 className="w-full justify-start border-gray-200 hover:bg-gray-50"
                 onClick={() => {
                   setSelectedDate('')
-                  setBookingForm({
-                    yachtId: '',
-                    customerId: '',
-                    checkInDate: '',
-                    checkOutDate: '',
-                  })
+                  setBookingForm({ yachtId: '', customerId: '', checkInDate: '', checkOutDate: '', status: 'pending', tripType: 'open-trip', price: '', depositAmount: '', depositDueDate: '', balanceDueDate: '', notes: '' })
                   setIsBookingDialogOpen(true)
                 }}
               >

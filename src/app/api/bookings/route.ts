@@ -66,7 +66,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique booking code
-    const bookingCode = `BK${Date.now().toString().slice(-6)}`
     const bookingCount = await db.booking.count()
     const paddedCount = String(bookingCount + 1).padStart(3, '0')
     const finalBookingCode = `BK${paddedCount}`
@@ -81,7 +80,7 @@ export async function POST(request: NextRequest) {
         totalPrice: parseFloat(totalPrice),
         depositPaid: depositPaid ? parseFloat(depositPaid) : 0,
         notes,
-        status: 'confirmed'
+        status: body.status ?? 'confirmed'
       },
       include: {
         yacht: true,
