@@ -89,7 +89,7 @@ export default function Home() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-background">
+      <div className="flex min-h-screen bg-background w-full">
         <Sidebar>
           <SidebarHeader className="p-6 border-b">
             <div className="flex items-center gap-3">
