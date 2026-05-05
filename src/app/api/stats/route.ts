@@ -65,11 +65,6 @@ export async function GET() {
       },
       orderBy: { scheduledDate: 'asc' },
       take: 5,
-      include: {
-        yacht: {
-          select: { name: true }
-        }
-      }
     })
 
     return NextResponse.json({

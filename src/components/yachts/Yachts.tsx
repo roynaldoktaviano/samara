@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,9 +10,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -19,12 +19,17 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Plus, Search, Edit, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil } from 'lucide-react'
 
 interface CabinRecord {
   id: string
   name: string
   capacity: number
+  price: number
   deck?: string
   bedType?: string
   extraBeds: number
@@ -48,15 +53,19 @@ interface YachtRecord {
 
 interface RoomInput {
   tempId: string
+  id?: string        // existing cabin id (for edit mode)
   name: string
   deck: string
   bedType: string
   capacity: string
+  price: string
   extraBeds: string
 }
 
 const BED_TYPES = ['Single', 'Double', 'Twin', 'Queen', 'King', 'Bunk']
 const DECKS     = ['Upper Deck', 'Main Deck', 'Lower Deck', 'Flybridge']
+
+const STATUS_OPTS = ['available', 'booked', 'maintenance']
 
 const STATUS_STYLE: Record<string, string> = {
   available:   'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -65,25 +74,34 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 const ACCENT = '#bdac7e'
+const STEPS  = ['Boat Info', 'Rooms & Cabins']
 
 export default function Yachts() {
-  const [yachts,      setYachts]      = useState<YachtRecord[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [searchTerm,  setSearch]      = useState('')
-  const [dialogOpen,  setDialogOpen]  = useState(false)
-  const [expandedId,  setExpandedId]  = useState<string | null>(null)
-  const [submitting,  setSubmitting]  = useState(false)
+  const { data: session } = useSession()
+  const canEdit = session?.user?.role === 'SUPER_ADMIN' || session?.user?.role === 'ADMIN'
+
+  const [yachts,       setYachts]       = useState<YachtRecord[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [searchTerm,   setSearch]       = useState('')
+  const [dialogOpen,   setDialogOpen]   = useState(false)
+  const [editTarget,   setEditTarget]   = useState<YachtRecord | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<YachtRecord | null>(null)
+  const [expandedId,   setExpandedId]   = useState<string | null>(null)
+  const [submitting,   setSubmitting]   = useState(false)
+  const [formStep,     setFormStep]     = useState(1)
+  const [error,        setError]        = useState('')
 
   /* form state */
-  const [name,        setName]        = useState('')
-  const [model,       setModel]       = useState('')
-  const [year,        setYear]        = useState('')
-  const [capacity,    setCapacity]    = useState('')
-  const [length,      setLength]      = useState('')
-  const [hourlyRate,  setHourly]      = useState('')
-  const [dailyRate,   setDaily]       = useState('')
-  const [description, setDesc]        = useState('')
-  const [rooms,       setRooms]       = useState<RoomInput[]>([])
+  const [name,        setName]    = useState('')
+  const [model,       setModel]   = useState('')
+  const [year,        setYear]    = useState('')
+  const [capacity,    setCap]     = useState('')
+  const [length,      setLen]     = useState('')
+  const [hourlyRate,  setHourly]  = useState('')
+  const [dailyRate,   setDaily]   = useState('')
+  const [status,      setStatus]  = useState('available')
+  const [description, setDesc]    = useState('')
+  const [rooms,       setRooms]   = useState<RoomInput[]>([])
 
   const fetchYachts = useCallback(async () => {
     setLoading(true)
@@ -97,40 +115,98 @@ export default function Yachts() {
   useEffect(() => { fetchYachts() }, [fetchYachts])
 
   const resetForm = () => {
-    setName(''); setModel(''); setYear(''); setCapacity(''); setLength('')
-    setHourly(''); setDaily(''); setDesc(''); setRooms([])
+    setName(''); setModel(''); setYear(''); setCap(''); setLen('')
+    setHourly(''); setDaily(''); setStatus('available'); setDesc('')
+    setRooms([]); setFormStep(1); setEditTarget(null); setError('')
+  }
+
+  const openAdd = () => {
+    resetForm()
+    setDialogOpen(true)
+  }
+
+  const openEdit = (y: YachtRecord) => {
+    setEditTarget(y)
+    setName(y.name)
+    setModel(y.model ?? '')
+    setYear(y.year?.toString() ?? '')
+    setCap(y.capacity.toString())
+    setLen(y.length?.toString() ?? '')
+    setHourly(y.hourlyRate.toString())
+    setDaily(y.dailyRate.toString())
+    setStatus(y.status)
+    setDesc(y.description ?? '')
+    setRooms(y.cabins.map(c => ({
+      tempId: c.id,
+      id: c.id,
+      name: c.name,
+      deck: c.deck ?? '',
+      bedType: c.bedType ?? '',
+      capacity: c.capacity.toString(),
+      price: c.price.toString(),
+      extraBeds: c.extraBeds.toString(),
+    })))
+    setFormStep(1)
+    setError('')
+    setDialogOpen(true)
   }
 
   const addRoom = () => setRooms(r => [...r, {
-    tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', extraBeds: '0',
+    tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0',
   }])
 
-  const removeRoom = (id: string) => setRooms(r => r.filter(x => x.tempId !== id))
+  const removeRoom = (tempId: string) => setRooms(r => r.filter(x => x.tempId !== tempId))
 
-  const updateRoom = (id: string, patch: Partial<RoomInput>) =>
-    setRooms(r => r.map(x => x.tempId === id ? { ...x, ...patch } : x))
+  const updateRoom = (tempId: string, patch: Partial<RoomInput>) =>
+    setRooms(r => r.map(x => x.tempId === tempId ? { ...x, ...patch } : x))
+
+  const step1Valid = !!name && !!capacity && !!hourlyRate && !!dailyRate
 
   const handleSubmit = async () => {
-    if (!name || !capacity || !hourlyRate || !dailyRate) return
+    if (!step1Valid) return
     setSubmitting(true)
+    setError('')
     try {
-      const res = await fetch('/api/yachts', {
-        method: 'POST',
+      const payload = {
+        name, model, year, capacity, length, hourlyRate, dailyRate, description, status,
+        rooms: rooms.filter(r => r.name.trim()).map(r => ({
+          id: r.id,
+          name: r.name, deck: r.deck, bedType: r.bedType,
+          capacity: r.capacity, price: r.price, extraBeds: r.extraBeds,
+        })),
+      }
+      const url    = editTarget ? `/api/yachts/${editTarget.id}` : '/api/yachts'
+      const method = editTarget ? 'PUT' : 'POST'
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name, model, year, capacity, length, hourlyRate, dailyRate, description,
-          rooms: rooms.filter(r => r.name.trim()).map(r => ({
-            name: r.name, deck: r.deck, bedType: r.bedType,
-            capacity: r.capacity, extraBeds: r.extraBeds,
-          })),
-        }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         await fetchYachts()
         setDialogOpen(false)
         resetForm()
+      } else {
+        const j = await res.json()
+        setError(j.error ?? 'Save failed')
       }
-    } catch (e) { console.error(e) }
+    } catch (e) { setError('Network error'); console.error(e) }
+    finally { setSubmitting(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/yachts/${deleteTarget.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        await fetchYachts()
+        setDeleteTarget(null)
+      } else {
+        const j = await res.json()
+        alert(j.error ?? 'Delete failed')
+      }
+    } catch { alert('Network error') }
     finally { setSubmitting(false) }
   }
 
@@ -146,171 +222,259 @@ export default function Yachts() {
           <h3 className="text-2xl font-bold tracking-tight">Yachts</h3>
           <p className="text-sm text-muted-foreground">Manage your fleet and cabins</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) resetForm() }}>
-          <DialogTrigger asChild>
-            <Button style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-              <Plus className="mr-2 h-4 w-4" /> Add Yacht
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl flex flex-col max-h-[92vh] overflow-hidden">
-            <DialogHeader className="shrink-0 border-b pb-3">
-              <DialogTitle>Add New Yacht</DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="p-4 space-y-6">
+        {canEdit && (
+          <Button style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90" onClick={openAdd}>
+            <Plus className="mr-2 h-4 w-4" /> Add Yacht
+          </Button>
+        )}
+      </div>
 
-                {/* Basic info */}
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Boat Info</h4>
-                  <div className="space-y-1.5">
+      {/* ── Add / Edit Dialog ── */}
+      <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) resetForm() }}>
+        <DialogContent className="w-240 max-w-[100vw] flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
+          <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
+            <DialogTitle className="text-lg">{editTarget ? `Edit — ${editTarget.name}` : 'Add New Yacht'}</DialogTitle>
+
+            {/* Step indicator */}
+            <div className="flex items-center gap-0 mt-3">
+              {STEPS.map((label, i) => {
+                const n = i + 1
+                const done   = formStep > n
+                const active = formStep === n
+                return (
+                  <Fragment key={n}>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors"
+                        style={{
+                          backgroundColor: done || active ? ACCENT : undefined,
+                          border: `2px solid ${done || active ? ACCENT : '#d1d5db'}`,
+                          color:  done || active ? 'white' : '#9ca3af',
+                        }}
+                      >
+                        {n}
+                      </div>
+                      <span className={`text-sm font-medium ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {label}
+                      </span>
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground mx-3 shrink-0" />
+                    )}
+                  </Fragment>
+                )
+              })}
+            </div>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="px-6 py-5">
+
+              {/* ── Step 1: Boat Info ── */}
+              {formStep === 1 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-1.5">
                     <Label>Boat Name <span className="text-destructive">*</span></Label>
                     <Input placeholder="e.g. Samara I" value={name} onChange={e => setName(e.target.value)} />
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label>Model / Type</Label>
-                      <Input placeholder="e.g. Custom Phinisi" value={model} onChange={e => setModel(e.target.value)} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Build Year</Label>
-                      <Input type="number" placeholder="2020" value={year} onChange={e => setYear(e.target.value)} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Length (m)</Label>
-                      <Input type="number" placeholder="27" value={length} onChange={e => setLength(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label>Max Capacity (pax) <span className="text-destructive">*</span></Label>
-                      <Input type="number" placeholder="12" value={capacity} onChange={e => setCapacity(e.target.value)} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Hourly Rate (USD) <span className="text-destructive">*</span></Label>
-                      <Input type="number" placeholder="350" value={hourlyRate} onChange={e => setHourly(e.target.value)} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Daily Rate (USD) <span className="text-destructive">*</span></Label>
-                      <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
-                    </div>
+                  <div className="space-y-1.5">
+                    <Label>Model / Type</Label>
+                    <Input placeholder="e.g. Custom Phinisi" value={model} onChange={e => setModel(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
+                    <Label>Build Year</Label>
+                    <Input type="number" placeholder="2020" value={year} onChange={e => setYear(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Length (m)</Label>
+                    <Input type="number" placeholder="27" value={length} onChange={e => setLen(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Max Capacity (pax) <span className="text-destructive">*</span></Label>
+                    <Input type="number" placeholder="12" value={capacity} onChange={e => setCap(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Hourly Rate (USD) <span className="text-destructive">*</span></Label>
+                    <Input type="number" placeholder="350" value={hourlyRate} onChange={e => setHourly(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Daily Rate (USD) <span className="text-destructive">*</span></Label>
+                    <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
+                  </div>
+                  {editTarget && (
+                    <div className="space-y-1.5">
+                      <Label>Status</Label>
+                      <Select value={status} onValueChange={setStatus}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {STATUS_OPTS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="col-span-2 space-y-1.5">
                     <Label>Description</Label>
-                    <Textarea placeholder="About this yacht..." value={description} onChange={e => setDesc(e.target.value)} rows={2} />
+                    <Textarea placeholder="About this yacht..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
                   </div>
                 </div>
+              )}
 
-                <Separator />
-
-                {/* Rooms / Cabins */}
-                <div className="space-y-3">
+              {/* ── Step 2: Rooms / Cabins ── */}
+              {formStep === 2 && (
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                      Rooms / Cabins <span className="normal-case font-normal ml-1">({rooms.length})</span>
-                    </h4>
+                    <div>
+                      <p className="text-sm font-medium">Rooms &amp; Cabins</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Set per-cabin price, bed type, and capacity for <span className="font-semibold">{name}</span>.
+                      </p>
+                    </div>
                     <Button type="button" variant="outline" size="sm" onClick={addRoom}>
-                      <Plus className="w-3 h-3 mr-1" /> Add Room
+                      <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Room
                     </Button>
                   </div>
 
-                  {rooms.length === 0 && (
-                    <div className="border-2 border-dashed rounded-lg p-6 text-center text-sm text-muted-foreground">
-                      No rooms added yet. Click "Add Room" to define cabins.
+                  {rooms.length === 0 ? (
+                    <div className="border-2 border-dashed rounded-xl py-12 flex flex-col items-center gap-3 text-muted-foreground">
+                      <BedDouble className="w-8 h-8 opacity-30" />
+                      <p className="text-sm">No rooms added yet.</p>
+                      <Button type="button" variant="outline" size="sm" onClick={addRoom}>
+                        <Plus className="w-3.5 h-3.5 mr-1.5" /> Add First Room
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border overflow-hidden">
+                      <div className="grid grid-cols-[1fr_130px_130px_70px_90px_70px_40px] gap-x-2 px-4 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        <span>Room Name <span className="text-destructive normal-case">*</span></span>
+                        <span>Deck</span>
+                        <span>Bed Type</span>
+                        <span>Cap.</span>
+                        <span>Price/Night</span>
+                        <span>Extra Beds</span>
+                        <span />
+                      </div>
+                      <div className="divide-y">
+                        {rooms.map((r, idx) => (
+                          <div key={r.tempId} className="grid grid-cols-[1fr_130px_130px_70px_90px_70px_40px] gap-x-2 items-center px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground font-medium shrink-0 w-5">{idx + 1}.</span>
+                              <Input
+                                className="h-8 text-sm"
+                                placeholder="e.g. Master Suite"
+                                value={r.name}
+                                onChange={e => updateRoom(r.tempId, { name: e.target.value })}
+                              />
+                            </div>
+                            <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Deck" /></SelectTrigger>
+                              <SelectContent>{DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+                            </Select>
+                            <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Bed type" /></SelectTrigger>
+                              <SelectContent>{BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                            </Select>
+                            <Input
+                              className="h-8 text-sm text-center" type="number" min="1"
+                              value={r.capacity}
+                              onChange={e => updateRoom(r.tempId, { capacity: e.target.value })}
+                            />
+                            <Input
+                              className="h-8 text-sm" type="number" min="0" step="50" placeholder="0"
+                              value={r.price}
+                              onChange={e => updateRoom(r.tempId, { price: e.target.value })}
+                            />
+                            <Input
+                              className="h-8 text-sm text-center" type="number" min="0"
+                              value={r.extraBeds}
+                              onChange={e => updateRoom(r.tempId, { extraBeds: e.target.value })}
+                            />
+                            <Button
+                              type="button" variant="ghost" size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeRoom(r.tempId)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-
-                  <div className="space-y-3">
-                    {rooms.map((r, idx) => (
-                      <div key={r.tempId} className="border rounded-lg p-3 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-muted-foreground">Room {idx + 1}</span>
-                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                            onClick={() => removeRoom(r.tempId)}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Room Name <span className="text-destructive">*</span></Label>
-                            <Input
-                              className="h-8 text-sm"
-                              placeholder="e.g. Master Suite"
-                              value={r.name}
-                              onChange={e => updateRoom(r.tempId, { name: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Deck</Label>
-                            <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder="Select deck" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Bed Type</Label>
-                            <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder="Select bed type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <Label className="text-xs">Capacity</Label>
-                              <Input
-                                className="h-8 text-sm"
-                                type="number" min="1"
-                                value={r.capacity}
-                                onChange={e => updateRoom(r.tempId, { capacity: e.target.value })}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Extra Beds</Label>
-                              <Input
-                                className="h-8 text-sm"
-                                type="number" min="0"
-                                value={r.extraBeds}
-                                onChange={e => updateRoom(r.tempId, { extraBeds: e.target.value })}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {rooms.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {rooms.filter(r => r.name.trim()).length} of {rooms.length} rooms have a name and will be saved.
+                    </p>
+                  )}
                 </div>
-              </div>
-            </ScrollArea>
+              )}
 
-            <div className="flex justify-end gap-2 pt-3 px-4 border-t shrink-0">
-              <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm() }}>Cancel</Button>
+            </div>
+          </ScrollArea>
+
+          {error && (
+            <p className="px-6 py-2 text-sm text-destructive bg-destructive/5 border-t">{error}</p>
+          )}
+
+          <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-muted/20">
+            <Button
+              variant="outline"
+              onClick={() => { if (formStep === 1) { setDialogOpen(false); resetForm() } else { setFormStep(1) } }}
+            >
+              {formStep === 1 ? 'Cancel' : '← Back'}
+            </Button>
+            {formStep === 1 ? (
               <Button
-                disabled={!name || !capacity || !hourlyRate || !dailyRate || submitting}
+                disabled={!step1Valid}
+                onClick={() => setFormStep(2)}
+                style={{ backgroundColor: ACCENT, color: 'white' }}
+                className="hover:opacity-90 min-w-32"
+              >
+                Next: Rooms →
+              </Button>
+            ) : (
+              <Button
+                disabled={submitting}
                 onClick={handleSubmit}
                 style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90"
+                className="hover:opacity-90 min-w-32"
               >
-                {submitting ? 'Saving...' : 'Save Yacht'}
+                {submitting ? 'Saving…' : editTarget ? 'Save Changes' : 'Save Yacht'}
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      {/* ── Delete Confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. The yacht and all its cabin definitions will be permanently removed.
+              Existing bookings referencing this yacht will block deletion.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {submitting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Fleet table ── */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Fleet</CardTitle>
               <CardDescription>
-                {loading ? 'Loading...' : `${filtered.length} yacht${filtered.length !== 1 ? 's' : ''}`}
+                {loading ? 'Loading…' : `${filtered.length} yacht${filtered.length !== 1 ? 's' : ''}`}
               </CardDescription>
             </div>
           </div>
@@ -319,7 +483,7 @@ export default function Yachts() {
           <div className="flex items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <Input
-              placeholder="Search by name or model..."
+              placeholder="Search by name or model…"
               value={searchTerm}
               onChange={e => setSearch(e.target.value)}
               className="max-w-sm"
@@ -338,7 +502,7 @@ export default function Yachts() {
                   <TableHead>Daily Rate</TableHead>
                   <TableHead>Bookings</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Rooms</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -353,15 +517,13 @@ export default function Yachts() {
                 ) : filtered.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                      {yachts.length === 0
-                        ? 'No yachts yet — add your first yacht.'
-                        : 'No yachts match the search.'}
+                      {yachts.length === 0 ? 'No yachts yet — add your first yacht.' : 'No yachts match the search.'}
                     </TableCell>
                   </TableRow>
                 ) : (
                   filtered.map(y => (
-                    <>
-                      <TableRow key={y.id} className="cursor-pointer hover:bg-muted/30">
+                    <Fragment key={y.id}>
+                      <TableRow className="hover:bg-muted/30">
                         <TableCell className="font-semibold">
                           <div className="flex items-center gap-2">
                             <Anchor className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -379,30 +541,41 @@ export default function Yachts() {
                             {y.status}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1 text-xs"
-                            onClick={() => setExpandedId(expandedId === y.id ? null : y.id)}
-                          >
-                            <BedDouble className="w-3.5 h-3.5" />
-                            {y.cabins.length} rooms
-                            {expandedId === y.id
-                              ? <ChevronUp className="w-3 h-3" />
-                              : <ChevronDown className="w-3 h-3" />}
-                          </Button>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost" size="sm" className="h-7 gap-1 text-xs"
+                              onClick={() => setExpandedId(expandedId === y.id ? null : y.id)}
+                            >
+                              <BedDouble className="w-3.5 h-3.5" />
+                              {y.cabins.length} rooms
+                              {expandedId === y.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </Button>
+                            {canEdit && (
+                              <>
+                                <Button
+                                  variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  onClick={() => openEdit(y)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setDeleteTarget(y)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
 
-                      {/* Expanded cabin rows */}
                       {expandedId === y.id && (
-                        <TableRow key={`${y.id}-cabins`}>
+                        <TableRow>
                           <TableCell colSpan={9} className="bg-muted/20 p-0">
                             {y.cabins.length === 0 ? (
-                              <div className="px-8 py-4 text-sm text-muted-foreground">
-                                No rooms defined yet for this yacht.
-                              </div>
+                              <div className="px-8 py-4 text-sm text-muted-foreground">No rooms defined yet for this yacht.</div>
                             ) : (
                               <div className="px-8 py-3">
                                 <div className="grid grid-cols-5 gap-3">
@@ -410,20 +583,15 @@ export default function Yachts() {
                                     <div key={c.id} className="rounded-lg border bg-card p-3 space-y-1">
                                       <div className="font-medium text-sm">{c.name}</div>
                                       {c.deck && <div className="text-xs text-muted-foreground">{c.deck}</div>}
-                                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                        {c.bedType && (
-                                          <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                            {c.bedType}
-                                          </Badge>
-                                        )}
-                                        <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                          {c.capacity} pax
-                                        </Badge>
-                                        {c.extraBeds > 0 && (
-                                          <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                            +{c.extraBeds} extra
-                                          </Badge>
-                                        )}
+                                      {c.price > 0 && (
+                                        <div className="text-xs font-semibold" style={{ color: ACCENT }}>
+                                          ${c.price.toLocaleString()}/night
+                                        </div>
+                                      )}
+                                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                        {c.bedType && <Badge variant="outline" className="text-xs px-1.5 py-0">{c.bedType}</Badge>}
+                                        <Badge variant="outline" className="text-xs px-1.5 py-0">{c.capacity} pax</Badge>
+                                        {c.extraBeds > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">+{c.extraBeds} extra</Badge>}
                                       </div>
                                     </div>
                                   ))}
@@ -433,7 +601,7 @@ export default function Yachts() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))
                 )}
               </TableBody>

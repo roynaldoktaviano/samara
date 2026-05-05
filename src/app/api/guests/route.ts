@@ -3,7 +3,9 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    const guests = await db.guest.findMany({ orderBy: { name: 'asc' } })
+    const guests = await db.bookingGuest.findMany({
+      include: { customer: { select: { id: true, name: true, phone: true, email: true } } },
+    })
     return NextResponse.json(guests)
   } catch (error) {
     console.error('Error fetching guests:', error)
@@ -14,19 +16,18 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, phone, email, idNumber, nationality } = body
+    const { bookingId, customerId, cabinId, isLead } = body
 
-    if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    if (!bookingId || !customerId) {
+      return NextResponse.json({ error: 'bookingId and customerId are required' }, { status: 400 })
     }
 
-    const guest = await db.guest.create({
+    const guest = await db.bookingGuest.create({
       data: {
-        name,
-        phone: phone || null,
-        email: email || null,
-        idNumber: idNumber || null,
-        nationality: nationality || null,
+        bookingId,
+        customerId,
+        cabinId: cabinId || null,
+        isLead: isLead ?? false,
       },
     })
 

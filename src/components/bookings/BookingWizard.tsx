@@ -28,11 +28,11 @@ type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string }
-interface CabinOpt   { id: string; name: string; capacity: number; deck?: string }
+interface CabinOpt   { id: string; name: string; capacity: number; price: number; deck?: string; bedType?: string }
 interface OpenTripOpt{
   id: string; title: string; description?: string
   yachtId: string; startDate: string; endDate: string
-  destination: string; pricePerPerson: number
+  destination: string; pricePerCabin: number
   maxCapacity: number; spotsAvailable: number; status: string
   yacht: { name: string }
 }
@@ -108,7 +108,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   const [customers, setCustomers] = useState<CustomerOpt[]>([])
   const [cabins,    setCabins]    = useState<CabinOpt[]>([])
   const [openTrips, setOpenTrips] = useState<OpenTripOpt[]>([])
+  const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
+  const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
   const [submitting,setSubmitting]= useState(false)
+
+  /* DnD state */
+  const [dragGuest,  setDragGuest]  = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [dropError,  setDropError]  = useState<string | null>(null)
 
   /* fetch on open */
   useEffect(() => {
@@ -136,11 +143,40 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
     })
   }, [yachtId, openTripId, tripType, openTrips])
 
+  /* fetch already-booked customers for selected open trip */
+  useEffect(() => {
+    if (!openTripId) { setBookedCustomerIds([]); return }
+    fetch(`/api/bookings?openTripId=${openTripId}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        const ids: string[] = []
+        const occ: Record<string, number> = {}
+        if (Array.isArray(data)) {
+          data.forEach(b => {
+            if (b.customerId) ids.push(b.customerId)
+            b.guests?.forEach((g: any) => {
+              if (g.customerId) ids.push(g.customerId)
+              const cabId = g.cabin?.id ?? g.cabinId
+              if (cabId) occ[cabId] = (occ[cabId] ?? 0) + 1
+            })
+          })
+        }
+        setBookedCustomerIds([...new Set(ids)])
+        setExistingCabinOccupancy(occ)
+      })
+      .catch(() => {})
+  }, [openTripId])
+
   /* auto base price */
   useEffect(() => {
     if (tripType === 'OPEN_TRIP') {
-      const t = openTrips.find(x => x.id === openTripId)
-      if (t) setBase((t.pricePerPerson * Math.max(1, guests.length)).toString())
+      // Sum of individual cabin prices for assigned cabins
+      const assignedCabinIds = [...new Set(guests.filter(g => g.cabinId).map(g => g.cabinId))]
+      const sum = assignedCabinIds.reduce((acc, id) => {
+        const c = cabins.find(x => x.id === id)
+        return acc + (c?.price ?? 0)
+      }, 0)
+      if (sum > 0) setBase(sum.toString())
     } else if (tripType === 'PRIVATE_CHARTER') {
       const y = yachts.find(x => x.id === yachtId)
       if (y && startDate && endDate) {
@@ -150,7 +186,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
         setBase((y.dailyRate * days).toString())
       }
     }
-  }, [tripType, openTripId, yachtId, startDate, endDate, guests.length, yachts, openTrips])
+  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips])
 
   /* reset on close */
   useEffect(() => {
@@ -160,6 +196,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
     setYachtId(''); setStart(preselectedDate ?? ''); setEnd(''); setDest(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false)
     setBase(''); setDisc('0'); setSvc([]); setDeposit('')
+    setBookedCustomerIds([]); setExistingCabinOccupancy({})
+    setDragGuest(null); setDropTarget(null); setDropError(null)
   }, [open, preselectedDate])
 
   /* computed */
@@ -172,11 +210,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
-  const filteredCusts   = customers.filter(c =>
+  const filteredCusts = customers.filter(c =>
     !guests.some(g => g.customerId === c.id) &&
+    !bookedCustomerIds.includes(c.id) &&
     (c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
      (c.phone ?? '').includes(custSearch))
   )
+
+  /* cabin occupancy map: cabinId → guest count */
+  const cabinOccupancy = guests.reduce<Record<string, number>>((acc, g) => {
+    if (g.cabinId) acc[g.cabinId] = (acc[g.cabinId] ?? 0) + 1
+    return acc
+  }, {})
 
   /* guest helpers */
   const addGuest = (c: CustomerOpt) => {
@@ -272,7 +317,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   }
 
   /* ── Step indicator ── */
-  const StepIndicator = () => (
+  const stepIndicator = () => (
     <div className="flex items-center justify-center mb-6">
       {STEPS.map((s, i) => (
         <div key={s.num} className="flex items-center">
@@ -304,7 +349,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   /* ════════════════════════════════════════════
      PHASE: SOURCE
   ════════════════════════════════════════════ */
-  const PhaseSource = () => (
+  const phaseSource = () => (
     <div className="space-y-6 py-2">
       <div className="text-center">
         <h3 className="text-xl font-semibold">New Booking</h3>
@@ -343,7 +388,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   /* ════════════════════════════════════════════
      PHASE: AGENT INFO
   ════════════════════════════════════════════ */
-  const PhaseAgentInfo = () => (
+  const phaseAgentInfo = () => (
     <div className="space-y-5 py-2">
       <button
         onClick={() => { setPhase('source'); setSource(null) }}
@@ -418,7 +463,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   /* ════════════════════════════════════════════
      PHASE: TRIP TYPE
   ════════════════════════════════════════════ */
-  const PhaseTripType = () => (
+  const phaseTripType = () => (
     <div className="space-y-5 py-2">
       <button
         onClick={() => setPhase(source === 'AGENT' ? 'agentInfo' : 'source')}
@@ -474,7 +519,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   /* ════════════════════════════════════════════
      STEP 1 — PRIVATE CHARTER
   ════════════════════════════════════════════ */
-  const Step1PC = () => (
+  const step1PC = () => (
     <div className="space-y-4">
       <div className="space-y-1.5">
         <Label>Yacht <span className="text-destructive">*</span></Label>
@@ -511,25 +556,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
         <Input placeholder="Special requests, remarks..." value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
 
-      {selectedYacht && startDate && endDate && (
-        <div className="rounded-lg border p-3 text-xs text-muted-foreground space-y-1"
-          style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}>
-          <div className="font-medium text-foreground">{selectedYacht.name}</div>
-          <div>
-            {Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000))} day(s)
-            × ${selectedYacht.dailyRate.toLocaleString()} = <span style={{ color: ACCENT }} className="font-semibold">
-              ${(selectedYacht.dailyRate * Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000))).toLocaleString()}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   )
 
   /* ════════════════════════════════════════════
      STEP 1 — OPEN TRIP
   ════════════════════════════════════════════ */
-  const Step1OT = () => (
+  const step1OT = () => (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">Select an available scheduled trip</p>
       {openTrips.length === 0 && (
@@ -570,7 +603,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
                 </div>
                 <div className="text-right shrink-0">
                   <div className="font-semibold text-sm" style={{ color: ACCENT }}>
-                    ${t.pricePerPerson.toLocaleString()}/pax
+                    ${t.pricePerCabin.toLocaleString()}/cabin
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {t.spotsAvailable}/{t.maxCapacity} spots left
@@ -590,116 +623,224 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   )
 
   /* ════════════════════════════════════════════
-     STEP 2 — GUESTS & CABINS
+     STEP 2 — GUESTS & CABINS (drag-and-drop)
   ════════════════════════════════════════════ */
-  const Step2 = () => (
-    <div className="space-y-4">
-      {/* customer search */}
-      <div className="space-y-1.5">
-        <Label>Add Guests <span className="text-destructive">*</span></Label>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Search customer by name or phone..."
-            value={custSearch}
-            onChange={e => setCSearch(e.target.value)}
-          />
-        </div>
-        {custSearch && filteredCusts.length > 0 && (
-          <div className="border rounded-lg bg-popover shadow-md overflow-hidden">
-            <ScrollArea className="max-h-36">
-              {filteredCusts.slice(0, 8).map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => addGuest(c)}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex justify-between"
-                >
-                  <span>{c.name}</span>
-                  {c.phone && <span className="text-muted-foreground">{c.phone}</span>}
-                </button>
-              ))}
-            </ScrollArea>
-          </div>
+  const step2 = () => {
+    const unassigned = guests.filter(g => !g.cabinId)
+
+    const dndStart = (e: React.DragEvent, customerId: string) => {
+      e.dataTransfer.setData('guestId', customerId)
+      setDragGuest(customerId); setDropError(null)
+    }
+    const dndEnd = () => { setDragGuest(null); setDropTarget(null) }
+
+    const dndDrop = (e: React.DragEvent, targetId: string | 'unassigned') => {
+      e.preventDefault()
+      const gId = e.dataTransfer.getData('guestId') || dragGuest
+      if (!gId) return
+      setDragGuest(null); setDropTarget(null)
+      if (targetId === 'unassigned') { updateGuest(gId, { cabinId: '' }); return }
+      const cabin   = cabins.find(c => c.id === targetId)
+      const newOcc  = (cabinOccupancy[targetId] ?? 0) + (existingCabinOccupancy[targetId] ?? 0)
+      const already = guests.find(g => g.customerId === gId)?.cabinId === targetId
+      if (!already && newOcc >= (cabin?.capacity ?? 0)) {
+        setDropError(`${cabin?.name} is full (capacity ${cabin?.capacity}, ${existingCabinOccupancy[targetId] ?? 0} already booked externally)`)
+        return
+      }
+      updateGuest(gId, { cabinId: targetId })
+    }
+
+    // called as a function, not a component — avoids React unmount on parent re-render
+    const pill = (g: SelectedGuest, inCabin?: boolean) => (
+      <div
+        key={g.customerId}
+        draggable
+        onDragStart={e => dndStart(e, g.customerId)}
+        onDragEnd={dndEnd}
+        className={cn(
+          'flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium cursor-grab active:cursor-grabbing select-none',
+          dragGuest === g.customerId ? 'opacity-40' : 'opacity-100',
+          g.isLead ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-foreground' : 'bg-muted/60 border-border',
         )}
+      >
+        {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
+        <span className="truncate max-w-24">{g.name}</span>
+        {!inCabin && !g.isLead && (
+          <button onClick={e => { e.stopPropagation(); setLead(g.customerId) }}
+            className="text-[9px] text-muted-foreground hover:text-foreground ml-0.5 shrink-0">★</button>
+        )}
+        <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
+          className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
+          <X className="w-2.5 h-2.5" />
+        </button>
       </div>
+    )
 
-      {/* guest list */}
-      {guests.length === 0 && (
-        <div className="text-center py-6 text-sm text-muted-foreground border-2 border-dashed rounded-lg">
-          Search and select customers above to add them as guests
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {guests.map((g) => (
-          <div
-            key={g.customerId}
-            className="border rounded-lg p-3 space-y-2"
-            style={g.isLead ? { borderColor: `${ACCENT}60`, backgroundColor: `${ACCENT}06` } : {}}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{g.name}</span>
-                {g.isLead ? (
-                  <Badge style={{ backgroundColor: ACCENT, color: 'white' }} className="text-xs px-2 py-0">Lead</Badge>
-                ) : (
-                  <button
-                    onClick={() => setLead(g.customerId)}
-                    className="text-xs text-muted-foreground hover:underline"
-                  >
-                    Set as lead
-                  </button>
-                )}
-              </div>
-              <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
-                onClick={() => removeGuest(g.customerId)}>
-                <X className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Label className="text-xs whitespace-nowrap text-muted-foreground w-14 shrink-0">Cabin</Label>
-              <Select value={g.cabinId} onValueChange={v => updateGuest(g.customerId, { cabinId: v })}>
-                <SelectTrigger className="h-7 text-xs">
-                  <SelectValue placeholder="Assign cabin (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No cabin assigned</SelectItem>
-                  {cabins.map(c => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}{c.deck ? ` — ${c.deck}` : ''} (cap. {c.capacity})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+    return (
+      <div className="space-y-4">
+        {/* Search */}
+        <div className="space-y-1.5">
+          <Label>Add Guests <span className="text-destructive">*</span></Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              placeholder="Search customer by name or phone…"
+              value={custSearch}
+              onChange={e => setCSearch(e.target.value)}
+            />
           </div>
-        ))}
-      </div>
-
-      {guests.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          {guests.length} guest{guests.length !== 1 ? 's' : ''} added
+          {custSearch && (
+            <div className="border rounded-lg bg-popover shadow-md overflow-hidden z-10 relative">
+              {filteredCusts.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  {customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
+                    ? '⚠ Already booked on this trip'
+                    : 'No customers found'}
+                </div>
+              ) : (
+                <ScrollArea className="max-h-36">
+                  {filteredCusts.slice(0, 8).map(c => (
+                    <button key={c.id} onClick={() => addGuest(c)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex justify-between">
+                      <span>{c.name}</span>
+                      {c.phone && <span className="text-muted-foreground text-xs">{c.phone}</span>}
+                    </button>
+                  ))}
+                </ScrollArea>
+              )}
+            </div>
+          )}
         </div>
-      )}
 
-      <Separator />
+        {dropError && (
+          <p className="text-xs text-destructive bg-destructive/8 rounded-lg px-3 py-2 border border-destructive/20">{dropError}</p>
+        )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <Label>Crew Required</Label>
-          <p className="text-xs text-muted-foreground">Assign crew to this booking</p>
+        <div className="flex gap-3" style={{ minHeight: 200 }}>
+          {/* Unassigned pool */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDropTarget('unassigned') }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={e => dndDrop(e, 'unassigned')}
+            className={cn(
+              'w-44 shrink-0 rounded-xl border-2 border-dashed p-3 flex flex-col gap-1.5 transition-colors',
+              dropTarget === 'unassigned' ? 'border-[#bdac7e] bg-[#bdac7e]/5' : 'border-muted-foreground/25',
+            )}
+          >
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+              Guests ({guests.length})
+            </p>
+            <p className="text-[10px] text-muted-foreground">Drag to a cabin →</p>
+            <div className="flex flex-col gap-1 mt-1">
+              {unassigned.map(g => pill(g))}
+            </div>
+            {guests.length > 0 && unassigned.length === 0 && (
+              <p className="text-[10px] text-muted-foreground italic mt-1">All assigned ✓</p>
+            )}
+          </div>
+
+          {/* Cabin grid */}
+          <div className="flex-1 min-w-0">
+            {cabins.length === 0 ? (
+              <div className="h-full border-2 border-dashed rounded-xl flex items-center justify-center text-sm text-muted-foreground">
+                No cabins for this yacht
+              </div>
+            ) : (
+              <div className={cn('grid gap-2', cabins.length <= 3 ? 'grid-cols-3' : cabins.length <= 6 ? 'grid-cols-3' : 'grid-cols-4')}>
+                {cabins.map(c => {
+                  const myOcc      = cabinOccupancy[c.id] ?? 0
+                  const extOcc     = existingCabinOccupancy[c.id] ?? 0
+                  const totalOcc   = myOcc + extOcc
+                  const isFull     = totalOcc >= c.capacity
+                  const isOver     = dropTarget === c.id
+                  const cabinGuests = guests.filter(g => g.cabinId === c.id)
+                  const available  = c.capacity - totalOcc
+
+                  return (
+                    <div
+                      key={c.id}
+                      onDragOver={e => {
+                        if (!isFull || guests.find(g => g.customerId === dragGuest)?.cabinId === c.id) {
+                          e.preventDefault(); setDropTarget(c.id)
+                        }
+                      }}
+                      onDragLeave={e => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(null)
+                      }}
+                      onDrop={e => dndDrop(e, c.id)}
+                      className={cn(
+                        'rounded-xl border-2 p-3 transition-all min-h-28',
+                        isFull
+                          ? 'border-red-300 bg-red-50/40 dark:bg-red-950/20'
+                          : isOver
+                          ? 'border-[#bdac7e] bg-[#bdac7e]/8 shadow-md scale-[1.01]'
+                          : 'border-border hover:border-muted-foreground/40',
+                      )}
+                    >
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold truncate">{c.name}</p>
+                          {c.deck && <p className="text-[10px] text-muted-foreground">{c.deck}</p>}
+                          {c.bedType && <p className="text-[10px] text-muted-foreground">{c.bedType}</p>}
+                        </div>
+                        <span className={cn(
+                          'text-[10px] font-bold rounded-full px-1.5 py-0.5 shrink-0 ml-1',
+                          isFull ? 'text-red-600 bg-red-100' : 'text-muted-foreground bg-muted',
+                        )}>
+                          {isFull ? 'Full' : `${available} left`}
+                        </span>
+                      </div>
+                      {c.price > 0 && (
+                        <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>
+                          ${c.price.toLocaleString()}/night
+                        </p>
+                      )}
+                      {/* occupancy bar */}
+                      <div className="w-full h-1 rounded-full bg-muted my-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, (totalOcc / c.capacity) * 100)}%`,
+                            backgroundColor: isFull ? '#e8547a' : ACCENT,
+                          }}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {extOcc > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">
+                            {extOcc} booked
+                          </span>
+                        )}
+                        {cabinGuests.map(g => pill(g, true))}
+                        {!isFull && cabinGuests.length === 0 && extOcc === 0 && (
+                          <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
-        <Switch checked={crewReq} onCheckedChange={setCrewReq} />
+
+        <Separator />
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Crew Required</Label>
+            <p className="text-xs text-muted-foreground">Assign crew to this booking</p>
+          </div>
+          <Switch checked={crewReq} onCheckedChange={setCrewReq} />
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   /* ════════════════════════════════════════════
      STEP 3 — PRICING
   ════════════════════════════════════════════ */
-  const Step3 = () => {
+  const step3 = () => {
     const b   = parseFloat(basePrice) || 0
     const d   = parseFloat(discPct) || 0
     const s   = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
@@ -713,8 +854,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
             <Label>Base Price (USD)</Label>
             <Input type="number" min="0" step="100" value={basePrice} onChange={e => setBase(e.target.value)} />
             <p className="text-xs text-muted-foreground">
-              {tripType === 'OPEN_TRIP' && selectedOT
-                ? `$${selectedOT.pricePerPerson.toLocaleString()}/pax × ${guests.length} guest(s)`
+              {tripType === 'OPEN_TRIP'
+                ? `Cabin prices summed from assigned cabins`
                 : selectedYacht
                 ? `$${selectedYacht.dailyRate.toLocaleString()}/day × days`
                 : ''}
@@ -814,7 +955,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl flex flex-col max-h-[92vh] overflow-hidden gap-0">
+      <DialogContent className="w-240 max-w-[100vw] flex flex-col max-h-[92vh] overflow-hidden gap-0">
         <DialogHeader className="shrink-0 pb-3 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
@@ -829,16 +970,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-4">
-            {phase === 'source'    && <PhaseSource />}
-            {phase === 'agentInfo' && <PhaseAgentInfo />}
-            {phase === 'tripType'  && <PhaseTripType />}
+            {phase === 'source'    && phaseSource()}
+            {phase === 'agentInfo' && phaseAgentInfo()}
+            {phase === 'tripType'  && phaseTripType()}
             {phase === 'steps' && (
               <div>
-                <StepIndicator />
-                {step === 1 && tripType === 'PRIVATE_CHARTER' && <Step1PC />}
-                {step === 1 && tripType === 'OPEN_TRIP'       && <Step1OT />}
-                {step === 2 && <Step2 />}
-                {step === 3 && <Step3 />}
+                {stepIndicator()}
+                {step === 1 && tripType === 'PRIVATE_CHARTER' && step1PC()}
+                {step === 1 && tripType === 'OPEN_TRIP'       && step1OT()}
+                {step === 2 && step2()}
+                {step === 3 && step3()}
               </div>
             )}
           </div>

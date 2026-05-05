@@ -54,7 +54,7 @@ export default function Customers() {
               Add Customer
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="w-240 max-w-[100vw]">
             <DialogHeader>
               <DialogTitle>Add New Customer</DialogTitle>
               <DialogDescription>Enter the customer's information.</DialogDescription>

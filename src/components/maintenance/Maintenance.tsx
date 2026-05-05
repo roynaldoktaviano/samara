@@ -86,7 +86,7 @@ export default function Maintenance() {
               Schedule Maintenance
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="w-240 max-w-[100vw]">
             <DialogHeader>
               <DialogTitle>Schedule Maintenance</DialogTitle>
               <DialogDescription>Add a new maintenance task to the schedule.</DialogDescription>

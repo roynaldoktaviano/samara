@@ -4,8 +4,6 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Plus, Clock, DollarSign } from 'lucide-react'
 import { BookingWizard } from '@/components/bookings/BookingWizard'
 
@@ -15,6 +13,7 @@ interface BookingEvent {
   startDate: string
   endDate: string
   status: 'confirmed' | 'pending' | 'completed' | 'cancelled'
+  tripType?: 'PRIVATE_CHARTER' | 'OPEN_TRIP'
   customerName?: string
   bookingCode?: string
   totalPrice?: number
@@ -22,8 +21,20 @@ interface BookingEvent {
   notes?: string
 }
 
-type DbYacht    = { id: string; name: string; dailyRate: number }
-type DbCustomer = { id: string; name: string }
+interface OpenTripEvent {
+  id: string
+  title: string
+  startDate: string
+  endDate: string
+  destination: string
+  pricePerCabin: number
+  maxCapacity: number
+  spotsAvailable: number
+  status: string
+  yacht: { name: string }
+}
+
+type DbYacht = { id: string; name: string; dailyRate: number }
 
 const STATUS_CONFIG = {
   confirmed:  { label: 'Guaranteed',     color: '#e8547a' },
@@ -38,9 +49,10 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, onDateClick, onBookingClick,
+  year, month, bookings, openTrips, onDateClick, onBookingClick,
 }: {
-  year: number; month: number; bookings: BookingEvent[]
+  year: number; month: number
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
   onDateClick: (d: string) => void; onBookingClick: (b: BookingEvent) => void
 }) {
   const today    = new Date()
@@ -57,13 +69,35 @@ function MonthGrid({
     bookings.forEach(b => {
       const s = new Date(b.startDate)
       if (s.getFullYear() === year && s.getMonth() === month) {
-        const d = s.getDate()
-        if (!map[d]) map[d] = []
-        map[d].push(b)
+        const d = s.getDate(); if (!map[d]) map[d] = []; map[d].push(b)
       }
     })
     return map
   }, [bookings, year, month])
+
+  const otByDay = useMemo(() => {
+    const map: Record<number, Array<{ trip: OpenTripEvent; isStart: boolean; isEnd: boolean }>> = {}
+    openTrips.forEach(t => {
+      const start = new Date(t.startDate + 'T00:00:00')
+      const end   = new Date(t.endDate   + 'T00:00:00')
+      const cur   = new Date(start)
+      while (cur <= end) {
+        if (cur.getFullYear() === year && cur.getMonth() === month) {
+          const d = cur.getDate()
+          if (!map[d]) map[d] = []
+          if (!map[d].some(x => x.trip.id === t.id)) {
+            map[d].push({
+              trip: t,
+              isStart: cur.getTime() === start.getTime(),
+              isEnd:   cur.getTime() === end.getTime(),
+            })
+          }
+        }
+        cur.setDate(cur.getDate() + 1)
+      }
+    })
+    return map
+  }, [openTrips, year, month])
 
   const isToday = (d: number) =>
     today.getFullYear() === year && today.getMonth() === month && today.getDate() === d
@@ -73,31 +107,25 @@ function MonthGrid({
       <p className="text-center text-sm font-semibold text-foreground mb-3">
         {MONTH_FULL[month]} {year}
       </p>
-
-      {/* Day headers */}
       <div className="grid grid-cols-7">
         {DAY_NAMES.map(d => (
-          <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1.5">
-            {d}
-          </div>
+          <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1.5">{d}</div>
         ))}
       </div>
-
-      {/* Cells */}
       <div className="grid grid-cols-7 border-t border-l border-border">
         {cells.map((day, idx) => {
           const dayBookings = day > 0 ? (byDay[day] ?? []) : []
+          const dayOT: Array<{ trip: OpenTripEvent; isStart: boolean; isEnd: boolean }> = day > 0 ? (otByDay[day] ?? []) : []
           const todayCell   = day > 0 && isToday(day)
           const dateStr     = day > 0
-            ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-            : ''
+            ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
 
           return (
             <div
               key={idx}
               onClick={() => day > 0 && onDateClick(dateStr)}
               className={[
-                'border-r border-b border-border min-h-24 p-2 relative transition-colors',
+                'border-r border-b border-border min-h-24 p-1.5 relative transition-colors',
                 day > 0 ? 'cursor-pointer hover:bg-muted/40' : 'bg-muted/20',
                 todayCell ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
               ].join(' ')}
@@ -108,26 +136,53 @@ function MonthGrid({
                     <span className={`text-xs font-semibold leading-none ${todayCell ? 'text-[#bdac7e]' : 'text-foreground'}`}>
                       {day}
                     </span>
-                    {dayBookings[0] && (
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: STATUS_CONFIG[dayBookings[0].status]?.color ?? '#e8547a' }}
-                      />
-                    )}
                   </div>
 
+                  {/* Private Charter booking markers */}
                   {dayBookings.map(b => (
                     <button
                       key={b.id}
                       onClick={e => { e.stopPropagation(); onBookingClick(b) }}
-                      className="text-left w-full mt-0.5 group"
+                      className="text-left w-full mt-0.5 group rounded px-1 py-0.5 hover:bg-muted/60 transition-colors"
                     >
-                      <div className="text-[9px] text-muted-foreground leading-none">From</div>
-                      <div className="text-[11px] font-semibold text-foreground leading-tight group-hover:text-[#bdac7e] transition-colors">
-                        USD {b.totalPrice ? b.totalPrice.toLocaleString() : '–'}
+                      <div className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
+                        <div className="text-[10px] font-semibold text-foreground leading-tight truncate group-hover:text-[#bdac7e] transition-colors">
+                          {b.totalPrice ? `$${b.totalPrice.toLocaleString()}` : b.yachtName}
+                        </div>
                       </div>
                     </button>
                   ))}
+
+                  {/* Open Trip markers */}
+                  {dayOT.map(({ trip: t, isStart, isEnd }) => {
+                    const isFull = t.spotsAvailable === 0
+                    const color  = isFull ? '#e8547a' : '#4a9f6e'
+                    return (
+                      <div
+                        key={t.id}
+                        title={`${t.title} · ${t.destination} — ${isFull ? 'Full' : `${t.spotsAvailable}/${t.maxCapacity} cabins left`}`}
+                        className="mt-0.5 flex items-center h-4 overflow-hidden"
+                        style={{
+                          backgroundColor: color,
+                          color: 'white',
+                          marginLeft:  isStart ? 2 : -2,
+                          marginRight: isEnd   ? 2 : -2,
+                          borderRadius: isStart && isEnd ? 4
+                            : isStart ? '4px 0 0 4px'
+                            : isEnd   ? '0 4px 4px 0'
+                            : 0,
+                        }}
+                      >
+                        {isStart && (
+                          <span className="text-[9px] font-semibold px-1.5 truncate leading-none">
+                            {t.yacht.name} · {isFull ? '🔴' : `${t.spotsAvailable}/${t.maxCapacity}`}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                 </>
               )}
             </div>
@@ -144,29 +199,32 @@ export default function CalendarView() {
   const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')
   const [bookings, setBookings]         = useState<BookingEvent[]>([])
   const [yachts, setYachts]             = useState<DbYacht[]>([])
-  const [customers, setCustomers]       = useState<DbCustomer[]>([])
   const [loading, setLoading]           = useState(true)
+  const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
+  const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
   const [selectedBooking, setSelectedBooking] = useState<BookingEvent | null>(null)
   const [isDetailOpen, setIsDetailOpen]       = useState(false)
-  const [isBookingOpen, setIsBookingOpen]     = useState(false)
   const [wizardOpen, setWizardOpen]           = useState(false)
   const [selectedDate, setSelectedDate]       = useState('')
-  const [bookingForm, setBookingForm] = useState({
-    yachtId: '', customerId: '', checkInDate: '', checkOutDate: '',
-    status: 'pending', price: '', depositAmount: '', notes: '',
-  })
 
   const fetchBookings = useCallback(async () => {
     try {
       const data = await fetch('/api/bookings').then(r => r.json())
       setBookings(data.map((b: any) => ({
-        id: b.id, yachtName: b.yacht.name,
+        id: b.id, yachtName: b.yacht?.name ?? '',
         startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
-        status: b.status, customerName: b.customer.name,
-        bookingCode: b.bookingCode, totalPrice: b.totalPrice,
-        depositAmount: b.depositPaid, notes: b.notes ?? undefined,
+        status: b.status, tripType: b.tripType,
+        customerName: b.customer?.name, bookingCode: b.bookingCode,
+        totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
       })))
     } catch (e) { console.error('Failed to fetch bookings', e) }
+  }, [])
+
+  const fetchOpenTrips = useCallback(async () => {
+    try {
+      const data = await fetch('/api/open-trips').then(r => r.json())
+      setOpenTrips(Array.isArray(data) ? data : [])
+    } catch (e) { console.error('Failed to fetch open trips', e) }
   }, [])
 
   useEffect(() => {
@@ -174,15 +232,14 @@ export default function CalendarView() {
       setLoading(true)
       await Promise.all([
         fetchBookings(),
+        fetchOpenTrips(),
         fetch('/api/yachts').then(r => r.json()).then((d: any[]) =>
           setYachts(d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })))),
-        fetch('/api/customers').then(r => r.json()).then((d: any[]) =>
-          setCustomers(d.map(c => ({ id: c.id, name: c.name })))),
       ])
       setLoading(false)
     }
     load()
-  }, [fetchBookings])
+  }, [fetchBookings, fetchOpenTrips])
 
   const navigate = (dir: 'prev' | 'next') =>
     setCurrentDate(prev => {
@@ -205,44 +262,7 @@ export default function CalendarView() {
 
   const handleDateClick = (dateStr: string) => {
     setSelectedDate(dateStr)
-    setBookingForm(f => ({ ...f, checkInDate: dateStr, checkOutDate: '' }))
-    setIsBookingOpen(true)
-  }
-
-  const getEstimatedPrice = () => {
-    if (bookingForm.price) return parseFloat(bookingForm.price) || 0
-    if (!bookingForm.yachtId || !bookingForm.checkInDate || !bookingForm.checkOutDate) return 0
-    const yacht = yachts.find(y => y.id === bookingForm.yachtId)
-    if (!yacht) return 0
-    const days = Math.ceil(
-      (new Date(bookingForm.checkOutDate).getTime() - new Date(bookingForm.checkInDate).getTime()) / 86400000
-    )
-    return Math.max(1, days) * yacht.dailyRate
-  }
-
-  const handleCreateBooking = async () => {
-    const yacht    = yachts.find(y => y.id === bookingForm.yachtId)
-    const customer = customers.find(c => c.id === bookingForm.customerId)
-    if (!yacht || !customer || !bookingForm.checkInDate || !bookingForm.checkOutDate) {
-      alert('Please fill in all required fields'); return
-    }
-    const price = getEstimatedPrice()
-    try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          yachtId: yacht.id, customerId: customer.id,
-          startDate: bookingForm.checkInDate, endDate: bookingForm.checkOutDate,
-          totalPrice: price,
-          depositPaid: bookingForm.depositAmount ? parseFloat(bookingForm.depositAmount) : 0,
-          notes: bookingForm.notes || null, status: bookingForm.status,
-        }),
-      })
-      if (!res.ok) { const e = await res.json(); alert(e.error ?? 'Failed'); return }
-      await fetchBookings()
-      setIsBookingOpen(false)
-      setBookingForm({ yachtId:'', customerId:'', checkInDate:'', checkOutDate:'', status:'pending', price:'', depositAmount:'', notes:'' })
-    } catch { alert('Network error. Please try again.') }
+    setWizardOpen(true)
   }
 
   const getDays = (s: string, e: string) =>
@@ -359,14 +379,40 @@ export default function CalendarView() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-6 px-5 py-2.5 border-b">
-          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
-              <span className="text-[11px] text-muted-foreground font-medium">{cfg.label}</span>
+        {/* Legend + Trip Filter */}
+        <div className="flex items-center justify-between gap-4 px-5 py-2.5 border-b flex-wrap">
+          <div className="flex items-center gap-4 flex-wrap">
+            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
+                <span className="text-[11px] text-muted-foreground font-medium">{cfg.label}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0 bg-[#4a9f6e]" />
+              <span className="text-[11px] text-muted-foreground font-medium">Open Trip (available)</span>
             </div>
-          ))}
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0 bg-[#e8547a]" />
+              <span className="text-[11px] text-muted-foreground font-medium">Open Trip (full)</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setTripFilter(f)}
+                className={[
+                  'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                  tripFilter === f
+                    ? 'bg-[#bdac7e] text-white'
+                    : 'text-muted-foreground hover:bg-muted',
+                ].join(' ')}
+              >
+                {f === 'all' ? 'All' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Body */}
@@ -383,7 +429,9 @@ export default function CalendarView() {
 
               {/* Left month */}
               <MonthGrid
-                year={leftYear} month={leftMonth} bookings={bookings}
+                year={leftYear} month={leftMonth}
+                bookings={tripFilter === 'OPEN_TRIP' ? bookings.filter(b => b.tripType === 'OPEN_TRIP') : tripFilter === 'PRIVATE_CHARTER' ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER') : bookings}
+                openTrips={tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips}
                 onDateClick={handleDateClick} onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
               />
 
@@ -392,7 +440,9 @@ export default function CalendarView() {
 
               {/* Right month */}
               <MonthGrid
-                year={rightYear} month={rightMonth} bookings={bookings}
+                year={rightYear} month={rightMonth}
+                bookings={tripFilter === 'OPEN_TRIP' ? bookings.filter(b => b.tripType === 'OPEN_TRIP') : tripFilter === 'PRIVATE_CHARTER' ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER') : bookings}
+                openTrips={tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips}
                 onDateClick={handleDateClick} onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
               />
 
@@ -445,7 +495,7 @@ export default function CalendarView() {
 
       {/* ── Booking Detail Dialog ── */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="w-240 max-w-[100vw]">
           {selectedBooking && (
             <>
               <DialogHeader>

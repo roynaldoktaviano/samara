@@ -87,6 +87,7 @@ model Cabin {
   yachtId   String
   name      String
   capacity  Int            @default(2)
+  price     Float          @default(0)
   deck      String?
   bedType   String?
   extraBeds Int            @default(0)

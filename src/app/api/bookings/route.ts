@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
     const source = searchParams.get('source')
     const tripType = searchParams.get('tripType')
+    const openTripId = searchParams.get('openTripId')
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
     if (customerId) where.customerId = customerId
     if (source) where.source = source
     if (tripType) where.tripType = tripType
+    if (openTripId) where.openTripId = openTripId
 
     const bookings = await db.booking.findMany({
       where,

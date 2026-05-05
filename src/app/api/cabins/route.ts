@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
             yachtId,
             name: `Cabin ${i + 1}`,
             capacity: 2,
+            price: 0,
           },
         })
       )
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { yachtId, name, capacity, deck, type } = body
+    const { yachtId, name, capacity, price, deck, bedType, extraBeds } = body
 
     if (!yachtId || !name) {
       return NextResponse.json({ error: 'yachtId and name are required' }, { status: 400 })
@@ -65,8 +66,10 @@ export async function POST(request: NextRequest) {
         yachtId,
         name,
         capacity: capacity ? parseInt(capacity) : 2,
+        price: price ? parseFloat(price) : 0,
         deck: deck || null,
-        type: type || null,
+        bedType: bedType || null,
+        extraBeds: extraBeds ? parseInt(extraBeds) : 0,
       },
     })
 

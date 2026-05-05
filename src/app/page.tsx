@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -12,8 +12,9 @@ import Customers from '@/components/customers/Customers'
 import CalendarView from '@/components/calendar/CalendarViewFixed'
 import Expenses from '@/components/expenses/Expenses'
 import Maintenance from '@/components/maintenance/Maintenance'
+import OpenTrips from '@/components/open-trips/OpenTrips'
 
-type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance'
+type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips'
 
 type NavItem = {
   id: View
@@ -26,6 +27,7 @@ const navigationItems: NavItem[] = [
   { id: 'calendar',     label: 'Dashboard',    icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
   { id: 'yachts',       label: 'Yachts',       icon: Anchor,           roles: ['SUPER_ADMIN', 'ADMIN'] },
   { id: 'bookings',     label: 'Bookings',     icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+  { id: 'open-trips',   label: 'Open Trips',   icon: Ship,             roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { id: 'customers',    label: 'Customers',    icon: Users,            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { id: 'dashboard',    label: 'Statistics',   icon: LayoutDashboard,  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { id: 'expenses',     label: 'Expenses',     icon: DollarSign,       roles: ['SUPER_ADMIN', 'ADMIN'] },
@@ -79,6 +81,7 @@ export default function Home() {
       case 'bookings':     return <Bookings />
       case 'customers':    return <Customers />
       case 'calendar':     return <CalendarView />
+      case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
       default:             return <CalendarView />
