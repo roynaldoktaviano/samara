@@ -8,46 +8,32 @@ export async function GET(request: NextRequest) {
 
     const customers = await db.customer.findMany({
       include: {
-        _count: {
-          select: { bookings: true }
-        }
+        _count: { select: { bookings: true, guestOf: true } },
+        bookings: { select: { totalPrice: true } },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     })
 
-    // Calculate total spent for each customer
-    const customersWithTotals = await Promise.all(
-      customers.map(async (customer) => {
-        const bookings = await db.booking.findMany({
-          where: { customerId: customer.id },
-          select: { totalPrice: true }
-        })
-        const totalSpent = bookings.reduce((sum, b) => sum + b.totalPrice, 0)
-        return {
-          ...customer,
-          totalSpent,
-          totalBookings: customer._count.bookings
-        }
-      })
-    )
+    let result = customers.map(c => ({
+      ...c,
+      totalBookings: c._count.bookings + c._count.guestOf,
+      totalSpent: c.bookings.reduce((s, b) => s + b.totalPrice, 0),
+    }))
 
-    let filtered = customersWithTotals
     if (search) {
-      const searchLower = search.toLowerCase()
-      filtered = filtered.filter(c =>
-        c.name.toLowerCase().includes(searchLower) ||
-        c.email?.toLowerCase().includes(searchLower) ||
-        c.companyName?.toLowerCase().includes(searchLower)
+      const q = search.toLowerCase()
+      result = result.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.phone?.toLowerCase().includes(q) ||
+        c.passport?.toLowerCase().includes(q)
       )
     }
 
-    return NextResponse.json(filtered)
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching customers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch customers' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 })
   }
 }
 
@@ -55,36 +41,28 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      name,
-      email,
-      phone,
-      address,
-      companyName
+      firstName, lastName, gender, email, phone,
+      passport, dateOfBirth, address,
+      dietaryRequirements, allergies, equipmentSizes, operationalNotes,
     } = body
 
+    const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
     const customer = await db.customer.create({
       data: {
-        name,
-        email,
-        phone,
-        address,
-        companyName
-      }
+        name, firstName, lastName, gender, email, phone,
+        passport, address, operationalNotes, equipmentSizes,
+        dietaryRequirements, allergies,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      },
     })
 
     return NextResponse.json(customer, { status: 201 })
   } catch (error) {
     console.error('Error creating customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to create customer' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 })
   }
 }

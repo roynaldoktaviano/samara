@@ -28,7 +28,7 @@ const navigationItems: NavItem[] = [
   { id: 'yachts',       label: 'Yachts',       icon: Anchor,           roles: ['SUPER_ADMIN', 'ADMIN'] },
   { id: 'bookings',     label: 'Bookings',     icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
   { id: 'open-trips',   label: 'Open Trips',   icon: Ship,             roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { id: 'customers',    label: 'Customers',    icon: Users,            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { id: 'customers',    label: 'Guests',       icon: Users,            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { id: 'dashboard',    label: 'Statistics',   icon: LayoutDashboard,  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { id: 'expenses',     label: 'Expenses',     icon: DollarSign,       roles: ['SUPER_ADMIN', 'ADMIN'] },
   { id: 'maintenance',  label: 'Maintenance',  icon: Wrench,           roles: ['SUPER_ADMIN', 'ADMIN'] },

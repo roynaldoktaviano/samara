@@ -17,7 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   User, Users, Ship, Map, Plus, Trash2,
-  ChevronLeft, ChevronRight, Check, Search, X,
+  ChevronLeft, ChevronRight, Check, Search, X, Loader2,
 } from 'lucide-react'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -117,6 +117,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [dropError,  setDropError]  = useState<string | null>(null)
 
+  /* quick guest creation */
+  const [showQuickAdd,   setShowQuickAdd]   = useState(false)
+  const [quickFirstName, setQuickFirstName] = useState('')
+  const [quickLastName,  setQuickLastName]  = useState('')
+  const [quickPhone,     setQuickPhone]     = useState('')
+  const [quickEmail,     setQuickEmail]     = useState('')
+  const [quickSaving,    setQuickSaving]    = useState(false)
+
   /* fetch on open */
   useEffect(() => {
     if (!open) return
@@ -198,6 +206,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
     setBase(''); setDisc('0'); setSvc([]); setDeposit('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
+    setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
   }, [open, preselectedDate])
 
   /* computed */
@@ -242,6 +251,27 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
   const setLead = (id: string) =>
     setGuests(prev => prev.map(g => ({ ...g, isLead: g.customerId === id })))
+
+  const createAndAddGuest = async () => {
+    const firstName = quickFirstName.trim()
+    const lastName  = quickLastName.trim()
+    if (!firstName) return
+    setQuickSaving(true)
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName, lastName, phone: quickPhone.trim(), email: quickEmail.trim() }),
+      })
+      if (res.ok) {
+        const created: CustomerOpt = await res.json()
+        setCustomers(prev => [created, ...prev])
+        addGuest(created)
+        setShowQuickAdd(false)
+        setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
+      }
+    } finally { setQuickSaving(false) }
+  }
 
   /* service helpers */
   const addSvc    = () => setSvc(s => [...s, { tempId: Date.now().toString(), name: '', price: '' }])
@@ -572,28 +602,38 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
       )}
       <div className="space-y-3">
         {openTrips.map(t => {
-          const selected = openTripId === t.id
+          const selected   = openTripId === t.id
+          const isSoldOut  = t.spotsAvailable === 0
           return (
             <button
               key={t.id}
-              onClick={() => setOTId(t.id)}
+              onClick={() => !isSoldOut && setOTId(t.id)}
+              disabled={isSoldOut}
               className={cn(
                 'w-full text-left p-4 rounded-xl border-2 transition-all',
-                selected ? 'bg-card' : 'border-border bg-card hover:shadow-sm'
+                isSoldOut
+                  ? 'border-border bg-muted/30 opacity-60 cursor-not-allowed'
+                  : selected ? 'bg-card' : 'border-border bg-card hover:shadow-sm'
               )}
-              style={selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}08` } : {}}
+              style={!isSoldOut && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}08` } : {}}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm">{t.title}</span>
-                    <Badge
-                      variant="outline"
-                      className="text-xs"
-                      style={t.status === 'open' ? { borderColor: '#4a9f6e', color: '#4a9f6e' } : {}}
-                    >
-                      {t.status}
-                    </Badge>
+                    {isSoldOut ? (
+                      <Badge className="text-xs bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">
+                        SOLD OUT
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-xs"
+                        style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}
+                      >
+                        {t.status}
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                     <div>🚢 {t.yacht.name}</div>
@@ -602,16 +642,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="font-semibold text-sm" style={{ color: ACCENT }}>
-                    ${t.pricePerCabin.toLocaleString()}/cabin
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {t.spotsAvailable}/{t.maxCapacity} spots left
-                  </div>
-                  {selected && (
-                    <div className="mt-1">
-                      <Check className="w-4 h-4 ml-auto" style={{ color: ACCENT }} />
+                  {isSoldOut ? (
+                    <div className="text-xs font-semibold text-red-600">
+                      No spots left
                     </div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {t.spotsAvailable}/{t.maxCapacity} spots left
+                      </div>
+                      {selected && (
+                        <div className="mt-1">
+                          <Check className="w-4 h-4 ml-auto" style={{ color: ACCENT }} />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -693,10 +738,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
           {custSearch && (
             <div className="border rounded-lg bg-popover shadow-md overflow-hidden z-10 relative">
               {filteredCusts.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  {customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
-                    ? '⚠ Already booked on this trip'
-                    : 'No customers found'}
+                <div>
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
+                      ? '⚠ Already booked on this trip'
+                      : 'No guest found'}
+                  </div>
+                  <button
+                    onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch('') }}
+                    className="w-full text-left px-3 py-2 text-sm text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t">
+                    <Plus className="h-3.5 w-3.5" /> Add &ldquo;{custSearch}&rdquo; as new guest
+                  </button>
                 </div>
               ) : (
                 <ScrollArea className="max-h-36">
@@ -707,8 +759,48 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
                       {c.phone && <span className="text-muted-foreground text-xs">{c.phone}</span>}
                     </button>
                   ))}
+                  <button
+                    onClick={() => { setShowQuickAdd(true); setCSearch('') }}
+                    className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors flex items-center gap-2 border-t">
+                    <Plus className="h-3 w-3" /> Create new guest
+                  </button>
                 </ScrollArea>
               )}
+            </div>
+          )}
+
+          {/* Inline quick-add form */}
+          {showQuickAdd && (
+            <div className="border rounded-lg bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Guest</p>
+                <button onClick={() => setShowQuickAdd(false)}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">First Name *</Label>
+                  <Input className="h-8 text-sm mt-1" value={quickFirstName} onChange={e => setQuickFirstName(e.target.value)} placeholder="First name" />
+                </div>
+                <div>
+                  <Label className="text-xs">Last Name</Label>
+                  <Input className="h-8 text-sm mt-1" value={quickLastName} onChange={e => setQuickLastName(e.target.value)} placeholder="Last name" />
+                </div>
+                <div>
+                  <Label className="text-xs">Phone</Label>
+                  <Input className="h-8 text-sm mt-1" value={quickPhone} onChange={e => setQuickPhone(e.target.value)} placeholder="+62 812..." />
+                </div>
+                <div>
+                  <Label className="text-xs">Email</Label>
+                  <Input className="h-8 text-sm mt-1" value={quickEmail} onChange={e => setQuickEmail(e.target.value)} placeholder="email@..." />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowQuickAdd(false)}>Cancel</Button>
+                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || quickSaving} onClick={createAndAddGuest}>
+                  {quickSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
+                  Add Guest
+                </Button>
+              </div>
             </div>
           )}
         </div>

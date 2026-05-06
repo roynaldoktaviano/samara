@@ -8,15 +8,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Plus, Search, Ship, MapPin, Calendar, Users, DollarSign } from 'lucide-react'
+import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation } from 'lucide-react'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -28,6 +26,9 @@ interface OpenTripRecord {
   startDate: string
   endDate: string
   destination: string
+  region?: string
+  departurePort?: string
+  arrivalPort?: string
   pricePerCabin: number
   maxCapacity: number
   status: string
@@ -53,23 +54,24 @@ const getDays = (s: string, e: string) =>
   Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
 
 export default function OpenTrips() {
-  const [trips,       setTrips]       = useState<OpenTripRecord[]>([])
-  const [yachts,      setYachts]      = useState<YachtOption[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [searchTerm,  setSearch]      = useState('')
-  const [statusFilter,setStatus]      = useState('all')
-  const [dialogOpen,  setDialogOpen]  = useState(false)
-  const [submitting,  setSubmitting]  = useState(false)
+  const [trips,       setTrips]      = useState<OpenTripRecord[]>([])
+  const [yachts,      setYachts]     = useState<YachtOption[]>([])
+  const [loading,     setLoading]    = useState(true)
+  const [searchTerm,  setSearch]     = useState('')
+  const [statusFilter,setStatus]     = useState('all')
+  const [dialogOpen,  setDialogOpen] = useState(false)
+  const [submitting,  setSubmitting] = useState(false)
 
   /* form */
-  const [title,        setTitle]       = useState('')
-  const [description,  setDesc]        = useState('')
-  const [yachtId,      setYachtId]     = useState('')
-  const [startDate,    setStart]       = useState('')
-  const [endDate,      setEnd]         = useState('')
-  const [destination,  setDest]        = useState('')
-  const [pricePerCabin,setPrice]       = useState('')
-  const [maxCapacity,  setMaxCap]      = useState('')
+  const [title,        setTitle]  = useState('')
+  const [description,  setDesc]   = useState('')
+  const [yachtId,      setYachtId]= useState('')
+  const [startDate,    setStart]  = useState('')
+  const [endDate,      setEnd]    = useState('')
+  const [destination,  setDest]   = useState('')
+  const [region,       setRegion] = useState('')
+  const [departurePort,setDepPort]= useState('')
+  const [arrivalPort,  setArrPort]= useState('')
 
   const selectedYacht = yachts.find(y => y.id === yachtId)
 
@@ -87,19 +89,13 @@ export default function OpenTrips() {
     fetch('/api/yachts').then(r => r.json()).then(d => setYachts(Array.isArray(d) ? d : []))
   }, [fetchTrips])
 
-  /* auto-fill maxCapacity from yacht cabin count */
-  useEffect(() => {
-    const y = yachts.find(y => y.id === yachtId)
-    if (y) setMaxCap(String(y.cabinCount || y.cabins?.length || ''))
-  }, [yachtId, yachts])
-
   const resetForm = () => {
     setTitle(''); setDesc(''); setYachtId(''); setStart(''); setEnd('')
-    setDest(''); setPrice(''); setMaxCap('')
+    setDest(''); setRegion(''); setDepPort(''); setArrPort('')
   }
 
   const handleSubmit = async () => {
-    if (!title || !yachtId || !startDate || !endDate || !destination || !pricePerCabin || !maxCapacity) return
+    if (!title || !yachtId || !startDate || !endDate || !destination) return
     setSubmitting(true)
     try {
       const res = await fetch('/api/open-trips', {
@@ -107,7 +103,7 @@ export default function OpenTrips() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title, description, yachtId, startDate, endDate,
-          destination, pricePerCabin, maxCapacity,
+          destination, region, departurePort, arrivalPort,
         }),
       })
       if (res.ok) {
@@ -146,7 +142,7 @@ export default function OpenTrips() {
             <DialogHeader className="shrink-0 border-b pb-3">
               <DialogTitle>Schedule New Open Trip</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="p-4 space-y-4">
 
                 <div className="space-y-1.5">
@@ -168,11 +164,13 @@ export default function OpenTrips() {
                   </Select>
                 </div>
 
-                {/* Show yacht cabins */}
+                {/* Cabin preview */}
                 {selectedYacht && selectedYacht.cabins?.length > 0 && (
                   <div className="rounded-lg border p-3 space-y-2"
                     style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}>
-                    <p className="text-xs font-medium text-muted-foreground">Cabins on {selectedYacht.name}</p>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Cabins on {selectedYacht.name} ({selectedYacht.cabinCount} total)
+                    </p>
                     <div className="flex flex-wrap gap-1.5">
                       {selectedYacht.cabins.map(c => (
                         <Badge key={c.id} variant="outline" className="text-xs">
@@ -199,17 +197,19 @@ export default function OpenTrips() {
                   <Input placeholder="e.g. Komodo National Park" value={destination} onChange={e => setDest(e.target.value)} />
                 </div>
 
+                <div className="space-y-1.5">
+                  <Label>Region</Label>
+                  <Input placeholder="e.g. East Nusa Tenggara, Raja Ampat" value={region} onChange={e => setRegion(e.target.value)} />
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label>Price per Cabin (USD) <span className="text-destructive">*</span></Label>
-                    <Input type="number" min="0" step="50" placeholder="1500" value={pricePerCabin} onChange={e => setPrice(e.target.value)} />
+                    <Label>Departure Port</Label>
+                    <Input placeholder="e.g. Labuan Bajo" value={departurePort} onChange={e => setDepPort(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Max Cabins to Sell <span className="text-destructive">*</span></Label>
-                    <Input type="number" min="1" placeholder="auto from yacht" value={maxCapacity} onChange={e => setMaxCap(e.target.value)} />
-                    {selectedYacht && (
-                      <p className="text-xs text-muted-foreground">{selectedYacht.cabinCount} cabins on {selectedYacht.name}</p>
-                    )}
+                    <Label>Arrival Port</Label>
+                    <Input placeholder="e.g. Lombok Harbor" value={arrivalPort} onChange={e => setArrPort(e.target.value)} />
                   </div>
                 </div>
 
@@ -218,29 +218,27 @@ export default function OpenTrips() {
                   <Textarea placeholder="Trip itinerary, inclusions, notes..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
                 </div>
 
-                {/* Price summary */}
-                {pricePerCabin && maxCapacity && (
-                  <div className="rounded-lg p-3 text-sm space-y-1" style={{ backgroundColor: `${ACCENT}0d` }}>
+                {/* Duration preview */}
+                {startDate && endDate && (
+                  <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: `${ACCENT}0d` }}>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Revenue if full</span>
-                      <span className="font-semibold" style={{ color: ACCENT }}>
-                        ${(parseFloat(pricePerCabin) * parseInt(maxCapacity)).toLocaleString()}
-                      </span>
+                      <span className="text-muted-foreground">Duration</span>
+                      <span>{getDays(startDate, endDate)} days</span>
                     </div>
-                    {startDate && endDate && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Duration</span>
-                        <span>{getDays(startDate, endDate)} days</span>
+                    {selectedYacht && (
+                      <div className="flex justify-between mt-1">
+                        <span className="text-muted-foreground">Max capacity</span>
+                        <span>{selectedYacht.cabinCount} cabins (auto from yacht)</span>
                       </div>
                     )}
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
             <div className="flex justify-end gap-2 pt-3 px-4 border-t shrink-0">
               <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm() }}>Cancel</Button>
               <Button
-                disabled={!title || !yachtId || !startDate || !endDate || !destination || !pricePerCabin || !maxCapacity || submitting}
+                disabled={!title || !yachtId || !startDate || !endDate || !destination || submitting}
                 onClick={handleSubmit}
                 style={{ backgroundColor: ACCENT, color: 'white' }}
                 className="hover:opacity-90"
@@ -255,10 +253,10 @@ export default function OpenTrips() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Total Trips',     value: trips.length,                                            color: ACCENT },
-          { label: 'Open',            value: trips.filter(t => t.status === 'open').length,           color: '#4a9f6e' },
-          { label: 'Full',            value: trips.filter(t => t.status === 'full').length,           color: '#e8547a' },
-          { label: 'Cabins Sold',     value: trips.reduce((s, t) => s + t.spotsBooked, 0),            color: '#4b8bca' },
+          { label: 'Total Trips',  value: trips.length,                                           color: ACCENT },
+          { label: 'Open',         value: trips.filter(t => t.status === 'open').length,          color: '#4a9f6e' },
+          { label: 'Full',         value: trips.filter(t => t.status === 'full').length,          color: '#e8547a' },
+          { label: 'Cabins Sold',  value: trips.reduce((s, t) => s + t.spotsBooked, 0),           color: '#4b8bca' },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3 px-4">
@@ -308,7 +306,7 @@ export default function OpenTrips() {
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-28 w-full rounded-xl" />
+                <Skeleton key={i} className="h-36 w-full rounded-xl" />
               ))}
             </div>
           ) : filtered.length === 0 ? (
@@ -320,7 +318,7 @@ export default function OpenTrips() {
           ) : (
             <div className="space-y-3">
               {filtered.map(t => {
-                const pct = t.maxCapacity > 0 ? (t.spotsBooked / t.maxCapacity) * 100 : 0
+                const pct   = t.maxCapacity > 0 ? (t.spotsBooked / t.maxCapacity) * 100 : 0
                 const isFull = t.spotsAvailable === 0
 
                 return (
@@ -349,10 +347,24 @@ export default function OpenTrips() {
                             {fmtDate(t.startDate)} → {fmtDate(t.endDate)}
                             <span className="ml-1">({getDays(t.startDate, t.endDate)}d)</span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <DollarSign className="w-3.5 h-3.5 shrink-0" />
-                            ${t.pricePerCabin.toLocaleString()}/cabin
-                          </div>
+                          {t.region && (
+                            <div className="flex items-center gap-1.5">
+                              <Navigation className="w-3.5 h-3.5 shrink-0" />
+                              {t.region}
+                            </div>
+                          )}
+                          {t.departurePort && (
+                            <div className="flex items-center gap-1.5">
+                              <Anchor className="w-3.5 h-3.5 shrink-0" />
+                              Dep: {t.departurePort}
+                            </div>
+                          )}
+                          {t.arrivalPort && (
+                            <div className="flex items-center gap-1.5">
+                              <Anchor className="w-3.5 h-3.5 shrink-0" />
+                              Arr: {t.arrivalPort}
+                            </div>
+                          )}
                         </div>
 
                         {/* Cabin occupancy bar */}
@@ -362,7 +374,7 @@ export default function OpenTrips() {
                               <span className="font-medium text-foreground">{t.spotsBooked}</span> / {t.maxCapacity} cabins booked
                             </span>
                             <span style={{ color: isFull ? '#e8547a' : '#4a9f6e' }} className="font-medium">
-                              {isFull ? 'Full' : `${t.spotsAvailable} available`}
+                              {isFull ? 'Sold Out' : `${t.spotsAvailable} available`}
                             </span>
                           </div>
                           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -375,16 +387,38 @@ export default function OpenTrips() {
                             />
                           </div>
                         </div>
+
+                        {/* PDF Buttons */}
+                        <div className="flex gap-2 pt-2 border-t mt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => window.open(`/print/manifest/${t.id}`, '_blank')}
+                          >
+                            <FileText className="w-3 h-3 mr-1.5" />
+                            Harbormaster Manifest
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => window.open(`/print/crew-sheet/${t.id}`, '_blank')}
+                          >
+                            <Users className="w-3 h-3 mr-1.5" />
+                            Crew Guest Sheet
+                          </Button>
+                        </div>
                       </div>
 
-                      {/* Right — revenue */}
+                      {/* Right — spot count */}
                       <div className="text-right shrink-0">
-                        <div className="text-xs text-muted-foreground">Revenue</div>
-                        <div className="font-bold text-base" style={{ color: ACCENT }}>
-                          ${(t.pricePerCabin * t.spotsBooked).toLocaleString()}
+                        <div className="text-xs text-muted-foreground">Bookings</div>
+                        <div className="font-bold text-2xl" style={{ color: ACCENT }}>
+                          {t.spotsBooked}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          of ${(t.pricePerCabin * t.maxCapacity).toLocaleString()} potential
+                          of {t.maxCapacity} cabins
                         </div>
                       </div>
                     </div>

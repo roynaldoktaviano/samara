@@ -65,7 +65,6 @@ async function main() {
         email: 'john.smith@example.com',
         phone: '+1 234-567-8900',
         address: '123 Ocean Drive, Miami, FL',
-        companyName: 'Smith Enterprises',
       },
     }),
     prisma.customer.upsert({
@@ -88,7 +87,6 @@ async function main() {
         email: 'mike.wilson@example.com',
         phone: '+1 234-567-8902',
         address: '789 Harbor St, Newport, RI',
-        companyName: 'Wilson Corp',
       },
     }),
     prisma.customer.upsert({
@@ -111,7 +109,6 @@ async function main() {
         email: 'robert.brown@example.com',
         phone: '+1 234-567-8904',
         address: '654 Bay Ave, Tampa, FL',
-        companyName: 'Brown & Co',
       },
     }),
   ])

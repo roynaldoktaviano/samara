@@ -37,11 +37,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, description, yachtId, startDate, endDate, destination, pricePerCabin, maxCapacity } = body
+    const { title, description, yachtId, startDate, endDate, destination, region, departurePort, arrivalPort } = body
 
-    if (!title || !yachtId || !startDate || !endDate || !destination || !pricePerCabin || !maxCapacity) {
+    if (!title || !yachtId || !startDate || !endDate || !destination) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // Auto-derive maxCapacity from yacht's cabin count
+    const yacht = await db.yacht.findUnique({
+      where: { id: yachtId },
+      select: { cabinCount: true },
+    })
 
     const trip = await db.openTrip.create({
       data: {
@@ -51,8 +57,11 @@ export async function POST(request: NextRequest) {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         destination,
-        pricePerCabin: parseFloat(pricePerCabin),
-        maxCapacity: parseInt(maxCapacity),
+        region: region || null,
+        departurePort: departurePort || null,
+        arrivalPort: arrivalPort || null,
+        pricePerCabin: 0,
+        maxCapacity: yacht?.cabinCount ?? 0,
         status: 'open',
       },
       include: {

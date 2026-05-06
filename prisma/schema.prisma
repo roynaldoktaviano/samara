@@ -36,16 +36,24 @@ model User {
 }
 
 model Customer {
-  id          String         @id @default(cuid())
-  name        String
-  email       String?
-  phone       String?
-  address     String?
-  companyName String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  bookings    Booking[]
-  guestOf     BookingGuest[]
+  id                  String         @id @default(cuid())
+  name                String
+  firstName           String?
+  lastName            String?
+  gender              String?
+  email               String?
+  phone               String?
+  passport            String?
+  dateOfBirth         DateTime?
+  address             String?
+  dietaryRequirements String?
+  allergies           String?
+  equipmentSizes      String?
+  operationalNotes    String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  bookings            Booking[]
+  guestOf             BookingGuest[]
 }
 
 model Agent {
@@ -103,8 +111,11 @@ model OpenTrip {
   startDate      DateTime
   endDate        DateTime
   destination    String
-  pricePerCabin  Float
-  maxCapacity    Int
+  region         String?
+  departurePort  String?
+  arrivalPort    String?
+  pricePerCabin  Float     @default(0)
+  maxCapacity    Int       @default(0)
   status         String    @default("open")
   bookings       Booking[]
   yacht          Yacht     @relation(fields: [yachtId], references: [id])

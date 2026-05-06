@@ -65,11 +65,24 @@ function MonthGrid({
   while (cells.length % 7 !== 0) cells.push(0)
 
   const byDay = useMemo(() => {
-    const map: Record<number, BookingEvent[]> = {}
+    const map: Record<number, Array<{ booking: BookingEvent; isStart: boolean; isEnd: boolean }>> = {}
     bookings.forEach(b => {
-      const s = new Date(b.startDate)
-      if (s.getFullYear() === year && s.getMonth() === month) {
-        const d = s.getDate(); if (!map[d]) map[d] = []; map[d].push(b)
+      const start = new Date(b.startDate + 'T00:00:00')
+      const end   = new Date(b.endDate   + 'T00:00:00')
+      const cur   = new Date(start)
+      while (cur <= end) {
+        if (cur.getFullYear() === year && cur.getMonth() === month) {
+          const d = cur.getDate()
+          if (!map[d]) map[d] = []
+          if (!map[d].some(x => x.booking.id === b.id)) {
+            map[d].push({
+              booking: b,
+              isStart: cur.getTime() === start.getTime(),
+              isEnd:   cur.getTime() === end.getTime(),
+            })
+          }
+        }
+        cur.setDate(cur.getDate() + 1)
       }
     })
     return map
@@ -138,22 +151,34 @@ function MonthGrid({
                     </span>
                   </div>
 
-                  {/* Private Charter booking markers */}
-                  {dayBookings.map(b => (
-                    <button
-                      key={b.id}
-                      onClick={e => { e.stopPropagation(); onBookingClick(b) }}
-                      className="text-left w-full mt-0.5 group rounded px-1 py-0.5 hover:bg-muted/60 transition-colors"
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
-                        <div className="text-[10px] font-semibold text-foreground leading-tight truncate group-hover:text-[#bdac7e] transition-colors">
-                          {b.totalPrice ? `$${b.totalPrice.toLocaleString()}` : b.yachtName}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                  {/* Private Charter booking markers — spanning bars */}
+                  {dayBookings.map(({ booking: b, isStart, isEnd }) => {
+                    const color = STATUS_CONFIG[b.status]?.color ?? '#e8547a'
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={e => { e.stopPropagation(); onBookingClick(b) }}
+                        title={`${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}`}
+                        className="mt-0.5 flex items-center h-4 overflow-hidden w-full text-left"
+                        style={{
+                          backgroundColor: color,
+                          color: 'white',
+                          marginLeft:  isStart ? 2 : -2,
+                          marginRight: isEnd   ? 2 : -2,
+                          borderRadius: isStart && isEnd ? 4
+                            : isStart ? '4px 0 0 4px'
+                            : isEnd   ? '0 4px 4px 0'
+                            : 0,
+                        }}
+                      >
+                        {isStart && (
+                          <span className="text-[9px] font-semibold px-1.5 truncate leading-none">
+                            {b.yachtName}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
 
                   {/* Open Trip markers */}
                   {dayOT.map(({ trip: t, isStart, isEnd }) => {
@@ -177,7 +202,7 @@ function MonthGrid({
                       >
                         {isStart && (
                           <span className="text-[9px] font-semibold px-1.5 truncate leading-none">
-                            {t.yacht.name} · {isFull ? '🔴' : `${t.spotsAvailable}/${t.maxCapacity}`}
+                            {t.title}
                           </span>
                         )}
                       </div>
