@@ -686,10 +686,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
       setDragGuest(null); setDropTarget(null)
       if (targetId === 'unassigned') { updateGuest(gId, { cabinId: '' }); return }
       const cabin   = cabins.find(c => c.id === targetId)
-      const newOcc  = (cabinOccupancy[targetId] ?? 0) + (existingCabinOccupancy[targetId] ?? 0)
       const already = guests.find(g => g.customerId === gId)?.cabinId === targetId
-      if (!already && newOcc >= (cabin?.capacity ?? 0)) {
-        setDropError(`${cabin?.name} is full (capacity ${cabin?.capacity}, ${existingCabinOccupancy[targetId] ?? 0} already booked externally)`)
+      const extOccDrop = existingCabinOccupancy[targetId] ?? 0
+      const myOccDrop  = cabinOccupancy[targetId] ?? 0
+      if (!already && extOccDrop > 0) {
+        setDropError(`${cabin?.name} is already reserved by another booking`)
+        return
+      }
+      if (!already && myOccDrop >= (cabin?.capacity ?? 0)) {
+        setDropError(`${cabin?.name} is full (capacity ${cabin?.capacity})`)
         return
       }
       updateGuest(gId, { cabinId: targetId })
@@ -843,11 +848,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
                 {cabins.map(c => {
                   const myOcc      = cabinOccupancy[c.id] ?? 0
                   const extOcc     = existingCabinOccupancy[c.id] ?? 0
-                  const totalOcc   = myOcc + extOcc
-                  const isFull     = totalOcc >= c.capacity
+                  // Cabin is full if taken by another booking OR current booking filled capacity
+                  const isFull     = extOcc > 0 || myOcc >= c.capacity
                   const isOver     = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
-                  const available  = c.capacity - totalOcc
+                  const available  = isFull ? 0 : c.capacity - myOcc
 
                   return (
                     <div

@@ -12,18 +12,27 @@ export async function GET(request: NextRequest) {
     const trips = await db.openTrip.findMany({
       where,
       include: {
-        yacht: { select: { id: true, name: true, model: true, cabinCount: true } },
-        _count: { select: { bookings: true } },
+        yacht: {
+          select: {
+            id: true, name: true, model: true, cabinCount: true,
+            cabins: { select: { id: true } },
+          },
+        },
+        _count: {
+          select: { bookings: { where: { status: { not: 'cancelled' } } } },
+        },
       },
       orderBy: { startDate: 'asc' },
     })
 
     const tripsWithAvailability = trips.map((t) => {
-      const totalBooked = t._count.bookings
+      // 1 booking = 1 cabin; available = total cabins − active bookings
+      const totalCabins = t.yacht.cabins.length || t.yacht.cabinCount
+      const activeBookings = t._count.bookings
       return {
         ...t,
-        spotsBooked: totalBooked,
-        spotsAvailable: Math.max(0, t.maxCapacity - totalBooked),
+        spotsBooked: activeBookings,
+        spotsAvailable: Math.max(0, totalCabins - activeBookings),
       }
     })
 
@@ -43,11 +52,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Auto-derive maxCapacity from yacht's cabin count
+    // Auto-derive maxCapacity from number of cabins (1 booking = 1 cabin)
     const yacht = await db.yacht.findUnique({
       where: { id: yachtId },
-      select: { cabinCount: true },
+      select: { cabinCount: true, cabins: { select: { id: true } } },
     })
+
+    const totalCabins = yacht?.cabins.length || yacht?.cabinCount || 0
 
     const trip = await db.openTrip.create({
       data: {
@@ -61,7 +72,7 @@ export async function POST(request: NextRequest) {
         departurePort: departurePort || null,
         arrivalPort: arrivalPort || null,
         pricePerCabin: 0,
-        maxCapacity: yacht?.cabinCount ?? 0,
+        maxCapacity: totalCabins,
         status: 'open',
       },
       include: {
