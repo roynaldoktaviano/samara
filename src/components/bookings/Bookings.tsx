@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Search, Edit, BedDouble } from 'lucide-react'
+import { Plus, Search, Edit, BedDouble, AlertCircle } from 'lucide-react'
 import { BookingWizard } from './BookingWizard'
 
 interface BookingRecord {
@@ -26,6 +26,8 @@ interface BookingRecord {
   discount: number
   guestCount: number
   status: string
+  depositDueDate?: string | null
+  finalDueDate?: string | null
   destination?: string
   notes?: string
   yacht?: { id: string; name: string; model?: string }
@@ -36,30 +38,51 @@ interface BookingRecord {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  confirmed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  pending:   'bg-amber-100   text-amber-700   border-amber-200',
-  completed: 'bg-blue-100    text-blue-700    border-blue-200',
-  cancelled: 'bg-red-100     text-red-700     border-red-200',
+  pending:        'bg-amber-100   text-amber-700   border-amber-200',
+  partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
+  fully_paid:     'bg-emerald-100 text-emerald-700 border-emerald-200',
+  completed:      'bg-purple-100  text-purple-700  border-purple-200',
+  cancelled:      'bg-red-100     text-red-700     border-red-200',
+  confirmed:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending:        'Pending',
+  partially_paid: 'Partially Paid',
+  fully_paid:     'Fully Paid',
+  completed:      'Completed',
+  cancelled:      'Cancelled',
+  confirmed:      'Confirmed',
 }
 
 const ACCENT = '#bdac7e'
 
-export default function Bookings() {
-  const [bookings,      setBookings]      = useState<BookingRecord[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [searchTerm,    setSearchTerm]    = useState('')
-  const [statusFilter,  setStatusFilter]  = useState('all')
-  const [sourceFilter,  setSourceFilter]  = useState('all')
-  const [wizardOpen,    setWizardOpen]    = useState(false)
-  const [editBooking,   setEditBooking]   = useState<BookingRecord | null>(null)
-  const [editSaving,    setEditSaving]    = useState(false)
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
 
-  /* edit form state */
-  const [editStatus,    setEditStatus]    = useState('')
-  const [editTotal,     setEditTotal]     = useState('')
-  const [editDeposit,   setEditDeposit]   = useState('')
-  const [editDiscount,  setEditDiscount]  = useState('')
-  const [editNotes,     setEditNotes]     = useState('')
+const fmtDateInput = (d?: string | null) =>
+  d ? new Date(d).toISOString().split('T')[0] : ''
+
+const getDays = (s: string, e: string) =>
+  Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
+
+export default function Bookings() {
+  const [bookings,     setBookings]    = useState<BookingRecord[]>([])
+  const [loading,      setLoading]     = useState(true)
+  const [searchTerm,   setSearchTerm]  = useState('')
+  const [statusFilter, setStatusFilter]= useState('all')
+  const [sourceFilter, setSourceFilter]= useState('all')
+  const [wizardOpen,   setWizardOpen]  = useState(false)
+  const [editBooking,  setEditBooking] = useState<BookingRecord | null>(null)
+  const [editSaving,   setEditSaving]  = useState(false)
+
+  const [editStatus,   setEditStatus]  = useState('')
+  const [editTotal,    setEditTotal]   = useState('')
+  const [editDeposit,  setEditDeposit] = useState('')
+  const [editDiscount, setEditDiscount]= useState('')
+  const [editDepDue,   setEditDepDue]  = useState('')
+  const [editFinalDue, setEditFinalDue]= useState('')
+  const [editNotes,    setEditNotes]   = useState('')
 
   const fetchBookings = useCallback(async () => {
     setLoading(true)
@@ -78,6 +101,8 @@ export default function Bookings() {
     setEditTotal(b.totalPrice.toString())
     setEditDeposit(b.depositPaid.toString())
     setEditDiscount(b.discount.toString())
+    setEditDepDue(fmtDateInput(b.depositDueDate))
+    setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
   }
 
@@ -89,17 +114,16 @@ export default function Bookings() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status:      editStatus,
-          totalPrice:  editTotal,
-          depositPaid: editDeposit,
-          discount:    editDiscount,
-          notes:       editNotes,
+          status:         editStatus,
+          totalPrice:     editTotal,
+          depositPaid:    editDeposit,
+          discount:       editDiscount,
+          depositDueDate: editDepDue   || null,
+          finalDueDate:   editFinalDue || null,
+          notes:          editNotes,
         }),
       })
-      if (res.ok) {
-        await fetchBookings()
-        setEditBooking(null)
-      }
+      if (res.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
     finally { setEditSaving(false) }
   }
@@ -117,8 +141,8 @@ export default function Bookings() {
     return matchSearch && matchStatus && matchSource
   })
 
-  const getDays = (s: string, e: string) => Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
-  const fmt = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
+  const isDepositOverdue = (b: BookingRecord) =>
+    b.status === 'pending' && !!b.depositDueDate && new Date(b.depositDueDate) < new Date()
 
   return (
     <div className="space-y-6">
@@ -143,11 +167,12 @@ export default function Bookings() {
             </div>
             <div className="flex gap-2 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                  <SelectItem value="fully_paid">Fully Paid</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
@@ -186,6 +211,7 @@ export default function Bookings() {
                   <TableHead>Guests</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Deposit</TableHead>
+                  <TableHead>Due Dates</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Edit</TableHead>
                 </TableRow>
@@ -194,15 +220,17 @@ export default function Bookings() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 10 }).map((_, j) => (
+                      {Array.from({ length: 11 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
-                      {bookings.length === 0 ? 'No bookings yet — click "New Booking" to get started.' : 'No bookings match the current filters.'}
+                    <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
+                      {bookings.length === 0
+                        ? 'No bookings yet — click "New Booking" to get started.'
+                        : 'No bookings match the current filters.'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -234,8 +262,8 @@ export default function Bookings() {
                       </TableCell>
                       <TableCell>
                         <div className="text-xs">
-                          <div>{fmt(b.startDate)}</div>
-                          <div className="text-muted-foreground">{fmt(b.endDate)}</div>
+                          <div>{fmtDate(b.startDate)}</div>
+                          <div className="text-muted-foreground">{fmtDate(b.endDate)}</div>
                           <div className="text-muted-foreground">{getDays(b.startDate, b.endDate)}d</div>
                         </div>
                       </TableCell>
@@ -246,15 +274,25 @@ export default function Bookings() {
                       </TableCell>
                       <TableCell className="text-sm">${b.depositPaid.toLocaleString()}</TableCell>
                       <TableCell>
+                        <div className="text-xs space-y-0.5 min-w-20">
+                          {b.depositDueDate ? (
+                            <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                              {isDepositOverdue(b) && <AlertCircle className="w-3 h-3 shrink-0" />}
+                              DP: {fmtDate(b.depositDueDate)}
+                            </div>
+                          ) : <span className="text-muted-foreground/50">—</span>}
+                          {b.finalDueDate && (
+                            <div className="text-muted-foreground">Bal: {fmtDate(b.finalDueDate)}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[b.status] ?? 'bg-muted text-muted-foreground'}`}>
-                          {b.status}
+                          {STATUS_LABELS[b.status] ?? b.status}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          onClick={() => openEdit(b)}
-                        >
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
                           <Edit className="h-3.5 w-3.5" />
                         </Button>
                       </TableCell>
@@ -269,7 +307,7 @@ export default function Bookings() {
 
       {/* ── Edit Booking Dialog ── */}
       <Dialog open={!!editBooking} onOpenChange={v => !v && setEditBooking(null)}>
-        <DialogContent className="w-240 max-w-[100vw]">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           {editBooking && (
             <>
               <DialogHeader>
@@ -279,7 +317,6 @@ export default function Bookings() {
                 </DialogTitle>
               </DialogHeader>
 
-              {/* Read-only summary */}
               <div className="grid grid-cols-3 gap-3 text-xs">
                 <div className="rounded-lg bg-muted/40 p-3">
                   <p className="text-muted-foreground mb-0.5">Customer</p>
@@ -293,7 +330,7 @@ export default function Bookings() {
                   <p className="font-semibold">
                     {editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}
                   </p>
-                  <p className="text-muted-foreground">{fmt(editBooking.startDate)} → {fmt(editBooking.endDate)}</p>
+                  <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-3">
                   <p className="text-muted-foreground mb-0.5">Guests & Cabins</p>
@@ -312,19 +349,20 @@ export default function Bookings() {
 
               <Separator />
 
-              {/* Editable fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>Status</Label>
                   <Select value={editStatus} onValueChange={setEditStatus}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="confirmed">Confirmed</SelectItem>
                       <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                      <SelectItem value="fully_paid">Fully Paid</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
                       <SelectItem value="cancelled">Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">Auto-computed from deposit. Only Completed & Cancelled are manual.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Discount (%)</Label>
@@ -337,6 +375,14 @@ export default function Bookings() {
                 <div className="space-y-1.5">
                   <Label>Deposit Paid (USD)</Label>
                   <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Deposit Due Date</Label>
+                  <Input type="date" value={editDepDue} onChange={e => setEditDepDue(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Final Balance Due Date</Label>
+                  <Input type="date" value={editFinalDue} min={editDepDue} onChange={e => setEditFinalDue(e.target.value)} />
                 </div>
                 <div className="col-span-2 space-y-1.5">
                   <Label>Notes</Label>

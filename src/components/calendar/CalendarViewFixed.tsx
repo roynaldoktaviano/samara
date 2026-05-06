@@ -397,13 +397,17 @@ export default function CalendarView() {
   const fetchBookings = useCallback(async () => {
     try {
       const data = await fetch('/api/bookings').then(r => r.json())
-      setBookings(data.map((b: any) => ({
-        id: b.id, yachtName: b.yacht?.name ?? '',
-        startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
-        status: b.status, tripType: b.tripType,
-        customerName: b.customer?.name, bookingCode: b.bookingCode,
-        totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
-      })))
+      setBookings(
+        (Array.isArray(data) ? data : [])
+          .filter((b: any) => b.status !== 'cancelled')
+          .map((b: any) => ({
+            id: b.id, yachtName: b.yacht?.name ?? '',
+            startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
+            status: b.status, tripType: b.tripType,
+            customerName: b.customer?.name, bookingCode: b.bookingCode,
+            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
+          }))
+      )
     } catch (e) { console.error('Failed to fetch bookings', e) }
   }, [])
 
@@ -473,8 +477,35 @@ export default function CalendarView() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-sm text-muted-foreground">Loading calendar…</div>
+      <div className="space-y-5 w-full">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-36 rounded-lg bg-muted animate-pulse" />
+            <div className="h-4 w-64 rounded-lg bg-muted animate-pulse" />
+          </div>
+          <div className="h-9 w-36 rounded-lg bg-muted animate-pulse" />
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border p-4 space-y-2">
+              <div className="h-3 w-28 rounded bg-muted animate-pulse" />
+              <div className="h-8 w-14 rounded bg-muted animate-pulse" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border overflow-hidden">
+          <div className="h-12 bg-muted/40 animate-pulse border-b" />
+          <div className="h-10 bg-muted/20 animate-pulse border-b" />
+          <div className="grid grid-cols-7">
+            {Array.from({ length: 35 }).map((_, i) => (
+              <div key={i} className="border-r border-b border-border min-h-24 p-2 space-y-1.5">
+                <div className="h-3 w-5 rounded bg-muted animate-pulse" />
+                {i % 4 === 0 && <div className="h-3 w-full rounded bg-muted/60 animate-pulse" />}
+                {i % 7 === 2 && <div className="h-3 w-3/4 rounded bg-muted/40 animate-pulse" />}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     )
   }
@@ -708,7 +739,7 @@ export default function CalendarView() {
 
       {/* ── Booking Detail Dialog ── */}
       <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) setIsBookingEditing(false) }}>
-        <DialogContent className="w-[480px] max-w-[95vw]">
+        <DialogContent className="sm:max-w-2xl">
           {selectedBooking && (
             <>
               <DialogHeader>
@@ -810,7 +841,7 @@ export default function CalendarView() {
 
       {/* ── Open Trip Detail Dialog ── */}
       <Dialog open={otDetailOpen} onOpenChange={v => { setOtDetailOpen(v); if (!v) setIsOtEditing(false) }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[88vh] overflow-y-auto">
           {otDetailLoading || !otDetail ? (
             <>
               <DialogHeader><DialogTitle>Open Trip</DialogTitle></DialogHeader>

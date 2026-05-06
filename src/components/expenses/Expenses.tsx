@@ -77,7 +77,7 @@ export default function Expenses() {
               Add Expense
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-240 max-w-[100vw]">
+          <DialogContent className="sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>Add New Expense</DialogTitle>
               <DialogDescription>Record a new expense for your operations.</DialogDescription>

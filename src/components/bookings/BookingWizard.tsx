@@ -66,6 +66,20 @@ const fmtDate = (d: string) =>
 
 const ACCENT = '#bdac7e'
 
+/* ─── Currency ───────────────────────────────────────────────────────────── */
+type CurrencyCode = 'USD' | 'EUR' | 'IDR'
+
+const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUSD: number; step: number; decimals: number }> = {
+  USD: { symbol: '$',  label: 'USD — US Dollar',           rateToUSD: 1,        step: 100,    decimals: 2 },
+  EUR: { symbol: '€',  label: 'EUR — Euro',                rateToUSD: 1.09,     step: 100,    decimals: 2 },
+  IDR: { symbol: 'Rp', label: 'IDR — Indonesian Rupiah',   rateToUSD: 0.000063, step: 100000, decimals: 0 },
+}
+
+const toUSD    = (amount: number, c: CurrencyCode) => amount * CURRENCIES[c].rateToUSD
+const fromUSD  = (usd:    number, c: CurrencyCode) => usd    / CURRENCIES[c].rateToUSD
+const fmtAmt   = (n: number, c: CurrencyCode) =>
+  `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
+
 export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }: Props) {
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
@@ -97,10 +111,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   const [crewReq,   setCrewReq] = useState(false)
 
   /* step-3 */
-  const [basePrice,  setBase]    = useState('')
-  const [discPct,    setDisc]    = useState('0')
-  const [services,   setSvc]     = useState<ServiceEntry[]>([])
-  const [deposit,    setDeposit] = useState('')
+  const [currency,       setCurrency]   = useState<CurrencyCode>('USD')
+  const [basePrice,      setBase]       = useState('')
+  const [discPct,        setDisc]       = useState('0')
+  const [services,       setSvc]        = useState<ServiceEntry[]>([])
+  const [deposit,        setDeposit]    = useState('')
+  const [depositDueDate, setDepDue]     = useState('')
+  const [finalDueDate,   setFinalDue]   = useState('')
 
   /* remote data */
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
@@ -132,7 +149,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
       fetch('/api/yachts').then(r => r.json()),
       fetch('/api/agents').then(r => r.json()),
       fetch('/api/customers').then(r => r.json()),
-      fetch('/api/open-trips?status=open').then(r => r.json()),
+      fetch('/api/open-trips').then(r => r.json()),
     ]).then(([y, a, c, ot]) => {
       if (y.status  === 'fulfilled') setYachts(Array.isArray(y.value)  ? y.value  : [])
       if (a.status  === 'fulfilled') setAgents(Array.isArray(a.value)  ? a.value  : [])
@@ -175,26 +192,29 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
       .catch(() => {})
   }, [openTripId])
 
-  /* auto base price */
+  /* auto base price — computed in USD then converted to selected currency */
   useEffect(() => {
+    let usdPrice = 0
     if (tripType === 'OPEN_TRIP') {
-      // Sum of individual cabin prices for assigned cabins
       const assignedCabinIds = [...new Set(guests.filter(g => g.cabinId).map(g => g.cabinId))]
-      const sum = assignedCabinIds.reduce((acc, id) => {
+      usdPrice = assignedCabinIds.reduce((acc, id) => {
         const c = cabins.find(x => x.id === id)
         return acc + (c?.price ?? 0)
       }, 0)
-      if (sum > 0) setBase(sum.toString())
     } else if (tripType === 'PRIVATE_CHARTER') {
       const y = yachts.find(x => x.id === yachtId)
       if (y && startDate && endDate) {
         const days = Math.max(1, Math.ceil(
           (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
         ))
-        setBase((y.dailyRate * days).toString())
+        usdPrice = y.dailyRate * days
       }
     }
-  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips])
+    if (usdPrice > 0) {
+      const converted = fromUSD(usdPrice, currency)
+      setBase(converted.toFixed(CURRENCIES[currency].decimals))
+    }
+  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips, currency])
 
   /* reset on close */
   useEffect(() => {
@@ -203,7 +223,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
     setAgentMode('existing'); setAgentId(''); setAgentName(''); setAgentCo(''); setAgentPhone(''); setAgentComm('0')
     setYachtId(''); setStart(preselectedDate ?? ''); setEnd(''); setDest(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false)
-    setBase(''); setDisc('0'); setSvc([]); setDeposit('')
+    setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
@@ -326,11 +346,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
           startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
           endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
           destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
-          totalPrice: total,
-          depositPaid: parseFloat(deposit) || 0,
-          discount: parseFloat(discPct) || 0,
-          crewRequired: crewReq,
-          notes: notes || undefined,
+          totalPrice:    toUSD(total, currency),
+          depositPaid:   toUSD(parseFloat(deposit) || 0, currency),
+          discount:      parseFloat(discPct) || 0,
+          depositDueDate: depositDueDate || undefined,
+          finalDueDate:   finalDueDate   || undefined,
+          crewRequired:  crewReq,
+          notes:         notes || undefined,
           guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
           services: services.filter(s => s.name.trim()),
           status: 'confirmed',
@@ -592,80 +614,80 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   /* ════════════════════════════════════════════
      STEP 1 — OPEN TRIP
   ════════════════════════════════════════════ */
-  const step1OT = () => (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">Select an available scheduled trip</p>
-      {openTrips.length === 0 && (
-        <div className="text-center py-10 text-muted-foreground text-sm">
-          No open trips scheduled. Create one from the Trips management page.
-        </div>
-      )}
+  const step1OT = () => {
+    // Hide closed/cancelled trips — they're past or manually removed
+    const visibleTrips = openTrips.filter(t => t.status !== 'closed' && t.status !== 'cancelled')
+
+    const statusBadge = (t: OpenTripOpt) => {
+      if (t.status === 'full')
+        return <Badge className="text-xs bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
+      return (
+        <Badge variant="outline" className="text-xs" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>
+          Open
+        </Badge>
+      )
+    }
+
+    return (
       <div className="space-y-3">
-        {openTrips.map(t => {
-          const selected   = openTripId === t.id
-          const isSoldOut  = t.spotsAvailable === 0
-          return (
-            <button
-              key={t.id}
-              onClick={() => !isSoldOut && setOTId(t.id)}
-              disabled={isSoldOut}
-              className={cn(
-                'w-full text-left p-4 rounded-xl border-2 transition-all',
-                isSoldOut
-                  ? 'border-border bg-muted/30 opacity-60 cursor-not-allowed'
-                  : selected ? 'bg-card' : 'border-border bg-card hover:shadow-sm'
-              )}
-              style={!isSoldOut && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}08` } : {}}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{t.title}</span>
-                    {isSoldOut ? (
-                      <Badge className="text-xs bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">
-                        SOLD OUT
-                      </Badge>
+        <p className="text-sm text-muted-foreground">Select an available scheduled trip</p>
+        {visibleTrips.length === 0 && (
+          <div className="text-center py-10 text-muted-foreground text-sm">
+            No open trips available. All trips are either full, closed, or none have been scheduled.
+          </div>
+        )}
+        <div className="space-y-3">
+          {visibleTrips.map(t => {
+            const selected  = openTripId === t.id
+            const isFull    = t.status === 'full'
+            return (
+              <button
+                key={t.id}
+                onClick={() => !isFull && setOTId(t.id)}
+                disabled={isFull}
+                className={cn(
+                  'w-full text-left p-4 rounded-xl border-2 transition-all',
+                  isFull
+                    ? 'border-border bg-muted/30 opacity-60 cursor-not-allowed'
+                    : selected ? 'bg-card' : 'border-border bg-card hover:shadow-sm'
+                )}
+                style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}08` } : {}}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{t.title}</span>
+                      {statusBadge(t)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                      <div>🚢 {t.yacht.name}</div>
+                      <div>📅 {fmtDate(t.startDate)} → {fmtDate(t.endDate)}</div>
+                      <div>📍 {t.destination}</div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {isFull ? (
+                      <div className="text-xs font-semibold text-red-600">No cabins left</div>
                     ) : (
-                      <Badge
-                        variant="outline"
-                        className="text-xs"
-                        style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}
-                      >
-                        {t.status}
-                      </Badge>
+                      <>
+                        <div className="font-semibold text-sm" style={{ color: ACCENT }}>
+                          ${t.pricePerCabin.toLocaleString()}/cabin
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {t.spotsAvailable}/{t.maxCapacity} cabins left
+                        </div>
+                        {selected && <Check className="w-4 h-4 ml-auto mt-1" style={{ color: ACCENT }} />}
+                      </>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                    <div>🚢 {t.yacht.name}</div>
-                    <div>📅 {fmtDate(t.startDate)} → {fmtDate(t.endDate)}</div>
-                    <div>📍 {t.destination}</div>
-                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  {isSoldOut ? (
-                    <div className="text-xs font-semibold text-red-600">
-                      No spots left
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {t.spotsAvailable}/{t.maxCapacity} spots left
-                      </div>
-                      {selected && (
-                        <div className="mt-1">
-                          <Check className="w-4 h-4 ml-auto" style={{ color: ACCENT }} />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </button>
-          )
-        })}
+              </button>
+            )
+          })}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   /* ════════════════════════════════════════════
      STEP 2 — GUESTS & CABINS (drag-and-drop)
@@ -848,11 +870,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
                 {cabins.map(c => {
                   const myOcc      = cabinOccupancy[c.id] ?? 0
                   const extOcc     = existingCabinOccupancy[c.id] ?? 0
-                  // Cabin is full if taken by another booking OR current booking filled capacity
-                  const isFull     = extOcc > 0 || myOcc >= c.capacity
+                  const totalOcc   = myOcc + extOcc
+                  const isFull     = totalOcc >= c.capacity
                   const isOver     = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
-                  const available  = isFull ? 0 : c.capacity - myOcc
+                  const available  = Math.max(0, c.capacity - totalOcc)
 
                   return (
                     <div
@@ -938,105 +960,207 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
      STEP 3 — PRICING
   ════════════════════════════════════════════ */
   const step3 = () => {
-    const b   = parseFloat(basePrice) || 0
-    const d   = parseFloat(discPct) || 0
-    const s   = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
-    const da  = b * (d / 100)
-    const tot = b - da + s
+    const curr = CURRENCIES[currency]
+    const b    = parseFloat(basePrice) || 0
+    const d    = parseFloat(discPct)   || 0
+    const svc  = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
+    const da   = b * (d / 100)
+    const tot  = b - da + svc
+    const dep  = parseFloat(deposit) || 0
+
+    const bUSD   = toUSD(b,   currency)
+    const totUSD = toUSD(tot, currency)
+    const depUSD = toUSD(dep, currency)
+
+    const usdHint = (usd: number) =>
+      currency === 'USD' ? null : (
+        <p className="text-xs text-muted-foreground mt-1">
+          ≈ ${usd.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD
+        </p>
+      )
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Base Price (USD)</Label>
-            <Input type="number" min="0" step="100" value={basePrice} onChange={e => setBase(e.target.value)} />
-            <p className="text-xs text-muted-foreground">
-              {tripType === 'OPEN_TRIP'
-                ? `Cabin prices summed from assigned cabins`
-                : selectedYacht
-                ? `$${selectedYacht.dailyRate.toLocaleString()}/day × days`
-                : ''}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Discount (%)</Label>
-            <Input type="number" min="0" max="100" step="1" value={discPct} onChange={e => setDisc(e.target.value)} />
-          </div>
-        </div>
 
-        {/* services */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label>Additional Services</Label>
-            <Button type="button" variant="outline" size="sm" onClick={addSvc}>
-              <Plus className="w-3 h-3 mr-1" /> Add
-            </Button>
+        {/* Currency selector — full width */}
+        <div className="flex items-center gap-3 rounded-xl border px-4 py-2.5" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+          <span className="text-sm font-medium shrink-0 text-muted-foreground">Currency</span>
+          <div className="flex gap-2">
+            {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => {
+                  if (basePrice) setBase(fromUSD(toUSD(parseFloat(basePrice) || 0, currency), c).toFixed(CURRENCIES[c].decimals))
+                  if (deposit)   setDeposit(fromUSD(toUSD(parseFloat(deposit) || 0, currency), c).toFixed(CURRENCIES[c].decimals))
+                  setCurrency(c)
+                }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
+                  currency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'
+                )}
+                style={currency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
+              >
+                {CURRENCIES[c].symbol} {c}
+              </button>
+            ))}
           </div>
-          {services.map(s => (
-            <div key={s.tempId} className="flex gap-2 items-center">
-              <Input placeholder="Service name" value={s.name} onChange={e => updateSvc(s.tempId, { name: e.target.value })} />
-              <Input type="number" min="0" step="50" placeholder="USD" className="w-32"
-                value={s.price} onChange={e => updateSvc(s.tempId, { price: e.target.value })} />
-              <Button type="button" variant="ghost" size="icon" onClick={() => removeSvc(s.tempId)}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <Separator />
-
-        {/* price breakdown */}
-        <div className="rounded-lg p-4 space-y-2 text-sm" style={{ backgroundColor: `${ACCENT}0d` }}>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Base Price</span>
-            <span>${b.toLocaleString()}</span>
-          </div>
-          {d > 0 && (
-            <div className="flex justify-between text-emerald-600">
-              <span>Discount ({d}%)</span>
-              <span>−${da.toLocaleString()}</span>
-            </div>
+          {currency !== 'USD' && (
+            <span className="text-xs text-muted-foreground ml-auto">
+              1 {currency} = ${CURRENCIES[currency].rateToUSD.toFixed(currency === 'IDR' ? 6 : 4)} USD
+            </span>
           )}
-          {s > 0 && (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Services</span>
-              <span>${s.toLocaleString()}</span>
+        </div>
+
+        {/* 2-column body */}
+        <div className="grid grid-cols-2 gap-5 items-start">
+
+          {/* ── LEFT: Price inputs ── */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pricing</p>
+
+            {/* Base Price */}
+            <div className="space-y-1.5">
+              <Label>Base Price <span className="text-muted-foreground font-normal">({currency})</span></Label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">{curr.symbol}</span>
+                <Input type="number" min="0" step={curr.step} value={basePrice}
+                  onChange={e => setBase(e.target.value)} className="pl-7" />
+              </div>
+              {usdHint(bUSD)}
+              {(tripType === 'OPEN_TRIP' || selectedYacht) && (
+                <p className="text-xs text-muted-foreground">
+                  {tripType === 'OPEN_TRIP'
+                    ? 'Auto-calculated from assigned cabin prices'
+                    : `${curr.symbol}${fromUSD(selectedYacht!.dailyRate, currency).toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
+                </p>
+              )}
             </div>
-          )}
-          <Separator />
-          <div className="flex justify-between font-semibold text-base">
-            <span>Total</span>
-            <span style={{ color: ACCENT }}>${tot.toLocaleString()}</span>
+
+            {/* Discount */}
+            <div className="space-y-1.5">
+              <Label>Discount <span className="text-muted-foreground font-normal">(%)</span></Label>
+              <Input type="number" min="0" max="100" step="1" value={discPct} onChange={e => setDisc(e.target.value)} />
+              {d > 0 && (
+                <p className="text-xs text-emerald-600">Saves {fmtAmt(da, currency)}</p>
+              )}
+            </div>
+
+            {/* Additional Services */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Additional Services</Label>
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addSvc}>
+                  <Plus className="w-3 h-3 mr-1" /> Add
+                </Button>
+              </div>
+              {services.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No additional services</p>
+              )}
+              {services.map(sv => (
+                <div key={sv.tempId} className="flex gap-2 items-center">
+                  <Input placeholder="Service name" value={sv.name}
+                    onChange={e => updateSvc(sv.tempId, { name: e.target.value })} />
+                  <div className="relative w-32 shrink-0">
+                    <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground select-none">{curr.symbol}</span>
+                    <Input type="number" min="0" step={curr.step} placeholder="0" className="pl-6"
+                      value={sv.price} onChange={e => updateSvc(sv.tempId, { price: e.target.value })} />
+                  </div>
+                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeSvc(sv.tempId)}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-1.5">
-          <Label>Deposit Paid (USD)</Label>
-          <Input type="number" min="0" step="100" placeholder="0" value={deposit} onChange={e => setDeposit(e.target.value)} />
-        </div>
+          {/* ── RIGHT: Breakdown + Payment + Summary ── */}
+          <div className="space-y-4">
 
-        <Separator />
+            {/* Price Breakdown */}
+            <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ backgroundColor: `${ACCENT}08`, borderColor: `${ACCENT}30` }}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Price Breakdown</p>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Base Price</span>
+                <span className="font-medium">{fmtAmt(b, currency)}</span>
+              </div>
+              {d > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>Discount ({d}%)</span>
+                  <span>−{fmtAmt(da, currency)}</span>
+                </div>
+              )}
+              {svc > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Services</span>
+                  <span>{fmtAmt(svc, currency)}</span>
+                </div>
+              )}
+              <Separator className="my-1" />
+              <div className="flex justify-between items-end">
+                <span className="font-semibold">Total</span>
+                <div className="text-right">
+                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(tot, currency)}</div>
+                  {currency !== 'USD' && (
+                    <div className="text-xs text-muted-foreground">≈ ${totUSD.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD</div>
+                  )}
+                </div>
+              </div>
+            </div>
 
-        {/* summary */}
-        <div className="rounded-lg border p-3 text-xs space-y-1.5">
-          <p className="font-semibold text-sm mb-2">Booking Summary</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-            <span>Source</span>       <span className="text-foreground">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</span>
-            <span>Type</span>         <span className="text-foreground">{tripType === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}</span>
-            {tripType === 'OPEN_TRIP' && selectedOT && (
-              <><span>Trip</span><span className="text-foreground">{selectedOT.title}</span></>
-            )}
-            {tripType === 'PRIVATE_CHARTER' && selectedYacht && (
-              <><span>Yacht</span><span className="text-foreground">{selectedYacht.name}</span></>
-            )}
-            {tripType === 'PRIVATE_CHARTER' && startDate && endDate && (
-              <><span>Dates</span><span className="text-foreground">{startDate} → {endDate}</span></>
-            )}
-            <span>Guests</span>       <span className="text-foreground">{guests.length} person(s)</span>
-            {destination && (
-              <><span>Destination</span><span className="text-foreground">{destination}</span></>
-            )}
+            {/* Payment */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
+
+              <div className="space-y-1.5">
+                <Label>Deposit Amount <span className="text-muted-foreground font-normal">({currency})</span></Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">{curr.symbol}</span>
+                  <Input type="number" min="0" step={curr.step} placeholder="0" value={deposit}
+                    onChange={e => setDeposit(e.target.value)} className="pl-7" />
+                </div>
+                {usdHint(depUSD)}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Deposit Due Date</Label>
+                  <Input type="date" value={depositDueDate} onChange={e => setDepDue(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Final Balance Due</Label>
+                  <Input type="date" value={finalDueDate} min={depositDueDate} onChange={e => setFinalDue(e.target.value)} />
+                </div>
+              </div>
+
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                ⚠ Booking is auto-cancelled if deposit is unpaid by the due date.
+              </p>
+            </div>
+
+            {/* Booking Summary */}
+            <div className="rounded-xl border p-3 text-xs space-y-1.5 bg-muted/30">
+              <p className="font-semibold text-sm mb-2">Booking Summary</p>
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
+                <span>Source</span>     <span className="text-foreground font-medium">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</span>
+                <span>Type</span>       <span className="text-foreground font-medium">{tripType === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}</span>
+                {tripType === 'OPEN_TRIP' && selectedOT && (
+                  <><span>Trip</span><span className="text-foreground font-medium truncate">{selectedOT.title}</span></>
+                )}
+                {tripType === 'PRIVATE_CHARTER' && selectedYacht && (
+                  <><span>Yacht</span><span className="text-foreground font-medium">{selectedYacht.name}</span></>
+                )}
+                {tripType === 'PRIVATE_CHARTER' && startDate && endDate && (
+                  <><span>Dates</span><span className="text-foreground font-medium">{fmtDate(startDate)} → {fmtDate(endDate)}</span></>
+                )}
+                {destination && (
+                  <><span>Destination</span><span className="text-foreground font-medium">{destination}</span></>
+                )}
+                <span>Guests</span>     <span className="text-foreground font-medium">{guests.length} person(s)</span>
+                <span>Currency</span>   <span className="text-foreground font-medium">{currency} → stored as USD</span>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -1052,8 +1176,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-240 max-w-[100vw] flex flex-col max-h-[92vh] overflow-hidden gap-0">
-        <DialogHeader className="shrink-0 pb-3 border-b">
+      <DialogContent className="sm:max-w-5xl flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
+        <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
               <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
@@ -1066,7 +1190,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
         </DialogHeader>
 
         <ScrollArea className="flex-1 min-h-0">
-          <div className="p-4">
+          <div className="px-6 py-5">
             {phase === 'source'    && phaseSource()}
             {phase === 'agentInfo' && phaseAgentInfo()}
             {phase === 'tripType'  && phaseTripType()}
@@ -1084,7 +1208,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
 
         {/* footer nav — only in agentInfo + steps phases */}
         {(phase === 'agentInfo' || phase === 'steps') && (
-          <div className="flex items-center justify-between pt-3 pb-1 px-4 border-t shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-t shrink-0 bg-muted/20">
             <Button
               variant="outline"
               onClick={() => {

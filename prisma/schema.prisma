@@ -124,32 +124,40 @@ model OpenTrip {
 }
 
 model Booking {
-  id           String         @id @default(cuid())
-  bookingCode  String         @unique
-  customerId   String
-  agentId      String?
-  openTripId   String?
-  source       BookingSource  @default(DIRECT)
-  tripType     TripType       @default(PRIVATE_CHARTER)
-  yachtId      String?
-  startDate    DateTime
-  endDate      DateTime
-  destination  String?
-  status       String         @default("confirmed")
-  totalPrice   Float
-  depositPaid  Float          @default(0)
-  discount     Float          @default(0)
-  guestCount   Int            @default(1)
-  crewRequired Boolean        @default(false)
-  notes        String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  customer     Customer       @relation(fields: [customerId], references: [id])
-  agent        Agent?         @relation(fields: [agentId], references: [id])
-  yacht        Yacht?         @relation(fields: [yachtId], references: [id])
-  openTrip     OpenTrip?      @relation(fields: [openTripId], references: [id])
-  guests       BookingGuest[]
-  services     BookingService[]
+  id             String         @id @default(cuid())
+  bookingCode    String         @unique
+  customerId     String
+  agentId        String?
+  openTripId     String?
+  source         BookingSource  @default(DIRECT)
+  tripType       TripType       @default(PRIVATE_CHARTER)
+  yachtId        String?
+  startDate      DateTime
+  endDate        DateTime
+  destination    String?
+  status         String         @default("pending")
+  totalPrice     Float
+  depositPaid    Float          @default(0)
+  discount       Float          @default(0)
+  depositDueDate DateTime?
+  finalDueDate   DateTime?
+  guestCount     Int            @default(1)
+  crewRequired   Boolean        @default(false)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  customer       Customer       @relation(fields: [customerId], references: [id])
+  agent          Agent?         @relation(fields: [agentId], references: [id])
+  yacht          Yacht?         @relation(fields: [yachtId], references: [id])
+  openTrip       OpenTrip?      @relation(fields: [openTripId], references: [id])
+  guests         BookingGuest[]
+  services       BookingService[]
+
+  @@index([status])
+  @@index([openTripId, status])
+  @@index([status, depositDueDate])
+  @@index([customerId])
+  @@index([startDate, endDate])
 }
 
 model BookingGuest {

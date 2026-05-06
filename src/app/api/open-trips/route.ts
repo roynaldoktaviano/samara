@@ -6,11 +6,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
 
-    const where: Record<string, unknown> = {}
-    if (status) where.status = status
-
     const trips = await db.openTrip.findMany({
-      where,
       include: {
         yacht: {
           select: {
@@ -25,18 +21,35 @@ export async function GET(request: NextRequest) {
       orderBy: { startDate: 'asc' },
     })
 
+    const now = new Date()
+
     const tripsWithAvailability = trips.map((t) => {
-      // 1 booking = 1 cabin; available = total cabins − active bookings
-      const totalCabins = t.yacht.cabins.length || t.yacht.cabinCount
+      const totalCabins    = t.yacht.cabins.length || t.yacht.cabinCount
       const activeBookings = t._count.bookings
+      const spotsAvailable = Math.max(0, totalCabins - activeBookings)
+
+      // Auto-compute status; only 'cancelled' is a manual override that is never touched
+      let effectiveStatus = t.status
+      if (t.status !== 'cancelled') {
+        if (now >= new Date(t.startDate)) effectiveStatus = 'closed'
+        else if (spotsAvailable === 0)   effectiveStatus = 'full'
+        else                             effectiveStatus = 'open'
+      }
+
       return {
         ...t,
+        status: effectiveStatus,
         spotsBooked: activeBookings,
-        spotsAvailable: Math.max(0, totalCabins - activeBookings),
+        spotsAvailable,
       }
     })
 
-    return NextResponse.json(tripsWithAvailability)
+    // Filter by computed status, not the raw DB value
+    const result = status
+      ? tripsWithAvailability.filter(t => t.status === status)
+      : tripsWithAvailability
+
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching open trips:', error)
     return NextResponse.json({ error: 'Failed to fetch open trips' }, { status: 500 })

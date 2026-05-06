@@ -231,7 +231,7 @@ export default function Yachts() {
 
       {/* ── Add / Edit Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) resetForm() }}>
-        <DialogContent className="w-240 max-w-[100vw] flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
+        <DialogContent className="sm:max-w-5xl flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
           <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
             <DialogTitle className="text-lg">{editTarget ? `Edit — ${editTarget.name}` : 'Add New Yacht'}</DialogTitle>
 

@@ -138,7 +138,7 @@ export default function OpenTrips() {
               <Plus className="mr-2 h-4 w-4" /> Schedule Trip
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-240 max-w-[100vw] flex flex-col max-h-[92vh] overflow-hidden">
+          <DialogContent className="sm:max-w-4xl flex flex-col max-h-[92vh] overflow-hidden">
             <DialogHeader className="shrink-0 border-b pb-3">
               <DialogTitle>Schedule New Open Trip</DialogTitle>
             </DialogHeader>

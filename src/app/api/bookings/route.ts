@@ -1,38 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+/* ── helpers ─────────────────────────────────────────────────────────── */
+
+/** Compute payment status from amounts (never overrides 'completed' or 'cancelled'). */
+function paymentStatus(depositPaid: number, totalPrice: number): string {
+  if (depositPaid <= 0)           return 'pending'
+  if (depositPaid >= totalPrice)  return 'fully_paid'
+  return 'partially_paid'
+}
+
+/* ── GET ─────────────────────────────────────────────────────────────── */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status')
-    const yachtId = searchParams.get('yachtId')
-    const customerId = searchParams.get('customerId')
-    const source = searchParams.get('source')
-    const tripType = searchParams.get('tripType')
-    const openTripId = searchParams.get('openTripId')
+    const status      = searchParams.get('status')
+    const yachtId     = searchParams.get('yachtId')
+    const customerId  = searchParams.get('customerId')
+    const source      = searchParams.get('source')
+    const tripType    = searchParams.get('tripType')
+    const openTripId  = searchParams.get('openTripId')
+
+    // Auto-cancel pending bookings whose deposit deadline has passed
+    await db.booking.updateMany({
+      where: {
+        status: 'pending',
+        depositDueDate: { lt: new Date() },
+      },
+      data: { status: 'cancelled' },
+    })
 
     const where: Record<string, unknown> = {}
-    if (status) where.status = status
-    if (yachtId) where.yachtId = yachtId
+    if (status)     where.status     = status
+    if (yachtId)    where.yachtId    = yachtId
     if (customerId) where.customerId = customerId
-    if (source) where.source = source
-    if (tripType) where.tripType = tripType
+    if (source)     where.source     = source
+    if (tripType)   where.tripType   = tripType
     if (openTripId) where.openTripId = openTripId
 
     const bookings = await db.booking.findMany({
       where,
-      include: {
-        yacht: { select: { id: true, name: true, model: true } },
-        customer: { select: { id: true, name: true, email: true, phone: true } },
-        agent: { select: { id: true, name: true, company: true } },
-        openTrip: { select: { id: true, title: true, destination: true } },
+      select: {
+        id: true, bookingCode: true, source: true, tripType: true,
+        startDate: true, endDate: true, status: true,
+        totalPrice: true, depositPaid: true, discount: true,
+        depositDueDate: true, finalDueDate: true,
+        guestCount: true, destination: true, notes: true,
+        yacht:     { select: { id: true, name: true, model: true } },
+        customer:  { select: { id: true, name: true, email: true, phone: true } },
+        agent:     { select: { id: true, name: true, company: true } },
+        openTrip:  { select: { id: true, title: true, destination: true } },
         guests: {
-          include: {
-            customer: { select: { id: true, name: true, phone: true } },
-            cabin: { select: { id: true, name: true } },
+          select: {
+            id: true, isLead: true, customerId: true,
+            customer: { select: { name: true } },
+            cabin:    { select: { id: true, name: true } },
           },
         },
-        services: true,
+        services: { select: { id: true, name: true, price: true } },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -44,81 +69,68 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/* ── POST ────────────────────────────────────────────────────────────── */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      tripType,
-      source,
-      agentId,
-      yachtId,
-      openTripId,
-      startDate,
-      endDate,
-      destination,
-      totalPrice,
-      depositPaid,
-      discount,
-      crewRequired,
-      notes,
+      tripType, source, agentId, yachtId, openTripId,
+      startDate, endDate, destination,
+      totalPrice, depositPaid, discount,
+      depositDueDate, finalDueDate,
+      crewRequired, notes,
       guests,   // Array<{ customerId, cabinId?, isLead }>
       services, // Array<{ name, price }>
-      status,
     } = body
 
     if (!startDate || !endDate || !totalPrice || !guests?.length) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Lead guest becomes the booking's primary customer
     const lead = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
-    const primaryCustomerId = lead.customerId
+    const paid = parseFloat(depositPaid) || 0
+    const total = parseFloat(totalPrice)
 
     const bookingCount = await db.booking.count()
-    const bookingCode = `BK${String(bookingCount + 1).padStart(3, '0')}`
+    const bookingCode  = `BK${String(bookingCount + 1).padStart(3, '0')}`
 
     const booking = await db.booking.create({
       data: {
         bookingCode,
-        customerId: primaryCustomerId,
-        agentId: agentId || null,
-        openTripId: openTripId || null,
-        source: source || 'DIRECT',
-        tripType: tripType || 'PRIVATE_CHARTER',
-        yachtId: yachtId || null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        destination: destination || null,
-        totalPrice: parseFloat(totalPrice),
-        depositPaid: depositPaid ? parseFloat(depositPaid) : 0,
-        discount: discount ? parseFloat(discount) : 0,
-        guestCount: guests.length,
-        crewRequired: crewRequired ?? false,
-        notes: notes || null,
-        status: status ?? 'confirmed',
+        customerId:    lead.customerId,
+        agentId:       agentId || null,
+        openTripId:    openTripId || null,
+        source:        source || 'DIRECT',
+        tripType:      tripType || 'PRIVATE_CHARTER',
+        yachtId:       yachtId || null,
+        startDate:     new Date(startDate),
+        endDate:       new Date(endDate),
+        destination:   destination || null,
+        totalPrice:    total,
+        depositPaid:   paid,
+        discount:      parseFloat(discount) || 0,
+        depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
+        finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
+        status:         paymentStatus(paid, total),
+        guestCount:     guests.length,
+        crewRequired:   crewRequired ?? false,
+        notes:          notes || null,
         guests: {
           create: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
             customerId: g.customerId,
-            cabinId: g.cabinId || null,
-            isLead: g.isLead ?? false,
+            cabinId:    g.cabinId || null,
+            isLead:     g.isLead ?? false,
           })),
         },
         services: (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
           ? {
               create: (services as { name: string; price: number | string }[])
-                .filter((s) => s.name?.trim())
-                .map((s) => ({ name: s.name, price: parseFloat(String(s.price)) || 0 })),
+                .filter(s => s.name?.trim())
+                .map(s => ({ name: s.name, price: parseFloat(String(s.price)) || 0 })),
             }
           : undefined,
       },
-      include: {
-        yacht: true,
-        customer: true,
-        agent: true,
-        openTrip: true,
-        guests: { include: { customer: true, cabin: true } },
-        services: true,
-      },
+      select: { id: true, bookingCode: true, status: true },
     })
 
     return NextResponse.json(booking, { status: 201 })
