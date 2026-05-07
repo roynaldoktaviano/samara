@@ -9,10 +9,10 @@ datasource db {
 }
 
 enum Role {
-  SUPER_ADMIN
   ADMIN
-  MANAGER
-  STAFF
+  SALES
+  FINANCE
+  MARKETING
 }
 
 enum BookingSource {
@@ -30,7 +30,7 @@ model User {
   email     String   @unique
   name      String?
   password  String
-  role      Role     @default(STAFF)
+  role      Role     @default(SALES)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

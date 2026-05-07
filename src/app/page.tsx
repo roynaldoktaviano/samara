@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship } from 'lucide-react'
+import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -13,8 +13,9 @@ import CalendarView from '@/components/calendar/CalendarViewFixed'
 import Expenses from '@/components/expenses/Expenses'
 import Maintenance from '@/components/maintenance/Maintenance'
 import OpenTrips from '@/components/open-trips/OpenTrips'
+import UsersPage from '@/components/users/Users'
 
-type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips'
+type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users'
 
 type NavItem = {
   id: View
@@ -24,28 +25,29 @@ type NavItem = {
 }
 
 const navigationItems: NavItem[] = [
-  { id: 'calendar',     label: 'Dashboard',    icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
-  { id: 'yachts',       label: 'Yachts',       icon: Anchor,           roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { id: 'bookings',     label: 'Bookings',     icon: Calendar,         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
-  { id: 'open-trips',   label: 'Open Trips',   icon: Ship,             roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { id: 'customers',    label: 'Guests',       icon: Users,            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { id: 'dashboard',    label: 'Statistics',   icon: LayoutDashboard,  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { id: 'expenses',     label: 'Expenses',     icon: DollarSign,       roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { id: 'maintenance',  label: 'Maintenance',  icon: Wrench,           roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { id: 'calendar',    label: 'Dashboard',   icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING'] },
+  { id: 'yachts',      label: 'Yachts',      icon: Anchor,          roles: ['ADMIN'] },
+  { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE'] },
+  { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'SALES', 'MARKETING'] },
+  { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
+  { id: 'dashboard',   label: 'Statistics',  icon: LayoutDashboard, roles: ['ADMIN', 'FINANCE'] },
+  { id: 'expenses',    label: 'Expenses',    icon: DollarSign,      roles: ['ADMIN', 'FINANCE'] },
+  { id: 'maintenance', label: 'Maintenance', icon: Wrench,          roles: ['ADMIN', 'FINANCE'] },
+  { id: 'users',       label: 'Team',        icon: UserCog,         roles: ['ADMIN'] },
 ]
 
 const roleBadgeColor: Record<string, string> = {
-  SUPER_ADMIN: 'bg-purple-100 text-purple-700',
-  ADMIN:       'bg-blue-100 text-blue-700',
-  MANAGER:     'bg-teal-100 text-teal-700',
-  STAFF:       'bg-gray-100 text-gray-600',
+  ADMIN:     'bg-purple-100 text-purple-700',
+  SALES:     'bg-blue-100 text-blue-700',
+  FINANCE:   'bg-emerald-100 text-emerald-700',
+  MARKETING: 'bg-orange-100 text-orange-700',
 }
 
 const roleLabel: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  ADMIN:       'Admin',
-  MANAGER:     'Manager',
-  STAFF:       'Staff',
+  ADMIN:     'Admin',
+  SALES:     'Sales',
+  FINANCE:   'Finance',
+  MARKETING: 'Marketing',
 }
 
 export default function Home() {
@@ -84,6 +86,7 @@ export default function Home() {
       case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
+      case 'users':        return <UsersPage />
       default:             return <CalendarView />
     }
   }

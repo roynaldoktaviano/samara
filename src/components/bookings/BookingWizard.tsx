@@ -51,6 +51,7 @@ interface Props {
   onOpenChange: (v: boolean) => void
   onSuccess: () => void
   preselectedDate?: string
+  preselectedOpenTripId?: string
 }
 
 /* ─── Step nav config ────────────────────────────────────────────────────── */
@@ -80,7 +81,7 @@ const fromUSD  = (usd:    number, c: CurrencyCode) => usd    / CURRENCIES[c].rat
 const fmtAmt   = (n: number, c: CurrencyCode) =>
   `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
-export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }: Props) {
+export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId }: Props) {
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
   const [source,  setSource]  = useState<Source | null>(null)
@@ -141,6 +142,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate }
   const [quickPhone,     setQuickPhone]     = useState('')
   const [quickEmail,     setQuickEmail]     = useState('')
   const [quickSaving,    setQuickSaving]    = useState(false)
+
+  /* jump to open-trip step when pre-selected from calendar */
+  useEffect(() => {
+    if (!open || !preselectedOpenTripId) return
+    setSource('DIRECT')
+    setTrip('OPEN_TRIP')
+    setPhase('steps')
+    setStep(1)
+    setOTId(preselectedOpenTripId)
+  }, [open, preselectedOpenTripId])
 
   /* fetch on open */
   useEffect(() => {

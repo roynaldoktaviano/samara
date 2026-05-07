@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { Loader2, User, Mail, Phone, CreditCard, CalendarDays, MapPin, Utensils, AlertCircle, Shirt, ClipboardList } from 'lucide-react'
 import { toast } from 'sonner'
 
-interface GuestFormState {
+export interface GuestFormState {
   firstName: string; lastName: string; gender: string
   email: string; phone: string; passport: string
   dateOfBirth: string; address: string
@@ -18,21 +19,17 @@ interface GuestFormState {
   equipmentSizes: string; operationalNotes: string
 }
 
-const EMPTY: GuestFormState = {
+export const GUEST_FORM_EMPTY: GuestFormState = {
   firstName: '', lastName: '', gender: '', email: '', phone: '',
   passport: '', dateOfBirth: '', address: '',
   dietaryRequirements: '', allergies: '', equipmentSizes: '', operationalNotes: '',
 }
 
-function toFormState(data: any): GuestFormState {
-  // Fall back to splitting name when firstName/lastName not yet populated
+export function toGuestFormState(data: any): GuestFormState {
   const parts = (data.name ?? '').trim().split(/\s+/)
-  const fallbackFirst = parts[0] ?? ''
-  const fallbackLast  = parts.slice(1).join(' ')
-
   return {
-    firstName:           data.firstName           || fallbackFirst,
-    lastName:            data.lastName            || fallbackLast,
+    firstName:           data.firstName           || parts[0]             || '',
+    lastName:            data.lastName            || parts.slice(1).join(' ') || '',
     gender:              data.gender              ?? '',
     email:               data.email               ?? '',
     phone:               data.phone               ?? '',
@@ -63,50 +60,65 @@ function FieldRow({ icon: Icon, label, children }: { icon: React.ElementType; la
 }
 
 interface Props {
-  guestId: string | null
+  open: boolean
+  guestId?: string | null   // undefined/null = add mode, string = edit mode
   onClose: () => void
-  onSaved?: () => void
+  onSaved?: (guest: any) => void
 }
 
-export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
-  const [form, setForm] = useState<GuestFormState>(EMPTY)
+export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Props) {
+  const isEdit = !!guestId
+  const [form, setForm] = useState<GuestFormState>(GUEST_FORM_EMPTY)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [guestName, setGuestName] = useState('')
 
   useEffect(() => {
-    if (!guestId) return
+    if (!open) return
+    if (!guestId) {
+      setForm(GUEST_FORM_EMPTY)
+      setGuestName('')
+      return
+    }
     setLoading(true)
-    setForm(EMPTY)
+    setForm(GUEST_FORM_EMPTY)
     setGuestName('')
     fetch(`/api/customers/${guestId}`)
       .then(r => r.json())
       .then(data => {
         setGuestName(data.name ?? '')
-        setForm(toFormState(data))
+        setForm(toGuestFormState(data))
       })
       .finally(() => setLoading(false))
-  }, [guestId])
+  }, [open, guestId])
 
   const set = (k: keyof GuestFormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   const handleSave = async () => {
-    if (!guestId) return
+    if (!form.firstName.trim()) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/customers/${guestId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+      const res = isEdit
+        ? await fetch(`/api/customers/${guestId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form),
+          })
+        : await fetch('/api/customers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(form),
+          })
+
       if (!res.ok) throw new Error()
-      toast.success('Guest profile updated')
-      onSaved?.()
+      const saved = await res.json()
+      toast.success(isEdit ? 'Guest profile updated' : 'Guest added successfully')
+      onSaved?.(saved)
       onClose()
     } catch {
-      toast.error('Failed to save changes')
+      toast.error(isEdit ? 'Failed to save changes' : 'Failed to add guest')
     } finally {
       setSaving(false)
     }
@@ -115,21 +127,28 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
   const displayName = [form.firstName, form.lastName].filter(Boolean).join(' ') || guestName
 
   return (
-    <Sheet open={!!guestId} onOpenChange={open => { if (!open) onClose() }}>
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
       <SheetContent className="w-100 sm:w-115 p-0 flex flex-col overflow-hidden border-l">
 
         {/* ── Header ── */}
         <div className="bg-[#1a5f6e] px-6 pt-8 pb-6 text-white shrink-0">
           <SheetHeader>
-            <SheetTitle className="sr-only">Edit Guest</SheetTitle>
+            <SheetTitle className="sr-only">{isEdit ? 'Edit Guest' : 'Add New Guest'}</SheetTitle>
           </SheetHeader>
           <div className="flex items-center gap-4">
             <div className="h-14 w-14 rounded-full bg-white/20 flex items-center justify-center text-white text-lg font-bold shrink-0 ring-2 ring-white/30">
-              {loading ? <Loader2 className="h-5 w-5 animate-spin opacity-70" /> : (displayName ? getInitials(displayName) : <User className="h-6 w-6 opacity-70" />)}
+              {loading
+                ? <Loader2 className="h-5 w-5 animate-spin opacity-70" />
+                : displayName ? getInitials(displayName) : <User className="h-6 w-6 opacity-70" />
+              }
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-widest text-white/60 font-medium mb-0.5">Guest Profile</p>
-              <h2 className="text-xl font-bold truncate">{loading ? 'Loading…' : (displayName || '—')}</h2>
+              <p className="text-[11px] uppercase tracking-widest text-white/60 font-medium mb-0.5">
+                {isEdit ? 'Edit Guest Profile' : 'New Guest'}
+              </p>
+              <h2 className="text-xl font-bold truncate">
+                {loading ? 'Loading…' : (displayName || 'Enter name below')}
+              </h2>
               {form.gender && !loading && (
                 <span className="inline-block mt-1 text-[10px] bg-white/15 px-2 py-0.5 rounded-full">{form.gender}</span>
               )}
@@ -145,7 +164,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
         ) : (
           <div className="flex-1 overflow-y-auto">
 
-            {/* Guest Information section */}
+            {/* Guest Information */}
             <div className="px-6 pt-5 pb-4">
               <div className="flex items-center gap-2 mb-4">
                 <div className="h-px flex-1 bg-border" />
@@ -154,30 +173,17 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
               </div>
 
               <div className="space-y-4">
-                {/* Name row */}
-                <FieldRow icon={User} label="Name">
+                <FieldRow icon={User} label="Name *">
                   <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={form.firstName}
-                      onChange={set('firstName')}
-                      placeholder="First name"
-                      className="h-9 text-sm"
-                    />
-                    <Input
-                      value={form.lastName}
-                      onChange={set('lastName')}
-                      placeholder="Last name"
-                      className="h-9 text-sm"
-                    />
+                    <Input value={form.firstName} onChange={set('firstName')} placeholder="First name" className="h-9 text-sm" />
+                    <Input value={form.lastName}  onChange={set('lastName')}  placeholder="Last name"  className="h-9 text-sm" />
                   </div>
                 </FieldRow>
 
                 <div className="grid grid-cols-2 gap-4">
                   <FieldRow icon={User} label="Gender">
-                    <Select value={form.gender} onValueChange={v => setForm(prev => ({ ...prev, gender: v }))}>
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
+                    <Select value={form.gender} onValueChange={v => setForm(p => ({ ...p, gender: v }))}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Male">Male</SelectItem>
                         <SelectItem value="Female">Female</SelectItem>
@@ -209,8 +215,10 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
               </div>
             </div>
 
-            {/* Special Requirements section */}
-            <div className="px-6 pb-6">
+            <Separator />
+
+            {/* Health & Requirements */}
+            <div className="px-6 py-5">
               <div className="flex items-center gap-2 mb-4">
                 <div className="h-px flex-1 bg-border" />
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold px-1">Health & Requirements</span>
@@ -219,34 +227,20 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
 
               <div className="space-y-4">
                 <FieldRow icon={Utensils} label="Dietary Requirements">
-                  <Textarea
-                    rows={2}
-                    value={form.dietaryRequirements}
-                    onChange={set('dietaryRequirements')}
-                    placeholder="e.g. Vegetarian, Halal, Vegan..."
-                    className="text-sm resize-none"
-                  />
+                  <Textarea rows={2} value={form.dietaryRequirements} onChange={set('dietaryRequirements')}
+                    placeholder="e.g. Vegetarian, Halal, Vegan..." className="text-sm resize-none" />
                 </FieldRow>
                 <FieldRow icon={AlertCircle} label="Allergies">
-                  <Textarea
-                    rows={2}
-                    value={form.allergies}
-                    onChange={set('allergies')}
-                    placeholder="e.g. Shellfish, Peanuts..."
-                    className="text-sm resize-none"
-                  />
+                  <Textarea rows={2} value={form.allergies} onChange={set('allergies')}
+                    placeholder="e.g. Shellfish, Peanuts..." className="text-sm resize-none" />
                 </FieldRow>
                 <FieldRow icon={Shirt} label="Equipment Sizes">
-                  <Input value={form.equipmentSizes} onChange={set('equipmentSizes')} placeholder="e.g. Wetsuit M, Fins L" className="h-9 text-sm" />
+                  <Input value={form.equipmentSizes} onChange={set('equipmentSizes')}
+                    placeholder="e.g. Wetsuit M, Fins L" className="h-9 text-sm" />
                 </FieldRow>
                 <FieldRow icon={ClipboardList} label="Operational Notes">
-                  <Textarea
-                    rows={2}
-                    value={form.operationalNotes}
-                    onChange={set('operationalNotes')}
-                    placeholder="Crew-facing notes..."
-                    className="text-sm resize-none"
-                  />
+                  <Textarea rows={2} value={form.operationalNotes} onChange={set('operationalNotes')}
+                    placeholder="Crew-facing notes..." className="text-sm resize-none" />
                 </FieldRow>
               </div>
             </div>
@@ -262,10 +256,10 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }: Props) {
           <Button
             onClick={handleSave}
             disabled={saving || loading || !form.firstName.trim()}
-            className="min-w-30 bg-[#1a5f6e] hover:bg-[#145260] text-white"
+            className="min-w-32 bg-[#1a5f6e] hover:bg-[#145260] text-white"
           >
-            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-            Save Changes
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {isEdit ? 'Save Changes' : 'Add Guest'}
           </Button>
         </div>
 

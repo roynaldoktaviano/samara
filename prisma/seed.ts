@@ -11,18 +11,8 @@ async function main() {
 
   await Promise.all([
     prisma.user.upsert({
-      where: { email: 'superadmin@samara.com' },
-      update: {},
-      create: {
-        email: 'superadmin@samara.com',
-        name: 'Super Admin',
-        password: hashedPassword,
-        role: 'SUPER_ADMIN',
-      },
-    }),
-    prisma.user.upsert({
       where: { email: 'admin@samara.com' },
-      update: {},
+      update: { role: 'ADMIN' },
       create: {
         email: 'admin@samara.com',
         name: 'Admin Samara',
@@ -31,28 +21,42 @@ async function main() {
       },
     }),
     prisma.user.upsert({
-      where: { email: 'manager@samara.com' },
-      update: {},
+      where: { email: 'sales@samara.com' },
+      update: { role: 'SALES' },
       create: {
-        email: 'manager@samara.com',
-        name: 'Manager Ops',
+        email: 'sales@samara.com',
+        name: 'Sales Team',
         password: hashedPassword,
-        role: 'MANAGER',
+        role: 'SALES',
       },
     }),
     prisma.user.upsert({
-      where: { email: 'staff@samara.com' },
-      update: {},
+      where: { email: 'finance@samara.com' },
+      update: { role: 'FINANCE' },
       create: {
-        email: 'staff@samara.com',
-        name: 'Staff Reservasi',
+        email: 'finance@samara.com',
+        name: 'Finance Team',
         password: hashedPassword,
-        role: 'STAFF',
+        role: 'FINANCE',
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'marketing@samara.com' },
+      update: { role: 'MARKETING' },
+      create: {
+        email: 'marketing@samara.com',
+        name: 'Marketing Team',
+        password: hashedPassword,
+        role: 'MARKETING',
       },
     }),
   ])
 
   console.log('Created 4 users (password: samara123 for all)')
+  console.log('  admin@samara.com     → ADMIN')
+  console.log('  sales@samara.com     → SALES')
+  console.log('  finance@samara.com   → FINANCE')
+  console.log('  marketing@samara.com → MARKETING')
 
   // Create customers
   const customers = await Promise.all([
@@ -126,7 +130,7 @@ async function main() {
         model: 'Custom Phinisi',
         year: 2017,
         capacity: 12,
-        cabins: 5,
+        cabinCount: 5,
         length: 27.0,
         hourlyRate: 350,
         dailyRate: 3500,
@@ -143,7 +147,7 @@ async function main() {
         model: 'Custom Phinisi',
         year: 2018,
         capacity: 10,
-        cabins: 4,
+        cabinCount: 4,
         length: 24.0,
         hourlyRate: 300,
         dailyRate: 3000,
@@ -160,7 +164,7 @@ async function main() {
         model: 'Luxury Phinisi',
         year: 2015,
         capacity: 8,
-        cabins: 3,
+        cabinCount: 3,
         length: 30.0,
         hourlyRate: 500,
         dailyRate: 5500,
@@ -177,7 +181,7 @@ async function main() {
         model: 'Luxury Motor Yacht',
         year: 2022,
         capacity: 14,
-        cabins: 5,
+        cabinCount: 5,
         length: 35.0,
         hourlyRate: 800,
         dailyRate: 7000,
@@ -472,11 +476,11 @@ async function main() {
 
   console.log('Created maintenance tasks')
   console.log('\nSeed completed successfully!')
-  console.log('\n--- Login credentials ---')
-  console.log('superadmin@samara.com  | samara123 | SUPER_ADMIN (all menus)')
-  console.log('admin@samara.com       | samara123 | ADMIN (all menus)')
-  console.log('manager@samara.com     | samara123 | MANAGER (Dashboard, Bookings, Customers, Statistics)')
-  console.log('staff@samara.com       | samara123 | STAFF (Dashboard, Bookings)')
+  console.log('\n--- Login credentials (password: samara123) ---')
+  console.log('admin@samara.com     → ADMIN     (full access + Team Management)')
+  console.log('sales@samara.com     → SALES     (Dashboard, Bookings, Open Trips, Guests)')
+  console.log('finance@samara.com   → FINANCE   (Dashboard, Statistics, Expenses, Maintenance, Bookings)')
+  console.log('marketing@samara.com → MARKETING (Dashboard, Open Trips, Guests)')
 }
 
 main()

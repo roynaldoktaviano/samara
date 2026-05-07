@@ -67,9 +67,9 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 22   /* px per event lane */
-const DAY_H     = 24   /* px for day-number row */
-const MIN_ROW_H = 88   /* minimum row height — keeps all rows the same base size */
+const LANE_H    = 28   /* px per event lane */
+const DAY_H     = 36   /* px for day-number row — extra space below date number */
+const MIN_ROW_H = 160  /* minimum row height — guaranteed space for 4 event lanes */
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -251,6 +251,15 @@ function MonthGrid({
                   style.backgroundColor = seg.color
                 }
 
+                /* ── Open trip extra info ── */
+                const ot = seg.openTripRef
+                const nights = ot
+                  ? Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000)
+                  : 0
+                const days = nights + 1
+                const soldOut   = ot ? ot.maxCapacity - ot.spotsAvailable : 0
+                const available = ot ? ot.spotsAvailable : 0
+
                 return (
                   <div
                     key={seg.key}
@@ -263,9 +272,68 @@ function MonthGrid({
                     }}
                   >
                     {seg.isRealStart && (
-                      <span className="text-[9px] font-semibold px-1.5 truncate leading-none drop-shadow-sm whitespace-nowrap">
-                        {seg.label}
-                      </span>
+                      seg.isStripe && ot ? (
+                        /* Open trip pill — white overlay so text is readable over stripes */
+                        <div style={{
+                          margin: '0 4px',
+                          backgroundColor: 'rgba(255,255,255,0.93)',
+                          borderRadius: 4,
+                          padding: '2px 6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          maxWidth: 'calc(100% - 8px)',
+                          overflow: 'hidden',
+                        }}>
+                          {/* Title */}
+                          <span style={{
+                            color: seg.color, fontSize: 11, fontWeight: 700,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            flexShrink: 1, minWidth: 0,
+                          }}>
+                            {ot.title}
+                          </span>
+                          {/* Days / Nights */}
+                          <span style={{
+                            color: '#475569', fontSize: 10, fontWeight: 600,
+                            whiteSpace: 'nowrap', flexShrink: 0,
+                          }}>
+                            {days}D/{nights}N
+                          </span>
+                          {/* Cabin status */}
+                          {seg.isFull ? (
+                            <span style={{
+                              background: '#ef4444', color: 'white',
+                              fontSize: 9, fontWeight: 800,
+                              padding: '1px 5px', borderRadius: 3,
+                              whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.04em',
+                            }}>
+                              FULL
+                            </span>
+                          ) : (
+                            <>
+                              <span style={{ color: '#16a34a', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                {available} sisa
+                              </span>
+                              {soldOut > 0 && (
+                                <span style={{ color: '#dc2626', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                  · {soldOut} sold
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        /* Regular booking — white text on solid bar */
+                        <span style={{
+                          fontSize: 9, fontWeight: 600, color: 'white',
+                          padding: '0 6px', overflow: 'hidden',
+                          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          textShadow: '0 1px 2px rgba(0,0,0,0.35)',
+                        }}>
+                          {seg.label}
+                        </span>
+                      )
                     )}
                   </div>
                 )
@@ -288,10 +356,12 @@ export default function CalendarView() {
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
+  const [yachtFilter, setYachtFilter]   = useState<string>('all')
   const [selectedBooking, setSelectedBooking]   = useState<BookingEvent | null>(null)
   const [isDetailOpen, setIsDetailOpen]         = useState(false)
   const [wizardOpen, setWizardOpen]             = useState(false)
   const [selectedDate, setSelectedDate]         = useState('')
+  const [wizardOpenTripId, setWizardOpenTripId] = useState<string | undefined>(undefined)
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
@@ -457,9 +527,6 @@ export default function CalendarView() {
 
   const leftYear  = currentDate.getFullYear()
   const leftMonth = currentDate.getMonth()
-  const rightDate  = new Date(leftYear, leftMonth + 1, 1)
-  const rightYear  = rightDate.getFullYear()
-  const rightMonth = rightDate.getMonth()
 
   const handleDateClick = (dateStr: string) => {
     setSelectedDate(dateStr)
@@ -469,11 +536,22 @@ export default function CalendarView() {
   const getDays = (s: string, e: string) =>
     Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000)
 
-  const upcomingBookings = useMemo(() =>
-    [...bookings]
-      .filter(b => b.status !== 'cancelled')
-      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()),
-    [bookings])
+  const upcomingBookings = useMemo(() => {
+    const monthStart = new Date(leftYear, leftMonth, 1)
+    const monthEnd   = new Date(leftYear, leftMonth + 1, 0)
+    return [...bookings]
+      .filter(b => {
+        if (b.status === 'cancelled') return false
+        const s = new Date(b.startDate)
+        const e = new Date(b.endDate)
+        if (s > monthEnd || e < monthStart) return false
+        if (tripFilter === 'PRIVATE_CHARTER' && b.tripType !== 'PRIVATE_CHARTER') return false
+        if (tripFilter === 'OPEN_TRIP'       && b.tripType !== 'OPEN_TRIP')        return false
+        if (yachtFilter !== 'all' && b.yachtName !== yachtFilter) return false
+        return true
+      })
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+  }, [bookings, leftYear, leftMonth, tripFilter, yachtFilter])
 
   if (loading) {
     return (
@@ -607,23 +685,20 @@ export default function CalendarView() {
           </div>
         </div>
 
-        {/* Legend + Trip Filter */}
-        <div className="flex items-center justify-between gap-4 px-5 py-2.5 border-b flex-wrap">
-          <div className="flex items-center gap-4 flex-wrap">
-            {/* Per-yacht color swatches */}
+        {/* Legend + Filters */}
+        <div className="border-b">
+          {/* Row 1: legend swatches */}
+          <div className="flex items-center gap-4 px-5 py-2 flex-wrap">
             {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
               const color = yachtColorMap[y.name] ?? '#64748b'
               return (
                 <div key={y.id} className="flex items-center gap-1.5">
-                  {/* solid = charter */}
-                  <span className="w-9 h-3 rounded-sm shrink-0 inline-block" style={{ backgroundColor: color }} />
-                  {/* striped = open trip */}
-                  <span className="w-9 h-3 rounded-sm shrink-0 inline-block" style={{ ...stripeStyle(color), outline: `1.5px solid ${color}`, outlineOffset: -1 }} />
+                  <span className="w-8 h-3 rounded-sm shrink-0 inline-block" style={{ backgroundColor: color }} />
+                  <span className="w-8 h-3 rounded-sm shrink-0 inline-block" style={{ ...stripeStyle(color), outline: `1.5px solid ${color}`, outlineOffset: -1 }} />
                   <span className="text-[11px] text-muted-foreground font-semibold">{y.name}</span>
                 </div>
               )
             })}
-            {/* Type key */}
             <div className="border-l border-border pl-3 flex items-center gap-3">
               <div className="flex items-center gap-1">
                 <span className="w-5 h-3 rounded-sm bg-[#64748b] inline-block" />
@@ -635,21 +710,56 @@ export default function CalendarView() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
+
+          {/* Row 2: trip type filter + yacht filter */}
+          <div className="flex items-center justify-between gap-4 px-5 py-2 border-t flex-wrap">
+            {/* Trip type */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium">Tipe:</span>
+              {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setTripFilter(f)}
+                  className={[
+                    'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                    tripFilter === f ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
+                  ].join(' ')}
+                >
+                  {f === 'all' ? 'Semua' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
+                </button>
+              ))}
+            </div>
+
+            {/* Yacht filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium">Kapal:</span>
               <button
-                key={f}
-                onClick={() => setTripFilter(f)}
+                onClick={() => setYachtFilter('all')}
                 className={[
                   'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
-                  tripFilter === f
-                    ? 'bg-[#bdac7e] text-white'
-                    : 'text-muted-foreground hover:bg-muted',
+                  yachtFilter === 'all' ? 'bg-[#1a5f6e] text-white' : 'text-muted-foreground hover:bg-muted',
                 ].join(' ')}
               >
-                {f === 'all' ? 'All' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
+                Semua
               </button>
-            ))}
+              {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
+                const color = yachtColorMap[y.name] ?? '#64748b'
+                const active = yachtFilter === y.name
+                return (
+                  <button
+                    key={y.id}
+                    onClick={() => setYachtFilter(active ? 'all' : y.name)}
+                    className={[
+                      'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border',
+                      active ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted',
+                    ].join(' ')}
+                    style={active ? { backgroundColor: color, borderColor: color } : {}}
+                  >
+                    {y.name}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
 
@@ -665,25 +775,19 @@ export default function CalendarView() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
 
-              {/* Left month */}
+              {/* Single month — full width */}
               <MonthGrid
                 year={leftYear} month={leftMonth}
-                bookings={tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER' ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER') : bookings.filter(b => b.tripType !== 'OPEN_TRIP')}
-                openTrips={tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips}
-                yachtColorMap={yachtColorMap}
-                onDateClick={handleDateClick}
-                onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
-                onOpenTripClick={handleOpenTripClick}
-              />
-
-              {/* Divider */}
-              <div className="w-px bg-border self-stretch mx-3 mt-8" />
-
-              {/* Right month */}
-              <MonthGrid
-                year={rightYear} month={rightMonth}
-                bookings={tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER' ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER') : bookings.filter(b => b.tripType !== 'OPEN_TRIP')}
-                openTrips={tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips}
+                bookings={
+                  (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
+                    ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
+                    : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
+                  ).filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+                }
+                openTrips={
+                  (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
+                    .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
+                }
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
                 onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
@@ -702,7 +806,9 @@ export default function CalendarView() {
             /* List view */
             <div className="px-5 py-4 space-y-2">
               {upcomingBookings.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground text-sm">No bookings found.</div>
+                <div className="text-center py-12 text-muted-foreground text-sm">
+                  Tidak ada booking di {MONTH_FULL[leftMonth]} {leftYear}.
+                </div>
               ) : (
                 upcomingBookings.map(b => (
                   <button
@@ -927,6 +1033,18 @@ export default function CalendarView() {
 
                   <DialogFooter className="gap-2">
                     <Button variant="outline" onClick={() => setOtDetailOpen(false)}>Close</Button>
+                    {otDetail.status === 'open' && (
+                      <Button
+                        onClick={() => {
+                          setOtDetailOpen(false)
+                          setWizardOpenTripId(otDetail.id)
+                          setWizardOpen(true)
+                        }}
+                        className="bg-[#bdac7e] hover:bg-[#a89660] text-white"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-2" /> Book This Trip
+                      </Button>
+                    )}
                     <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                       <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
                     </Button>
@@ -1001,6 +1119,7 @@ export default function CalendarView() {
 
       {/* ── Guest Edit Sheet ── */}
       <GuestEditSheet
+        open={!!editGuestId}
         guestId={editGuestId}
         onClose={() => setEditGuestId(null)}
       />
@@ -1008,9 +1127,10 @@ export default function CalendarView() {
       {/* ── New Booking Wizard ── */}
       <BookingWizard
         open={wizardOpen}
-        onOpenChange={setWizardOpen}
+        onOpenChange={v => { setWizardOpen(v); if (!v) setWizardOpenTripId(undefined) }}
         onSuccess={fetchBookings}
         preselectedDate={selectedDate}
+        preselectedOpenTripId={wizardOpenTripId}
       />
 
     </div>
