@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true,
         depositDueDate: true, finalDueDate: true,
-        guestCount: true, destination: true, notes: true,
+        guestCount: true, destination: true, notes: true, salesperson: true,
         yacht:     { select: { id: true, name: true, model: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:     { select: { id: true, name: true, company: true } },
@@ -72,6 +74,7 @@ export async function GET(request: NextRequest) {
 /* ── POST ────────────────────────────────────────────────────────────── */
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
       tripType, source, agentId, yachtId, openTripId,
@@ -83,16 +86,20 @@ export async function POST(request: NextRequest) {
       services, // Array<{ name, price }>
     } = body
 
-    if (!startDate || !endDate || !totalPrice || !guests?.length) {
+    if (!startDate || !endDate || !guests?.length) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const lead = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
-    const paid = parseFloat(depositPaid) || 0
-    const total = parseFloat(totalPrice)
+    const paid  = parseFloat(depositPaid) || 0
+    const total = parseFloat(totalPrice)  || 0
 
-    const bookingCount = await db.booking.count()
-    const bookingCode  = `BK${String(bookingCount + 1).padStart(3, '0')}`
+    const last = await db.booking.findFirst({
+      orderBy: { bookingCode: 'desc' },
+      select: { bookingCode: true },
+    })
+    const lastNum = last ? parseInt(last.bookingCode.replace(/\D/g, ''), 10) : 0
+    const bookingCode = `BK${String(lastNum + 1).padStart(3, '0')}`
 
     const booking = await db.booking.create({
       data: {
@@ -115,6 +122,7 @@ export async function POST(request: NextRequest) {
         guestCount:     guests.length,
         crewRequired:   crewRequired ?? false,
         notes:          notes || null,
+        salesperson:    session?.user?.name || null,
         guests: {
           create: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
             customerId: g.customerId,

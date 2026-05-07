@@ -178,8 +178,16 @@ export default function UsersPage() {
           <CardDescription>{users.length} accounts</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-hidden">
+            <Table className="table-fixed w-full">
+              <colgroup>
+                <col className="w-44" />
+                <col className="w-52" />
+                <col className="w-28" />
+                <col />
+                <col className="w-32" />
+                <col className="w-24" />
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
@@ -210,6 +218,7 @@ export default function UsersPage() {
                 ) : users.map(u => {
                   const meta = roleMeta(u.role)
                   const isSelf = u.id === session?.user.id
+                  const moduleList = meta.modules.split(', ')
                   return (
                     <TableRow key={u.id}>
                       <TableCell>
@@ -217,24 +226,30 @@ export default function UsersPage() {
                           <div className="h-8 w-8 rounded-full bg-[#1a5f6e] text-white flex items-center justify-center text-xs font-bold uppercase shrink-0">
                             {(u.name ?? u.email).charAt(0)}
                           </div>
-                          <div>
-                            <p className="font-medium text-sm">{u.name ?? '—'}</p>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{u.name ?? '—'}</p>
                             {isSelf && (
                               <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">you</span>
                             )}
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{u.email}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm truncate">{u.email}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${meta.color}`}>
                           {meta.label}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-64">
-                        {meta.modules}
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {moduleList.map(m => (
+                            <span key={m} className="inline-block text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{fmtDate(u.createdAt)}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{fmtDate(u.createdAt)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>

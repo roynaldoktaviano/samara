@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Loader2, X, CreditCard, Calendar } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 
@@ -143,7 +144,24 @@ export default function Guests() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="py-12 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+                  [...Array(6)].map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="h-9 w-9 rounded-full shrink-0" />
+                          <div className="space-y-1.5">
+                            <Skeleton className="h-3.5 w-28" />
+                            <Skeleton className="h-3 w-16" />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
+                      <TableCell><Skeleton className="h-3 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-3 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-3 w-8" /></TableCell>
+                      <TableCell><div className="flex justify-end gap-1"><Skeleton className="h-8 w-8 rounded-md" /><Skeleton className="h-8 w-8 rounded-md" /></div></TableCell>
+                    </TableRow>
+                  ))
                 ) : guests.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">No guests found</TableCell></TableRow>
                 ) : guests.map(g => (
@@ -202,7 +220,10 @@ export default function Guests() {
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             {detailLoading || !detail ? (
-              <DialogTitle className="sr-only">Guest Details</DialogTitle>
+              <div className="space-y-1.5">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-32" />
+              </div>
             ) : (
               <div className="flex items-start justify-between">
                 <div>
@@ -219,7 +240,21 @@ export default function Guests() {
             )}
           </DialogHeader>
           {detailLoading || !detail ? (
-            <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="space-y-1">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-4 w-36" />
+                  </div>
+                ))}
+              </div>
+              <Skeleton className="h-px w-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+              </div>
+            </div>
           ) : (
             <>
 

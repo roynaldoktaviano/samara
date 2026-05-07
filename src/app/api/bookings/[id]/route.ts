@@ -38,7 +38,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -63,6 +63,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(destination    !== undefined && { destination:    destination || null }),
         ...(depositDueDate !== undefined && { depositDueDate: depositDueDate ? new Date(depositDueDate) : null }),
         ...(finalDueDate   !== undefined && { finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null }),
+        ...(salesperson    !== undefined && { salesperson:    salesperson || null }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },

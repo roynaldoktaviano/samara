@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,9 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Search, Edit, BedDouble, AlertCircle } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Plus, Search, Edit, BedDouble, AlertCircle,
+  CreditCard, CheckCircle2, XCircle, Receipt, Clock,
+  Upload, ImageIcon, Eye, Trash2, Download,
+} from 'lucide-react'
 import { BookingWizard } from './BookingWizard'
 
+/* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
   id: string
   bookingCode: string
@@ -37,6 +44,38 @@ interface BookingRecord {
   guests: Array<{ id: string; isLead: boolean; customerId: string; customer?: { name: string }; cabin?: { name: string } }>
 }
 
+interface PaymentRecord {
+  id: string
+  bookingId: string
+  invoiceNumber: string
+  paymentType: string
+  previouslyPaid: number
+  amount: number
+  currency: string
+  status: string
+  notes?: string
+  proofOfTransfer?: string | null
+  confirmedBy?: string
+  confirmedAt?: string
+  createdAt: string
+  booking: {
+    bookingCode: string
+    tripType: string
+    totalPrice: number
+    depositPaid: number
+    startDate: string
+    endDate: string
+    destination?: string
+    salesperson?: string
+    customer: { name: string; email?: string; phone?: string }
+    yacht?: { name: string; model?: string }
+    openTrip?: { title: string; destination?: string }
+    agent?: { name: string; company?: string }
+    services: Array<{ name: string; price: number }>
+  }
+}
+
+/* ─── Constants ─────────────────────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
   pending:        'bg-amber-100   text-amber-700   border-amber-200',
   partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
@@ -45,7 +84,6 @@ const STATUS_STYLES: Record<string, string> = {
   cancelled:      'bg-red-100     text-red-700     border-red-200',
   confirmed:      'bg-emerald-100 text-emerald-700 border-emerald-200',
 }
-
 const STATUS_LABELS: Record<string, string> = {
   pending:        'Pending',
   partially_paid: 'Partially Paid',
@@ -54,19 +92,40 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled:      'Cancelled',
   confirmed:      'Confirmed',
 }
+const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
+  pending_confirmation: { label: 'Awaiting Confirmation', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  confirmed:            { label: 'Confirmed',             color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  rejected:             { label: 'Rejected',              color: 'bg-red-100 text-red-700 border-red-200' },
+}
 
 const ACCENT = '#bdac7e'
 
+const RATES: Record<string, number> = { USD: 1, EUR: 1.09, IDR: 0.000063 }
+const toUSD = (amount: number, currency: string) => amount * (RATES[currency] ?? 1)
+
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
-
+const fmtDateFull = (d: string) =>
+  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' } as Intl.DateTimeFormatOptions)
 const fmtDateInput = (d?: string | null) =>
   d ? new Date(d).toISOString().split('T')[0] : ''
-
 const getDays = (s: string, e: string) =>
   Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
+const fmtAmt = (n: number, currency = 'USD') => {
+  if (currency === 'IDR') return `Rp ${n.toLocaleString('id-ID')}`
+  if (currency === 'EUR') return `€${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
+/* ─── Component ─────────────────────────────────────────────────────────── */
 export default function Bookings() {
+  const { data: session } = useSession()
+  const userRole           = (session?.user as { role?: string })?.role ?? ''
+  const canManageBookings  = userRole === 'ADMIN' || userRole === 'SALES'
+  const canConfirmPayments = userRole === 'ADMIN' || userRole === 'FINANCE'
+  const showPaymentPanel   = userRole === 'ADMIN' || userRole === 'SALES' || userRole === 'FINANCE'
+
+  /* booking state */
   const [bookings,     setBookings]    = useState<BookingRecord[]>([])
   const [loading,      setLoading]     = useState(true)
   const [searchTerm,   setSearchTerm]  = useState('')
@@ -75,7 +134,6 @@ export default function Bookings() {
   const [wizardOpen,   setWizardOpen]  = useState(false)
   const [editBooking,  setEditBooking] = useState<BookingRecord | null>(null)
   const [editSaving,   setEditSaving]  = useState(false)
-
   const [editStatus,   setEditStatus]  = useState('')
   const [editTotal,    setEditTotal]   = useState('')
   const [editDeposit,  setEditDeposit] = useState('')
@@ -84,6 +142,28 @@ export default function Bookings() {
   const [editFinalDue, setEditFinalDue]= useState('')
   const [editNotes,    setEditNotes]   = useState('')
 
+  /* payment record dialog */
+  const [paymentBooking,  setPaymentBooking]  = useState<BookingRecord | null>(null)
+  const [paymentAmount,   setPaymentAmount]   = useState('')
+  const [paymentCurrency, setPaymentCurrency] = useState('USD')
+  const [paymentNotes,    setPaymentNotes]    = useState('')
+  const [paymentSaving,   setPaymentSaving]   = useState(false)
+
+  /* proof upload */
+  const [proofPayment,    setProofPayment]    = useState<PaymentRecord | null>(null)
+  const [proofPreview,    setProofPreview]    = useState<string | null>(null)
+  const [proofUploading,  setProofUploading]  = useState(false)
+  const proofInputRef = useRef<HTMLInputElement>(null)
+
+  /* finance review popup */
+  const [reviewPayment,   setReviewPayment]   = useState<PaymentRecord | null>(null)
+  const [confirmingId,    setConfirmingId]    = useState<string | null>(null)
+
+  /* payments list */
+  const [payments,        setPayments]        = useState<PaymentRecord[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
+
+  /* ── fetchers ── */
   const fetchBookings = useCallback(async () => {
     setLoading(true)
     try {
@@ -93,8 +173,19 @@ export default function Bookings() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchBookings() }, [fetchBookings])
+  const fetchPayments = useCallback(async () => {
+    setPaymentsLoading(true)
+    try {
+      const res = await fetch('/api/payments')
+      if (res.ok) setPayments(await res.json())
+    } catch (err) { console.error(err) }
+    finally { setPaymentsLoading(false) }
+  }, [])
 
+  useEffect(() => { fetchBookings() }, [fetchBookings])
+  useEffect(() => { if (showPaymentPanel) fetchPayments() }, [showPaymentPanel, fetchPayments])
+
+  /* ── edit booking ── */
   const openEdit = (b: BookingRecord) => {
     setEditBooking(b)
     setEditStatus(b.status)
@@ -105,7 +196,6 @@ export default function Bookings() {
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
   }
-
   const saveEdit = async () => {
     if (!editBooking) return
     setEditSaving(true)
@@ -114,13 +204,9 @@ export default function Bookings() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status:         editStatus,
-          totalPrice:     editTotal,
-          depositPaid:    editDeposit,
-          discount:       editDiscount,
-          depositDueDate: editDepDue   || null,
-          finalDueDate:   editFinalDue || null,
-          notes:          editNotes,
+          status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
+          discount: editDiscount, depositDueDate: editDepDue || null,
+          finalDueDate: editFinalDue || null, notes: editNotes,
         }),
       })
       if (res.ok) { await fetchBookings(); setEditBooking(null) }
@@ -128,6 +214,89 @@ export default function Bookings() {
     finally { setEditSaving(false) }
   }
 
+  /* ── delete booking ── */
+  const deleteBooking = async (b: BookingRecord) => {
+    if (!confirm(`Delete booking ${b.bookingCode}? This cannot be undone.`)) return
+    try {
+      await fetch(`/api/bookings/${b.id}`, { method: 'DELETE' })
+      await fetchBookings()
+    } catch (e) { console.error(e) }
+  }
+
+  /* ── record payment ── */
+  const openPayment = (b: BookingRecord) => {
+    setPaymentBooking(b)
+    const remaining = b.totalPrice - b.depositPaid
+    setPaymentAmount(remaining > 0 ? remaining.toFixed(2) : '')
+    setPaymentCurrency('USD')
+    setPaymentNotes('')
+  }
+  const submitPayment = async () => {
+    if (!paymentBooking || !paymentAmount) return
+    setPaymentSaving(true)
+    try {
+      const res = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: paymentBooking.id,
+          amount: paymentAmount,
+          currency: paymentCurrency,
+          notes: paymentNotes,
+        }),
+      })
+      if (res.ok) {
+        setPaymentBooking(null)
+        await Promise.all([fetchPayments(), fetchBookings()])
+      }
+    } catch (e) { console.error(e) }
+    finally { setPaymentSaving(false) }
+  }
+
+  /* ── proof upload ── */
+  const openProofUpload = (p: PaymentRecord) => {
+    setProofPayment(p)
+    setProofPreview(p.proofOfTransfer ?? null)
+  }
+  const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setProofPreview(ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+  const saveProof = async () => {
+    if (!proofPayment || !proofPreview) return
+    setProofUploading(true)
+    try {
+      const res = await fetch(`/api/payments/${proofPayment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proofOfTransfer: proofPreview }),
+      })
+      if (res.ok) { await fetchPayments(); setProofPayment(null); setProofPreview(null) }
+    } catch (e) { console.error(e) }
+    finally { setProofUploading(false) }
+  }
+
+  /* ── finance confirm/reject ── */
+  const handlePaymentAction = async (paymentId: string, action: 'confirm' | 'reject') => {
+    setConfirmingId(paymentId)
+    try {
+      const res = await fetch(`/api/payments/${paymentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (res.ok) {
+        await Promise.all([fetchBookings(), fetchPayments()])
+        setReviewPayment(null)
+      }
+    } catch (e) { console.error(e) }
+    finally { setConfirmingId(null) }
+  }
+
+  /* ── filters ── */
   const filtered = bookings.filter(b => {
     const q = searchTerm.toLowerCase()
     const matchSearch =
@@ -144,18 +313,142 @@ export default function Bookings() {
   const isDepositOverdue = (b: BookingRecord) =>
     b.status === 'pending' && !!b.depositDueDate && new Date(b.depositDueDate) < new Date()
 
+  const pendingPayments = payments.filter(p => p.status === 'pending_confirmation')
+
+  /* ════════════════════════════════════════════════════════════════════════ */
   return (
     <div className="space-y-6">
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Bookings</h3>
           <p className="text-muted-foreground text-sm">Manage all yacht reservations</p>
         </div>
-        <Button onClick={() => setWizardOpen(true)} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-          <Plus className="mr-2 h-4 w-4" /> New Booking
-        </Button>
+        {canManageBookings && (
+          <Button onClick={() => setWizardOpen(true)} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+            <Plus className="mr-2 h-4 w-4" /> New Booking
+          </Button>
+        )}
       </div>
 
+      {/* ── Payment Panel (SALES: upload proof | FINANCE: review & confirm) ── */}
+      {showPaymentPanel && (
+        <Card className={pendingPayments.length > 0 ? 'border-amber-200 bg-amber-50/30' : ''}>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-amber-600" />
+              <CardTitle className="text-base">Payment Records</CardTitle>
+              {pendingPayments.length > 0 && (
+                <Badge className="bg-amber-100 text-amber-700 border-amber-200 border text-xs">
+                  {pendingPayments.length} awaiting confirmation
+                </Badge>
+              )}
+            </div>
+            <CardDescription>
+              {canConfirmPayments
+                ? 'Review payment submissions and confirm after verifying transfer proof'
+                : 'Track submitted payments — upload transfer proof so finance can confirm'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {paymentsLoading ? (
+              <div className="space-y-2">
+                {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+              </div>
+            ) : payments.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No payment records yet.</p>
+            ) : (
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Booking</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Proof</TableHead>
+                      <TableHead>Submitted</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payments.map(p => {
+                      const tripName = p.booking.tripType === 'OPEN_TRIP'
+                        ? (p.booking.openTrip?.title ?? '—')
+                        : (p.booking.yacht?.name ?? '—')
+                      const ps = PAYMENT_STATUS[p.status] ?? { label: p.status, color: 'bg-muted text-muted-foreground' }
+                      return (
+                        <TableRow key={p.id} className={p.status === 'pending_confirmation' ? 'bg-amber-50/50' : ''}>
+                          <TableCell>
+                            <div className="font-mono text-xs font-medium">{p.invoiceNumber}</div>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${p.paymentType === 'DP' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {p.paymentType === 'DP' ? 'DP' : 'Pelunasan'}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-mono text-xs font-semibold">{p.booking.bookingCode}</div>
+                            <div className="text-xs text-muted-foreground">{tripName}</div>
+                          </TableCell>
+                          <TableCell className="text-sm">{p.booking.customer.name}</TableCell>
+                          <TableCell className="font-semibold text-sm">{fmtAmt(p.amount, p.currency)}</TableCell>
+                          <TableCell>
+                            {p.proofOfTransfer ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                                <ImageIcon className="h-3 w-3" /> Uploaded
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{fmtDateFull(p.createdAt)}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${ps.color}`}>
+                              {p.status === 'pending_confirmation' && <Clock className="h-3 w-3" />}
+                              {p.status === 'confirmed' && <CheckCircle2 className="h-3 w-3" />}
+                              {p.status === 'rejected' && <XCircle className="h-3 w-3" />}
+                              {ps.label}
+                            </span>
+                            {p.status !== 'pending_confirmation' && p.confirmedBy && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">by {p.confirmedBy}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1.5 flex-wrap">
+                              {/* FINANCE/ADMIN: detail popup — always visible */}
+                              {canConfirmPayments && (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                                  onClick={() => setReviewPayment(p)}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  {p.status === 'pending_confirmation' ? 'Review' : 'Lihat Detail'}
+                                </Button>
+                              )}
+                              {/* Invoice */}
+                              <Button
+                                size="sm" variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
+                              >
+                                <Receipt className="h-3 w-3 mr-1" /> Invoice
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Bookings Table ── */}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -167,9 +460,9 @@ export default function Bookings() {
             </div>
             <div className="flex gap-2 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="partially_paid">Partially Paid</SelectItem>
                   <SelectItem value="fully_paid">Fully Paid</SelectItem>
@@ -178,27 +471,26 @@ export default function Bookings() {
                 </SelectContent>
               </Select>
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger className="w-36"><SelectValue placeholder="Source" /></SelectTrigger>
+                <SelectTrigger className="w-28 h-8 text-xs"><SelectValue placeholder="Source" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sources</SelectItem>
                   <SelectItem value="DIRECT">Direct</SelectItem>
-                  <SelectItem value="AGENT">Via Agent</SelectItem>
+                  <SelectItem value="AGENT">Agent</SelectItem>
                 </SelectContent>
               </Select>
+              <div className="relative">
+                <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search by code, customer, yacht, agent..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="pl-7 h-8 text-xs w-72"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4">
-            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Input
-              placeholder="Search by code, customer, yacht, agent…"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="max-w-sm"
-            />
-          </div>
-
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
@@ -210,102 +502,505 @@ export default function Bookings() {
                   <TableHead>Dates</TableHead>
                   <TableHead>Guests</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Deposit</TableHead>
+                  <TableHead>Paid</TableHead>
                   <TableHead>Due Dates</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Edit</TableHead>
+                  {canManageBookings && <TableHead className="text-center">Payment</TableHead>}
+                  {canManageBookings && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 11 }).map((_, j) => (
+                      {Array.from({ length: canManageBookings ? 12 : 10 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={canManageBookings ? 12 : 10} className="text-center py-12 text-muted-foreground">
                       {bookings.length === 0
                         ? 'No bookings yet — click "New Booking" to get started.'
                         : 'No bookings match the current filters.'}
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filtered.map(b => (
-                    <TableRow key={b.id} className="hover:bg-muted/30">
-                      <TableCell className="font-mono text-xs font-medium">{b.bookingCode}</TableCell>
-                      <TableCell>
-                        <div className="space-y-0.5">
-                          <Badge variant="outline" className="text-xs"
-                            style={b.source === 'AGENT' ? { borderColor: ACCENT, color: ACCENT } : {}}>
-                            {b.source === 'AGENT' ? 'Agent' : 'Direct'}
-                          </Badge>
-                          <div className="text-xs text-muted-foreground">
-                            {b.tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm font-medium">
-                          {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : b.yacht?.name ?? '—'}
-                        </div>
+                ) : filtered.map(b => (
+                  <TableRow key={b.id} className="hover:bg-muted/30">
+                    <TableCell className="font-mono text-xs font-medium">{b.bookingCode}</TableCell>
+                    <TableCell>
+                      <div className="space-y-0.5">
+                        <Badge variant="outline" className="text-xs"
+                          style={b.source === 'AGENT' ? { borderColor: ACCENT, color: ACCENT } : {}}>
+                          {b.source === 'AGENT' ? 'Agent' : 'Direct'}
+                        </Badge>
                         <div className="text-xs text-muted-foreground">
-                          {b.tripType === 'OPEN_TRIP' ? b.openTrip?.destination : b.yacht?.model}
+                          {b.tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">{b.customer.name}</div>
-                        {b.agent && <div className="text-xs text-muted-foreground">via {b.agent.name}</div>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs">
-                          <div>{fmtDate(b.startDate)}</div>
-                          <div className="text-muted-foreground">{fmtDate(b.endDate)}</div>
-                          <div className="text-muted-foreground">{getDays(b.startDate, b.endDate)}d</div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">{b.guestCount}</TableCell>
-                      <TableCell className="text-sm font-medium">
-                        ${b.totalPrice.toLocaleString()}
-                        {b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
-                      </TableCell>
-                      <TableCell className="text-sm">${b.depositPaid.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <div className="text-xs space-y-0.5 min-w-20">
-                          {b.depositDueDate ? (
-                            <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
-                              {isDepositOverdue(b) && <AlertCircle className="w-3 h-3 shrink-0" />}
-                              DP: {fmtDate(b.depositDueDate)}
-                            </div>
-                          ) : <span className="text-muted-foreground/50">—</span>}
-                          {b.finalDueDate && (
-                            <div className="text-muted-foreground">Bal: {fmtDate(b.finalDueDate)}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm font-medium">
+                        {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : b.yacht?.name ?? '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {b.tripType === 'OPEN_TRIP' ? b.openTrip?.destination : b.yacht?.model}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">{b.customer.name}</div>
+                      {b.agent && <div className="text-xs text-muted-foreground">via {b.agent.name}</div>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs">
+                        <div>{fmtDate(b.startDate)}</div>
+                        <div className="text-muted-foreground">{fmtDate(b.endDate)}</div>
+                        <div className="text-muted-foreground">{getDays(b.startDate, b.endDate)}d</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">{b.guestCount}</TableCell>
+                    <TableCell className="text-sm font-medium">
+                      ${b.totalPrice.toLocaleString()}
+                      {b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
+                    </TableCell>
+                    <TableCell className="text-sm">${b.depositPaid.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <div className="text-xs space-y-0.5 min-w-20">
+                        {b.depositDueDate ? (
+                          <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                            {isDepositOverdue(b) && <AlertCircle className="w-3 h-3 shrink-0" />}
+                            DP: {fmtDate(b.depositDueDate)}
+                          </div>
+                        ) : <span className="text-muted-foreground/50">—</span>}
+                        {b.finalDueDate && (
+                          <div className="text-muted-foreground">Bal: {fmtDate(b.finalDueDate)}</div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[b.status] ?? 'bg-muted text-muted-foreground'}`}>
+                        {STATUS_LABELS[b.status] ?? b.status}
+                      </span>
+                    </TableCell>
+                    {canManageBookings && (() => {
+                      const bookingPmts  = payments.filter(p => p.bookingId === b.id)
+                      const pendingPmt   = bookingPmts.find(p => p.status === 'pending_confirmation')
+                      const hasAnyPmt    = bookingPmts.length > 0
+                      const canRecord    = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
+                      const nextType     = hasAnyPmt ? 'Pelunasan' : 'DP'
+                      return (
+                        <TableCell>
+                          <div className="flex flex-col gap-1 items-start">
+                            {canRecord && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => openPayment(b)}
+                              >
+                                <CreditCard className="h-3 w-3 mr-1" /> Buat Invoice {nextType}
+                              </Button>
+                            )}
+                            {pendingPmt && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className={`h-7 px-2 text-xs ${pendingPmt.proofOfTransfer ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'}`}
+                                onClick={() => openProofUpload(pendingPmt)}
+                              >
+                                <Upload className="h-3 w-3 mr-1" />
+                                {pendingPmt.proofOfTransfer ? 'Update Bukti' : 'Upload Bukti'}
+                              </Button>
+                            )}
+                            {bookingPmts.map((p, idx) => (
+                              <Button
+                                key={p.id}
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
+                              >
+                                <Receipt className="h-3 w-3 mr-1" />
+                                {p.paymentType === 'PELUNASAN'
+                                  ? 'Invoice Pelunasan'
+                                  : idx === 0 ? 'Invoice DP' : `Invoice ${idx + 1}`}
+                              </Button>
+                            ))}
+                          </div>
+                        </TableCell>
+                      )
+                    })()}
+                    {canManageBookings && (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          {userRole === 'ADMIN' && (
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => deleteBooking(b)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[b.status] ?? 'bg-muted text-muted-foreground'}`}>
-                          {STATUS_LABELS[b.status] ?? b.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                    )}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Edit Booking Dialog ── */}
+      {/* ════ Record Payment Dialog ════ */}
+      <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
+        <DialogContent className={paymentBooking && payments.filter(p => p.bookingId === paymentBooking.id).length > 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'}>
+          {paymentBooking && (() => {
+            const prev = payments.filter(p => p.bookingId === paymentBooking.id)
+            const hasHistory = prev.length > 0
+            return (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" style={{ color: ACCENT }} />
+                  Record Payment
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className={hasHistory ? 'grid grid-cols-2 gap-3' : ''}>
+                {/* Left: booking summary */}
+                <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Booking</span>
+                    <span className="font-mono font-semibold">{paymentBooking.bookingCode}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-medium">{paymentBooking.customer.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-medium">${paymentBooking.totalPrice.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Already Paid</span>
+                    <span className="font-medium text-emerald-600">${paymentBooking.depositPaid.toLocaleString()}</span>
+                  </div>
+                  <Separator className="my-1" />
+                  <div className="flex justify-between font-semibold">
+                    <span>Remaining</span>
+                    <span className={paymentBooking.totalPrice - paymentBooking.depositPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}>
+                      ${Math.max(0, paymentBooking.totalPrice - paymentBooking.depositPaid).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right: payment history (only when exists) */}
+                {hasHistory && (
+                  <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-2">
+                    <p className="text-muted-foreground text-[11px] uppercase tracking-wide font-semibold">Riwayat Pembayaran</p>
+                    <div className="space-y-1.5">
+                      {prev.map(p => {
+                        const ps = PAYMENT_STATUS[p.status]
+                        return (
+                          <div key={p.id} className="space-y-0.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[11px] text-muted-foreground">{p.invoiceNumber}</span>
+                              <span className="text-xs font-semibold">{fmtAmt(p.amount, p.currency)}</span>
+                            </div>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${ps?.color ?? 'bg-muted text-muted-foreground'}`}>
+                              {ps?.label ?? p.status}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Currency</Label>
+                  <div className="flex gap-2">
+                    {['USD', 'EUR', 'IDR'].map(c => (
+                      <button key={c} type="button" onClick={() => {
+                        // convert current amount from old currency → USD → new currency
+                        const amtUSD = toUSD(parseFloat(paymentAmount) || 0, paymentCurrency)
+                        const converted = amtUSD / (RATES[c] ?? 1)
+                        const decimals = c === 'IDR' ? 0 : 2
+                        setPaymentAmount(converted > 0 ? converted.toFixed(decimals) : '')
+                        setPaymentCurrency(c)
+                      }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${paymentCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                        style={paymentCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Payment Amount <span className="text-red-500">*</span></Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">
+                      {paymentCurrency === 'IDR' ? 'Rp' : paymentCurrency === 'EUR' ? '€' : '$'}
+                    </span>
+                    <Input
+                      type={paymentCurrency === 'IDR' ? 'text' : 'number'}
+                      inputMode="numeric"
+                      min="0"
+                      step={paymentCurrency === 'IDR' ? 100000 : 100}
+                      placeholder="0"
+                      value={
+                        paymentCurrency === 'IDR' && paymentAmount
+                          ? parseFloat(paymentAmount).toLocaleString('id-ID')
+                          : paymentAmount
+                      }
+                      onChange={e => {
+                        if (paymentCurrency === 'IDR') {
+                          const raw = e.target.value.replace(/\./g, '').replace(/[^\d]/g, '')
+                          setPaymentAmount(raw)
+                        } else {
+                          setPaymentAmount(e.target.value)
+                        }
+                      }}
+                      className="pl-9"
+                    />
+                  </div>
+                  {paymentCurrency !== 'USD' && parseFloat(paymentAmount) > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      ≈ ${toUSD(parseFloat(paymentAmount), paymentCurrency).toLocaleString('en-US', { maximumFractionDigits: 2 })} USD
+                      <span className="text-muted-foreground font-normal ml-1">(yang tersimpan di sistem)</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Kurang dari total → Partially Paid · Sama dengan total → Fully Paid
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                  <Textarea placeholder="e.g. Bank transfer via BCA, ref #123456"
+                    value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
+                    rows={2} className="text-sm resize-none" />
+                </div>
+                <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  ℹ Setelah submit, tombol <strong>Lihat Invoice</strong> dan <strong>Upload Bukti</strong> akan muncul di baris booking.
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
+                <Button disabled={paymentSaving || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                  onClick={submitPayment}
+                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                  {paymentSaving ? 'Submitting…' : 'Submit & Generate Invoice'}
+                </Button>
+              </DialogFooter>
+            </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Upload Proof of Transfer Dialog ════ */}
+      <Dialog open={!!proofPayment} onOpenChange={v => { if (!v) { setProofPayment(null); setProofPreview(null) } }}>
+        <DialogContent className="sm:max-w-md">
+          {proofPayment && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" style={{ color: ACCENT }} />
+                  Upload Transfer Proof
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1 mb-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Invoice</span>
+                  <span className="font-mono font-semibold">{proofPayment.invoiceNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-semibold">{fmtAmt(proofPayment.amount, proofPayment.currency)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span>{proofPayment.booking.customer.name}</span>
+                </div>
+              </div>
+
+              {/* Image preview */}
+              <div
+                className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors min-h-36 overflow-hidden relative"
+                onClick={() => proofInputRef.current?.click()}
+              >
+                {proofPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                    <ImageIcon className="h-10 w-10 opacity-30" />
+                    <p className="text-sm">Click to select image</p>
+                    <p className="text-xs opacity-60">JPG, PNG, or PDF screenshot</p>
+                  </div>
+                )}
+              </div>
+              <input
+                ref={proofInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleProofFile}
+              />
+              {proofPreview && (
+                <Button variant="ghost" size="sm" className="text-xs w-full"
+                  onClick={() => proofInputRef.current?.click()}>
+                  Change image
+                </Button>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview(null) }}>Cancel</Button>
+                <Button disabled={!proofPreview || proofUploading}
+                  onClick={saveProof}
+                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                  {proofUploading ? 'Uploading…' : 'Save Proof'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Finance Review Popup ════ */}
+      <Dialog open={!!reviewPayment} onOpenChange={v => !v && setReviewPayment(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          {reviewPayment && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" style={{ color: ACCENT }} />
+                  Review Payment — {reviewPayment.invoiceNumber}
+                </DialogTitle>
+              </DialogHeader>
+
+              {/* Transaction detail grid */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transaction</p>
+                  <div className="space-y-2">
+                    {[
+                      ['Invoice', reviewPayment.invoiceNumber],
+                      ['Booking', reviewPayment.booking.bookingCode],
+                      ['Submitted', fmtDateFull(reviewPayment.createdAt)],
+                      ['Currency', reviewPayment.currency],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between">
+                        <span className="text-muted-foreground">{k}</span>
+                        <span className="font-medium font-mono">{v}</span>
+                      </div>
+                    ))}
+                    <Separator />
+                    <div className="flex justify-between text-base font-bold">
+                      <span>Amount</span>
+                      <span style={{ color: ACCENT }}>{fmtAmt(reviewPayment.amount, reviewPayment.currency)}</span>
+                    </div>
+                    {reviewPayment.notes && (
+                      <div className="rounded-lg bg-muted/40 p-2 text-xs text-muted-foreground">
+                        <p className="font-semibold text-foreground mb-0.5">Notes</p>
+                        {reviewPayment.notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booking Details</p>
+                  <div className="space-y-2">
+                    {[
+                      ['Customer', reviewPayment.booking.customer.name],
+                      ['Email', reviewPayment.booking.customer.email ?? '—'],
+                      ['Phone', reviewPayment.booking.customer.phone ?? '—'],
+                      ['Trip', reviewPayment.booking.tripType === 'OPEN_TRIP'
+                        ? (reviewPayment.booking.openTrip?.title ?? '—')
+                        : (reviewPayment.booking.yacht?.name ?? '—')],
+                      ['Booking Total', fmtAmt(reviewPayment.booking.totalPrice, reviewPayment.currency)],
+                      ['Previously Paid', fmtAmt(reviewPayment.booking.depositPaid, reviewPayment.currency)],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between">
+                        <span className="text-muted-foreground">{k}</span>
+                        <span className="font-medium text-right max-w-32 truncate">{v}</span>
+                      </div>
+                    ))}
+                    {reviewPayment.booking.salesperson && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Sales</span>
+                        <span className="font-medium">{reviewPayment.booking.salesperson}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Proof of transfer */}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Proof of Transfer</p>
+                {reviewPayment.proofOfTransfer ? (
+                  <div className="space-y-2">
+                    <div className="rounded-xl border overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={reviewPayment.proofOfTransfer} alt="Transfer proof" className="w-full max-h-96 object-contain bg-muted/30" />
+                    </div>
+                    <a
+                      href={reviewPayment.proofOfTransfer}
+                      download={`proof-${reviewPayment.invoiceNumber}.jpg`}
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border rounded-lg px-3 py-1.5 transition-colors hover:bg-muted/50"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download Image
+                    </a>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border-2 border-dashed p-8 text-center text-muted-foreground">
+                    <ImageIcon className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No proof uploaded yet</p>
+                    <p className="text-xs opacity-60 mt-1">Sales team has not uploaded the transfer screenshot</p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setReviewPayment(null)}>Close</Button>
+                {reviewPayment.status === 'pending_confirmation' && (<>
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50"
+                  disabled={confirmingId === reviewPayment.id}
+                  onClick={() => handlePaymentAction(reviewPayment.id, 'reject')}
+                >
+                  <XCircle className="h-4 w-4 mr-1.5" />
+                  Reject Payment
+                </Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={confirmingId === reviewPayment.id}
+                  onClick={() => handlePaymentAction(reviewPayment.id, 'confirm')}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  {confirmingId === reviewPayment.id ? 'Confirming…' : 'Confirm Payment'}
+                </Button>
+                </>)}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Edit Booking Dialog ════ */}
       <Dialog open={!!editBooking} onOpenChange={v => !v && setEditBooking(null)}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           {editBooking && (
@@ -316,7 +1011,6 @@ export default function Bookings() {
                   <span className="text-sm font-normal text-muted-foreground">— Edit Booking</span>
                 </DialogTitle>
               </DialogHeader>
-
               <div className="grid grid-cols-3 gap-3 text-xs">
                 <div className="rounded-lg bg-muted/40 p-3">
                   <p className="text-muted-foreground mb-0.5">Customer</p>
@@ -324,12 +1018,8 @@ export default function Bookings() {
                   {editBooking.agent && <p className="text-muted-foreground">via {editBooking.agent.name}</p>}
                 </div>
                 <div className="rounded-lg bg-muted/40 p-3">
-                  <p className="text-muted-foreground mb-0.5">
-                    {editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}
-                  </p>
-                  <p className="font-semibold">
-                    {editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}
-                  </p>
+                  <p className="text-muted-foreground mb-0.5">{editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}</p>
+                  <p className="font-semibold">{editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
                   <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-3">
@@ -337,18 +1027,12 @@ export default function Bookings() {
                   {editBooking.guests.map(g => (
                     <div key={g.id} className="flex items-center gap-1">
                       <span className="font-medium">{g.customer?.name ?? '—'}</span>
-                      {g.cabin && (
-                        <span className="text-muted-foreground flex items-center gap-0.5">
-                          <BedDouble className="w-2.5 h-2.5" /> {g.cabin.name}
-                        </span>
-                      )}
+                      {g.cabin && <span className="text-muted-foreground flex items-center gap-0.5"><BedDouble className="w-2.5 h-2.5" /> {g.cabin.name}</span>}
                     </div>
                   ))}
                 </div>
               </div>
-
               <Separator />
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>Status</Label>
@@ -362,7 +1046,7 @@ export default function Bookings() {
                       <SelectItem value="cancelled">Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Auto-computed from deposit. Only Completed & Cancelled are manual.</p>
+                  <p className="text-xs text-muted-foreground">Auto-computed from payments. Only Completed & Cancelled are manual.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Discount (%)</Label>
@@ -373,11 +1057,11 @@ export default function Bookings() {
                   <Input type="number" min="0" value={editTotal} onChange={e => setEditTotal(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Deposit Paid (USD)</Label>
+                  <Label>Amount Paid (USD)</Label>
                   <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Deposit Due Date</Label>
+                  <Label>Payment Due Date</Label>
                   <Input type="date" value={editDepDue} onChange={e => setEditDepDue(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
@@ -389,15 +1073,10 @@ export default function Bookings() {
                   <Input placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                 </div>
               </div>
-
               <DialogFooter>
                 <Button variant="outline" onClick={() => setEditBooking(null)}>Cancel</Button>
-                <Button
-                  disabled={editSaving}
-                  onClick={saveEdit}
-                  style={{ backgroundColor: ACCENT, color: 'white' }}
-                  className="hover:opacity-90"
-                >
+                <Button disabled={editSaving} onClick={saveEdit}
+                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
                   {editSaving ? 'Saving…' : 'Save Changes'}
                 </Button>
               </DialogFooter>

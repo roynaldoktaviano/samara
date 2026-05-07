@@ -98,13 +98,14 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   if (!trip) notFound()
 
   /* Flatten guests */
-  const guests: Array<{ no: number; name: string; phone: string; email: string; cabin: string; isLead: boolean; bookingCode: string }> = []
+  const guests: Array<{ no: number; name: string; phone: string; email: string; cabin: string; isLead: boolean; bookingCode: string; salesperson: string }> = []
   let gNo = 1
   trip.bookings.forEach(b => {
+    const sales = b.salesperson || b.agent?.name || 'Direct'
     if (b.guests.length > 0) {
-      b.guests.forEach(g => guests.push({ no: gNo++, name: g.customer.name, phone: g.customer.phone ?? '', email: g.customer.email ?? '', cabin: g.cabin?.name ?? '', isLead: g.isLead, bookingCode: b.bookingCode }))
+      b.guests.forEach(g => guests.push({ no: gNo++, name: g.customer.name, phone: g.customer.phone ?? '', email: g.customer.email ?? '', cabin: g.cabin?.name ?? '', isLead: g.isLead, bookingCode: b.bookingCode, salesperson: sales }))
     } else {
-      guests.push({ no: gNo++, name: b.customer.name, phone: b.customer.phone ?? '', email: b.customer.email ?? '', cabin: '', isLead: true, bookingCode: b.bookingCode })
+      guests.push({ no: gNo++, name: b.customer.name, phone: b.customer.phone ?? '', email: b.customer.email ?? '', cabin: '', isLead: true, bookingCode: b.bookingCode, salesperson: sales })
     }
   })
 
@@ -222,8 +223,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'FOOD ALLERGIES'].map((h, i) => (
-                    <th key={h} style={{ ...th, borderRight: i === 6 ? 'none' : undefined }}>{h}</th>
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'FOOD ALLERGIES', 'SALES'].map((h, i) => (
+                    <th key={h} style={{ ...th, borderRight: i === 7 ? 'none' : undefined }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -235,13 +236,14 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                       {g.name}{g.isLead && <span style={{ fontSize: 8, color: GOLD, marginLeft: 3 }}>★</span>}
                     </td>
                     {[...Array(4)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
-                    <td style={{ ...td, borderRight: 'none' }}>&nbsp;</td>
+                    <td style={td}>&nbsp;</td>
+                    <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
                   </tr>
                 ))}
                 {Array.from({ length: BLANK }).map((_, i) => (
                   <tr key={`b${i}`}>
                     <td style={{ ...td, textAlign: 'center', color: '#ccc', width: 28 }}>{guests.length + i + 1}</td>
-                    {[...Array(4)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
+                    {[...Array(5)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
                     <td style={{ ...td, borderRight: 'none' }}>&nbsp;</td>
                   </tr>
                 ))}
@@ -270,6 +272,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
               <div style={{ textAlign: 'right' }}>
                 <p style={{ fontSize: 9, color: '#bbb', marginBottom: 2 }}>Booking Ref.</p>
                 <p style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: DARK }}>{g.bookingCode}</p>
+                <p style={{ fontSize: 9, color: '#bbb', marginTop: 6, marginBottom: 2 }}>Sales</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: GOLD }}>{g.salesperson}</p>
               </div>
             </div>
 

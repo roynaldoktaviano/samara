@@ -31,18 +31,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!trip) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     // Build cabin availability map
-    const occupancyMap: Record<string, { guests: { id: string; name: string }[] }> = {}
+    const occupancyMap: Record<string, { guests: { id: string; name: string }[]; bookingStatus: string | null }> = {}
     trip.bookings.forEach(b => {
       b.guests.forEach(g => {
         if (g.cabinId) {
-          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [] }
+          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status }
           occupancyMap[g.cabinId].guests.push({ id: g.customer.id, name: g.customer.name })
         }
       })
     })
 
     const cabins = trip.yacht.cabins.map(c => {
-      const occ = occupancyMap[c.id] ?? { guests: [] }
+      const occ = occupancyMap[c.id] ?? { guests: [], bookingStatus: null }
       // 1 booking = 1 cabin: any guest in this cabin means it's fully reserved
       const isBooked = occ.guests.length > 0
       return {
@@ -55,6 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         spotsLeft: isBooked ? 0 : 1,
         isFull: isBooked,
         guests: occ.guests,
+        bookingStatus: occ.bookingStatus,
       }
     })
 
@@ -70,6 +71,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   } catch (error) {
     console.error('Error fetching open trip detail:', error)
     return NextResponse.json({ error: 'Failed to fetch trip detail' }, { status: 500 })
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    await db.openTrip.delete({ where: { id } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Error deleting open trip:', error)
+    return NextResponse.json({ error: 'Failed to delete open trip' }, { status: 500 })
   }
 }
 

@@ -143,6 +143,7 @@ model Booking {
   finalDueDate   DateTime?
   guestCount     Int            @default(1)
   crewRequired   Boolean        @default(false)
+  salesperson    String?
   notes          String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -152,6 +153,7 @@ model Booking {
   openTrip       OpenTrip?      @relation(fields: [openTripId], references: [id])
   guests         BookingGuest[]
   services       BookingService[]
+  payments       Payment[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -217,4 +219,25 @@ model Expense {
   bookingId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Payment {
+  id              String    @id @default(cuid())
+  bookingId       String
+  invoiceNumber   String    @unique
+  paymentType     String    @default("DP")
+  amount          Float
+  previouslyPaid  Float     @default(0)
+  currency        String    @default("USD")
+  status          String    @default("pending_confirmation")
+  notes           String?
+  proofOfTransfer String?
+  confirmedBy     String?
+  confirmedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([status])
 }

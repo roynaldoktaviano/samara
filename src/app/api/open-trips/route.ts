@@ -11,7 +11,14 @@ export async function GET(request: NextRequest) {
         yacht: {
           select: {
             id: true, name: true, model: true, cabinCount: true,
-            cabins: { select: { id: true } },
+            cabins: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
+          },
+        },
+        bookings: {
+          where: { status: { not: 'cancelled' } },
+          select: {
+            status: true,
+            guests: { select: { cabinId: true } },
           },
         },
         _count: {
@@ -36,11 +43,18 @@ export async function GET(request: NextRequest) {
         else                             effectiveStatus = 'open'
       }
 
+      // Build per-cabin booking status
+      const cabinStatuses = t.yacht.cabins.map(c => {
+        const booking = t.bookings.find(b => b.guests.some(g => g.cabinId === c.id))
+        return { id: c.id, name: c.name, bookingStatus: booking?.status ?? null }
+      })
+
       return {
         ...t,
         status: effectiveStatus,
         spotsBooked: activeBookings,
         spotsAvailable,
+        cabinStatuses,
       }
     })
 
@@ -59,7 +73,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, description, yachtId, startDate, endDate, destination, region, departurePort, arrivalPort } = body
+    const { title, description, yachtId, startDate, endDate, destination, region, departurePort, arrivalPort, pricePerCabin } = body
 
     if (!title || !yachtId || !startDate || !endDate || !destination) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -84,7 +98,7 @@ export async function POST(request: NextRequest) {
         region: region || null,
         departurePort: departurePort || null,
         arrivalPort: arrivalPort || null,
-        pricePerCabin: 0,
+        pricePerCabin: parseFloat(pricePerCabin) || 0,
         maxCapacity: totalCabins,
         status: 'open',
       },

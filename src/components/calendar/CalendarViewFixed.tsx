@@ -27,6 +27,13 @@ interface BookingEvent {
   totalPrice?: number
   depositAmount?: number
   notes?: string
+  salesperson?: string
+}
+
+interface CabinStatus {
+  id: string
+  name: string
+  bookingStatus: string | null  // null = available, 'pending'/'partially_paid' = yellow, 'fully_paid'/'confirmed'/'completed' = red
 }
 
 interface OpenTripEvent {
@@ -40,6 +47,7 @@ interface OpenTripEvent {
   spotsAvailable: number
   status: string
   yacht: { name: string }
+  cabinStatuses: CabinStatus[]
 }
 
 type DbYacht = { id: string; name: string; dailyRate: number }
@@ -108,10 +116,11 @@ function MonthGrid({
       key: string; weekIdx: number; startCol: number; endCol: number
       isRealStart: boolean; isRealEnd: boolean
       label: string; color: string; isStripe: boolean; isFull: boolean
-      tooltip: string; bookingRef?: BookingEvent; openTripRef?: OpenTripEvent; lane: number
+      tooltip: string; bookingRef?: BookingEvent; openTripRef?: OpenTripEvent
+      lane: number; laneSpan: number
     }
 
-    const raw: Omit<Seg, 'lane'>[] = []
+    const raw: Omit<Seg, 'lane' | 'laneSpan'>[] = []
 
     const addSegs = (
       id: string, label: string, color: string, isStripe: boolean, isFull: boolean,
@@ -147,15 +156,16 @@ function MonthGrid({
 
     openTrips.forEach(t => {
       const isFull = t.spotsAvailable === 0
+      const otColor = isFull ? '#ef4444' : '#22c55e'
       addSegs(
-        t.id, t.title, yachtColorMap[t.yacht.name] ?? '#64748b', true, isFull,
+        t.id, t.title, otColor, true, isFull,
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
         `[Open Trip] ${t.title} · ${t.yacht.name} — ${isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`}`,
         undefined, t,
       )
     })
 
-    /* Assign lanes within each week row */
+    /* Assign lanes — open trips occupy 2 consecutive lanes */
     const result: Seg[][] = weeks.map(() => [])
     weeks.forEach((_, wi) => {
       const segs = raw
@@ -163,10 +173,20 @@ function MonthGrid({
         .sort((a, b) => a.startCol - b.startCol || (b.endCol - b.startCol) - (a.endCol - a.startCol))
       const laneEnds: number[] = []
       segs.forEach(seg => {
-        let lane = laneEnds.findIndex(end => end < seg.startCol)
-        if (lane === -1) { lane = laneEnds.length; laneEnds.push(seg.endCol) }
-        else laneEnds[lane] = seg.endCol
-        result[wi].push({ ...seg, lane })
+        const span = seg.isStripe ? 2 : 1
+        let lane = -1
+        outer: for (let l = 0; l <= laneEnds.length; l++) {
+          for (let s = 0; s < span; s++) {
+            if ((laneEnds[l + s] ?? -1) >= seg.startCol) continue outer
+          }
+          lane = l; break
+        }
+        if (lane === -1) lane = laneEnds.length
+        for (let s = 0; s < span; s++) {
+          while (laneEnds.length <= lane + s) laneEnds.push(-1)
+          laneEnds[lane + s] = seg.endCol
+        }
+        result[wi].push({ ...seg, lane, laneSpan: span })
       })
     })
     return result
@@ -185,8 +205,8 @@ function MonthGrid({
 
       <div className="border-t border-l border-border">
         {weeks.map((week, wi) => {
-          const maxLanes = segsByWeek[wi].length > 0 ? Math.max(...segsByWeek[wi].map(s => s.lane)) + 1 : 0
-          const rowH = Math.max(MIN_ROW_H, DAY_H + maxLanes * LANE_H + 8)
+          const maxLaneEnd = segsByWeek[wi].length > 0 ? Math.max(...segsByWeek[wi].map(s => s.lane + s.laneSpan)) : 0
+          const rowH = Math.max(MIN_ROW_H, DAY_H + maxLaneEnd * LANE_H + 8)
 
           return (
             <div key={wi} className="relative" style={{ height: rowH }}>
@@ -194,20 +214,29 @@ function MonthGrid({
               {/* ── Day cell background layer ── */}
               <div className="absolute inset-0 grid grid-cols-7">
                 {week.map((day, col) => {
-                  const dateStr  = day > 0 ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
+                  const dateStr   = day > 0 ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
                   const todayCell = day > 0 && isToday(day)
+                  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
+                  const isPast    = day > 0 && new Date(dateStr) <= todayMidnight
                   return (
                     <div
                       key={col}
-                      onClick={() => day > 0 && onDateClick(dateStr)}
+                      onClick={() => day > 0 && !isPast && onDateClick(dateStr)}
                       className={cn(
                         'border-r border-b border-border p-1.5 transition-colors',
-                        day > 0 ? 'cursor-pointer hover:bg-muted/40' : 'bg-muted/20',
+                        day === 0        ? 'bg-muted/20' :
+                        isPast           ? 'bg-muted/10 cursor-not-allowed' :
+                                           'cursor-pointer hover:bg-muted/40',
                         todayCell ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
                       )}
                     >
                       {day > 0 && (
-                        <span className={cn('text-xs font-semibold leading-none', todayCell ? 'text-[#bdac7e]' : 'text-foreground')}>
+                        <span className={cn(
+                          'text-xs font-semibold leading-none',
+                          todayCell ? 'text-[#bdac7e]' :
+                          isPast    ? 'text-muted-foreground/40' :
+                                      'text-foreground'
+                        )}>
                           {day}
                         </span>
                       )}
@@ -229,7 +258,7 @@ function MonthGrid({
                   top,
                   left:   `calc(${lPct}% + ${lOff}px)`,
                   width:  `calc(${wPct}% - ${lOff + rOff}px)`,
-                  height: LANE_H - 3,
+                  height: seg.laneSpan * LANE_H - 3,
                   borderRadius: seg.isRealStart && seg.isRealEnd ? 4
                     : seg.isRealStart ? '4px 0 0 4px'
                     : seg.isRealEnd   ? '0 4px 4px 0'
@@ -237,16 +266,16 @@ function MonthGrid({
                   color: 'white',
                   overflow: 'hidden',
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: seg.isStripe ? 'flex-start' : 'center',
                   zIndex: 10,
                   cursor: 'pointer',
                 }
 
                 if (seg.isStripe) {
-                  const gap = seg.isFull ? `${seg.color}99` : `${seg.color}28`
-                  style.background     = `repeating-linear-gradient(45deg,${seg.color} 0px,${seg.color} 3px,${gap} 3px,${gap} 8px)`
-                  style.outline        = `1.5px solid ${seg.color}`
-                  style.outlineOffset  = '-1px'
+                  const gap = `${seg.color}44`
+                  style.background    = `repeating-linear-gradient(45deg,${seg.color} 0px,${seg.color} 3px,${gap} 3px,${gap} 8px)`
+                  style.outline       = `1.5px solid ${seg.color}`
+                  style.outlineOffset = '-1px'
                 } else {
                   style.backgroundColor = seg.color
                 }
@@ -257,8 +286,6 @@ function MonthGrid({
                   ? Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000)
                   : 0
                 const days = nights + 1
-                const soldOut   = ot ? ot.maxCapacity - ot.spotsAvailable : 0
-                const available = ot ? ot.spotsAvailable : 0
 
                 return (
                   <div
@@ -273,55 +300,49 @@ function MonthGrid({
                   >
                     {seg.isRealStart && (
                       seg.isStripe && ot ? (
-                        /* Open trip pill — white overlay so text is readable over stripes */
+                        /* Open trip pill — 2-row white overlay */
                         <div style={{
-                          margin: '0 4px',
+                          margin: '2px 4px',
                           backgroundColor: 'rgba(255,255,255,0.93)',
                           borderRadius: 4,
-                          padding: '2px 6px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
+                          padding: '3px 6px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 3,
                           maxWidth: 'calc(100% - 8px)',
                           overflow: 'hidden',
+                          alignSelf: 'flex-start',
                         }}>
-                          {/* Title */}
-                          <span style={{
-                            color: seg.color, fontSize: 11, fontWeight: 700,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            flexShrink: 1, minWidth: 0,
-                          }}>
-                            {ot.title}
-                          </span>
-                          {/* Days / Nights */}
-                          <span style={{
-                            color: '#475569', fontSize: 10, fontWeight: 600,
-                            whiteSpace: 'nowrap', flexShrink: 0,
-                          }}>
-                            {days}D/{nights}N
-                          </span>
-                          {/* Cabin status */}
-                          {seg.isFull ? (
+                          {/* Row 1: Title + Yacht + Days */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                             <span style={{
-                              background: '#ef4444', color: 'white',
-                              fontSize: 9, fontWeight: 800,
-                              padding: '1px 5px', borderRadius: 3,
-                              whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.04em',
+                              color: '#111827', fontSize: 11, fontWeight: 700,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              flexShrink: 1, minWidth: 0,
                             }}>
-                              FULL
+                              {ot.title}
                             </span>
-                          ) : (
-                            <>
-                              <span style={{ color: '#16a34a', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                {available} sisa
-                              </span>
-                              {soldOut > 0 && (
-                                <span style={{ color: '#dc2626', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                  · {soldOut} sold
-                                </span>
-                              )}
-                            </>
-                          )}
+                            <span style={{ color: '#475569', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {ot.yacht.name}
+                            </span>
+                            <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {days}D/{nights}N
+                            </span>
+                          </div>
+                          {/* Row 2: Per-cabin dots */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
+                            {(ot.cabinStatuses ?? []).map(c => {
+                              const isPaid    = c.bookingStatus === 'fully_paid' || c.bookingStatus === 'confirmed' || c.bookingStatus === 'completed'
+                              const isPending = c.bookingStatus !== null && !isPaid
+                              const dotColor  = isPaid ? '#ef4444' : isPending ? '#f59e0b' : '#22c55e'
+                              return (
+                                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                                  <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }} />
+                                  <span style={{ fontSize: 9, color: '#334155', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
                       ) : (
                         /* Regular booking — white text on solid bar */
@@ -356,7 +377,7 @@ export default function CalendarView() {
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
-  const [yachtFilter, setYachtFilter]   = useState<string>('all')
+  const [yachtFilter, setYachtFilter]   = useState<string>('Samara I')
   const [selectedBooking, setSelectedBooking]   = useState<BookingEvent | null>(null)
   const [isDetailOpen, setIsDetailOpen]         = useState(false)
   const [wizardOpen, setWizardOpen]             = useState(false)
@@ -475,7 +496,7 @@ export default function CalendarView() {
             startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
             status: b.status, tripType: b.tripType,
             customerName: b.customer?.name, bookingCode: b.bookingCode,
-            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
+            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined, salesperson: b.salesperson ?? undefined,
           }))
       )
     } catch (e) { console.error('Failed to fetch bookings', e) }
@@ -488,8 +509,9 @@ export default function CalendarView() {
         Array.isArray(data)
           ? data.map((t: any) => ({
               ...t,
-              startDate: t.startDate.split('T')[0],
-              endDate:   t.endDate.split('T')[0],
+              startDate:     t.startDate.split('T')[0],
+              endDate:       t.endDate.split('T')[0],
+              cabinStatuses: t.cabinStatuses ?? [],
             }))
           : []
       )
@@ -529,6 +551,8 @@ export default function CalendarView() {
   const leftMonth = currentDate.getMonth()
 
   const handleDateClick = (dateStr: string) => {
+    const today = new Date(); today.setHours(0,0,0,0)
+    if (new Date(dateStr) <= today) return
     setSelectedDate(dateStr)
     setWizardOpen(true)
   }
@@ -689,24 +713,24 @@ export default function CalendarView() {
         <div className="border-b">
           {/* Row 1: legend swatches */}
           <div className="flex items-center gap-4 px-5 py-2 flex-wrap">
+            {/* Charter per-yacht colors */}
             {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
               const color = yachtColorMap[y.name] ?? '#64748b'
               return (
                 <div key={y.id} className="flex items-center gap-1.5">
-                  <span className="w-8 h-3 rounded-sm shrink-0 inline-block" style={{ backgroundColor: color }} />
-                  <span className="w-8 h-3 rounded-sm shrink-0 inline-block" style={{ ...stripeStyle(color), outline: `1.5px solid ${color}`, outlineOffset: -1 }} />
+                  <span className="w-6 h-3 rounded-sm shrink-0 inline-block" style={{ backgroundColor: color }} />
                   <span className="text-[11px] text-muted-foreground font-semibold">{y.name}</span>
                 </div>
               )
             })}
-            <div className="border-l border-border pl-3 flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <span className="w-5 h-3 rounded-sm bg-[#64748b] inline-block" />
-                <span className="text-[10px] text-muted-foreground">Charter</span>
+            <div className="border-l border-border pl-3 flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#22c55e'), outline: '1.5px solid #22c55e', outlineOffset: -1 }} />
+                <span className="text-[10px] text-muted-foreground">Open Trip (tersedia)</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="w-5 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#64748b'), outline: '1.5px solid #64748b', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#ef4444'), outline: '1.5px solid #ef4444', outlineOffset: -1 }} />
+                <span className="text-[10px] text-muted-foreground">Open Trip (penuh)</span>
               </div>
             </div>
           </div>
@@ -733,32 +757,33 @@ export default function CalendarView() {
             {/* Yacht filter */}
             <div className="flex items-center gap-1">
               <span className="text-[11px] text-muted-foreground mr-1.5 font-medium">Kapal:</span>
-              <button
-                onClick={() => setYachtFilter('all')}
-                className={[
-                  'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
-                  yachtFilter === 'all' ? 'bg-[#1a5f6e] text-white' : 'text-muted-foreground hover:bg-muted',
-                ].join(' ')}
-              >
-                Semua
-              </button>
-              {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
-                const color = yachtColorMap[y.name] ?? '#64748b'
-                const active = yachtFilter === y.name
-                return (
-                  <button
-                    key={y.id}
-                    onClick={() => setYachtFilter(active ? 'all' : y.name)}
-                    className={[
-                      'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border',
-                      active ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted',
-                    ].join(' ')}
-                    style={active ? { backgroundColor: color, borderColor: color } : {}}
-                  >
-                    {y.name}
-                  </button>
-                )
-              })}
+              {(() => {
+                const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
+                const sorted = [...yachts].sort((a, b) => {
+                  const ai = ORDER.indexOf(a.name); const bi = ORDER.indexOf(b.name)
+                  if (ai === -1 && bi === -1) return a.name.localeCompare(b.name)
+                  if (ai === -1) return 1
+                  if (bi === -1) return -1
+                  return ai - bi
+                })
+                return sorted.map(y => {
+                  const color = yachtColorMap[y.name] ?? '#64748b'
+                  const active = yachtFilter === y.name
+                  return (
+                    <button
+                      key={y.id}
+                      onClick={() => setYachtFilter(y.name)}
+                      className={[
+                        'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border',
+                        active ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted',
+                      ].join(' ')}
+                      style={active ? { backgroundColor: color, borderColor: color } : {}}
+                    >
+                      {y.name}
+                    </button>
+                  )
+                })
+              })()}
             </div>
           </div>
         </div>
@@ -887,17 +912,29 @@ export default function CalendarView() {
                       <div className="text-sm font-semibold">USD {selectedBooking.totalPrice?.toLocaleString() ?? '–'}</div>
                     </div>
                   </div>
-                  {selectedBooking.notes && (
-                    <div className="rounded-lg border p-3">
-                      <div className="text-[11px] text-muted-foreground mb-1">Notes</div>
-                      <p className="text-sm">{selectedBooking.notes}</p>
+                  {(selectedBooking.salesperson || selectedBooking.notes) && (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: selectedBooking.salesperson && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
+                      {selectedBooking.salesperson && (
+                        <div className="rounded-lg border p-3">
+                          <div className="text-[11px] text-muted-foreground mb-1">Salesperson</div>
+                          <p className="text-sm font-semibold">{selectedBooking.salesperson}</p>
+                        </div>
+                      )}
+                      {selectedBooking.notes && (
+                        <div className="rounded-lg border p-3">
+                          <div className="text-[11px] text-muted-foreground mb-1">Notes</div>
+                          <p className="text-sm">{selectedBooking.notes}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   <DialogFooter className="gap-2 pt-1">
                     <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
-                    <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
-                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
-                    </Button>
+                    {new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
+                      <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
+                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
+                      </Button>
+                    )}
                   </DialogFooter>
                 </div>
               ) : (
@@ -978,11 +1015,12 @@ export default function CalendarView() {
               {/* ── View mode ── */}
               {!isOtEditing ? (
                 <>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     {[
                       { label: 'Total Cabins', val: otDetail.cabins?.length ?? 0, color: '#64748b' },
                       { label: 'Available',    val: otDetail.cabins?.filter((c: any) => !c.isFull).length ?? 0, color: '#22c55e' },
-                      { label: 'Sold Out',     val: otDetail.cabins?.filter((c: any) => c.isFull).length ?? 0, color: '#ef4444' },
+                      { label: 'Menunggu DP',  val: otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus !== 'fully_paid' && c.bookingStatus !== 'completed' && c.bookingStatus !== 'confirmed').length ?? 0, color: '#f59e0b' },
+                      { label: 'DP Lunas',     val: otDetail.cabins?.filter((c: any) => c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0, color: '#ef4444' },
                     ].map(s => (
                       <div key={s.label} className="rounded-lg border p-3 text-center">
                         <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
@@ -993,38 +1031,57 @@ export default function CalendarView() {
 
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Cabin Availability</p>
-                    <div className="space-y-2">
-                      {otDetail.cabins?.map((c: any) => (
-                        <div key={c.id} className={cn(
-                          'rounded-lg border p-3 flex items-start justify-between gap-3',
-                          c.isFull ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
-                        )}>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-sm">{c.name}</span>
-                              {c.deck && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.deck}</span>}
-                              {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
-                            </div>
-                            {c.guests.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {c.guests.map((g: { id: string; name: string }) => (
-                                  <button key={g.id} onClick={() => setEditGuestId(g.id)}
-                                    className="text-[10px] bg-white border rounded px-1.5 py-0.5 text-foreground hover:bg-muted hover:border-foreground/30 transition-colors cursor-pointer">
-                                    {g.name}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <span className={cn('text-[11px] font-semibold rounded-full px-2.5 py-1',
-                              c.isFull ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')}>
-                              {c.isFull ? 'SOLD OUT' : `${c.spotsLeft} spot${c.spotsLeft !== 1 ? 's' : ''} left`}
-                            </span>
-                            <div className="text-[10px] text-muted-foreground mt-1">{c.occupied}/{c.capacity} pax</div>
-                          </div>
+                    {/* Legend */}
+                    <div className="flex items-center gap-3 mb-2.5">
+                      {[
+                        { color: 'bg-green-500', label: 'Available' },
+                        { color: 'bg-yellow-400', label: 'Menunggu DP' },
+                        { color: 'bg-red-500', label: 'DP Lunas' },
+                      ].map(l => (
+                        <div key={l.label} className="flex items-center gap-1.5">
+                          <span className={`w-2.5 h-2.5 rounded-full ${l.color} shrink-0`} />
+                          <span className="text-[10px] text-muted-foreground">{l.label}</span>
                         </div>
                       ))}
+                    </div>
+                    <div className="space-y-2">
+                      {otDetail.cabins?.map((c: any) => {
+                        const isPaid    = c.isFull && (c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
+                        const isPending = c.isFull && !isPaid
+                        const cardCls   = isPaid    ? 'bg-red-50 border-red-200'
+                                        : isPending ? 'bg-yellow-50 border-yellow-200'
+                                        :             'bg-green-50 border-green-200'
+                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700'
+                                        : isPending ? 'bg-yellow-100 text-yellow-700'
+                                        :             'bg-green-100 text-green-700'
+                        const badgeLabel = isPaid    ? 'DP Lunas'
+                                         : isPending ? 'Menunggu DP'
+                                         :             'Available'
+                        return (
+                          <div key={c.id} className={cn('rounded-lg border p-3 flex items-start justify-between gap-3', cardCls)}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-sm">{c.name}</span>
+                                {c.deck && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.deck}</span>}
+                                {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
+                              </div>
+                              {c.guests.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {c.guests.map((g: { id: string; name: string }) => (
+                                    <button key={g.id} onClick={() => setEditGuestId(g.id)}
+                                      className="text-[10px] bg-white border rounded px-1.5 py-0.5 text-foreground hover:bg-muted hover:border-foreground/30 transition-colors cursor-pointer">
+                                      {g.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <span className={cn('text-[11px] font-semibold rounded-full px-2.5 py-1 shrink-0', badgeCls)}>
+                              {badgeLabel}
+                            </span>
+                          </div>
+                        )
+                      })}
                       {(!otDetail.cabins || otDetail.cabins.length === 0) && (
                         <p className="text-sm text-muted-foreground text-center py-6">No cabins found for this yacht.</p>
                       )}
@@ -1045,9 +1102,11 @@ export default function CalendarView() {
                         <Plus className="w-3.5 h-3.5 mr-2" /> Book This Trip
                       </Button>
                     )}
-                    <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
-                      <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
-                    </Button>
+                    {new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
+                      <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
+                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
+                      </Button>
+                    )}
                   </DialogFooter>
                 </>
               ) : (

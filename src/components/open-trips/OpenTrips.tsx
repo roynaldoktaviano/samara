@@ -8,13 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
-import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2 } from 'lucide-react'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -53,27 +50,29 @@ const fmtDate = (d: string) =>
 const getDays = (s: string, e: string) =>
   Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
 
+const emptyForm = () => ({
+  title: '', description: '', yachtId: '', startDate: '', endDate: '',
+  destination: '', region: '', departurePort: '', arrivalPort: '', pricePerCabin: '',
+})
+
 export default function OpenTrips() {
-  const [trips,       setTrips]      = useState<OpenTripRecord[]>([])
-  const [yachts,      setYachts]     = useState<YachtOption[]>([])
-  const [loading,     setLoading]    = useState(true)
-  const [searchTerm,  setSearch]     = useState('')
-  const [statusFilter,setStatus]     = useState('all')
-  const [dialogOpen,  setDialogOpen] = useState(false)
-  const [submitting,  setSubmitting] = useState(false)
+  const [trips,        setTrips]       = useState<OpenTripRecord[]>([])
+  const [yachts,       setYachts]      = useState<YachtOption[]>([])
+  const [loading,      setLoading]     = useState(true)
+  const [searchTerm,   setSearch]      = useState('')
+  const [statusFilter, setStatus]      = useState('all')
 
-  /* form */
-  const [title,        setTitle]  = useState('')
-  const [description,  setDesc]   = useState('')
-  const [yachtId,      setYachtId]= useState('')
-  const [startDate,    setStart]  = useState('')
-  const [endDate,      setEnd]    = useState('')
-  const [destination,  setDest]   = useState('')
-  const [region,       setRegion] = useState('')
-  const [departurePort,setDepPort]= useState('')
-  const [arrivalPort,  setArrPort]= useState('')
+  const [dialogOpen,   setDialogOpen]  = useState(false)
+  const [editTrip,     setEditTrip]    = useState<OpenTripRecord | null>(null)
+  const [submitting,   setSubmitting]  = useState(false)
+  const [form,         setForm]        = useState(emptyForm())
 
-  const selectedYacht = yachts.find(y => y.id === yachtId)
+  const [deleteTarget, setDeleteTarget] = useState<OpenTripRecord | null>(null)
+  const [deleting,     setDeleting]    = useState(false)
+
+  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const selectedYacht = yachts.find(y => y.id === form.yachtId)
 
   const fetchTrips = useCallback(async () => {
     setLoading(true)
@@ -89,30 +88,73 @@ export default function OpenTrips() {
     fetch('/api/yachts').then(r => r.json()).then(d => setYachts(Array.isArray(d) ? d : []))
   }, [fetchTrips])
 
-  const resetForm = () => {
-    setTitle(''); setDesc(''); setYachtId(''); setStart(''); setEnd('')
-    setDest(''); setRegion(''); setDepPort(''); setArrPort('')
+  const openAdd = () => {
+    setEditTrip(null)
+    setForm(emptyForm())
+    setDialogOpen(true)
+  }
+
+  const openEdit = (t: OpenTripRecord) => {
+    setEditTrip(t)
+    setForm({
+      title:         t.title,
+      description:   t.description ?? '',
+      yachtId:       t.yachtId,
+      startDate:     t.startDate.split('T')[0],
+      endDate:       t.endDate.split('T')[0],
+      destination:   t.destination,
+      region:        t.region ?? '',
+      departurePort: t.departurePort ?? '',
+      arrivalPort:   t.arrivalPort ?? '',
+      pricePerCabin: t.pricePerCabin > 0 ? String(t.pricePerCabin) : '',
+    })
+    setDialogOpen(true)
   }
 
   const handleSubmit = async () => {
-    if (!title || !yachtId || !startDate || !endDate || !destination) return
+    if (!form.title || !form.yachtId || !form.startDate || !form.endDate || !form.destination) return
     setSubmitting(true)
     try {
-      const res = await fetch('/api/open-trips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title, description, yachtId, startDate, endDate,
-          destination, region, departurePort, arrivalPort,
-        }),
-      })
-      if (res.ok) {
-        await fetchTrips()
-        setDialogOpen(false)
-        resetForm()
+      const payload = {
+        title:         form.title,
+        description:   form.description,
+        yachtId:       form.yachtId,
+        startDate:     form.startDate,
+        endDate:       form.endDate,
+        destination:   form.destination,
+        region:        form.region,
+        departurePort: form.departurePort,
+        arrivalPort:   form.arrivalPort,
+        pricePerCabin: form.pricePerCabin,
       }
+      if (editTrip) {
+        await fetch(`/api/open-trips/${editTrip.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } else {
+        await fetch('/api/open-trips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      }
+      await fetchTrips()
+      setDialogOpen(false)
     } catch (e) { console.error(e) }
     finally { setSubmitting(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await fetch(`/api/open-trips/${deleteTarget.id}`, { method: 'DELETE' })
+      await fetchTrips()
+      setDeleteTarget(null)
+    } catch (e) { console.error(e) }
+    finally { setDeleting(false) }
   }
 
   const filtered = trips.filter(t => {
@@ -132,131 +174,18 @@ export default function OpenTrips() {
           <h3 className="text-2xl font-bold tracking-tight">Open Trips</h3>
           <p className="text-sm text-muted-foreground">Manage pre-scheduled shared trips sold per cabin</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) resetForm() }}>
-          <DialogTrigger asChild>
-            <Button style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-              <Plus className="mr-2 h-4 w-4" /> Schedule Trip
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl flex flex-col max-h-[92vh] overflow-hidden">
-            <DialogHeader className="shrink-0 border-b pb-3">
-              <DialogTitle>Schedule New Open Trip</DialogTitle>
-            </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="p-4 space-y-4">
-
-                <div className="space-y-1.5">
-                  <Label>Trip Title <span className="text-destructive">*</span></Label>
-                  <Input placeholder="e.g. Komodo Explorer — June 2026" value={title} onChange={e => setTitle(e.target.value)} />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Yacht <span className="text-destructive">*</span></Label>
-                  <Select value={yachtId} onValueChange={setYachtId}>
-                    <SelectTrigger><SelectValue placeholder="Select yacht" /></SelectTrigger>
-                    <SelectContent>
-                      {yachts.map(y => (
-                        <SelectItem key={y.id} value={y.id}>
-                          {y.name}{y.model ? ` (${y.model})` : ''} — {y.cabinCount} cabins
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Cabin preview */}
-                {selectedYacht && selectedYacht.cabins?.length > 0 && (
-                  <div className="rounded-lg border p-3 space-y-2"
-                    style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Cabins on {selectedYacht.name} ({selectedYacht.cabinCount} total)
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedYacht.cabins.map(c => (
-                        <Badge key={c.id} variant="outline" className="text-xs">
-                          {c.name}{c.bedType ? ` · ${c.bedType}` : ''}{c.deck ? ` · ${c.deck}` : ''}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Start Date <span className="text-destructive">*</span></Label>
-                    <Input type="date" value={startDate} onChange={e => setStart(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>End Date <span className="text-destructive">*</span></Label>
-                    <Input type="date" value={endDate} min={startDate} onChange={e => setEnd(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Destination <span className="text-destructive">*</span></Label>
-                  <Input placeholder="e.g. Komodo National Park" value={destination} onChange={e => setDest(e.target.value)} />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Region</Label>
-                  <Input placeholder="e.g. East Nusa Tenggara, Raja Ampat" value={region} onChange={e => setRegion(e.target.value)} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Departure Port</Label>
-                    <Input placeholder="e.g. Labuan Bajo" value={departurePort} onChange={e => setDepPort(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Arrival Port</Label>
-                    <Input placeholder="e.g. Lombok Harbor" value={arrivalPort} onChange={e => setArrPort(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Description</Label>
-                  <Textarea placeholder="Trip itinerary, inclusions, notes..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
-                </div>
-
-                {/* Duration preview */}
-                {startDate && endDate && (
-                  <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: `${ACCENT}0d` }}>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Duration</span>
-                      <span>{getDays(startDate, endDate)} days</span>
-                    </div>
-                    {selectedYacht && (
-                      <div className="flex justify-between mt-1">
-                        <span className="text-muted-foreground">Max capacity</span>
-                        <span>{selectedYacht.cabinCount} cabins (auto from yacht)</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-3 px-4 border-t shrink-0">
-              <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm() }}>Cancel</Button>
-              <Button
-                disabled={!title || !yachtId || !startDate || !endDate || !destination || submitting}
-                onClick={handleSubmit}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90"
-              >
-                {submitting ? 'Saving...' : 'Schedule Trip'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={openAdd} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+          <Plus className="mr-2 h-4 w-4" /> Schedule Trip
+        </Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Total Trips',  value: trips.length,                                           color: ACCENT },
-          { label: 'Open',         value: trips.filter(t => t.status === 'open').length,          color: '#4a9f6e' },
-          { label: 'Full',         value: trips.filter(t => t.status === 'full').length,          color: '#e8547a' },
-          { label: 'Cabins Sold',  value: trips.reduce((s, t) => s + t.spotsBooked, 0),           color: '#4b8bca' },
+          { label: 'Total Trips',  value: trips.length,                                  color: ACCENT },
+          { label: 'Open',         value: trips.filter(t => t.status === 'open').length,  color: '#4a9f6e' },
+          { label: 'Full',         value: trips.filter(t => t.status === 'full').length,  color: '#e8547a' },
+          { label: 'Cabins Sold',  value: trips.reduce((s, t) => s + t.spotsBooked, 0),  color: '#4b8bca' },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3 px-4">
@@ -279,9 +208,7 @@ export default function OpenTrips() {
               <CardDescription>{loading ? 'Loading...' : `${filtered.length} trip${filtered.length !== 1 ? 's' : ''}`}</CardDescription>
             </div>
             <Select value={statusFilter} onValueChange={setStatus}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
+              <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="open">Open</SelectItem>
@@ -305,9 +232,7 @@ export default function OpenTrips() {
 
           {loading ? (
             <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-36 w-full rounded-xl" />
-              ))}
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)}
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground text-sm">
@@ -318,7 +243,7 @@ export default function OpenTrips() {
           ) : (
             <div className="space-y-3">
               {filtered.map(t => {
-                const pct   = t.maxCapacity > 0 ? (t.spotsBooked / t.maxCapacity) * 100 : 0
+                const pct    = t.maxCapacity > 0 ? (t.spotsBooked / t.maxCapacity) * 100 : 0
                 const isFull = t.spotsAvailable === 0
 
                 return (
@@ -331,6 +256,11 @@ export default function OpenTrips() {
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLE[t.status] ?? 'bg-muted text-muted-foreground'}`}>
                             {t.status}
                           </span>
+                          {t.pricePerCabin > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              USD {t.pricePerCabin.toLocaleString()} / cabin
+                            </span>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
@@ -380,45 +310,41 @@ export default function OpenTrips() {
                           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: isFull ? '#e8547a' : '#4a9f6e',
-                              }}
+                              style={{ width: `${pct}%`, backgroundColor: isFull ? '#e8547a' : '#4a9f6e' }}
                             />
                           </div>
                         </div>
 
-                        {/* PDF Buttons */}
-                        <div className="flex gap-2 pt-2 border-t mt-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => window.open(`/print/manifest/${t.id}`, '_blank')}
-                          >
-                            <FileText className="w-3 h-3 mr-1.5" />
-                            Harbormaster Manifest
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t mt-2 flex-wrap">
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={() => window.open(`/print/manifest/${t.id}`, '_blank')}>
+                            <FileText className="w-3 h-3 mr-1.5" /> Harbormaster Manifest
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => window.open(`/print/crew-sheet/${t.id}`, '_blank')}
-                          >
-                            <Users className="w-3 h-3 mr-1.5" />
-                            Crew Guest Sheet
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={() => window.open(`/print/crew-sheet/${t.id}`, '_blank')}>
+                            <Users className="w-3 h-3 mr-1.5" /> Crew Guest Sheet
                           </Button>
                         </div>
                       </div>
 
-                      {/* Right — spot count */}
-                      <div className="text-right shrink-0">
-                        <div className="text-xs text-muted-foreground">Bookings</div>
-                        <div className="font-bold text-2xl" style={{ color: ACCENT }}>
-                          {t.spotsBooked}
+                      {/* Right — spot count + actions */}
+                      <div className="flex flex-col items-end gap-3 shrink-0">
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">Bookings</div>
+                          <div className="font-bold text-2xl" style={{ color: ACCENT }}>{t.spotsBooked}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">of {t.maxCapacity} cabins</div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          of {t.maxCapacity} cabins
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(t)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(t)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -429,6 +355,156 @@ export default function OpenTrips() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) setEditTrip(null) }}>
+        <DialogContent className="sm:max-w-2xl flex flex-col max-h-[92vh] overflow-hidden">
+          <DialogHeader className="shrink-0 border-b pb-3">
+            <DialogTitle>{editTrip ? 'Edit Open Trip' : 'Schedule New Open Trip'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="p-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label>Trip Title <span className="text-destructive">*</span></Label>
+                <Input placeholder="e.g. Komodo Explorer — June 2026" value={form.title} onChange={e => set('title', e.target.value)} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Yacht <span className="text-destructive">*</span></Label>
+                {editTrip ? (
+                  <div className="flex items-center gap-2 h-9 px-3 border rounded-md bg-muted/40 text-sm text-muted-foreground">
+                    <Ship className="w-4 h-4" />
+                    {editTrip.yacht.name}
+                    <span className="text-xs ml-1">(cannot change after creation)</span>
+                  </div>
+                ) : (
+                  <Select value={form.yachtId} onValueChange={v => set('yachtId', v)}>
+                    <SelectTrigger><SelectValue placeholder="Select yacht" /></SelectTrigger>
+                    <SelectContent>
+                      {yachts.map(y => (
+                        <SelectItem key={y.id} value={y.id}>
+                          {y.name}{y.model ? ` (${y.model})` : ''} — {y.cabinCount} cabins
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Cabin preview (create mode) */}
+              {!editTrip && selectedYacht && selectedYacht.cabins?.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Cabins on {selectedYacht.name} ({selectedYacht.cabinCount} total)
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedYacht.cabins.map(c => (
+                      <Badge key={c.id} variant="outline" className="text-xs">
+                        {c.name}{c.bedType ? ` · ${c.bedType}` : ''}{c.deck ? ` · ${c.deck}` : ''}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Start Date <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>End Date <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={form.endDate} min={form.startDate} onChange={e => set('endDate', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Destination <span className="text-destructive">*</span></Label>
+                  <Input placeholder="e.g. Komodo National Park" value={form.destination} onChange={e => set('destination', e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Price per Cabin (USD)</Label>
+                  <Input type="number" placeholder="0" min="0" value={form.pricePerCabin} onChange={e => set('pricePerCabin', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Region</Label>
+                <Input placeholder="e.g. East Nusa Tenggara, Raja Ampat" value={form.region} onChange={e => set('region', e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Departure Port</Label>
+                  <Input placeholder="e.g. Labuan Bajo" value={form.departurePort} onChange={e => set('departurePort', e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Arrival Port</Label>
+                  <Input placeholder="e.g. Lombok Harbor" value={form.arrivalPort} onChange={e => set('arrivalPort', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Textarea placeholder="Trip itinerary, inclusions, notes..." value={form.description} onChange={e => set('description', e.target.value)} rows={3} />
+              </div>
+
+              {/* Summary */}
+              {form.startDate && form.endDate && (
+                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: `${ACCENT}0d` }}>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Duration</span>
+                    <span>{getDays(form.startDate, form.endDate)} days</span>
+                  </div>
+                  {!editTrip && selectedYacht && (
+                    <div className="flex justify-between mt-1">
+                      <span className="text-muted-foreground">Max capacity</span>
+                      <span>{selectedYacht.cabinCount} cabins (auto from yacht)</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 border-t px-4 pt-3 gap-2">
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!form.title || !form.yachtId || !form.startDate || !form.endDate || !form.destination || submitting}
+              onClick={handleSubmit}
+              style={{ backgroundColor: ACCENT, color: 'white' }}
+              className="hover:opacity-90"
+            >
+              {submitting ? 'Saving...' : editTrip ? 'Save Changes' : 'Schedule Trip'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Open Trip</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{deleteTarget?.title}</strong>?
+              This will also remove all associated bookings and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? 'Deleting...' : 'Delete Trip'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
