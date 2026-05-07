@@ -3,9 +3,19 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-export async function GET() {
+export async function GET(_: NextRequest) {
   try {
+    const session  = await getServerSession(authOptions)
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    const userName = session?.user?.name ?? ''
+
+    // SALES: only their own payments (matched via booking.salesperson)
+    const where = userRole === 'SALES' && userName
+      ? { booking: { salesperson: { equals: userName, mode: 'insensitive' as const } } }
+      : {}
+
     const payments = await db.payment.findMany({
+      where,
       select: {
         id: true,
         bookingId: true,
@@ -17,6 +27,8 @@ export async function GET() {
         status: true,
         notes: true,
         proofOfTransfer: true,
+        submittedByUserId: true,
+        submittedByName: true,
         confirmedBy: true,
         confirmedAt: true,
         createdAt: true,
@@ -65,9 +77,11 @@ export async function POST(request: NextRequest) {
 
     const previouslyPaid = booking.depositPaid
     const paymentType = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
-    const typePrefix = paymentType === 'DP' ? 'DP' : 'LUN'
-    const sameTypeCount = await db.payment.count({ where: { bookingId, paymentType } })
-    const invoiceNumber = `INV-${booking.bookingCode}-${typePrefix}-${String(sameTypeCount + 1).padStart(2, '0')}`
+    const allCount = await db.payment.count({ where: { bookingId } })
+    const invoiceNumber = `INV-${booking.bookingCode}-${String(allCount + 1).padStart(2, '0')}`
+
+    const submittedByUserId = session?.user?.id ?? null
+    const submittedByName   = session?.user?.name ?? session?.user?.email ?? null
 
     const payment = await db.payment.create({
       data: {
@@ -79,8 +93,28 @@ export async function POST(request: NextRequest) {
         currency: currency || 'USD',
         notes: notes || null,
         status: 'pending_confirmation',
+        submittedByUserId,
+        submittedByName,
       },
     })
+
+    // Notify all Finance + Admin users
+    const financeUsers = await db.user.findMany({
+      where: { role: { in: ['FINANCE', 'ADMIN'] } },
+      select: { id: true },
+    })
+    if (financeUsers.length > 0) {
+      await db.notification.createMany({
+        data: financeUsers.map(u => ({
+          userId: u.id,
+          type: 'PAYMENT_SUBMITTED',
+          title: 'Invoice menunggu konfirmasi',
+          body: `${invoiceNumber} — $${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} dikirim oleh ${submittedByName ?? 'Sales'}`,
+          paymentId: payment.id,
+          bookingId,
+        })),
+      })
+    }
 
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {

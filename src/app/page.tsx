@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog } from 'lucide-react'
+import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -14,8 +14,9 @@ import Expenses from '@/components/expenses/Expenses'
 import Maintenance from '@/components/maintenance/Maintenance'
 import OpenTrips from '@/components/open-trips/OpenTrips'
 import UsersPage from '@/components/users/Users'
+import Payments from '@/components/payments/Payments'
 
-type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users'
+type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments'
 
 type NavItem = {
   id: View
@@ -27,7 +28,8 @@ type NavItem = {
 const navigationItems: NavItem[] = [
   { id: 'calendar',    label: 'Dashboard',   icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING'] },
   { id: 'yachts',      label: 'Yachts',      icon: Anchor,          roles: ['ADMIN'] },
-  { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE'] },
+  { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES'] },
+  { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'SALES', 'FINANCE'] },
   { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'dashboard',   label: 'Statistics',  icon: LayoutDashboard, roles: ['ADMIN', 'FINANCE'] },
@@ -50,12 +52,113 @@ const roleLabel: Record<string, string> = {
   MARKETING: 'Marketing',
 }
 
+interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string
+  isRead: boolean
+  paymentId: string | null
+  createdAt: string
+}
+
+const NOTIF_ICON: Record<string, React.ElementType> = {
+  PAYMENT_SUBMITTED: Clock,
+  PAYMENT_CONFIRMED: CheckCircle2,
+  PAYMENT_REJECTED:  XCircle,
+}
+const NOTIF_COLOR: Record<string, string> = {
+  PAYMENT_SUBMITTED: 'text-amber-600',
+  PAYMENT_CONFIRMED: 'text-green-600',
+  PAYMENT_REJECTED:  'text-red-600',
+}
+
+function fmtRelative(d: string) {
+  const diff = Date.now() - new Date(d).getTime()
+  const min  = Math.floor(diff / 60000)
+  if (min < 1)   return 'Baru saja'
+  if (min < 60)  return `${min} menit lalu`
+  const hr = Math.floor(min / 60)
+  if (hr < 24)   return `${hr} jam lalu`
+  return `${Math.floor(hr / 24)} hari lalu`
+}
+
 export default function Home() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const [currentView, setCurrentView] = useState<View>('calendar')
   const [showUserMenu, setShowUserMenu] = useState(false)
 
+  // ── Notifications ──────────────────────────────────────────────────
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [pendingPayments, setPendingPayments] = useState(0)
+  const notifRef = useRef<HTMLDivElement>(null)
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications')
+      if (res.ok) setNotifications(await res.json())
+    } catch { /* silent */ }
+  }, [])
+
+  const fetchPendingPayments = useCallback(async () => {
+    try {
+      const res = await fetch('/api/payments')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingPayments(data.filter((p: { status: string }) => p.status === 'pending_confirmation').length)
+      }
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => {
+    if (!session) return
+    const refresh = () => { fetchNotifications(); fetchPendingPayments() }
+    const interval = setInterval(refresh, 30000)
+    refresh()
+    return () => clearInterval(interval)
+  }, [session])
+
+  // Immediate refresh when a payment action fires (confirm/reject from Payments module)
+  useEffect(() => {
+    const handler = () => { fetchNotifications(); fetchPendingPayments() }
+    window.addEventListener('payment-updated', handler)
+    return () => window.removeEventListener('payment-updated', handler)
+  }, [fetchNotifications, fetchPendingPayments])
+
+  // Close notif dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const unreadCount = notifications.filter(n => !n.isRead).length
+
+  const markAllRead = async () => {
+    await fetch('/api/notifications', { method: 'PATCH' })
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+  }
+
+  const markOneRead = async (id: string) => {
+    await fetch(`/api/notifications/${id}`, { method: 'PATCH' })
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
+  }
+
+  const handleNotifClick = (n: Notification) => {
+    markOneRead(n.id)
+    if (n.paymentId) {
+      setCurrentView('payments')
+      setNotifOpen(false)
+    }
+  }
+
+  // ── Auth guard ─────────────────────────────────────────────────────
   if (status === 'loading') {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -70,9 +173,9 @@ export default function Home() {
   }
 
   const userRole = session.user.role
+  const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const visibleNavItems = navigationItems.filter((item) => item.roles.includes(userRole))
 
-  // If current view is not accessible for this role, reset to first accessible view
   const isCurrentViewAllowed = visibleNavItems.some((item) => item.id === currentView)
   const activeView = isCurrentViewAllowed ? currentView : visibleNavItems[0]?.id ?? 'calendar'
 
@@ -87,6 +190,7 @@ export default function Home() {
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
       case 'users':        return <UsersPage />
+      case 'payments':     return <Payments />
       default:             return <CalendarView />
     }
   }
@@ -109,13 +213,29 @@ export default function Home() {
               <SidebarMenu>
                 {visibleNavItems.map((item) => {
                   const Icon = item.icon
+                  // Dot: Finance sees pending-payment count, Sales sees unread notifs
+                  const showDot =
+                    item.id === 'payments' && (
+                      isFinance ? pendingPayments > 0 : unreadCount > 0
+                    )
+                  const dotCount = item.id === 'payments'
+                    ? (isFinance ? pendingPayments : unreadCount)
+                    : 0
+
                   return (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
                         onClick={() => setCurrentView(item.id)}
                         isActive={activeView === item.id}
                       >
-                        <Icon className="h-4 w-4" />
+                        <div className="relative shrink-0">
+                          <Icon className="h-4 w-4" />
+                          {showDot && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                              {dotCount > 9 ? '9+' : dotCount}
+                            </span>
+                          )}
+                        </div>
                         <span>{item.label}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -126,7 +246,6 @@ export default function Home() {
           </SidebarContent>
 
           <SidebarFooter className="p-4 border-t">
-            {/* User info + logout */}
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu((v) => !v)}
@@ -175,7 +294,87 @@ export default function Home() {
                 {currentNavItem?.label ?? activeView}
               </h2>
             </div>
+
+            {/* ── Notification Bell ── */}
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen(v => !v)}
+                className="relative p-2 rounded-full hover:bg-muted transition-colors"
+              >
+                <Bell className="h-5 w-5 text-muted-foreground" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border bg-background shadow-xl z-50 overflow-hidden">
+                  {/* Dropdown header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                    <span className="font-semibold text-sm">Notifikasi</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="flex items-center gap-1 text-xs text-[#1a5f6e] hover:underline"
+                      >
+                        <CheckCheck className="h-3 w-3" />
+                        Tandai semua dibaca
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Notification list */}
+                  <div className="max-h-80 overflow-y-auto divide-y">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                        Tidak ada notifikasi
+                      </div>
+                    ) : notifications.slice(0, 20).map(n => {
+                      const Icon = NOTIF_ICON[n.type] ?? Bell
+                      const color = NOTIF_COLOR[n.type] ?? 'text-muted-foreground'
+                      return (
+                        <button
+                          key={n.id}
+                          onClick={() => handleNotifClick(n)}
+                          className={[
+                            'w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors flex items-start gap-3',
+                            !n.isRead ? 'bg-blue-50/50' : '',
+                          ].join(' ')}
+                        >
+                          <div className={`mt-0.5 shrink-0 ${color}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-semibold ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
+                              {n.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
+                            <p className="text-[10px] text-muted-foreground/70 mt-1">{fmtRelative(n.createdAt)}</p>
+                          </div>
+                          {!n.isRead && (
+                            <span className="shrink-0 mt-1.5 w-2 h-2 rounded-full bg-blue-500" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="border-t px-4 py-2 bg-muted/20">
+                    <button
+                      onClick={() => { setCurrentView('payments'); setNotifOpen(false) }}
+                      className="text-xs text-[#1a5f6e] hover:underline w-full text-center"
+                    >
+                      Lihat semua payment →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </header>
+
           <div className="p-6">
             {renderView()}
           </div>

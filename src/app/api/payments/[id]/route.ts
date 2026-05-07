@@ -22,6 +22,13 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             openTrip: { select: { title: true, destination: true } },
             agent:    { select: { name: true, company: true } },
             services: true,
+            guests: {
+              select: {
+                isLead: true,
+                customer: { select: { name: true } },
+                cabin:    { select: { name: true } },
+              },
+            },
           },
         },
       },
@@ -56,12 +63,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const payment = await db.payment.findUnique({
       where: { id },
       include: {
-        booking: { select: { id: true, totalPrice: true, depositPaid: true } },
+        booking: { select: { id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true } },
       },
     })
     if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     if (payment.status !== 'pending_confirmation') {
       return NextResponse.json({ error: 'Payment already processed' }, { status: 400 })
+    }
+
+    const confirmedByName = session?.user?.name || 'Finance'
+
+    // Resolve recipient: prefer explicit submittedByUserId, fallback to salesperson name lookup
+    let recipientUserId = payment.submittedByUserId
+    if (!recipientUserId && payment.booking.salesperson) {
+      const salespersonUser = await db.user.findFirst({
+        where: { name: { equals: payment.booking.salesperson, mode: 'insensitive' } },
+        select: { id: true },
+      })
+      if (salespersonUser) recipientUserId = salespersonUser.id
     }
 
     if (action === 'confirm') {
@@ -71,26 +90,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       await db.$transaction([
         db.payment.update({
           where: { id },
-          data: {
-            status: 'confirmed',
-            confirmedBy: session?.user?.name || 'Finance',
-            confirmedAt: new Date(),
-          },
+          data: { status: 'confirmed', confirmedBy: confirmedByName, confirmedAt: new Date() },
         }),
         db.booking.update({
           where: { id: payment.bookingId },
           data: { depositPaid: newDepositPaid, status: newStatus },
         }),
       ])
+
+      // Notify the submitter
+      if (recipientUserId) {
+        await db.notification.create({
+          data: {
+            userId: recipientUserId,
+            type: 'PAYMENT_CONFIRMED',
+            title: 'Invoice dikonfirmasi ✓',
+            body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${confirmedByName}`,
+            paymentId: payment.id,
+            bookingId: payment.bookingId,
+          },
+        })
+      }
     } else if (action === 'reject') {
       await db.payment.update({
         where: { id },
-        data: {
-          status: 'rejected',
-          confirmedBy: session?.user?.name || 'Finance',
-          confirmedAt: new Date(),
-        },
+        data: { status: 'rejected', confirmedBy: confirmedByName, confirmedAt: new Date() },
       })
+
+      // Notify the submitter
+      if (recipientUserId) {
+        await db.notification.create({
+          data: {
+            userId: recipientUserId,
+            type: 'PAYMENT_REJECTED',
+            title: 'Invoice ditolak',
+            body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${confirmedByName}`,
+            paymentId: payment.id,
+            bookingId: payment.bookingId,
+          },
+        })
+      }
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }

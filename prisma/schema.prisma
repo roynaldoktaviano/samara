@@ -222,22 +222,39 @@ model Expense {
 }
 
 model Payment {
-  id              String    @id @default(cuid())
-  bookingId       String
-  invoiceNumber   String    @unique
-  paymentType     String    @default("DP")
-  amount          Float
-  previouslyPaid  Float     @default(0)
-  currency        String    @default("USD")
-  status          String    @default("pending_confirmation")
-  notes           String?
-  proofOfTransfer String?
-  confirmedBy     String?
-  confirmedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  bookingId         String
+  invoiceNumber     String    @unique
+  paymentType       String    @default("DP")
+  amount            Float
+  previouslyPaid    Float     @default(0)
+  currency          String    @default("USD")
+  status            String    @default("pending_confirmation")
+  notes             String?
+  proofOfTransfer   String?
+  submittedByUserId String?
+  submittedByName   String?
+  confirmedBy       String?
+  confirmedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([status])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  paymentId String?
+  bookingId String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId])
 }

@@ -85,11 +85,12 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, openTrips, yachtColorMap, onDateClick, onBookingClick, onOpenTripClick,
+  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick,
 }: {
   year: number; month: number
   bookings: BookingEvent[]; openTrips: OpenTripEvent[]
   yachtColorMap: Record<string, string>
+  yachtFilter: string
   onDateClick: (d: string) => void
   onBookingClick: (b: BookingEvent) => void
   onOpenTripClick: (t: OpenTripEvent) => void
@@ -194,9 +195,16 @@ function MonthGrid({
 
   return (
     <div className="flex-1 min-w-0">
-      <p className="text-center text-sm font-semibold text-foreground mb-3">
-        {MONTH_FULL[month]} {year}
-      </p>
+      <div className="text-center mb-3">
+        <p className="text-sm font-semibold text-foreground">
+          {MONTH_FULL[month]} {year}
+        </p>
+        {yachtFilter !== 'all' && (
+          <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? '#64748b' }}>
+            {yachtFilter}
+          </p>
+        )}
+      </div>
       <div className="grid grid-cols-7">
         {DAY_NAMES.map(d => (
           <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1.5">{d}</div>
@@ -803,6 +811,7 @@ export default function CalendarView() {
               {/* Single month — full width */}
               <MonthGrid
                 year={leftYear} month={leftMonth}
+                yachtFilter={yachtFilter}
                 bookings={
                   (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
                     ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')

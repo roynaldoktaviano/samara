@@ -12,9 +12,24 @@ function paymentStatus(depositPaid: number, totalPrice: number): string {
   return 'partially_paid'
 }
 
+/** Map yacht name to booking code initial. */
+function yachtInitial(name: string | null | undefined): string {
+  if (!name) return 'UNK'
+  const n = name.trim()
+  if (/samara\s*ii/i.test(n))  return 'SL2'
+  if (/samara\s*i\b/i.test(n)) return 'SL1'
+  if (/mischief/i.test(n))     return 'MC'
+  if (/otium/i.test(n))        return 'OT'
+  return n.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase()
+}
+
 /* ── GET ─────────────────────────────────────────────────────────────── */
 export async function GET(request: NextRequest) {
   try {
+    const session  = await getServerSession(authOptions)
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    const userName = session?.user?.name ?? ''
+
     const { searchParams } = new URL(request.url)
     const status      = searchParams.get('status')
     const yachtId     = searchParams.get('yachtId')
@@ -39,6 +54,11 @@ export async function GET(request: NextRequest) {
     if (source)     where.source     = source
     if (tripType)   where.tripType   = tripType
     if (openTripId) where.openTripId = openTripId
+
+    // SALES: hanya lihat booking yang dia buat sendiri
+    if (userRole === 'SALES' && userName) {
+      where.salesperson = { equals: userName, mode: 'insensitive' }
+    }
 
     const bookings = await db.booking.findMany({
       where,
@@ -94,12 +114,24 @@ export async function POST(request: NextRequest) {
     const paid  = parseFloat(depositPaid) || 0
     const total = parseFloat(totalPrice)  || 0
 
-    const last = await db.booking.findFirst({
-      orderBy: { bookingCode: 'desc' },
-      select: { bookingCode: true },
-    })
-    const lastNum = last ? parseInt(last.bookingCode.replace(/\D/g, ''), 10) : 0
-    const bookingCode = `BK${String(lastNum + 1).padStart(3, '0')}`
+    // Resolve yacht name for booking code
+    let yachtName: string | null = null
+    if (yachtId) {
+      const yacht = await db.yacht.findUnique({ where: { id: yachtId }, select: { name: true } })
+      yachtName = yacht?.name ?? null
+    } else if (openTripId) {
+      const trip = await db.openTrip.findUnique({
+        where: { id: openTripId },
+        include: { yacht: { select: { name: true } } },
+      })
+      yachtName = trip?.yacht?.name ?? null
+    }
+
+    const yInit  = yachtInitial(yachtName)
+    const tInit  = (tripType === 'OPEN_TRIP') ? 'ST' : 'PC'
+    const prefix = `${yInit}-${tInit}-`
+    const sameCount  = await db.booking.count({ where: { bookingCode: { startsWith: prefix } } })
+    const bookingCode = `${prefix}${String(sameCount + 1).padStart(4, '0')}`
 
     const booking = await db.booking.create({
       data: {

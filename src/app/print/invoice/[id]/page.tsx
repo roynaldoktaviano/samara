@@ -29,12 +29,13 @@ interface PaymentDetail {
     openTrip?: { title: string; destination?: string }
     agent?: { name: string; company?: string }
     services: Array<{ name: string; price: number }>
+    guests: Array<{
+      isLead: boolean
+      customer: { name: string } | null
+      cabin: { name: string } | null
+    }>
   }
 }
-
-/* ── helpers ── */
-const RATES: Record<string, number> = { USD: 1, EUR: 1.09, IDR: 0.000063 }
-const toCurrency = (usdAmt: number, currency: string) => usdAmt / (RATES[currency] ?? 1)
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -42,18 +43,15 @@ const fmtDate = (d: string) =>
 const fmtDateShort = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-const fmtAmt = (n: number, currency: string) => {
-  if (currency === 'IDR') return `Rp ${Math.round(n).toLocaleString('id-ID')}`
-  if (currency === 'EUR') return `€ ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  return `$ ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+const fmtAmt = (n: number) =>
+  `$ ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const ACCENT = '#bdac7e'
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
   const [payment, setPayment] = useState<PaymentDetail | null>(null)
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading] = useState(true)
   const printed = useRef(false)
 
   useEffect(() => {
@@ -71,77 +69,100 @@ export default function InvoicePage() {
   }, [loading, payment])
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#9ca3af', fontSize: 14 }}>
       Loading invoice…
     </div>
   )
   if (!payment) return (
-    <div className="flex items-center justify-center min-h-screen text-gray-400 text-sm">
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#9ca3af', fontSize: 14 }}>
       Invoice not found.
     </div>
   )
 
-  const b = payment.booking
-  const tripName = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
+  const b           = payment.booking
+  const tripName    = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
   const destination = b.destination ?? b.openTrip?.destination ?? '—'
+  const discountAmt = b.totalPrice * b.discount / 100
+  const netTotal    = b.totalPrice - discountAmt
+  const remaining   = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)
 
-  /* All amounts in payment.currency for consistent display */
-  const totalInCurrency    = toCurrency(b.totalPrice, payment.currency)
-  const prevPaidInCurrency = toCurrency(payment.previouslyPaid, payment.currency)
-  const discountAmt        = totalInCurrency * b.discount / 100
-  const netTotal           = totalInCurrency - discountAmt
-  const remaining          = Math.max(0, netTotal - prevPaidInCurrency - payment.amount)
+  // Cabins with guest names — only show if any cabin is assigned
+  const guestsWithCabin = b.guests.filter(g => g.cabin)
+  const hasCabins = guestsWithCabin.length > 0
 
   return (
-    <div className="bg-white min-h-screen">
-      <div className="max-w-[680px] mx-auto font-sans text-gray-800" style={{ fontSize: 13 }}>
+    <>
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; background: #f3f4f6; }
+        @media print {
+          @page { margin: 1cm; size: A4 portrait; }
+          html, body { background: white; height: 100%; }
+        }
+        @media screen {
+          body { padding: 32px 0 48px; }
+        }
+      `}</style>
+
+      {/* Page shell — A4 height, flex column so footer sticks to bottom */}
+      <div style={{
+        maxWidth: 680,
+        margin: '0 auto',
+        background: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 'calc(297mm - 2cm)',
+        fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+        fontSize: 13,
+        color: '#1f2937',
+      }}>
 
         {/* ── Top accent bar ── */}
-        <div style={{ backgroundColor: ACCENT, height: 6 }} />
+        <div style={{ backgroundColor: ACCENT, height: 6, flexShrink: 0 }} />
 
-        {/* ── Header ── */}
-        <div className="flex items-stretch" style={{ minHeight: 100 }}>
-          {/* Brand column */}
-          <div className="flex flex-col justify-center px-8 py-6" style={{ borderRight: `1px solid #e5e7eb`, minWidth: 220 }}>
-            <div style={{ color: ACCENT, fontSize: 26, fontWeight: 800, letterSpacing: 3 }}>SAMARA</div>
-            <div style={{ color: '#9ca3af', fontSize: 10, letterSpacing: 1.5, marginTop: 2 }}>PREMIUM YACHT EXPERIENCES</div>
+        {/* ── Header: logo + invoice meta ── */}
+        <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '20px 28px', borderRight: '1px solid #e5e7eb', minWidth: 220 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+              alt="Samara Liveaboard"
+              style={{ width: 140, objectFit: 'contain' }}
+            />
+            <div style={{ color: '#9ca3af', fontSize: 9, letterSpacing: 1.5, marginTop: 6 }}>PREMIUM YACHT EXPERIENCES</div>
           </div>
-          {/* Invoice meta */}
-          <div className="flex-1 flex flex-col justify-center px-8 py-6">
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 4 }}>INVOICE</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#374151', fontWeight: 600 }}>{payment.invoiceNumber}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Diterbitkan: {fmtDate(payment.createdAt)}</div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '20px 28px' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 6 }}>INVOICE</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 14, color: '#374151', fontWeight: 700 }}>{payment.invoiceNumber}</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>Issued: {fmtDate(payment.createdAt)}</div>
           </div>
         </div>
 
-        {/* ── Divider ── */}
-        <div style={{ height: 1, backgroundColor: '#e5e7eb', margin: '0 32px' }} />
-
         {/* ── Bill To + Booking Details ── */}
-        <div className="grid grid-cols-2 gap-0" style={{ padding: '24px 32px' }}>
-          <div style={{ paddingRight: 24, borderRight: `1px solid #f3f4f6` }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 8 }}>Bill To</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '24px 28px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
+          <div style={{ paddingRight: 24, borderRight: '1px solid #f3f4f6' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 10 }}>Bill To</div>
             <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{b.customer.name}</div>
-            {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>{b.customer.email}</div>}
+            {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 3 }}>{b.customer.email}</div>}
             {b.customer.phone   && <div style={{ color: '#6b7280', fontSize: 12 }}>{b.customer.phone}</div>}
             {b.customer.address && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>{b.customer.address}</div>}
             {b.agent && (
-              <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 6 }}>
+              <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 8 }}>
                 via {b.agent.name}{b.agent.company ? ` · ${b.agent.company}` : ''}
               </div>
             )}
           </div>
           <div style={{ paddingLeft: 24 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 8 }}>Booking Details</div>
-            {[
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 10 }}>Booking Details</div>
+            {([
               ['Booking No.', b.bookingCode],
-              ['Trip', tripName],
+              ['Trip',        tripName],
               ['Destination', destination],
-              ['Date', `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
-              ['Guests', `${b.guestCount} pax`],
+              ['Date',        `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
+              ['Guests',      `${b.guestCount} pax`],
               ...(b.salesperson ? [['Sales', b.salesperson]] : []),
-            ].map(([k, v]) => (
-              <div key={k} className="flex gap-2" style={{ marginBottom: 3 }}>
+            ] as [string, string][]).map(([k, v]) => (
+              <div key={k} style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
                 <span style={{ color: '#9ca3af', fontSize: 12, width: 80, flexShrink: 0 }}>{k}</span>
                 <span style={{ color: '#111827', fontSize: 12, fontWeight: k === 'Booking No.' ? 700 : 500, fontFamily: k === 'Booking No.' ? 'monospace' : undefined }}>{v}</span>
               </div>
@@ -150,15 +171,15 @@ export default function InvoicePage() {
         </div>
 
         {/* ── Line Items ── */}
-        <div style={{ margin: '0 32px' }}>
+        <div style={{ padding: '0 28px', flexShrink: 0 }}>
           {/* Table header */}
-          <div className="flex justify-between" style={{ backgroundColor: '#f9fafb', padding: '8px 12px', borderRadius: '6px 6px 0 0', borderBottom: `2px solid ${ACCENT}` }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Description</span>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Amount</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#f9fafb', padding: '8px 12px', borderRadius: '6px 6px 0 0', borderBottom: `2px solid ${ACCENT}`, marginTop: 20 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Description</span>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Amount</span>
           </div>
 
           {/* Main item */}
-          <div className="flex justify-between items-start" style={{ padding: '12px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px', borderBottom: '1px solid #f3f4f6' }}>
             <div>
               <div style={{ fontWeight: 600, color: '#111827' }}>
                 {b.tripType === 'OPEN_TRIP' ? 'Open Trip — Cabin Booking' : 'Private Charter'}
@@ -166,92 +187,109 @@ export default function InvoicePage() {
               <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{tripName} · {destination}</div>
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16 }}>
-              {fmtAmt(totalInCurrency, payment.currency)}
+              {fmtAmt(b.totalPrice)}
             </div>
           </div>
 
+          {/* Cabin / Passenger breakdown */}
+          {hasCabins && (
+            <div style={{ borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#6b7280', textTransform: 'uppercase' }}>Passengers &amp; Cabins</span>
+              </div>
+              {guestsWithCabin.map((g, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 4px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: '#374151', fontSize: 12 }}>{g.customer?.name ?? '—'}</span>
+                    {g.isLead && (
+                      <span style={{ fontSize: 9, fontWeight: 600, color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Lead</span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500 }}>
+                    {g.cabin?.name}
+                  </span>
+                </div>
+              ))}
+              <div style={{ height: 8 }} />
+            </div>
+          )}
+
           {/* Discount */}
           {b.discount > 0 && (
-            <div className="flex justify-between items-center" style={{ padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}>
               <span style={{ color: '#059669', fontSize: 12 }}>Discount ({b.discount}%)</span>
-              <span style={{ color: '#059669', fontSize: 12 }}>−{fmtAmt(discountAmt, payment.currency)}</span>
+              <span style={{ color: '#059669', fontSize: 12 }}>−{fmtAmt(discountAmt)}</span>
             </div>
           )}
 
           {/* Additional services */}
           {b.services.map((s, i) => (
-            <div key={i} className="flex justify-between items-center" style={{ padding: '8px 12px 8px 20px', borderBottom: '1px solid #f3f4f6' }}>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px 8px 20px', borderBottom: '1px solid #f3f4f6' }}>
               <span style={{ color: '#6b7280', fontSize: 12 }}>{s.name}</span>
-              <span style={{ color: '#374151', fontSize: 12 }}>{fmtAmt(toCurrency(s.price, payment.currency), payment.currency)}</span>
+              <span style={{ color: '#374151', fontSize: 12 }}>{fmtAmt(s.price)}</span>
             </div>
           ))}
 
-          {/* ── Payment Summary ── */}
-          <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 6px 6px', padding: '12px' }}>
-            {/* Net total */}
-            <div className="flex justify-between" style={{ paddingBottom: 8, borderBottom: '1px solid #e5e7eb', marginBottom: 8 }}>
-              <span style={{ color: '#6b7280', fontSize: 12 }}>Total Paket</span>
-              <span style={{ color: '#111827', fontSize: 12, fontWeight: 600 }}>{fmtAmt(netTotal, payment.currency)}</span>
+          {/* Payment summary */}
+          <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 6px 6px', padding: '12px', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid #e5e7eb', marginBottom: 8 }}>
+              <span style={{ color: '#6b7280', fontSize: 12 }}>Package Total</span>
+              <span style={{ color: '#111827', fontSize: 12, fontWeight: 600 }}>{fmtAmt(netTotal)}</span>
             </div>
 
-            {/* Previously paid (only if there was a prior payment) */}
-            {prevPaidInCurrency > 0 && (
-              <div className="flex justify-between" style={{ marginBottom: 6 }}>
-                <span style={{ color: '#6b7280', fontSize: 12 }}>Pembayaran Sebelumnya</span>
-                <span style={{ color: '#059669', fontSize: 12, fontWeight: 600 }}>−{fmtAmt(prevPaidInCurrency, payment.currency)}</span>
+            {payment.previouslyPaid > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ color: '#6b7280', fontSize: 12 }}>Previously Paid</span>
+                <span style={{ color: '#059669', fontSize: 12, fontWeight: 600 }}>−{fmtAmt(payment.previouslyPaid)}</span>
               </div>
             )}
 
-            {/* This invoice */}
-            <div className="flex justify-between items-center" style={{ backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 6, padding: '10px 12px', marginBottom: 8 }}>
+            {/* This invoice highlight */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 6, padding: '10px 12px', marginBottom: 8 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>
-                Jumlah Tagihan Invoice Ini
+                Amount Due — This Invoice
               </div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>{fmtAmt(payment.amount, payment.currency)}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#111827' }}>{fmtAmt(payment.amount)}</div>
             </div>
 
-            {/* Remaining */}
-            <div className="flex justify-between">
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 12, fontWeight: 600 }}>
-                {remaining > 0 ? 'Sisa Tagihan' : 'Lunas ✓'}
+                {remaining > 0 ? 'Balance Due' : 'Paid in Full ✓'}
               </span>
               <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 12, fontWeight: 700 }}>
-                {fmtAmt(remaining, payment.currency)}
+                {fmtAmt(remaining)}
               </span>
             </div>
           </div>
         </div>
 
-        {/* ── Notes ── */}
+        {/* Notes */}
         {payment.notes && (
-          <div style={{ margin: '20px 32px 0', padding: '10px 14px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#92400e', textTransform: 'uppercase', marginBottom: 4 }}>Catatan</div>
+          <div style={{ margin: '0 28px 20px', padding: '10px 14px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, flexShrink: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#92400e', textTransform: 'uppercase', marginBottom: 4 }}>Notes</div>
             <div style={{ fontSize: 12, color: '#78350f' }}>{payment.notes}</div>
           </div>
         )}
 
+        {/* ── Spacer pushes footer to bottom ── */}
+        <div style={{ flex: 1 }} />
+
         {/* ── Footer ── */}
-        <div style={{ margin: '24px 32px 0', paddingTop: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af' }}>Terima kasih telah berlayar bersama Samara.</div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: '#d1d5db' }}>Generated {fmtDate(new Date().toISOString())}</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#d1d5db', marginTop: 1 }}>{payment.invoiceNumber}</div>
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ margin: '0 28px', paddingTop: 14, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500 }}>Thank you for sailing with Samara.</div>
+              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>samaraliveaboard.com</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#d1d5db' }}>Generated {fmtDate(new Date().toISOString())}</div>
+              <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#d1d5db', marginTop: 1 }}>{payment.invoiceNumber}</div>
+            </div>
           </div>
+          <div style={{ backgroundColor: ACCENT, height: 6 }} />
         </div>
 
-        {/* ── Bottom accent bar ── */}
-        <div style={{ backgroundColor: ACCENT, height: 4, marginTop: 24 }} />
       </div>
-
-      <style>{`
-        @media print {
-          @page { margin: 1cm; size: A4; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
-        }
-        @media screen {
-          body { background: #f3f4f6; padding: 24px 0; }
-        }
-      `}</style>
-    </div>
+    </>
   )
 }

@@ -310,7 +310,7 @@ export default function Guests() {
                             <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
                               {t.status}
                             </Badge>
-                            <p className="text-xs text-muted-foreground mt-1.5">IDR {t.totalPrice.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                         </div>
                       </div>
