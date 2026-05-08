@@ -41,18 +41,24 @@ export async function GET(_: NextRequest) {
             endDate: true,
             destination: true,
             tripType: true,
+            source: true,
             salesperson: true,
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent: { select: { name: true, company: true } },
+            agent: { select: { name: true, company: true, commission: true } },
             services: { select: { name: true, price: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     })
-    return NextResponse.json(payments)
+    // Strip base64 proof from list; return a boolean flag instead
+    const result = payments.map(({ proofOfTransfer, ...p }) => ({
+      ...p,
+      hasProof: !!proofOfTransfer,
+    }))
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching payments:', error)
     return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 })

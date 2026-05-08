@@ -4,8 +4,15 @@ import { db } from '@/lib/db'
 export async function GET() {
   try {
     const yachts = await db.yacht.findMany({
-      include: {
-        cabins: { orderBy: { name: 'asc' } },
+      select: {
+        id: true, name: true, model: true, year: true,
+        capacity: true, cabinCount: true, length: true,
+        hourlyRate: true, dailyRate: true, description: true,
+        image: true, status: true, createdAt: true,
+        cabins: {
+          select: { id: true, name: true, deck: true, bedType: true, capacity: true, extraBeds: true },
+          orderBy: { name: 'asc' },
+        },
         _count: { select: { bookings: true, crew: true } },
       },
       orderBy: { createdAt: 'desc' },

@@ -39,7 +39,7 @@ interface BookingRecord {
   yacht?: { id: string; name: string; model?: string }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
-  agent?: { id: string; name: string; company?: string }
+  agent?: { id: string; name: string; company?: string; commission?: number }
   guests: Array<{ id: string; isLead: boolean; customerId: string; customer?: { name: string }; cabin?: { name: string } }>
 }
 
@@ -53,7 +53,7 @@ interface PaymentRecord {
   currency: string
   status: string
   notes?: string
-  proofOfTransfer?: string | null
+  hasProof?: boolean
   confirmedBy?: string
   confirmedAt?: string
   createdAt: string
@@ -72,6 +72,9 @@ interface PaymentRecord {
     services: Array<{ name: string; price: number }>
   }
 }
+
+const netBook = (b: BookingRecord) =>
+  b.source === 'AGENT' ? b.totalPrice * (1 - (b.agent?.commission ?? 0) / 100) : b.totalPrice
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
@@ -209,7 +212,7 @@ export default function Bookings() {
   /* ── record payment ── */
   const openPayment = (b: BookingRecord) => {
     setPaymentBooking(b)
-    const remaining = b.totalPrice - b.depositPaid
+    const remaining = netBook(b) - b.depositPaid
     setPaymentAmount(remaining > 0 ? remaining.toFixed(2) : '')
     setPaymentNotes('')
   }
@@ -232,9 +235,18 @@ export default function Bookings() {
   }
 
   /* ── proof upload ── */
-  const openProofUpload = (p: PaymentRecord) => {
+  const openProofUpload = async (p: PaymentRecord) => {
     setProofPayment(p)
-    setProofPreview(p.proofOfTransfer ?? null)
+    setProofPreview(null)
+    if (p.hasProof) {
+      try {
+        const res = await fetch(`/api/payments/${p.id}`)
+        if (res.ok) {
+          const detail = await res.json()
+          setProofPreview(detail.proofOfTransfer ?? null)
+        }
+      } catch (e) { console.error(e) }
+    }
   }
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -404,8 +416,10 @@ export default function Bookings() {
                     </TableCell>
                     <TableCell className="text-sm">{b.guestCount}</TableCell>
                     <TableCell className="text-sm font-medium">
-                      ${b.totalPrice.toLocaleString()}
-                      {b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
+                      ${netBook(b).toLocaleString()}
+                      {b.source === 'AGENT' && (b.agent?.commission ?? 0) > 0
+                        ? <div className="text-xs text-blue-600">{b.agent!.commission}% comm</div>
+                        : b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
                     </TableCell>
                     <TableCell className="text-sm">${b.depositPaid.toLocaleString()}</TableCell>
                     <TableCell>
@@ -447,11 +461,11 @@ export default function Bookings() {
                             {pendingPmt && (
                               <Button
                                 variant="ghost" size="sm"
-                                className={`h-7 px-2 text-xs ${pendingPmt.proofOfTransfer ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'}`}
+                                className={`h-7 px-2 text-xs ${pendingPmt.hasProof ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'}`}
                                 onClick={() => openProofUpload(pendingPmt)}
                               >
                                 <Upload className="h-3 w-3 mr-1" />
-                                {pendingPmt.proofOfTransfer ? 'Update Bukti' : 'Upload Bukti'}
+                                {pendingPmt.hasProof ? 'Update Bukti' : 'Upload Bukti'}
                               </Button>
                             )}
                             {bookingPmts.map((p, idx) => (
@@ -525,7 +539,7 @@ export default function Bookings() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total</span>
-                      <span className="font-medium">{fmtAmt(paymentBooking.totalPrice)}</span>
+                      <span className="font-medium">{fmtAmt(netBook(paymentBooking))}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Already Paid</span>
@@ -534,8 +548,8 @@ export default function Bookings() {
                     <Separator className="my-1" />
                     <div className="flex justify-between font-semibold">
                       <span>Remaining</span>
-                      <span className={paymentBooking.totalPrice - paymentBooking.depositPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}>
-                        {fmtAmt(Math.max(0, paymentBooking.totalPrice - paymentBooking.depositPaid))}
+                      <span className={netBook(paymentBooking) - paymentBooking.depositPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}>
+                        {fmtAmt(Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid))}
                       </span>
                     </div>
                   </div>

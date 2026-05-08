@@ -90,12 +90,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [step,    setStep]    = useState(1)
 
   /* agent state */
-  const [agentMode,  setAgentMode]  = useState<'existing' | 'new'>('existing')
-  const [agentId,    setAgentId]    = useState('')
-  const [agentName,  setAgentName]  = useState('')
-  const [agentCo,    setAgentCo]    = useState('')
-  const [agentPhone, setAgentPhone] = useState('')
-  const [agentComm,  setAgentComm]  = useState('0')
+  const [agentId, setAgentId] = useState('')
 
   /* step-1 PC */
   const [yachtId,    setYachtId]    = useState('')
@@ -239,7 +234,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   useEffect(() => {
     if (open) return
     setPhase('source'); setSource(null); setTrip(null); setStep(1)
-    setAgentMode('existing'); setAgentId(''); setAgentName(''); setAgentCo(''); setAgentPhone(''); setAgentComm('0')
+    setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
@@ -320,9 +315,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* validation */
   const canNext = () => {
-    if (phase === 'agentInfo') {
-      return agentMode === 'existing' ? !!agentId : !!agentName.trim()
-    }
+    if (phase === 'agentInfo') return !!agentId
     if (step === 1) {
       if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate)
       return !!openTripId
@@ -336,21 +329,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      let resolvedAgentId: string | undefined
-
-      if (source === 'AGENT') {
-        if (agentMode === 'new') {
-          const r = await fetch('/api/agents', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: agentName, company: agentCo, phone: agentPhone, commission: agentComm }),
-          })
-          const a = await r.json()
-          resolvedAgentId = a.id
-        } else {
-          resolvedAgentId = agentId
-        }
-      }
+      const resolvedAgentId = source === 'AGENT' ? agentId : undefined
 
       const ot = openTrips.find(t => t.id === openTripId)
 
@@ -479,61 +458,31 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <div className="flex justify-center mb-3">
           <Badge style={{ backgroundColor: ACCENT, color: 'white' }} className="px-3 py-1">Via Agent</Badge>
         </div>
-        <h3 className="text-xl font-semibold">Agent Information</h3>
-        <p className="text-sm text-muted-foreground mt-1">Enter the referring agent details</p>
+        <h3 className="text-xl font-semibold">Pilih Agent</h3>
+        <p className="text-sm text-muted-foreground mt-1">Pilih travel agent untuk booking ini</p>
       </div>
 
-      {/* toggle */}
-      <div className="flex rounded-lg border overflow-hidden">
-        {(['existing', 'new'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => setAgentMode(m)}
-            className={cn('flex-1 py-2 text-sm font-medium transition-colors',
-              agentMode === m ? 'text-white' : 'text-muted-foreground')}
-            style={agentMode === m ? { backgroundColor: ACCENT } : {}}
-          >
-            {m === 'existing' ? 'Select Existing' : 'Add New Agent'}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <Label>Agent <span className="text-destructive">*</span></Label>
+        <Select value={agentId} onValueChange={setAgentId}>
+          <SelectTrigger><SelectValue placeholder="Pilih agent…" /></SelectTrigger>
+          <SelectContent>
+            {agents.length === 0
+              ? <SelectItem value="_" disabled>Belum ada agent</SelectItem>
+              : agents.map(a => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}{a.company ? ` — ${a.company}` : ''} ({a.commission}%)
+                  </SelectItem>
+                ))
+            }
+          </SelectContent>
+        </Select>
       </div>
 
-      {agentMode === 'existing' ? (
-        <div className="space-y-1.5">
-          <Label>Select Agent <span className="text-destructive">*</span></Label>
-          <Select value={agentId} onValueChange={setAgentId}>
-            <SelectTrigger><SelectValue placeholder="Choose an agent..." /></SelectTrigger>
-            <SelectContent>
-              {agents.length === 0 && <SelectItem value="_" disabled>No agents yet</SelectItem>}
-              {agents.map(a => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}{a.company ? ` — ${a.company}` : ''} ({a.commission}%)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Agent Name <span className="text-destructive">*</span></Label>
-            <Input placeholder="Full name" value={agentName} onChange={e => setAgentName(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Company</Label>
-              <Input placeholder="Company name" value={agentCo} onChange={e => setAgentCo(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Phone</Label>
-              <Input placeholder="+62..." value={agentPhone} onChange={e => setAgentPhone(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Commission (%)</Label>
-            <Input type="number" min="0" max="100" value={agentComm} onChange={e => setAgentComm(e.target.value)} />
-          </div>
-        </div>
+      {agents.length === 0 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Belum ada agent terdaftar. Tambahkan agent terlebih dahulu melalui menu <strong>Agents</strong>.
+        </p>
       )}
     </div>
   )
@@ -1020,15 +969,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      STEP 3 — PRICING
   ════════════════════════════════════════════ */
   const step3 = () => {
-    const curr = CURRENCIES[currency]
-    const b    = parseFloat(basePrice) || 0
-    const d    = parseFloat(discPct)   || 0
-    const svc  = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
-    const da   = b * (d / 100)
-    const tot  = b - da + svc
+    const curr    = CURRENCIES[currency]
+    const b       = parseFloat(basePrice) || 0
+    const d       = parseFloat(discPct)   || 0
+    const svc     = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
+    const da      = b * (d / 100)
+    const tot     = b - da + svc
 
-    const bUSD   = toUSD(b,   currency)
-    const totUSD = toUSD(tot, currency)
+    // Agent commission deduction (display only — totalPrice stored gross)
+    const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
+    const commPct  = selectedAgent?.commission ?? 0
+    const commAmt  = commPct > 0 ? tot * commPct / 100 : 0
+    const netTot   = tot - commAmt
+
+    const bUSD   = toUSD(b,      currency)
+    const totUSD = toUSD(netTot, currency)
 
     const usdHint = (usd: number) =>
       currency === 'USD' ? null : (
@@ -1147,17 +1102,23 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <span>−{fmtAmt(da, currency)}</span>
                 </div>
               )}
-              {svc > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Services</span>
-                  <span>{fmtAmt(svc, currency)}</span>
+              {services.filter(x => x.name.trim()).map(sv => (
+                <div key={sv.tempId} className="flex justify-between">
+                  <span className="text-muted-foreground truncate max-w-[140px]">{sv.name}</span>
+                  <span>{fmtAmt(parseFloat(sv.price) || 0, currency)}</span>
+                </div>
+              ))}
+              {commPct > 0 && (
+                <div className="flex justify-between" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                  <span className="text-xs">Agent Commission ({commPct}%)</span>
+                  <span className="text-xs">({fmtAmt(commAmt, currency)})</span>
                 </div>
               )}
               <Separator className="my-1" />
               <div className="flex justify-between items-end">
                 <span className="font-semibold">Total</span>
                 <div className="text-right">
-                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(tot, currency)}</div>
+                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(netTot, currency)}</div>
                   {currency !== 'USD' && (
                     <div className="text-xs text-muted-foreground">≈ ${totUSD.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD</div>
                   )}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -33,7 +34,7 @@ interface BookingEvent {
 interface CabinStatus {
   id: string
   name: string
-  bookingStatus: string | null  // null = available, 'pending'/'partially_paid' = yellow, 'fully_paid'/'confirmed'/'completed' = red
+  bookingStatus: string | null  // null = available, 'pending' = yellow, 'partially_paid'/'fully_paid'/'confirmed'/'completed' = red
 }
 
 interface OpenTripEvent {
@@ -85,7 +86,7 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick,
+  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange,
 }: {
   year: number; month: number
   bookings: BookingEvent[]; openTrips: OpenTripEvent[]
@@ -94,6 +95,7 @@ function MonthGrid({
   onDateClick: (d: string) => void
   onBookingClick: (b: BookingEvent) => void
   onOpenTripClick: (t: OpenTripEvent) => void
+  isInFilterRange: (dateStr: string) => boolean
 }) {
   const today = new Date()
   const isToday = (d: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === d
@@ -222,26 +224,29 @@ function MonthGrid({
               {/* ── Day cell background layer ── */}
               <div className="absolute inset-0 grid grid-cols-7">
                 {week.map((day, col) => {
-                  const dateStr   = day > 0 ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
-                  const todayCell = day > 0 && isToday(day)
+                  const dateStr    = day > 0 ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
+                  const todayCell  = day > 0 && isToday(day)
                   const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
-                  const isPast    = day > 0 && new Date(dateStr) <= todayMidnight
+                  const isPast     = day > 0 && new Date(dateStr) <= todayMidnight
+                  const inRange    = day > 0 && isInFilterRange(dateStr)
                   return (
                     <div
                       key={col}
                       onClick={() => day > 0 && !isPast && onDateClick(dateStr)}
                       className={cn(
                         'border-r border-b border-border p-1.5 transition-colors',
-                        day === 0        ? 'bg-muted/20' :
-                        isPast           ? 'bg-muted/10 cursor-not-allowed' :
-                                           'cursor-pointer hover:bg-muted/40',
-                        todayCell ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
+                        day === 0   ? 'bg-muted/20' :
+                        inRange     ? 'bg-[#bdac7e]/10 cursor-pointer hover:bg-[#bdac7e]/20' :
+                        isPast      ? 'bg-muted/10 cursor-not-allowed' :
+                                      'cursor-pointer hover:bg-muted/40',
+                        todayCell   ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
                       )}
                     >
                       {day > 0 && (
                         <span className={cn(
                           'text-xs font-semibold leading-none',
                           todayCell ? 'text-[#bdac7e]' :
+                          inRange   ? 'text-[#8a7a55]' :
                           isPast    ? 'text-muted-foreground/40' :
                                       'text-foreground'
                         )}>
@@ -340,7 +345,7 @@ function MonthGrid({
                           {/* Row 2: Per-cabin dots */}
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
                             {(ot.cabinStatuses ?? []).map(c => {
-                              const isPaid    = c.bookingStatus === 'fully_paid' || c.bookingStatus === 'confirmed' || c.bookingStatus === 'completed'
+                              const isPaid    = c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'confirmed' || c.bookingStatus === 'completed'
                               const isPending = c.bookingStatus !== null && !isPaid
                               const dotColor  = isPaid ? '#ef4444' : isPending ? '#f59e0b' : '#22c55e'
                               return (
@@ -376,8 +381,34 @@ function MonthGrid({
   )
 }
 
+/* ── date filter helpers ── */
+const todayStr = () => new Date().toISOString().split('T')[0]
+
+function getPreset(preset: string): [string, string] {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  if (preset === 'today') { const t = fmt(now); return [t, t] }
+  if (preset === 'week') {
+    const day = now.getDay()
+    const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1))
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+    return [fmt(mon), fmt(sun)]
+  }
+  if (preset === 'month') {
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    return [fmt(first), fmt(last)]
+  }
+  const end = new Date(now); end.setDate(now.getDate() + 30)
+  return [fmt(now), fmt(end)]
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function CalendarView() {
+  const { data: session } = useSession()
+  const canEdit = ['ADMIN', 'SALES'].includes((session?.user as { role?: string })?.role ?? '')
+
   const [currentDate, setCurrentDate]   = useState(new Date())
   const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')
   const [bookings, setBookings]         = useState<BookingEvent[]>([])
@@ -386,6 +417,12 @@ export default function CalendarView() {
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
   const [yachtFilter, setYachtFilter]   = useState<string>('Samara I')
+
+  /* date filter */
+  const [filterMode, setFilterMode]     = useState<'single' | 'range'>('single')
+  const [filterFrom, setFilterFrom]     = useState(todayStr())
+  const [filterTo,   setFilterTo]       = useState(todayStr())
+  const [filterActive, setFilterActive] = useState(false)
   const [selectedBooking, setSelectedBooking]   = useState<BookingEvent | null>(null)
   const [isDetailOpen, setIsDetailOpen]         = useState(false)
   const [wizardOpen, setWizardOpen]             = useState(false)
@@ -558,6 +595,46 @@ export default function CalendarView() {
   const leftYear  = currentDate.getFullYear()
   const leftMonth = currentDate.getMonth()
 
+  /* apply date filter — switch to list view, show all yachts */
+  const applyDateFilter = (from: string, to: string) => {
+    setFilterFrom(from)
+    setFilterTo(to)
+    setFilterActive(true)
+    setViewMode('list')
+  }
+  const clearDateFilter = () => {
+    setFilterActive(false)
+    setFilterFrom(todayStr())
+    setFilterTo(todayStr())
+    setFilterMode('single')
+  }
+  const handlePreset = (preset: string) => {
+    const [f, t] = getPreset(preset)
+    setFilterFrom(f)
+    setFilterTo(t)
+    setFilterMode(f === t ? 'single' : 'range')
+    applyDateFilter(f, t)
+  }
+  const handleFilterApply = () => {
+    const to = filterMode === 'single' ? filterFrom : filterTo
+    applyDateFilter(filterFrom, to)
+  }
+
+  /* date overlap check */
+  const filterOverlaps = (b: BookingEvent) => {
+    const bStart = b.startDate.split('T')[0]
+    const bEnd   = b.endDate.split('T')[0]
+    const fTo    = filterMode === 'single' ? filterFrom : filterTo
+    return bStart <= fTo && bEnd >= filterFrom
+  }
+
+  /* highlight check for calendar cells */
+  const isInFilterRange = (dateStr: string) => {
+    if (!filterActive) return false
+    const fTo = filterMode === 'single' ? filterFrom : filterTo
+    return dateStr >= filterFrom && dateStr <= fTo
+  }
+
   const handleDateClick = (dateStr: string) => {
     const today = new Date(); today.setHours(0,0,0,0)
     if (new Date(dateStr) <= today) return
@@ -574,16 +651,21 @@ export default function CalendarView() {
     return [...bookings]
       .filter(b => {
         if (b.status === 'cancelled') return false
+        // when date filter active: ignore month + yacht restrictions, just match date overlap
+        if (filterActive) {
+          return filterOverlaps(b)
+            && (tripFilter === 'all' || b.tripType === tripFilter)
+        }
         const s = new Date(b.startDate)
         const e = new Date(b.endDate)
         if (s > monthEnd || e < monthStart) return false
-        if (tripFilter === 'PRIVATE_CHARTER' && b.tripType !== 'PRIVATE_CHARTER') return false
-        if (tripFilter === 'OPEN_TRIP'       && b.tripType !== 'OPEN_TRIP')        return false
+        if (tripFilter !== 'all' && b.tripType !== tripFilter) return false
         if (yachtFilter !== 'all' && b.yachtName !== yachtFilter) return false
         return true
       })
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-  }, [bookings, leftYear, leftMonth, tripFilter, yachtFilter])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookings, leftYear, leftMonth, tripFilter, yachtFilter, filterActive, filterFrom, filterTo, filterMode])
 
   if (loading) {
     return (
@@ -629,12 +711,14 @@ export default function CalendarView() {
           <h3 className="text-2xl font-bold tracking-tight">Dashboard</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
         </div>
-        <Button
-          onClick={() => { setSelectedDate(''); setWizardOpen(true) }}
-          className="bg-[#bdac7e] hover:bg-[#a89660] text-white shadow-sm"
-        >
-          <Plus className="mr-2 h-4 w-4" /> New Booking
-        </Button>
+        {canEdit && (
+          <Button
+            onClick={() => { setSelectedDate(''); setWizardOpen(true) }}
+            className="bg-[#bdac7e] hover:bg-[#a89660] text-white shadow-sm"
+          >
+            <Plus className="mr-2 h-4 w-4" /> New Booking
+          </Button>
+        )}
       </div>
 
       {/* Stats strip */}
@@ -743,7 +827,60 @@ export default function CalendarView() {
             </div>
           </div>
 
-          {/* Row 2: trip type filter + yacht filter */}
+          {/* Row 2: Date filter */}
+          <div className="flex items-center gap-2 px-5 py-2 border-t flex-wrap">
+            <span className="text-[11px] text-muted-foreground font-medium shrink-0">Tanggal:</span>
+            {/* Presets */}
+            {(['today','week','month'] as const).map(p => (
+              <button key={p} onClick={() => handlePreset(p)}
+                className="text-[11px] px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
+                style={filterActive && (p === 'today' ? filterFrom === todayStr() && filterTo === todayStr() : false)
+                  ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e', color: 'white' } : {}}>
+                {p === 'today' ? 'Hari Ini' : p === 'week' ? 'Minggu Ini' : 'Bulan Ini'}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-border mx-1" />
+            {/* Mode toggle */}
+            <div className="flex rounded-lg border overflow-hidden text-[11px]">
+              {(['single','range'] as const).map(m => (
+                <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
+                  className="px-2.5 py-1 transition-colors"
+                  style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white' } : { color: '#6b7280' }}>
+                  {m === 'single' ? 'Tanggal' : 'Rentang'}
+                </button>
+              ))}
+            </div>
+            {/* Inputs */}
+            <input type="date" value={filterFrom}
+              onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
+              className="h-7 text-[11px] border rounded-lg px-2 bg-background" />
+            {filterMode === 'range' && (<>
+              <span className="text-muted-foreground text-[11px]">–</span>
+              <input type="date" value={filterTo} min={filterFrom}
+                onChange={e => setFilterTo(e.target.value)}
+                className="h-7 text-[11px] border rounded-lg px-2 bg-background" />
+            </>)}
+            <button onClick={handleFilterApply}
+              className="h-7 px-3 text-[11px] font-semibold rounded-lg text-white transition-colors"
+              style={{ backgroundColor: '#bdac7e' }}>
+              Tampilkan
+            </button>
+            {filterActive && (
+              <button onClick={clearDateFilter}
+                className="h-7 w-7 flex items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {filterActive && (
+              <span className="text-[11px] text-[#bdac7e] font-semibold ml-1">
+                {filterFrom === filterTo
+                  ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })
+                  : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}`}
+              </span>
+            )}
+          </div>
+
+          {/* Row 3: trip type filter + yacht filter */}
           <div className="flex items-center justify-between gap-4 px-5 py-2 border-t flex-wrap">
             {/* Trip type */}
             <div className="flex items-center gap-1">
@@ -826,6 +963,7 @@ export default function CalendarView() {
                 onDateClick={handleDateClick}
                 onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
                 onOpenTripClick={handleOpenTripClick}
+                isInFilterRange={isInFilterRange}
               />
 
               {/* Next */}
@@ -839,12 +977,30 @@ export default function CalendarView() {
           ) : (
             /* List view */
             <div className="px-5 py-4 space-y-2">
-              {upcomingBookings.length === 0 ? (
+              {filterActive && (
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">{upcomingBookings.length} trip</span> ditemukan
+                    {' · '}
+                    <span style={{ color: '#bdac7e' }} className="font-semibold">
+                      {filterFrom === filterTo
+                        ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+                        : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}`}
+                    </span>
+                    {' · semua kapal'}
+                  </p>
+                </div>
+              )}
+              {(() => {
+                const listItems = upcomingBookings
+                return listItems.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">
-                  Tidak ada booking di {MONTH_FULL[leftMonth]} {leftYear}.
+                  {filterActive
+                    ? 'Tidak ada trip yang aktif di tanggal ini.'
+                    : `Tidak ada booking di ${MONTH_FULL[leftMonth]} ${leftYear}.`}
                 </div>
               ) : (
-                upcomingBookings.map(b => (
+                listItems.map(b => (
                   <button
                     key={b.id}
                     onClick={() => { setSelectedBooking(b); setIsDetailOpen(true) }}
@@ -852,12 +1008,16 @@ export default function CalendarView() {
                   >
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{b.yachtName}</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold truncate">{b.yachtName || b.customerName}</span>
+                        {b.bookingCode && <span className="font-mono text-[10px] text-muted-foreground">{b.bookingCode}</span>}
+                        {b.customerName && b.yachtName && <span className="text-xs text-muted-foreground truncate">{b.customerName}</span>}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {new Date(b.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                         {' – '}
                         {new Date(b.endDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-                        {' · '}{getDays(b.startDate, b.endDate)} days
+                        {' · '}{getDays(b.startDate, b.endDate)} hari
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -871,7 +1031,8 @@ export default function CalendarView() {
                     </div>
                   </button>
                 ))
-              )}
+              )
+              })()}
             </div>
           )}
         </CardContent>
@@ -1028,8 +1189,8 @@ export default function CalendarView() {
                     {[
                       { label: 'Total Cabins', val: otDetail.cabins?.length ?? 0, color: '#64748b' },
                       { label: 'Available',    val: otDetail.cabins?.filter((c: any) => !c.isFull).length ?? 0, color: '#22c55e' },
-                      { label: 'Menunggu DP',  val: otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus !== 'fully_paid' && c.bookingStatus !== 'completed' && c.bookingStatus !== 'confirmed').length ?? 0, color: '#f59e0b' },
-                      { label: 'DP Lunas',     val: otDetail.cabins?.filter((c: any) => c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0, color: '#ef4444' },
+                      { label: 'Menunggu DP',  val: otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus === 'pending').length ?? 0, color: '#f59e0b' },
+                      { label: 'DP Lunas',     val: otDetail.cabins?.filter((c: any) => c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0, color: '#ef4444' },
                     ].map(s => (
                       <div key={s.label} className="rounded-lg border p-3 text-center">
                         <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
@@ -1055,7 +1216,7 @@ export default function CalendarView() {
                     </div>
                     <div className="space-y-2">
                       {otDetail.cabins?.map((c: any) => {
-                        const isPaid    = c.isFull && (c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
+                        const isPaid    = c.isFull && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
                         const isPending = c.isFull && !isPaid
                         const cardCls   = isPaid    ? 'bg-red-50 border-red-200'
                                         : isPending ? 'bg-yellow-50 border-yellow-200'
@@ -1099,7 +1260,7 @@ export default function CalendarView() {
 
                   <DialogFooter className="gap-2">
                     <Button variant="outline" onClick={() => setOtDetailOpen(false)}>Close</Button>
-                    {otDetail.status === 'open' && (
+                    {canEdit && otDetail.status === 'open' && (
                       <Button
                         onClick={() => {
                           setOtDetailOpen(false)
@@ -1111,7 +1272,7 @@ export default function CalendarView() {
                         <Plus className="w-3.5 h-3.5 mr-2" /> Book This Trip
                       </Button>
                     )}
-                    {new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
+                    {canEdit && new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
                       <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                         <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
                       </Button>

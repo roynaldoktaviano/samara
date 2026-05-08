@@ -27,7 +27,8 @@ interface PaymentDetail {
     customer: { name: string; email?: string; phone?: string; address?: string }
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
-    agent?: { name: string; company?: string }
+    source?: string
+    agent?: { name: string; company?: string; email?: string; phone?: string; commission?: number }
     services: Array<{ name: string; price: number }>
     guests: Array<{
       isLead: boolean
@@ -79,16 +80,21 @@ export default function InvoicePage() {
     </div>
   )
 
-  const b           = payment.booking
-  const tripName    = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
-  const destination = b.destination ?? b.openTrip?.destination ?? '—'
-  const discountAmt = b.totalPrice * b.discount / 100
-  const netTotal    = b.totalPrice - discountAmt
-  const remaining   = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)
+  const b              = payment.booking
+  const tripName       = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
+  const destination    = b.destination ?? b.openTrip?.destination ?? '—'
+  const isAgentBooking = b.source === 'AGENT' && !!b.agent
+  const servicesTotal  = b.services.reduce((s, x) => s + x.price, 0)
+  const discountAmt    = b.totalPrice * b.discount / 100
+  const afterDiscount  = b.totalPrice - discountAmt
+  const commissionPct  = isAgentBooking ? (b.agent!.commission ?? 0) : 0
+  const commissionAmt  = afterDiscount * commissionPct / 100
+  const netTotal       = afterDiscount - commissionAmt
+  const remaining      = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)
 
-  // Cabins with guest names — only show if any cabin is assigned
+  // Cabins with guest names — only shown for direct bookings
   const guestsWithCabin = b.guests.filter(g => g.cabin)
-  const hasCabins = guestsWithCabin.length > 0
+  const hasCabins = !isAgentBooking && guestsWithCabin.length > 0
 
   return (
     <>
@@ -142,14 +148,29 @@ export default function InvoicePage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '24px 28px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
           <div style={{ paddingRight: 24, borderRight: '1px solid #f3f4f6' }}>
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 10 }}>Bill To</div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{b.customer.name}</div>
-            {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 3 }}>{b.customer.email}</div>}
-            {b.customer.phone   && <div style={{ color: '#6b7280', fontSize: 12 }}>{b.customer.phone}</div>}
-            {b.customer.address && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>{b.customer.address}</div>}
-            {b.agent && (
-              <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 8 }}>
-                via {b.agent.name}{b.agent.company ? ` · ${b.agent.company}` : ''}
-              </div>
+
+            {b.source === 'AGENT' && b.agent ? (
+              /* ── Via Agent: bill to the agent ── */
+              <>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{b.agent.name}</div>
+                {b.agent.company && <div style={{ color: '#374151', fontSize: 12, marginTop: 2 }}>{b.agent.company}</div>}
+                {b.agent.email   && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 3 }}>{b.agent.email}</div>}
+                {b.agent.phone   && <div style={{ color: '#6b7280', fontSize: 12 }}>{b.agent.phone}</div>}
+                {/* Guest info as secondary line */}
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #f3f4f6' }}>
+                  <div style={{ fontSize: 9, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Guest</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{b.customer.name}</div>
+                  {b.customer.phone && <div style={{ fontSize: 11, color: '#9ca3af' }}>{b.customer.phone}</div>}
+                </div>
+              </>
+            ) : (
+              /* ── Direct: bill to the customer ── */
+              <>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{b.customer.name}</div>
+                {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 3 }}>{b.customer.email}</div>}
+                {b.customer.phone   && <div style={{ color: '#6b7280', fontSize: 12 }}>{b.customer.phone}</div>}
+                {b.customer.address && <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>{b.customer.address}</div>}
+              </>
             )}
           </div>
           <div style={{ paddingLeft: 24 }}>
@@ -187,7 +208,7 @@ export default function InvoicePage() {
               <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{tripName} · {destination}</div>
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16 }}>
-              {fmtAmt(b.totalPrice)}
+              {fmtAmt(b.totalPrice - servicesTotal)}
             </div>
           </div>
 
@@ -222,13 +243,33 @@ export default function InvoicePage() {
             </div>
           )}
 
-          {/* Additional services */}
-          {b.services.map((s, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px 8px 20px', borderBottom: '1px solid #f3f4f6' }}>
-              <span style={{ color: '#6b7280', fontSize: 12 }}>{s.name}</span>
-              <span style={{ color: '#374151', fontSize: 12 }}>{fmtAmt(s.price)}</span>
+          {/* Agent commission deduction */}
+          {isAgentBooking && commissionPct > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ color: '#6b7280', fontSize: 12, fontStyle: 'italic' }}>
+                Agent Rate ({commissionPct}% Commission)
+              </span>
+              <span style={{ color: '#6b7280', fontSize: 12, fontStyle: 'italic' }}>
+                $ ({commissionAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
             </div>
-          ))}
+          )}
+
+          {/* Additional services */}
+          {b.services.length > 0 && (
+            <div style={{ borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#6b7280', textTransform: 'uppercase' }}>Additional Services</span>
+              </div>
+              {b.services.map((s, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 4px 20px' }}>
+                  <span style={{ color: '#374151', fontSize: 12 }}>{s.name}</span>
+                  <span style={{ color: '#374151', fontSize: 12, fontWeight: 500 }}>{fmtAmt(s.price)}</span>
+                </div>
+              ))}
+              <div style={{ height: 8 }} />
+            </div>
+          )}
 
           {/* Payment summary */}
           <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 6px 6px', padding: '12px', marginBottom: 20 }}>

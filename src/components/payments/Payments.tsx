@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   FileText, Search, X, Loader2, CheckCircle2, XCircle, Clock,
   Upload, Eye, DollarSign, TrendingUp, AlertCircle, Check, Ban,
-  Receipt, Building2, User, Ship, Calendar, Download
+  Receipt, Building2, User, Ship, Calendar, Download, UserCheck
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -42,11 +42,12 @@ interface Payment {
     endDate: string
     destination: string | null
     tripType: string
+    source: string | null
     salesperson: string | null
     customer: { name: string; email: string | null; phone: string | null }
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
-    agent: { name: string; company: string | null } | null
+    agent: { name: string; company: string | null; commission: number | null } | null
     services: { name: string; price: number }[]
   }
 }
@@ -401,7 +402,11 @@ export default function Payments() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground mb-0.5">Total Booking</p>
-                    <p className="font-semibold text-sm">${fmt(selected.booking.totalPrice)}</p>
+                    <p className="font-semibold text-sm">${fmt(
+                      selected.booking.source === 'AGENT' && selected.booking.agent?.commission
+                        ? selected.booking.totalPrice * (1 - selected.booking.agent.commission / 100)
+                        : selected.booking.totalPrice
+                    )}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -454,6 +459,15 @@ export default function Payments() {
                       <p className="text-xs text-muted-foreground">Agent</p>
                       <p className="font-medium">{selected.booking.agent.name}</p>
                       {selected.booking.agent.company && <p className="text-xs text-muted-foreground">{selected.booking.agent.company}</p>}
+                    </div>
+                  </div>
+                )}
+                {selected.booking.salesperson && (
+                  <div className="flex items-start gap-2">
+                    <UserCheck className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Salesperson</p>
+                      <p className="font-medium">{selected.booking.salesperson}</p>
                     </div>
                   </div>
                 )}

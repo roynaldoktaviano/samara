@@ -31,9 +31,18 @@ export async function GET(request: NextRequest) {
     const now = new Date()
 
     const tripsWithAvailability = trips.map((t) => {
-      const totalCabins    = t.yacht.cabins.length || t.yacht.cabinCount
-      const activeBookings = t._count.bookings
-      const spotsAvailable = Math.max(0, totalCabins - activeBookings)
+      const totalCabins = t.yacht.cabins.length || t.yacht.cabinCount
+
+      // Build per-cabin booking status — same data used for both dots and availability
+      const cabinStatuses = t.yacht.cabins.map(c => {
+        const booking = t.bookings.find(b => b.guests.some(g => g.cabinId === c.id))
+        return { id: c.id, name: c.name, bookingStatus: booking?.status ?? null }
+      })
+
+      // Count occupied cabins from assignments (not booking records) so one booking
+      // with multiple guests in different cabins is counted correctly
+      const occupiedCabins = cabinStatuses.filter(c => c.bookingStatus !== null).length
+      const spotsAvailable = Math.max(0, totalCabins - occupiedCabins)
 
       // Auto-compute status; only 'cancelled' is a manual override that is never touched
       let effectiveStatus = t.status
@@ -43,16 +52,10 @@ export async function GET(request: NextRequest) {
         else                             effectiveStatus = 'open'
       }
 
-      // Build per-cabin booking status
-      const cabinStatuses = t.yacht.cabins.map(c => {
-        const booking = t.bookings.find(b => b.guests.some(g => g.cabinId === c.id))
-        return { id: c.id, name: c.name, bookingStatus: booking?.status ?? null }
-      })
-
       return {
         ...t,
         status: effectiveStatus,
-        spotsBooked: activeBookings,
+        spotsBooked: occupiedCabins,
         spotsAvailable,
         cabinStatuses,
       }

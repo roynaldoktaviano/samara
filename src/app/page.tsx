@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle } from 'lucide-react'
+import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -15,8 +15,9 @@ import Maintenance from '@/components/maintenance/Maintenance'
 import OpenTrips from '@/components/open-trips/OpenTrips'
 import UsersPage from '@/components/users/Users'
 import Payments from '@/components/payments/Payments'
+import Agents from '@/components/agents/Agents'
 
-type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments'
+type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents'
 
 type NavItem = {
   id: View
@@ -35,6 +36,7 @@ const navigationItems: NavItem[] = [
   { id: 'dashboard',   label: 'Statistics',  icon: LayoutDashboard, roles: ['ADMIN', 'FINANCE'] },
   { id: 'expenses',    label: 'Expenses',    icon: DollarSign,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench,          roles: ['ADMIN', 'FINANCE'] },
+  { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
   { id: 'users',       label: 'Team',        icon: UserCog,         roles: ['ADMIN'] },
 ]
 
@@ -191,6 +193,7 @@ export default function Home() {
       case 'maintenance':  return <Maintenance />
       case 'users':        return <UsersPage />
       case 'payments':     return <Payments />
+      case 'agents':       return <Agents />
       default:             return <CalendarView />
     }
   }

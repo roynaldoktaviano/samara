@@ -38,14 +38,11 @@ export async function GET(request: NextRequest) {
     const tripType    = searchParams.get('tripType')
     const openTripId  = searchParams.get('openTripId')
 
-    // Auto-cancel pending bookings whose deposit deadline has passed
-    await db.booking.updateMany({
-      where: {
-        status: 'pending',
-        depositDueDate: { lt: new Date() },
-      },
+    // Auto-cancel pending bookings whose deposit deadline has passed (fire-and-forget)
+    db.booking.updateMany({
+      where: { status: 'pending', depositDueDate: { lt: new Date() } },
       data: { status: 'cancelled' },
-    })
+    }).catch(e => console.error('auto-cancel failed:', e))
 
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
@@ -70,7 +67,7 @@ export async function GET(request: NextRequest) {
         guestCount: true, destination: true, notes: true, salesperson: true,
         yacht:     { select: { id: true, name: true, model: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
-        agent:     { select: { id: true, name: true, company: true } },
+        agent:     { select: { id: true, name: true, company: true, commission: true } },
         openTrip:  { select: { id: true, title: true, destination: true } },
         guests: {
           select: {

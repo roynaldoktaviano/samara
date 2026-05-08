@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const all = searchParams.get('all') === 'true'
+
     const agents = await db.agent.findMany({
-      where: { isActive: true },
-      include: { _count: { select: { bookings: true } } },
+      where: all ? undefined : { isActive: true },
+      select: {
+        id: true, name: true, email: true, phone: true,
+        company: true, commission: true, isActive: true, createdAt: true,
+        _count: { select: { bookings: true } },
+      },
       orderBy: { name: 'asc' },
     })
     return NextResponse.json(agents)
@@ -17,6 +26,12 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    if (userRole !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { name, email, phone, company, commission } = body
 
@@ -27,9 +42,9 @@ export async function POST(request: NextRequest) {
     const agent = await db.agent.create({
       data: {
         name,
-        email: email || null,
-        phone: phone || null,
-        company: company || null,
+        email:      email      || null,
+        phone:      phone      || null,
+        company:    company    || null,
         commission: commission ? parseFloat(commission) : 0,
       },
     })
