@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -75,8 +78,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getServerSession(authOptions)
+    const { id } = await params
+    const bookingCount = await db.booking.count({ where: { customerId: id } })
+    if (bookingCount > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete: ${bookingCount} booking(s) reference this customer` },
+        { status: 409 }
+      )
+    }
+    const existing = await db.customer.findUnique({ where: { id }, select: { name: true } })
+    await db.customer.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'DELETE', entity: 'Customer', entityId: id,
+      detail: `Hapus guest: ${existing?.name ?? id}`,
+    }).catch(() => {})
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Error deleting customer:', error)
+    return NextResponse.json({ error: 'Failed to delete customer' }, { status: 500 })
+  }
+}
+
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
     const {
@@ -97,6 +130,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       },
     })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'UPDATE', entity: 'Customer', entityId: id,
+      detail: `Update guest: ${customer.name}`,
+    }).catch(() => {})
 
     return NextResponse.json(customer)
   } catch (error) {

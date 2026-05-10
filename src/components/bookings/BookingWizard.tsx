@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
   User, Users, Ship, Map, Plus, Trash2,
-  ChevronLeft, ChevronRight, Check, Search, X, Loader2,
+  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag,
 } from 'lucide-react'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -77,8 +77,6 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
   IDR: { symbol: 'Rp', label: 'IDR — Indonesian Rupiah',   rateToUSD: 0.000063, step: 100000, decimals: 0 },
 }
 
-const toUSD    = (amount: number, c: CurrencyCode) => amount * CURRENCIES[c].rateToUSD
-const fromUSD  = (usd:    number, c: CurrencyCode) => usd    / CURRENCIES[c].rateToUSD
 const fmtAmt   = (n: number, c: CurrencyCode) =>
   `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
@@ -116,6 +114,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [depositDueDate, setDepDue]     = useState('')
   const [finalDueDate,   setFinalDue]   = useState('')
 
+  /* exchange rate (manual, non-USD only) */
+  const [manualRate,   setManualRate]   = useState<number>(1)
+  const [baseFocused,  setBaseFocused]  = useState(false)
+  const [svcFocused,   setSvcFocused]   = useState<string | null>(null)
+
+  /* voucher */
+  const [voucherApplied, setVoucherApplied] = useState<{ id: string; code: string; name: string; type: string; value: number } | null>(null)
+  const [voucherError,   setVoucherError]   = useState('')
+
   /* remote data */
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
   const [agents,    setAgents]    = useState<AgentOpt[]>([])
@@ -123,6 +130,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [cabins,    setCabins]    = useState<CabinOpt[]>([])
   const [openTrips, setOpenTrips] = useState<OpenTripOpt[]>([])
   const [openTripsLoading, setOpenTripsLoading] = useState(false)
+  const [activeVouchers, setActiveVouchers] = useState<Array<{ id: string; code: string; name: string; type: string; value: number; minBooking: number | null; maxUses: number | null; usedCount: number }>>([])
   const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
   const [submitting,setSubmitting]= useState(false)
@@ -159,11 +167,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       fetch('/api/agents').then(r => r.json()),
       fetch('/api/customers').then(r => r.json()),
       fetch('/api/open-trips').then(r => r.json()),
-    ]).then(([y, a, c, ot]) => {
+      fetch('/api/vouchers').then(r => r.json()),
+    ]).then(([y, a, c, ot, v]) => {
       if (y.status  === 'fulfilled') setYachts(Array.isArray(y.value)  ? y.value  : [])
       if (a.status  === 'fulfilled') setAgents(Array.isArray(a.value)  ? a.value  : [])
       if (c.status  === 'fulfilled') setCustomers(Array.isArray(c.value)? c.value : [])
       if (ot.status === 'fulfilled') setOpenTrips(Array.isArray(ot.value)? ot.value: [])
+      if (v.status  === 'fulfilled') setActiveVouchers(Array.isArray(v.value) ? v.value.filter((x: any) => x.isActive) : [])
       setOpenTripsLoading(false)
     })
   }, [open])
@@ -218,10 +228,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       }
     }
     if (usdPrice > 0) {
-      const converted = fromUSD(usdPrice, currency)
-      setBase(converted.toFixed(CURRENCIES[currency].decimals))
+      setBase(usdPrice.toFixed(2))
     }
-  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips, currency])
+  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips])
 
   /* sync start date whenever wizard opens */
   useEffect(() => {
@@ -238,18 +247,33 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
+    setManualRate(1); setBaseFocused(false); setSvcFocused(null)
+    setVoucherApplied(null); setVoucherError('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
   }, [open])
 
+  /* voucher remove */
+  const removeVoucher = () => {
+    setVoucherApplied(null)
+    setVoucherError('')
+    setDisc('0')
+  }
+
   /* computed */
   const total = useMemo(() => {
     const b = parseFloat(basePrice) || 0
-    const d = parseFloat(discPct) || 0
     const s = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
+    if (voucherApplied) {
+      const discount = voucherApplied.type === 'PERCENTAGE'
+        ? b * (voucherApplied.value / 100)
+        : voucherApplied.value
+      return Math.max(0, b - discount) + s
+    }
+    const d = parseFloat(discPct) || 0
     return b * (1 - d / 100) + s
-  }, [basePrice, discPct, services])
+  }, [basePrice, discPct, services, voucherApplied])
 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
@@ -345,9 +369,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
           endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
           destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
-          totalPrice:    toUSD(total, currency),
-          depositPaid:   toUSD(parseFloat(deposit) || 0, currency),
-          discount:      parseFloat(discPct) || 0,
+          totalPrice:    total,
+          depositPaid:   parseFloat(deposit) || 0,
+          discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
+          voucherCode:   voucherApplied?.code ?? undefined,
+          currency,
+          exchangeRate:  currency !== 'USD' ? manualRate : undefined,
           depositDueDate: depositDueDate || undefined,
           finalDueDate:   finalDueDate   || undefined,
           crewRequired:  crewReq,
@@ -969,12 +996,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      STEP 3 — PRICING
   ════════════════════════════════════════════ */
   const step3 = () => {
-    const curr    = CURRENCIES[currency]
     const b       = parseFloat(basePrice) || 0
-    const d       = parseFloat(discPct)   || 0
+    const d       = voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : (parseFloat(discPct) || 0)
     const svc     = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
-    const da      = b * (d / 100)
-    const tot     = b - da + svc
+    const da      = voucherApplied
+      ? (voucherApplied.type === 'PERCENTAGE'
+          ? b * (voucherApplied.value / 100)
+          : voucherApplied.value)
+      : b * (d / 100)
+    const tot     = Math.max(0, b - da) + svc
 
     // Agent commission deduction (display only — totalPrice stored gross)
     const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
@@ -982,13 +1012,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     const commAmt  = commPct > 0 ? tot * commPct / 100 : 0
     const netTot   = tot - commAmt
 
-    const bUSD   = toUSD(b,      currency)
-    const totUSD = toUSD(netTot, currency)
+    const toLocal = (usd: number) => usd * manualRate
 
-    const usdHint = (usd: number) =>
+    const localHint = (usd: number) =>
       currency === 'USD' ? null : (
         <p className="text-xs text-muted-foreground mt-1">
-          ≈ ${usd.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD
+          ≈ {CURRENCIES[currency].symbol}{toLocal(usd).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[currency].decimals })} {currency}
         </p>
       )
 
@@ -996,15 +1025,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       <div className="space-y-4">
 
         {/* Currency selector — full width */}
-        <div className="flex items-center gap-3 rounded-xl border px-4 py-2.5" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
-          <span className="text-sm font-medium shrink-0 text-muted-foreground">Currency</span>
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+          <div className="shrink-0">
+            <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
+            <p className="text-[10px] text-muted-foreground">All prices entered in USD</p>
+          </div>
           <div className="flex gap-2">
             {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
               <button
                 key={c}
                 type="button"
                 onClick={() => {
-                  if (basePrice) setBase(fromUSD(toUSD(parseFloat(basePrice) || 0, currency), c).toFixed(CURRENCIES[c].decimals))
+                  const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
+                  setManualRate(newRateFromUSD)
                   setCurrency(c)
                 }}
                 className={cn(
@@ -1018,9 +1051,22 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             ))}
           </div>
           {currency !== 'USD' && (
-            <span className="text-xs text-muted-foreground ml-auto">
-              1 {currency} = ${CURRENCIES[currency].rateToUSD.toFixed(currency === 'IDR' ? 6 : 4)} USD
-            </span>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-muted-foreground">1 USD =</span>
+              <input
+                type="number"
+                min="0.000001"
+                step={currency === 'IDR' ? 100 : 0.0001}
+                value={manualRate}
+                onChange={e => {
+                  const r = parseFloat(e.target.value)
+                  if (r > 0) setManualRate(r)
+                }}
+                className="w-28 text-xs border rounded px-2 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
+                style={{ borderColor: `${ACCENT}60` }}
+              />
+              <span className="text-xs text-muted-foreground font-medium">{currency}</span>
+            </div>
           )}
         </div>
 
@@ -1033,30 +1079,101 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
             {/* Base Price */}
             <div className="space-y-1.5">
-              <Label>Base Price <span className="text-red-500">*</span> <span className="text-muted-foreground font-normal">({currency})</span></Label>
+              <Label>Base Price <span className="text-red-500">*</span> <span className="text-muted-foreground font-normal">(USD)</span></Label>
               <div className="relative">
-                <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">{curr.symbol}</span>
-                <Input type="number" min="0" step={curr.step} value={basePrice}
-                  onChange={e => setBase(e.target.value)} className="pl-7" />
+                <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">$</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="pl-7"
+                  value={
+                    baseFocused || !basePrice
+                      ? basePrice
+                      : (parseFloat(basePrice) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+                  }
+                  onFocus={() => setBaseFocused(true)}
+                  onBlur={() => setBaseFocused(false)}
+                  onChange={e => setBase(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+                />
               </div>
-              {usdHint(bUSD)}
+              {localHint(b)}
               {(tripType === 'OPEN_TRIP' || selectedYacht) && (
                 <p className="text-xs text-muted-foreground">
                   {tripType === 'OPEN_TRIP'
                     ? 'Auto-calculated from assigned cabin prices'
-                    : `${curr.symbol}${fromUSD(selectedYacht!.dailyRate, currency).toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
+                    : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
                 </p>
               )}
             </div>
 
+            {/* Voucher */}
+            <div className="space-y-1.5">
+              <Label>Voucher / Discount</Label>
+              <Select
+                value={voucherApplied?.id ?? '__none'}
+                onValueChange={val => {
+                  setVoucherError('')
+                  if (val === '__none') { removeVoucher(); return }
+                  const v = activeVouchers.find(x => x.id === val)
+                  if (!v) return
+                  const basePriceUSD = parseFloat(basePrice) || 0
+                  if (v.minBooking != null && basePriceUSD < v.minBooking) {
+                    setVoucherError(`Minimum booking $${v.minBooking.toLocaleString()} — current base is $${basePriceUSD.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
+                    return
+                  }
+                  if (v.maxUses != null && v.usedCount >= v.maxUses) {
+                    setVoucherError('Voucher usage limit has been reached')
+                    return
+                  }
+                  setVoucherApplied({ id: v.id, code: v.code, name: v.name, type: v.type, value: v.value })
+                  if (v.type === 'PERCENTAGE') setDisc(String(v.value))
+                  else setDisc('0')
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No voucher" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">No voucher</SelectItem>
+                  {activeVouchers.map(v => (
+                    <SelectItem
+                      key={v.id}
+                      value={v.id}
+                      disabled={v.maxUses != null && v.usedCount >= v.maxUses}
+                    >
+                      <span className="font-mono font-semibold">{v.code}</span>
+                      <span className="text-muted-foreground ml-2">
+                        — {v.name} ({v.type === 'PERCENTAGE' ? `${v.value}%` : `$${v.value}`} off)
+                        {v.maxUses != null ? ` · ${v.usedCount}/${v.maxUses} used` : ''}
+                      </span>
+                    </SelectItem>
+                  ))}
+                  {activeVouchers.length === 0 && (
+                    <SelectItem value="__empty" disabled>No active vouchers</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {voucherApplied && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <Tag className="h-3 w-3 text-emerald-600 shrink-0" />
+                  <span className="text-xs text-emerald-700 font-medium">
+                    {voucherApplied.type === 'PERCENTAGE' ? `${voucherApplied.value}% off` : `$${voucherApplied.value} off`} applied — {voucherApplied.name}
+                  </span>
+                </div>
+              )}
+              {voucherError && <p className="text-xs text-destructive">{voucherError}</p>}
+            </div>
+
             {/* Discount */}
+            {!voucherApplied && (
             <div className="space-y-1.5">
               <Label>Discount <span className="text-muted-foreground font-normal">(%)</span></Label>
               <Input type="number" min="0" max="100" step="1" value={discPct} onChange={e => setDisc(e.target.value)} />
               {d > 0 && (
-                <p className="text-xs text-emerald-600">Saves {fmtAmt(da, currency)}</p>
+                <p className="text-xs text-emerald-600">Saves {fmtAmt(da, 'USD')}</p>
               )}
             </div>
+            )}
 
             {/* Additional Services */}
             <div className="space-y-2">
@@ -1074,9 +1191,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <Input placeholder="Service name" value={sv.name}
                     onChange={e => updateSvc(sv.tempId, { name: e.target.value })} />
                   <div className="relative w-32 shrink-0">
-                    <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground select-none">{curr.symbol}</span>
-                    <Input type="number" min="0" step={curr.step} placeholder="0" className="pl-6"
-                      value={sv.price} onChange={e => updateSvc(sv.tempId, { price: e.target.value })} />
+                    <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground select-none">$</span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="pl-6"
+                      value={
+                        svcFocused === sv.tempId || !sv.price
+                          ? sv.price
+                          : (parseFloat(sv.price) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+                      }
+                      onFocus={() => setSvcFocused(sv.tempId)}
+                      onBlur={() => setSvcFocused(null)}
+                      onChange={e => updateSvc(sv.tempId, { price: e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, '') })}
+                    />
                   </div>
                   <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeSvc(sv.tempId)}>
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1094,33 +1223,39 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Price Breakdown</p>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Base Price</span>
-                <span className="font-medium">{fmtAmt(b, currency)}</span>
+                <span className="font-medium">{fmtAmt(b, 'USD')}</span>
               </div>
-              {d > 0 && (
+              {da > 0 && (
                 <div className="flex justify-between text-emerald-600">
-                  <span>Discount ({d}%)</span>
-                  <span>−{fmtAmt(da, currency)}</span>
+                  <span>
+                    {voucherApplied
+                      ? `Voucher ${voucherApplied.code} (${voucherApplied.type === 'PERCENTAGE' ? `${voucherApplied.value}%` : `$${voucherApplied.value}`})`
+                      : `Discount (${d}%)`}
+                  </span>
+                  <span>−{fmtAmt(da, 'USD')}</span>
                 </div>
               )}
               {services.filter(x => x.name.trim()).map(sv => (
                 <div key={sv.tempId} className="flex justify-between">
                   <span className="text-muted-foreground truncate max-w-[140px]">{sv.name}</span>
-                  <span>{fmtAmt(parseFloat(sv.price) || 0, currency)}</span>
+                  <span>{fmtAmt(parseFloat(sv.price) || 0, 'USD')}</span>
                 </div>
               ))}
               {commPct > 0 && (
                 <div className="flex justify-between" style={{ color: '#6b7280', fontStyle: 'italic' }}>
                   <span className="text-xs">Agent Commission ({commPct}%)</span>
-                  <span className="text-xs">({fmtAmt(commAmt, currency)})</span>
+                  <span className="text-xs">({fmtAmt(commAmt, 'USD')})</span>
                 </div>
               )}
               <Separator className="my-1" />
               <div className="flex justify-between items-end">
                 <span className="font-semibold">Total</span>
                 <div className="text-right">
-                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(netTot, currency)}</div>
+                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(netTot, 'USD')}</div>
                   {currency !== 'USD' && (
-                    <div className="text-xs text-muted-foreground">≈ ${totUSD.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD</div>
+                    <div className="text-xs text-muted-foreground">
+                      ≈ {CURRENCIES[currency].symbol}{toLocal(netTot).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[currency].decimals })} {currency}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1165,7 +1300,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <><span>Destination</span><span className="text-foreground font-medium">{destination}</span></>
                 )}
                 <span>Guests</span>     <span className="text-foreground font-medium">{guests.length} person(s)</span>
-                <span>Currency</span>   <span className="text-foreground font-medium">{currency} → stored as USD</span>
+                <span>Currency</span>
+                <span className="text-foreground font-medium">
+                  {currency}
+                  {currency !== 'USD' && (
+                    <span className="text-muted-foreground font-normal ml-1">
+                      (1 USD = {manualRate.toLocaleString('en-US', { maximumFractionDigits: currency === 'IDR' ? 0 : 4 })} {currency})
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
 

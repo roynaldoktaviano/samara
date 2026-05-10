@@ -24,6 +24,8 @@ interface PaymentDetail {
     discount: number
     guestCount: number
     salesperson?: string
+    currency?: string
+    exchangeRate?: number
     customer: { name: string; email?: string; phone?: string; address?: string }
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
@@ -44,10 +46,9 @@ const fmtDate = (d: string) =>
 const fmtDateShort = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-const fmtAmt = (n: number) =>
-  `$ ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
 const ACCENT = '#bdac7e'
+
+const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
@@ -84,6 +85,20 @@ export default function InvoicePage() {
   const tripName       = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
   const destination    = b.destination ?? b.openTrip?.destination ?? '—'
   const isAgentBooking = b.source === 'AGENT' && !!b.agent
+
+  // Currency conversion — all DB amounts are in USD
+  const invoiceCurrency = b.currency || 'USD'
+  const rate            = (invoiceCurrency !== 'USD' && b.exchangeRate) ? b.exchangeRate : 1
+  const currSymbol      = CURRENCY_SYMBOLS[invoiceCurrency] || '$'
+  const isIDR           = invoiceCurrency === 'IDR'
+
+  const toLocal = (usd: number) => usd * rate
+  const fmtAmt  = (usd: number) => {
+    const local = toLocal(usd)
+    if (isIDR) return `Rp ${local.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
+    return `${currSymbol} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
   const servicesTotal  = b.services.reduce((s, x) => s + x.price, 0)
   const discountAmt    = b.totalPrice * b.discount / 100
   const afterDiscount  = b.totalPrice - discountAmt
@@ -141,6 +156,11 @@ export default function InvoicePage() {
             <div style={{ fontSize: 22, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 6 }}>INVOICE</div>
             <div style={{ fontFamily: 'monospace', fontSize: 14, color: '#374151', fontWeight: 700 }}>{payment.invoiceNumber}</div>
             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>Issued: {fmtDate(payment.createdAt)}</div>
+            {invoiceCurrency !== 'USD' && (
+              <div style={{ fontSize: 10, color: ACCENT, marginTop: 4, fontWeight: 600 }}>
+                {invoiceCurrency} · 1 USD = {rate.toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 4 })} {invoiceCurrency}
+              </div>
+            )}
           </div>
         </div>
 
@@ -250,7 +270,7 @@ export default function InvoicePage() {
                 Agent Rate ({commissionPct}% Commission)
               </span>
               <span style={{ color: '#6b7280', fontSize: 12, fontStyle: 'italic' }}>
-                $ ({commissionAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                ({fmtAmt(commissionAmt)})
               </span>
             </div>
           )}

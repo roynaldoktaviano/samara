@@ -50,6 +50,7 @@ model Customer {
   allergies           String?
   equipmentSizes      String?
   operationalNotes    String?
+  deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   bookings            Booking[]
@@ -70,24 +71,27 @@ model Agent {
 }
 
 model Yacht {
-  id           String      @id @default(cuid())
+  id           String        @id @default(cuid())
   name         String
   model        String?
   year         Int?
   capacity     Int
-  cabinCount   Int         @default(0)
+  cabinCount   Int           @default(0)
   length       Float?
   description  String?
   hourlyRate   Float
   dailyRate    Float
-  status       String      @default("available")
+  status       String        @default("available")
   image        String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   bookings     Booking[]
   crew         Crew[]
   cabins       Cabin[]
   openTrips    OpenTrip[]
+  maintenances Maintenance[]
+  expenses     Expense[]
 }
 
 model Cabin {
@@ -145,6 +149,9 @@ model Booking {
   crewRequired   Boolean        @default(false)
   salesperson    String?
   notes          String?
+  voucherCode    String?
+  currency       String         @default("USD")
+  exchangeRate   Float?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   customer       Customer       @relation(fields: [customerId], references: [id])
@@ -154,6 +161,8 @@ model Booking {
   guests         BookingGuest[]
   services       BookingService[]
   payments       Payment[]
+  expenses       Expense[]
+  notifications  Notification[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -184,16 +193,18 @@ model BookingService {
 }
 
 model Crew {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   yachtId   String
   name      String
   position  String
   phone     String?
   email     String?
-  startDate DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  yacht     Yacht    @relation(fields: [yachtId], references: [id])
+  isActive  Boolean   @default(true)
+  startDate DateTime  @default(now())
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  yacht     Yacht     @relation(fields: [yachtId], references: [id])
 }
 
 model Maintenance {
@@ -207,6 +218,10 @@ model Maintenance {
   cost          Float?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  yacht         Yacht     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+
+  @@index([yachtId])
+  @@index([status, scheduledDate])
 }
 
 model Expense {
@@ -219,6 +234,12 @@ model Expense {
   bookingId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  yacht       Yacht?   @relation(fields: [yachtId], references: [id], onDelete: SetNull)
+  booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([yachtId])
+  @@index([bookingId])
+  @@index([date])
 }
 
 model Payment {
@@ -238,10 +259,44 @@ model Payment {
   confirmedAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking           Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  notifications     Notification[]
 
   @@index([bookingId])
   @@index([status])
+}
+
+model Voucher {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  description String?
+  type        String    // PERCENTAGE | FIXED
+  value       Float
+  minBooking  Float?
+  maxUses     Int?
+  usedCount   Int       @default(0)
+  validFrom   DateTime?
+  validUntil  DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  userName  String
+  userRole  String
+  action    String
+  entity    String?
+  entityId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([entity, action])
 }
 
 model Notification {
@@ -254,7 +309,10 @@ model Notification {
   bookingId String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
   @@index([userId])
+  @@unique([userId, type, bookingId])
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 function paymentStatus(depositPaid: number, totalPrice: number): string {
   if (depositPaid <= 0)          return 'pending'
@@ -72,6 +73,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const confirmedByName = session?.user?.name || 'Finance'
+    const actorId   = session?.user?.id   ?? ''
+    const actorRole = (session?.user as { role?: string })?.role ?? ''
 
     // Resolve recipient: prefer explicit submittedByUserId, fallback to salesperson name lookup
     let recipientUserId = payment.submittedByUserId
@@ -98,7 +101,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }),
       ])
 
-      // Notify the submitter
+      logActivity({
+        userId: actorId, userName: confirmedByName, userRole: actorRole,
+        action: 'CONFIRM', entity: 'Payment', entityId: payment.id,
+        detail: `Konfirmasi invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
+      }).catch(() => {})
+
+      // Notify the submitter (bookingId omitted to avoid @@unique([userId,type,bookingId]) conflict on repeat payments)
       if (recipientUserId) {
         await db.notification.create({
           data: {
@@ -107,7 +116,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             title: 'Invoice dikonfirmasi ✓',
             body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${confirmedByName}`,
             paymentId: payment.id,
-            bookingId: payment.bookingId,
           },
         })
       }
@@ -117,7 +125,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         data: { status: 'rejected', confirmedBy: confirmedByName, confirmedAt: new Date() },
       })
 
-      // Notify the submitter
+      logActivity({
+        userId: actorId, userName: confirmedByName, userRole: actorRole,
+        action: 'REJECT', entity: 'Payment', entityId: payment.id,
+        detail: `Tolak invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
+      }).catch(() => {})
+
+      // Notify the submitter (bookingId omitted for same reason as PAYMENT_CONFIRMED)
       if (recipientUserId) {
         await db.notification.create({
           data: {
@@ -126,7 +140,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             title: 'Invoice ditolak',
             body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${confirmedByName}`,
             paymentId: payment.id,
-            bookingId: payment.bookingId,
           },
         })
       }

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 function paymentStatus(depositPaid: number, totalPrice: number): string {
   if (depositPaid <= 0)          return 'pending'
@@ -36,6 +39,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
     const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson } = body
@@ -69,6 +73,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       select: { id: true, bookingCode: true, status: true },
     })
 
+    const userId   = session?.user?.id   ?? ''
+    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    logActivity({
+      userId, userName, userRole,
+      action: 'UPDATE', entity: 'Booking', entityId: id,
+      detail: `Update booking ${booking.bookingCode} → status: ${booking.status}`,
+    }).catch(() => {})
+
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error updating booking:', error)
@@ -76,10 +89,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const session  = await getServerSession(authOptions)
+    const { id }   = await params
+    const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true } })
     await db.booking.delete({ where: { id } })
+
+    const userId   = session?.user?.id   ?? ''
+    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    logActivity({
+      userId, userName, userRole,
+      action: 'DELETE', entity: 'Booking', entityId: id,
+      detail: `Hapus booking ${existing?.bookingCode ?? id}`,
+    }).catch(() => {})
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error deleting booking:', error)

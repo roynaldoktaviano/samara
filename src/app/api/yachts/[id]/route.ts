@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,6 +21,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
     const { name, model, year, capacity, length, hourlyRate, dailyRate, description, status, rooms } = body
@@ -84,6 +88,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       where: { id: yacht.id },
       include: { cabins: { orderBy: { name: 'asc' } }, _count: { select: { bookings: true, crew: true } } },
     })
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'UPDATE', entity: 'Yacht', entityId: yacht.id,
+      detail: `Update yacht: ${name}`,
+    }).catch(() => {})
+
     return NextResponse.json(result)
   } catch (error) {
     console.error('Error updating yacht:', error)
@@ -91,17 +103,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getServerSession(authOptions)
     const { id } = await params
-    const bookingCount = await db.booking.count({ where: { yachtId: id } })
-    if (bookingCount > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete: ${bookingCount} booking(s) reference this yacht` },
-        { status: 409 }
-      )
-    }
-    await db.yacht.delete({ where: { id } })
+    const existing = await db.yacht.findUnique({ where: { id }, select: { name: true } })
+    await db.yacht.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'DELETE', entity: 'Yacht', entityId: id,
+      detail: `Hapus yacht: ${existing?.name ?? id}`,
+    }).catch(() => {})
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error deleting yacht:', error)

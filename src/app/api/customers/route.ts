@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,6 +10,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
 
     const customers = await db.customer.findMany({
+      where: { deletedAt: null },
       include: {
         _count: { select: { bookings: true, guestOf: true } },
         bookings: { select: { totalPrice: true } },
@@ -39,6 +43,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
       firstName, lastName, gender, email, phone,
@@ -59,6 +64,14 @@ export async function POST(request: NextRequest) {
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       },
     })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'CREATE', entity: 'Customer', entityId: customer.id,
+      detail: `Tambah guest: ${customer.name}`,
+    }).catch(() => {})
 
     return NextResponse.json(customer, { status: 201 })
   } catch (error) {

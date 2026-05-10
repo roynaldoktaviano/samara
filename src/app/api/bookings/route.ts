@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -38,9 +39,11 @@ export async function GET(request: NextRequest) {
     const tripType    = searchParams.get('tripType')
     const openTripId  = searchParams.get('openTripId')
 
-    // Auto-cancel pending bookings whose deposit deadline has passed (fire-and-forget)
+    // Auto-cancel pending bookings whose deposit deadline was before today (H+1)
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
     db.booking.updateMany({
-      where: { status: 'pending', depositDueDate: { lt: new Date() } },
+      where: { status: 'pending', depositDueDate: { lt: todayStart } },
       data: { status: 'cancelled' },
     }).catch(e => console.error('auto-cancel failed:', e))
 
@@ -65,6 +68,7 @@ export async function GET(request: NextRequest) {
         totalPrice: true, depositPaid: true, discount: true,
         depositDueDate: true, finalDueDate: true,
         guestCount: true, destination: true, notes: true, salesperson: true,
+        currency: true, exchangeRate: true,
         yacht:     { select: { id: true, name: true, model: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:     { select: { id: true, name: true, company: true, commission: true } },
@@ -96,7 +100,8 @@ export async function POST(request: NextRequest) {
     const {
       tripType, source, agentId, yachtId, openTripId,
       startDate, endDate, destination,
-      totalPrice, depositPaid, discount,
+      totalPrice, depositPaid, discount, voucherCode,
+      currency, exchangeRate,
       depositDueDate, finalDueDate,
       crewRequired, notes,
       guests,   // Array<{ customerId, cabinId?, isLead }>
@@ -151,6 +156,9 @@ export async function POST(request: NextRequest) {
         guestCount:     guests.length,
         crewRequired:   crewRequired ?? false,
         notes:          notes || null,
+        voucherCode:    voucherCode || null,
+        currency:       currency || 'USD',
+        exchangeRate:   (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
         salesperson:    session?.user?.name || null,
         guests: {
           create: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
@@ -169,6 +177,23 @@ export async function POST(request: NextRequest) {
       },
       select: { id: true, bookingCode: true, status: true },
     })
+
+    // Increment voucher usage count if one was applied
+    if (voucherCode) {
+      db.voucher.update({
+        where: { code: String(voucherCode).toUpperCase().trim() },
+        data: { usedCount: { increment: 1 } },
+      }).catch(e => console.error('voucher increment failed:', e))
+    }
+
+    const userId   = session?.user?.id   ?? ''
+    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    logActivity({
+      userId, userName, userRole,
+      action: 'CREATE', entity: 'Booking', entityId: booking.id,
+      detail: `Booking baru ${booking.bookingCode}`,
+    }).catch(() => {})
 
     return NextResponse.json(booking, { status: 201 })
   } catch (error) {

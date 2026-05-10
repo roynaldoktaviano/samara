@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
+import { logActivity } from '@/lib/activity'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -38,5 +39,13 @@ export async function POST(req: Request) {
     data: { name: name || null, email, password: hashed, role },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
   })
+  logActivity({
+    userId:   session!.user.id,
+    userName: session!.user.name ?? session!.user.email ?? 'Unknown',
+    userRole: session!.user.role ?? '',
+    action: 'CREATE', entity: 'User', entityId: user.id,
+    detail: `Tambah user: ${user.name ?? user.email} (${user.role})`,
+  }).catch(() => {})
+
   return NextResponse.json(user, { status: 201 })
 }

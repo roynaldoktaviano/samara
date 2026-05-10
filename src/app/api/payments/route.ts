@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(_: NextRequest) {
   try {
@@ -117,10 +118,20 @@ export async function POST(request: NextRequest) {
           title: 'Invoice menunggu konfirmasi',
           body: `${invoiceNumber} — $${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} dikirim oleh ${submittedByName ?? 'Sales'}`,
           paymentId: payment.id,
-          bookingId,
+          // bookingId intentionally omitted: @@unique([userId, type, bookingId]) uses null≠null,
+          // so multiple payment notifications per booking are allowed without constraint conflict
         })),
       })
     }
+
+    const userId   = submittedByUserId ?? ''
+    const userName = submittedByName   ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    logActivity({
+      userId, userName, userRole,
+      action: 'CREATE', entity: 'Payment', entityId: payment.id,
+      detail: `Submit invoice ${invoiceNumber} — ${paymentType} $${parseFloat(amount).toFixed(2)}`,
+    }).catch(() => {})
 
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {

@@ -36,6 +36,8 @@ interface BookingRecord {
   finalDueDate?: string | null
   destination?: string
   notes?: string
+  currency?: string
+  exchangeRate?: number | null
   yacht?: { id: string; name: string; model?: string }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
@@ -138,6 +140,8 @@ export default function Bookings() {
   const [paymentAmount,  setPaymentAmount]  = useState('')
   const [paymentNotes,   setPaymentNotes]   = useState('')
   const [paymentSaving,  setPaymentSaving]  = useState(false)
+  const [payCurrency,    setPayCurrency]    = useState('USD')
+  const [payAmtFocused,  setPayAmtFocused]  = useState(false)
 
   /* proof upload */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -212,18 +216,30 @@ export default function Bookings() {
   /* ── record payment ── */
   const openPayment = (b: BookingRecord) => {
     setPaymentBooking(b)
-    const remaining = netBook(b) - b.depositPaid
-    setPaymentAmount(remaining > 0 ? remaining.toFixed(2) : '')
+    const initCurr = (b.currency && b.currency !== 'USD') ? b.currency : 'USD'
+    setPayCurrency(initCurr)
+    setPayAmtFocused(false)
+    const remainingUSD = netBook(b) - b.depositPaid
+    if (remainingUSD > 0) {
+      const rate = b.exchangeRate ?? 1
+      const displayAmt = (initCurr !== 'USD' && rate > 0) ? remainingUSD * rate : remainingUSD
+      setPaymentAmount(displayAmt.toFixed(initCurr === 'IDR' ? 0 : 2))
+    } else {
+      setPaymentAmount('')
+    }
     setPaymentNotes('')
   }
   const submitPayment = async () => {
     if (!paymentBooking || !paymentAmount) return
     setPaymentSaving(true)
+    const rawAmt  = parseFloat(String(paymentAmount).replace(/,/g, '')) || 0
+    const rate    = paymentBooking.exchangeRate ?? 1
+    const amtUSD  = (payCurrency !== 'USD' && rate > 0) ? rawAmt / rate : rawAmt
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: paymentBooking.id, amount: paymentAmount, currency: 'USD', notes: paymentNotes }),
+        body: JSON.stringify({ bookingId: paymentBooking.id, amount: amtUSD, currency: 'USD', notes: paymentNotes }),
       })
       if (res.ok) {
         setPaymentBooking(null)
@@ -515,8 +531,24 @@ export default function Bookings() {
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
         <DialogContent className={paymentBooking && payments.filter(p => p.bookingId === paymentBooking.id).length > 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'}>
           {paymentBooking && (() => {
-            const prev = payments.filter(p => p.bookingId === paymentBooking.id)
-            const hasHistory = prev.length > 0
+            const prev        = payments.filter(p => p.bookingId === paymentBooking.id)
+            const hasHistory  = prev.length > 0
+            const bookingCurr = paymentBooking.currency ?? 'USD'
+            const hasAltCurr  = bookingCurr !== 'USD'
+            const rate        = paymentBooking.exchangeRate ?? 1
+            const CURR_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
+            const currSymbol  = CURR_SYMBOLS[payCurrency] ?? payCurrency
+            const isIDR       = payCurrency === 'IDR'
+
+            const toDisplay = (usd: number) =>
+              payCurrency !== 'USD' && rate > 0 ? usd * rate : usd
+
+            const fmtPayAmt = (usd: number) => {
+              const v = toDisplay(usd)
+              if (isIDR) return `Rp ${v.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
+              return `${currSymbol}${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            }
+
             return (
               <>
                 <DialogHeader>
@@ -525,6 +557,43 @@ export default function Bookings() {
                     Record Payment
                   </DialogTitle>
                 </DialogHeader>
+
+                {/* Currency toggle — only shown if booking has non-USD currency */}
+                {hasAltCurr && (
+                  <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+                    <span className="text-xs text-muted-foreground shrink-0">Pay in</span>
+                    <div className="flex gap-1.5">
+                      {(['USD', bookingCurr] as string[]).map(c => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => {
+                            if (c === payCurrency) return
+                            // Convert current amount to new currency
+                            const raw = parseFloat(String(paymentAmount).replace(/,/g, '')) || 0
+                            if (raw > 0) {
+                              const inUSD = payCurrency !== 'USD' && rate > 0 ? raw / rate : raw
+                              const inNew = c !== 'USD' && rate > 0 ? inUSD * rate : inUSD
+                              setPaymentAmount(inNew.toFixed(c === 'IDR' ? 0 : 2))
+                            }
+                            setPayCurrency(c)
+                          }}
+                          className="px-3 py-1 rounded-full text-xs font-semibold border transition-colors"
+                          style={payCurrency === c
+                            ? { backgroundColor: ACCENT, color: 'white', borderColor: ACCENT }
+                            : { borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    {payCurrency !== 'USD' && (
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        1 USD = {rate.toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 4 })} {bookingCurr}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className={hasHistory ? 'grid grid-cols-2 gap-3' : ''}>
                   {/* Left: booking summary */}
@@ -539,17 +608,17 @@ export default function Bookings() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total</span>
-                      <span className="font-medium">{fmtAmt(netBook(paymentBooking))}</span>
+                      <span className="font-medium">{fmtPayAmt(netBook(paymentBooking))}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Already Paid</span>
-                      <span className="font-medium text-emerald-600">{fmtAmt(paymentBooking.depositPaid)}</span>
+                      <span className="font-medium text-emerald-600">{fmtPayAmt(paymentBooking.depositPaid)}</span>
                     </div>
                     <Separator className="my-1" />
                     <div className="flex justify-between font-semibold">
                       <span>Remaining</span>
                       <span className={netBook(paymentBooking) - paymentBooking.depositPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}>
-                        {fmtAmt(Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid))}
+                        {fmtPayAmt(Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid))}
                       </span>
                     </div>
                   </div>
@@ -580,20 +649,29 @@ export default function Bookings() {
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label>Payment Amount (USD) <span className="text-red-500">*</span></Label>
+                    <Label>Payment Amount ({payCurrency}) <span className="text-red-500">*</span></Label>
                     <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                      <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">{currSymbol}</span>
                       <Input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
-                        step="100"
-                        placeholder="0.00"
-                        value={paymentAmount}
-                        onChange={e => setPaymentAmount(e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={
+                          payAmtFocused || !paymentAmount
+                            ? paymentAmount
+                            : (parseFloat(String(paymentAmount).replace(/,/g, '')) || 0).toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 2 })
+                        }
+                        onFocus={() => setPayAmtFocused(true)}
+                        onBlur={() => setPayAmtFocused(false)}
+                        onChange={e => setPaymentAmount(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
                         className="pl-7"
                       />
                     </div>
+                    {payCurrency !== 'USD' && paymentAmount && (
+                      <p className="text-xs text-muted-foreground">
+                        ≈ ${((parseFloat(String(paymentAmount).replace(/,/g, '')) || 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD — stored as USD
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Kurang dari total → Partially Paid · Sama dengan total → Fully Paid
                     </p>
@@ -611,7 +689,7 @@ export default function Bookings() {
 
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
-                  <Button disabled={paymentSaving || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                  <Button disabled={paymentSaving || !paymentAmount || (parseFloat(String(paymentAmount).replace(/,/g, '')) || 0) <= 0}
                     onClick={submitPayment}
                     style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
                     {paymentSaving ? 'Submitting…' : 'Submit & Generate Invoice'}

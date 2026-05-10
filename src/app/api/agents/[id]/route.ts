@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
@@ -27,7 +28,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!await requireAdmin()) {
+    const session = await requireAdmin()
+    if (!session) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     const { id } = await params
@@ -47,6 +49,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         isActive:   isActive   !== undefined ? Boolean(isActive)                     : undefined,
       },
     })
+
+    logActivity({
+      userId:   session.user.id,
+      userName: session.user.name ?? session.user.email ?? 'Unknown',
+      userRole: (session.user as { role?: string }).role ?? '',
+      action: 'UPDATE', entity: 'Agent', entityId: id,
+      detail: `Update agent: ${name}`,
+    }).catch(() => {})
+
     return NextResponse.json(agent)
   } catch (error) {
     console.error('Error updating agent:', error)
@@ -56,12 +67,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!await requireAdmin()) {
+    const session = await requireAdmin()
+    if (!session) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     const { id } = await params
-    // Soft-delete: preserve booking history, just hide from new booking selections
+    const existing = await db.agent.findUnique({ where: { id }, select: { name: true } })
     await db.agent.update({ where: { id }, data: { isActive: false } })
+
+    logActivity({
+      userId:   session.user.id,
+      userName: session.user.name ?? session.user.email ?? 'Unknown',
+      userRole: (session.user as { role?: string }).role ?? '',
+      action: 'DELETE', entity: 'Agent', entityId: id,
+      detail: `Nonaktifkan agent: ${existing?.name ?? id}`,
+    }).catch(() => {})
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error deactivating agent:', error)

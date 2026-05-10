@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET() {
   try {
     const yachts = await db.yacht.findMany({
+      where: { deletedAt: null },
       select: {
         id: true, name: true, model: true, year: true,
         capacity: true, cabinCount: true, length: true,
@@ -26,6 +30,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
     const body = await request.json()
     const { name, model, year, capacity, length, hourlyRate, dailyRate, description, image, rooms } = body
 
@@ -63,6 +68,14 @@ export async function POST(request: NextRequest) {
       },
       include: { cabins: true },
     })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'CREATE', entity: 'Yacht', entityId: yacht.id,
+      detail: `Tambah yacht: ${yacht.name}`,
+    }).catch(() => {})
 
     return NextResponse.json(yacht, { status: 201 })
   } catch (error) {

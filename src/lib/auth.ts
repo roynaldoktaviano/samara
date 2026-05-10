@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -33,6 +34,19 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.type === 'credentials' && user?.id) {
+        const u = user as { id: string; name?: string | null; email?: string | null; role?: string }
+        logActivity({
+          userId:   u.id,
+          userName: u.name || u.email || 'Unknown',
+          userRole: u.role || 'UNKNOWN',
+          action:   'LOGIN',
+          detail:   'Login berhasil',
+        }).catch(() => {})
+      }
+      return true
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id

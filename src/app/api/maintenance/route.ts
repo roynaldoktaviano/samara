@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,24 +16,16 @@ export async function GET(request: NextRequest) {
 
     const maintenanceTasks = await db.maintenance.findMany({
       where,
-      orderBy: { scheduledDate: 'desc' }
+      include: { yacht: { select: { name: true } } },
+      orderBy: { scheduledDate: 'desc' },
     })
 
-    // Enhance with yacht names
-    const tasksWithYachtNames = await Promise.all(
-      maintenanceTasks.map(async (task) => {
-        const yacht = await db.yacht.findUnique({
-          where: { id: task.yachtId },
-          select: { name: true }
-        })
-        return {
-          ...task,
-          yachtName: yacht?.name || 'Unknown'
-        }
-      })
-    )
+    const result = maintenanceTasks.map(({ yacht, ...task }) => ({
+      ...task,
+      yachtName: yacht.name,
+    }))
 
-    return NextResponse.json(tasksWithYachtNames)
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching maintenance tasks:', error)
     return NextResponse.json(
@@ -42,6 +37,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
       yachtId,
@@ -68,6 +64,14 @@ export async function POST(request: NextRequest) {
         status: 'scheduled'
       }
     })
+
+    logActivity({
+      userId:   session?.user?.id   ?? '',
+      userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
+      userRole: (session?.user as { role?: string })?.role ?? '',
+      action: 'CREATE', entity: 'Maintenance', entityId: maintenance.id,
+      detail: `Jadwal maintenance: ${title}`,
+    }).catch(() => {})
 
     return NextResponse.json(maintenance, { status: 201 })
   } catch (error) {

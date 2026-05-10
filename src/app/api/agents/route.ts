@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { logActivity } from '@/lib/activity'
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,6 +49,14 @@ export async function POST(request: NextRequest) {
         commission: commission ? parseFloat(commission) : 0,
       },
     })
+
+    logActivity({
+      userId:   session!.user.id,
+      userName: session!.user.name ?? session!.user.email ?? 'Unknown',
+      userRole: (session!.user as { role?: string }).role ?? '',
+      action: 'CREATE', entity: 'Agent', entityId: agent.id,
+      detail: `Tambah agent: ${agent.name}`,
+    }).catch(() => {})
 
     return NextResponse.json(agent, { status: 201 })
   } catch (error) {
