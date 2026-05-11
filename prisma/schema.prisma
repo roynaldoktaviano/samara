@@ -50,6 +50,10 @@ model Customer {
   allergies           String?
   equipmentSizes      String?
   operationalNotes    String?
+  nationality         String?
+  passportExpiry      DateTime?
+  emergencyContact    String?
+  drinkPreferences    String?
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -95,16 +99,28 @@ model Yacht {
 }
 
 model Cabin {
-  id        String         @id @default(cuid())
-  yachtId   String
-  name      String
-  capacity  Int            @default(2)
-  price     Float          @default(0)
-  deck      String?
-  bedType   String?
-  extraBeds Int            @default(0)
-  yacht     Yacht          @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  guests    BookingGuest[]
+  id           String             @id @default(cuid())
+  yachtId      String
+  name         String
+  capacity     Int                @default(2)
+  price        Float              @default(0)
+  deck         String?
+  bedType      String?
+  extraBeds    Int                @default(0)
+  yacht        Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  guests       BookingGuest[]
+  pricingTiers CabinPricingTier[]
+}
+
+model CabinPricingTier {
+  id      String @id @default(cuid())
+  cabinId String
+  nights  Int
+  price   Float
+  cabin   Cabin  @relation(fields: [cabinId], references: [id], onDelete: Cascade)
+
+  @@unique([cabinId, nights])
+  @@map("cabin_pricing_tiers")
 }
 
 model OpenTrip {
@@ -172,14 +188,20 @@ model Booking {
 }
 
 model BookingGuest {
-  id         String   @id @default(cuid())
-  bookingId  String
-  customerId String
-  cabinId    String?
-  isLead     Boolean  @default(false)
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer   Customer @relation(fields: [customerId], references: [id])
-  cabin      Cabin?   @relation(fields: [cabinId], references: [id])
+  id                  String   @id @default(cuid())
+  bookingId           String
+  customerId          String
+  cabinId             String?
+  isLead              Boolean  @default(false)
+  arrivalPickupTime   String?
+  arrivalHotel        String?
+  arrivalFlight       String?
+  departurePickupTime String?
+  departureHotel      String?
+  departureFlight     String?
+  booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer            Customer @relation(fields: [customerId], references: [id])
+  cabin               Cabin?   @relation(fields: [cabinId], references: [id])
 
   @@unique([bookingId, customerId])
 }

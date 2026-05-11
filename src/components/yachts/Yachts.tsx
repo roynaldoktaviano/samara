@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil } from 'lucide-react'
 
+interface PricingTier { nights: number; price: number }
+
 interface CabinRecord {
   id: string
   name: string
@@ -33,6 +35,7 @@ interface CabinRecord {
   deck?: string
   bedType?: string
   extraBeds: number
+  pricingTiers: PricingTier[]
 }
 
 interface YachtRecord {
@@ -51,15 +54,18 @@ interface YachtRecord {
   _count: { bookings: number; crew: number }
 }
 
+interface TierInput { nights: number; price: string }
+
 interface RoomInput {
   tempId: string
-  id?: string        // existing cabin id (for edit mode)
+  id?: string
   name: string
   deck: string
   bedType: string
   capacity: string
-  price: string
+  price: string      // per-night fallback
   extraBeds: string
+  pricingTiers: TierInput[]
 }
 
 const BED_TYPES = ['Single', 'Double', 'Twin', 'Queen', 'King', 'Bunk']
@@ -97,7 +103,6 @@ export default function Yachts() {
   const [year,        setYear]    = useState('')
   const [capacity,    setCap]     = useState('')
   const [length,      setLen]     = useState('')
-  const [hourlyRate,  setHourly]  = useState('')
   const [dailyRate,   setDaily]   = useState('')
   const [status,      setStatus]  = useState('available')
   const [description, setDesc]    = useState('')
@@ -116,7 +121,7 @@ export default function Yachts() {
 
   const resetForm = () => {
     setName(''); setModel(''); setYear(''); setCap(''); setLen('')
-    setHourly(''); setDaily(''); setStatus('available'); setDesc('')
+    setDaily(''); setStatus('available'); setDesc('')
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
   }
 
@@ -132,7 +137,6 @@ export default function Yachts() {
     setYear(y.year?.toString() ?? '')
     setCap(y.capacity.toString())
     setLen(y.length?.toString() ?? '')
-    setHourly(y.hourlyRate.toString())
     setDaily(y.dailyRate.toString())
     setStatus(y.status)
     setDesc(y.description ?? '')
@@ -142,9 +146,13 @@ export default function Yachts() {
       name: c.name,
       deck: c.deck ?? '',
       bedType: c.bedType ?? '',
-      capacity: c.capacity.toString(),
-      price: c.price.toString(),
-      extraBeds: c.extraBeds.toString(),
+      capacity: (c.capacity ?? 0).toString(),
+      price: (c.price ?? 0).toString(),
+      extraBeds: (c.extraBeds ?? 0).toString(),
+      pricingTiers: [2, 3, 4].map(n => ({
+        nights: n,
+        price: (c.pricingTiers?.find(t => t.nights === n)?.price ?? 0).toString(),
+      })),
     })))
     setFormStep(1)
     setError('')
@@ -153,6 +161,7 @@ export default function Yachts() {
 
   const addRoom = () => setRooms(r => [...r, {
     tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0',
+    pricingTiers: [{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }],
   }])
 
   const removeRoom = (tempId: string) => setRooms(r => r.filter(x => x.tempId !== tempId))
@@ -160,19 +169,28 @@ export default function Yachts() {
   const updateRoom = (tempId: string, patch: Partial<RoomInput>) =>
     setRooms(r => r.map(x => x.tempId === tempId ? { ...x, ...patch } : x))
 
-  const step1Valid = !!name && !!capacity && !!hourlyRate && !!dailyRate
+  const maxCap         = parseInt(capacity) || 0
+  const totalCabinCap  = rooms.reduce((s, r) => s + (parseInt(r.capacity)  || 0), 0)
+  const totalExtraBeds = rooms.reduce((s, r) => s + (parseInt(r.extraBeds) || 0), 0)
+  const cabinCapExceeded = maxCap > 0 && totalCabinCap > maxCap
+  const extraBedOverflow = maxCap > 0 && (totalCabinCap + totalExtraBeds) > maxCap
+
+  const step1Valid = !!name && !!capacity && !!dailyRate
 
   const handleSubmit = async () => {
-    if (!step1Valid) return
+    if (!step1Valid || cabinCapExceeded || extraBedOverflow) return
     setSubmitting(true)
     setError('')
     try {
       const payload = {
-        name, model, year, capacity, length, hourlyRate, dailyRate, description, status,
+        name, model, year, capacity, length, hourlyRate: '0', dailyRate, description, status,
         rooms: rooms.filter(r => r.name.trim()).map(r => ({
           id: r.id,
           name: r.name, deck: r.deck, bedType: r.bedType,
-          capacity: r.capacity, price: r.price, extraBeds: r.extraBeds,
+          capacity: r.capacity, extraBeds: r.extraBeds,
+          pricingTiers: r.pricingTiers
+            .filter(t => t.price && parseFloat(t.price) > 0)
+            .map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
         })),
       }
       const url    = editTarget ? `/api/yachts/${editTarget.id}` : '/api/yachts'
@@ -294,11 +312,7 @@ export default function Yachts() {
                     <Input type="number" placeholder="12" value={capacity} onChange={e => setCap(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Hourly Rate (USD) <span className="text-destructive">*</span></Label>
-                    <Input type="number" placeholder="350" value={hourlyRate} onChange={e => setHourly(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Daily Rate (USD) <span className="text-destructive">*</span></Label>
+                    <Label>Private Charter Rate (USD/day) <span className="text-destructive">*</span></Label>
                     <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
                   </div>
                   {editTarget && (
@@ -335,66 +349,122 @@ export default function Yachts() {
                   </div>
 
                   {rooms.length === 0 ? (
-                    <div className="border-2 border-dashed rounded-xl py-12 flex flex-col items-center gap-3 text-muted-foreground">
-                      <BedDouble className="w-8 h-8 opacity-30" />
+                    <div className="border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 text-muted-foreground">
+                      <BedDouble className="w-7 h-7 opacity-30" />
                       <p className="text-sm">No rooms added yet.</p>
                       <Button type="button" variant="outline" size="sm" onClick={addRoom}>
                         <Plus className="w-3.5 h-3.5 mr-1.5" /> Add First Room
                       </Button>
                     </div>
                   ) : (
-                    <div className="rounded-lg border overflow-hidden">
-                      <div className="grid grid-cols-[1fr_130px_130px_70px_90px_70px_40px] gap-x-2 px-4 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        <span>Room Name <span className="text-destructive normal-case">*</span></span>
-                        <span>Deck</span>
-                        <span>Bed Type</span>
-                        <span>Cap.</span>
-                        <span>Price/Night</span>
-                        <span>Extra Beds</span>
-                        <span />
+                    <div className="rounded-xl border overflow-hidden">
+                      {/* Column headers */}
+                      <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
+                        {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra', '3D/2N', '4D/3N', '5D/4N', ''].map((h, i) => (
+                          <div key={i} className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                            style={{ color: i >= 6 && i <= 8 ? ACCENT : undefined }}>
+                            {h}
+                          </div>
+                        ))}
                       </div>
+
+                      {/* Cabin rows */}
                       <div className="divide-y">
                         {rooms.map((r, idx) => (
-                          <div key={r.tempId} className="grid grid-cols-[1fr_130px_130px_70px_90px_70px_40px] gap-x-2 items-center px-4 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground font-medium shrink-0 w-5">{idx + 1}.</span>
+                          <div key={r.tempId} className="grid items-center gap-0 hover:bg-muted/10 transition-colors"
+                            style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
+
+                            {/* # */}
+                            <div className="px-2 py-2 text-xs font-medium text-muted-foreground text-center">{idx + 1}</div>
+
+                            {/* Name */}
+                            <div className="px-1 py-1 border-l">
                               <Input
-                                className="h-8 text-sm"
-                                placeholder="e.g. Master Suite"
+                                className="h-7 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 placeholder:text-muted-foreground/40"
+                                placeholder="Name…"
                                 value={r.name}
                                 onChange={e => updateRoom(r.tempId, { name: e.target.value })}
                               />
                             </div>
-                            <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
-                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Deck" /></SelectTrigger>
-                              <SelectContent>{DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-                            </Select>
-                            <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
-                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Bed type" /></SelectTrigger>
-                              <SelectContent>{BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
-                            </Select>
-                            <Input
-                              className="h-8 text-sm text-center" type="number" min="1"
-                              value={r.capacity}
-                              onChange={e => updateRoom(r.tempId, { capacity: e.target.value })}
-                            />
-                            <Input
-                              className="h-8 text-sm" type="number" min="0" step="50" placeholder="0"
-                              value={r.price}
-                              onChange={e => updateRoom(r.tempId, { price: e.target.value })}
-                            />
-                            <Input
-                              className="h-8 text-sm text-center" type="number" min="0"
-                              value={r.extraBeds}
-                              onChange={e => updateRoom(r.tempId, { extraBeds: e.target.value })}
-                            />
-                            <Button
-                              type="button" variant="ghost" size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeRoom(r.tempId)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+
+                            {/* Deck */}
+                            <div className="px-1 py-1 border-l">
+                              <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
+                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1">
+                                  <SelectValue placeholder="—" />
+                                </SelectTrigger>
+                                <SelectContent>{DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Bed */}
+                            <div className="px-1 py-1 border-l">
+                              <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
+                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1">
+                                  <SelectValue placeholder="—" />
+                                </SelectTrigger>
+                                <SelectContent>{BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Capacity */}
+                            <div className="px-1 py-1 border-l">
+                              <Input
+                                className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0"
+                                type="number" min="1" value={r.capacity}
+                                onChange={e => {
+                                  const v = Math.max(1, parseInt(e.target.value) || 1)
+                                  updateRoom(r.tempId, { capacity: v.toString() })
+                                }}
+                              />
+                            </div>
+
+                            {/* Extra beds */}
+                            <div className="px-1 py-1 border-l">
+                              <Input
+                                className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0"
+                                type="number" min="0" value={r.extraBeds}
+                                onChange={e => {
+                                  const thisExtra = parseInt(r.extraBeds) || 0
+                                  const otherExtras = totalExtraBeds - thisExtra
+                                  const maxExtra = maxCap > 0 ? Math.max(0, maxCap - totalCabinCap - otherExtras) : 9999
+                                  const v = Math.min(maxExtra, Math.max(0, parseInt(e.target.value) || 0))
+                                  updateRoom(r.tempId, { extraBeds: v.toString() })
+                                }}
+                              />
+                            </div>
+
+                            {/* Pricing tiers */}
+                            {r.pricingTiers.map(t => (
+                              <div key={t.nights} className="px-1 py-1 border-l">
+                                <div className="flex items-center">
+                                  <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
+                                  <Input
+                                    className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium"
+                                    type="number" min="0" step="50"
+                                    placeholder="—"
+                                    value={t.price}
+                                    onChange={e => updateRoom(r.tempId, {
+                                      pricingTiers: r.pricingTiers.map(x =>
+                                        x.nights === t.nights ? { ...x, price: e.target.value } : x
+                                      ),
+                                    })}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Delete */}
+                            <div className="flex items-center justify-center border-l">
+                              <button
+                                type="button"
+                                onClick={() => removeRoom(r.tempId)}
+                                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+
                           </div>
                         ))}
                       </div>
@@ -403,6 +473,16 @@ export default function Yachts() {
                   {rooms.length > 0 && (
                     <p className="text-xs text-muted-foreground">
                       {rooms.filter(r => r.name.trim()).length} of {rooms.length} rooms have a name and will be saved.
+                    </p>
+                  )}
+                  {cabinCapExceeded && (
+                    <p className="text-xs text-destructive font-medium">
+                      Total cabin capacity ({totalCabinCap} pax) exceeds yacht max capacity ({maxCap} pax).
+                    </p>
+                  )}
+                  {!cabinCapExceeded && extraBedOverflow && (
+                    <p className="text-xs text-destructive font-medium">
+                      Total capacity + extra beds ({totalCabinCap + totalExtraBeds} pax) exceeds yacht max capacity ({maxCap} pax).
                     </p>
                   )}
                 </div>
@@ -580,19 +660,24 @@ export default function Yachts() {
                               <div className="px-8 py-3">
                                 <div className="grid grid-cols-5 gap-3">
                                   {y.cabins.map(c => (
-                                    <div key={c.id} className="rounded-lg border bg-card p-3 space-y-1">
+                                    <div key={c.id} className="rounded-lg border bg-card p-3 space-y-1.5">
                                       <div className="font-medium text-sm">{c.name}</div>
                                       {c.deck && <div className="text-xs text-muted-foreground">{c.deck}</div>}
-                                      {c.price > 0 && (
-                                        <div className="text-xs font-semibold" style={{ color: ACCENT }}>
-                                          ${c.price.toLocaleString()}/night
-                                        </div>
-                                      )}
-                                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
                                         {c.bedType && <Badge variant="outline" className="text-xs px-1.5 py-0">{c.bedType}</Badge>}
                                         <Badge variant="outline" className="text-xs px-1.5 py-0">{c.capacity} pax</Badge>
-                                        {c.extraBeds > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">+{c.extraBeds} extra</Badge>}
+                                        {c.extraBeds > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">+{c.extraBeds} extra bed</Badge>}
                                       </div>
+                                      {c.pricingTiers?.length > 0 && (
+                                        <div className="pt-1 space-y-0.5">
+                                          {c.pricingTiers.map(t => (
+                                            <div key={t.nights} className="flex justify-between text-xs">
+                                              <span className="text-muted-foreground">{t.nights + 1}D/{t.nights}N</span>
+                                              <span className="font-semibold" style={{ color: ACCENT }}>${t.price.toLocaleString()}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

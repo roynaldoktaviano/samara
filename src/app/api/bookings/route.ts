@@ -76,6 +76,8 @@ export async function GET(request: NextRequest) {
         guests: {
           select: {
             id: true, isLead: true, customerId: true,
+            arrivalPickupTime: true, arrivalHotel: true, arrivalFlight: true,
+            departurePickupTime: true, departureHotel: true, departureFlight: true,
             customer: { select: { name: true } },
             cabin:    { select: { id: true, name: true } },
           },

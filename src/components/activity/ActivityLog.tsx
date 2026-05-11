@@ -64,7 +64,7 @@ export default function ActivityLog() {
   const [filterTo,     setFilterTo]     = useState('')
   const [search,       setSearch]       = useState('')
 
-  const LIMIT = 50
+  const LIMIT = 10
 
   const fetchLogs = useCallback(async (p = 1) => {
     setLoading(true)
@@ -274,24 +274,56 @@ export default function ActivityLog() {
           <p className="text-muted-foreground text-xs">
             Halaman {page} dari {totalPages} · {total} entri
           </p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              variant="outline" size="icon" className="h-8 w-8"
+              disabled={page <= 1}
+              onClick={() => { setPage(1); fetchLogs(1) }}
+            >
+              <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
+            </Button>
+            <Button
+              variant="outline" size="icon" className="h-8 w-8"
               disabled={page <= 1}
               onClick={() => { setPage(p => p - 1); fetchLogs(page - 1) }}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+              .reduce<(number | '...')[]>((acc, p, i, arr) => {
+                if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push('...')
+                acc.push(p)
+                return acc
+              }, [])
+              .map((p, i) =>
+                p === '...' ? (
+                  <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-xs">…</span>
+                ) : (
+                  <Button
+                    key={p}
+                    variant={page === p ? 'default' : 'outline'}
+                    size="icon" className="h-8 w-8 text-xs"
+                    style={page === p ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e' } : {}}
+                    onClick={() => { setPage(p as number); fetchLogs(p as number) }}
+                  >
+                    {p}
+                  </Button>
+                )
+              )}
             <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              variant="outline" size="icon" className="h-8 w-8"
               disabled={page >= totalPages}
               onClick={() => { setPage(p => p + 1); fetchLogs(page + 1) }}
             >
               <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline" size="icon" className="h-8 w-8"
+              disabled={page >= totalPages}
+              onClick={() => { setPage(totalPages); fetchLogs(totalPages) }}
+            >
+              <ChevronRight className="h-3 w-3" /><ChevronRight className="h-3 w-3 -ml-2" />
             </Button>
           </div>
         </div>

@@ -34,7 +34,7 @@ const navigationItems: NavItem[] = [
   { id: 'calendar',    label: 'Dashboard',   icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING'] },
   { id: 'yachts',      label: 'Yachts',      icon: Anchor,          roles: ['ADMIN'] },
   { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES'] },
-  { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'SALES', 'FINANCE'] },
+  { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'dashboard',   label: 'Statistics',  icon: LayoutDashboard, roles: ['ADMIN', 'FINANCE'] },

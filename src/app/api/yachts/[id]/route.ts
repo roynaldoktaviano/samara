@@ -9,7 +9,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     const { id } = await params
     const yacht = await db.yacht.findUnique({
       where: { id },
-      include: { cabins: { orderBy: { name: 'asc' } } },
+      include: { cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } } },
     })
     if (!yacht) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(yacht)
@@ -30,12 +30,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Rooms with a name are upserted; existing cabins with no matching entry are left alone
-    const validRooms: { id?: string; name: string; deck?: string; bedType?: string; capacity: number; price: number; extraBeds: number }[] =
-      (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
+    type RoomPayload = {
+      id?: string; name: string; deck?: string; bedType?: string
+      capacity?: number; price?: number; extraBeds?: number
+      pricingTiers?: { nights: number; price: number }[]
+    }
+    const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
 
     const yacht = await db.$transaction(async (tx) => {
-      // Update base yacht info
       const updated = await tx.yacht.update({
         where: { id },
         data: {
@@ -52,8 +54,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         },
       })
 
-      // Upsert cabins: update existing by id, create new ones
       for (const r of validRooms) {
+        const tiers = (r.pricingTiers ?? []).filter(t => t.price > 0)
         if (r.id) {
           await tx.cabin.update({
             where: { id: r.id },
@@ -66,8 +68,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
             },
           })
+          // replace all pricing tiers for this cabin
+          await tx.cabinPricingTier.deleteMany({ where: { cabinId: r.id } })
+          if (tiers.length > 0) {
+            await tx.cabinPricingTier.createMany({
+              data: tiers.map(t => ({ cabinId: r.id!, nights: t.nights, price: t.price })),
+            })
+          }
         } else {
-          await tx.cabin.create({
+          const newCabin = await tx.cabin.create({
             data: {
               yachtId: id,
               name: r.name,
@@ -78,6 +87,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
             },
           })
+          if (tiers.length > 0) {
+            await tx.cabinPricingTier.createMany({
+              data: tiers.map(t => ({ cabinId: newCabin.id, nights: t.nights, price: t.price })),
+            })
+          }
         }
       }
 
@@ -86,7 +100,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const result = await db.yacht.findUnique({
       where: { id: yacht.id },
-      include: { cabins: { orderBy: { name: 'asc' } }, _count: { select: { bookings: true, crew: true } } },
+      include: {
+        cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } },
+        _count: { select: { bookings: true, crew: true } },
+      },
     })
     logActivity({
       userId:   session?.user?.id   ?? '',

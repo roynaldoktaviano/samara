@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
-  CreditCard, Receipt, Upload, ImageIcon, Trash2,
+  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2,
 } from 'lucide-react'
 import { BookingWizard } from './BookingWizard'
 
@@ -42,7 +42,12 @@ interface BookingRecord {
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
   agent?: { id: string; name: string; company?: string; commission?: number }
-  guests: Array<{ id: string; isLead: boolean; customerId: string; customer?: { name: string }; cabin?: { name: string } }>
+  guests: Array<{
+    id: string; isLead: boolean; customerId: string
+    customer?: { name: string }; cabin?: { name: string }
+    arrivalPickupTime?: string | null; arrivalHotel?: string | null; arrivalFlight?: string | null
+    departurePickupTime?: string | null; departureHotel?: string | null; departureFlight?: string | null
+  }>
 }
 
 interface PaymentRecord {
@@ -134,6 +139,10 @@ export default function Bookings() {
   const [editDepDue,   setEditDepDue]  = useState('')
   const [editFinalDue, setEditFinalDue]= useState('')
   const [editNotes,    setEditNotes]   = useState('')
+  const [guestTravel,  setGuestTravel] = useState<Record<string, {
+    arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
+    departurePickupTime: string; departureHotel: string; departureFlight: string
+  }>>({})
 
   /* payment invoice state */
   const [paymentBooking, setPaymentBooking] = useState<BookingRecord | null>(null)
@@ -147,6 +156,7 @@ export default function Bookings() {
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
   const [proofPreview,   setProofPreview]   = useState<string | null>(null)
   const [proofUploading, setProofUploading] = useState(false)
+  const [proofFetching,  setProofFetching]  = useState(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
 
   /* payments list (for payment column context) */
@@ -185,21 +195,42 @@ export default function Bookings() {
     setEditDepDue(fmtDateInput(b.depositDueDate))
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
+    const travel: typeof guestTravel = {}
+    b.guests.forEach(g => {
+      travel[g.id] = {
+        arrivalPickupTime:   g.arrivalPickupTime   ?? '',
+        arrivalHotel:        g.arrivalHotel        ?? '',
+        arrivalFlight:       g.arrivalFlight       ?? '',
+        departurePickupTime: g.departurePickupTime ?? '',
+        departureHotel:      g.departureHotel      ?? '',
+        departureFlight:     g.departureFlight     ?? '',
+      }
+    })
+    setGuestTravel(travel)
   }
   const saveEdit = async () => {
     if (!editBooking) return
     setEditSaving(true)
     try {
-      const res = await fetch(`/api/bookings/${editBooking.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
-          discount: editDiscount, depositDueDate: editDepDue || null,
-          finalDueDate: editFinalDue || null, notes: editNotes,
+      const [bookingRes] = await Promise.all([
+        fetch(`/api/bookings/${editBooking.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
+            discount: editDiscount, depositDueDate: editDepDue || null,
+            finalDueDate: editFinalDue || null, notes: editNotes,
+          }),
         }),
-      })
-      if (res.ok) { await fetchBookings(); setEditBooking(null) }
+        ...Object.entries(guestTravel).map(([guestId, travel]) =>
+          fetch(`/api/guests/${guestId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(travel),
+          })
+        ),
+      ])
+      if (bookingRes.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
     finally { setEditSaving(false) }
   }
@@ -255,6 +286,7 @@ export default function Bookings() {
     setProofPayment(p)
     setProofPreview(null)
     if (p.hasProof) {
+      setProofFetching(true)
       try {
         const res = await fetch(`/api/payments/${p.id}`)
         if (res.ok) {
@@ -262,6 +294,7 @@ export default function Bookings() {
           setProofPreview(detail.proofOfTransfer ?? null)
         }
       } catch (e) { console.error(e) }
+      finally { setProofFetching(false) }
     }
   }
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -729,10 +762,15 @@ export default function Bookings() {
               </div>
 
               <div
-                className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors min-h-36 overflow-hidden relative"
-                onClick={() => proofInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden relative ${proofFetching ? 'cursor-default' : 'cursor-pointer hover:border-primary/50'}`}
+                onClick={() => { if (!proofFetching) proofInputRef.current?.click() }}
               >
-                {proofPreview ? (
+                {proofFetching ? (
+                  <div className="flex flex-col items-center gap-2.5 py-8 text-muted-foreground">
+                    <Loader2 className="h-8 w-8 animate-spin opacity-40" />
+                    <p className="text-sm">Memeriksa bukti transfer...</p>
+                  </div>
+                ) : proofPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
                 ) : (
@@ -759,7 +797,7 @@ export default function Bookings() {
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview(null) }}>Cancel</Button>
-                <Button disabled={!proofPreview || proofUploading}
+                <Button disabled={!proofPreview || proofUploading || proofFetching}
                   onClick={saveProof}
                   style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
                   {proofUploading ? 'Uploading…' : 'Save Proof'}
@@ -802,6 +840,56 @@ export default function Bookings() {
                   ))}
                 </div>
               </div>
+
+              {/* ── Guest Travel Details ── */}
+              {editBooking.guests.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Guest Travel Details</p>
+                  {editBooking.guests.map(g => {
+                    const t = guestTravel[g.id] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
+                    const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
+                      setGuestTravel(prev => ({ ...prev, [g.id]: { ...t, [k]: e.target.value } }))
+                    return (
+                      <div key={g.id} className="rounded-lg border p-3 space-y-2.5">
+                        <p className="text-xs font-semibold">{g.customer?.name ?? '—'}{g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                          <div className="space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1a5f6e]">Arrival</p>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                              <Input value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} placeholder="e.g. 12 Jul, 09:00" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                              <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                              <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-7 text-xs" />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1a5f6e]">Departure</p>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                              <Input value={t.departurePickupTime} onChange={setT('departurePickupTime')} placeholder="e.g. 15 Jul, 14:00" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                              <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                              <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-7 text-xs" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">

@@ -59,14 +59,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       }
     })
 
-    const bookedCabins = cabins.filter(c => c.isFull).length
-    const totalCabins  = cabins.length
+    const bookedCabins    = cabins.filter(c => c.isFull).length
+    const totalCabins     = cabins.length
+    const spotsAvailable  = Math.max(0, totalCabins - bookedCabins)
+
+    // Auto-compute effective status (same logic as list route)
+    let effectiveStatus = trip.status
+    if (trip.status !== 'cancelled') {
+      if (new Date() >= new Date(trip.startDate)) effectiveStatus = 'closed'
+      else if (spotsAvailable === 0)              effectiveStatus = 'full'
+      else                                        effectiveStatus = 'open'
+    }
 
     return NextResponse.json({
       ...trip,
+      status: effectiveStatus,
       cabins,
       spotsBooked: bookedCabins,
-      spotsAvailable: Math.max(0, totalCabins - bookedCabins),
+      spotsAvailable,
     })
   } catch (error) {
     console.error('Error fetching open trip detail:', error)

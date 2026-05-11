@@ -158,12 +158,14 @@ function MonthGrid({
     ))
 
     openTrips.forEach(t => {
-      const isFull = t.spotsAvailable === 0
-      const otColor = isFull ? '#ef4444' : '#22c55e'
+      const isClosed = t.status === 'closed'
+      const isFull   = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
+      const otColor  = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const tooltip  = isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
       addSegs(
         t.id, t.title, otColor, true, isFull,
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
-        `[Open Trip] ${t.title} · ${t.yacht.name} — ${isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`}`,
+        `[Open Trip] ${t.title} · ${t.yacht.name} — ${tooltip}`,
         undefined, t,
       )
     })
@@ -326,7 +328,7 @@ function MonthGrid({
                           overflow: 'hidden',
                           alignSelf: 'flex-start',
                         }}>
-                          {/* Row 1: Title + Yacht + Days */}
+                          {/* Row 1: Title + Yacht + Days + Status badge */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                             <span style={{
                               color: '#111827', fontSize: 11, fontWeight: 700,
@@ -341,6 +343,16 @@ function MonthGrid({
                             <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
                               {days}D/{nights}N
                             </span>
+                            {ot.status === 'closed' && (
+                              <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', backgroundColor: '#64748b', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
+                                CLOSED
+                              </span>
+                            )}
+                            {ot.status === 'full' && (
+                              <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', backgroundColor: '#ef4444', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
+                                FULL
+                              </span>
+                            )}
                           </div>
                           {/* Row 2: Per-cabin dots */}
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
@@ -569,12 +581,18 @@ export default function CalendarView() {
       await Promise.all([
         fetchBookings(),
         fetchOpenTrips(),
-        fetch('/api/yachts').then(r => r.json()).then((d: any[]) =>
-          setYachts(d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })))),
+        fetch('/api/yachts').then(r => r.json()).then((d: any) =>
+          setYachts(Array.isArray(d) ? d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })) : [])),
       ])
       setLoading(false)
     }
     load()
+  }, [fetchBookings, fetchOpenTrips])
+
+  useEffect(() => {
+    const handler = () => { fetchBookings(); fetchOpenTrips() }
+    window.addEventListener('booking-created', handler)
+    return () => window.removeEventListener('booking-created', handler)
   }, [fetchBookings, fetchOpenTrips])
 
   const navigate = (dir: 'prev' | 'next') =>
@@ -824,6 +842,10 @@ export default function CalendarView() {
                 <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#ef4444'), outline: '1.5px solid #ef4444', outlineOffset: -1 }} />
                 <span className="text-[10px] text-muted-foreground">Open Trip (penuh)</span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#94a3b8'), outline: '1.5px solid #94a3b8', outlineOffset: -1 }} />
+                <span className="text-[10px] text-muted-foreground">Open Trip (closed)</span>
+              </div>
             </div>
           </div>
 
@@ -1041,12 +1063,13 @@ export default function CalendarView() {
       {/* ── Booking Detail Dialog ── */}
       <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) setIsBookingEditing(false) }}>
         <DialogContent className="sm:max-w-2xl">
+          <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
             <>
               <DialogHeader>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <DialogTitle className="text-xl">{selectedBooking.yachtName}</DialogTitle>
+                    <p className="text-xl font-semibold">{selectedBooking.yachtName}</p>
                     <DialogDescription>{selectedBooking.bookingCode} · {selectedBooking.customerName}</DialogDescription>
                   </div>
                   {!isBookingEditing && (
@@ -1185,75 +1208,97 @@ export default function CalendarView() {
               {/* ── View mode ── */}
               {!isOtEditing ? (
                 <>
-                  <div className="grid grid-cols-4 gap-3">
-                    {[
-                      { label: 'Total Cabins', val: otDetail.cabins?.length ?? 0, color: '#64748b' },
-                      { label: 'Available',    val: otDetail.cabins?.filter((c: any) => !c.isFull).length ?? 0, color: '#22c55e' },
-                      { label: 'Menunggu DP',  val: otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus === 'pending').length ?? 0, color: '#f59e0b' },
-                      { label: 'DP Lunas',     val: otDetail.cabins?.filter((c: any) => c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0, color: '#ef4444' },
-                    ].map(s => (
-                      <div key={s.label} className="rounded-lg border p-3 text-center">
-                        <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">{s.label}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Cabin Availability</p>
-                    {/* Legend */}
-                    <div className="flex items-center gap-3 mb-2.5">
-                      {[
-                        { color: 'bg-green-500', label: 'Available' },
-                        { color: 'bg-yellow-400', label: 'Menunggu DP' },
-                        { color: 'bg-red-500', label: 'DP Lunas' },
-                      ].map(l => (
-                        <div key={l.label} className="flex items-center gap-1.5">
-                          <span className={`w-2.5 h-2.5 rounded-full ${l.color} shrink-0`} />
-                          <span className="text-[10px] text-muted-foreground">{l.label}</span>
+                  {/* ── Capacity bar ── */}
+                  {(() => {
+                    const total    = otDetail.cabins?.length ?? 0
+                    const paid     = otDetail.cabins?.filter((c: any) => c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0
+                    const pending  = otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus === 'pending').length ?? 0
+                    const avail    = total - paid - pending
+                    const paidPct  = total ? (paid    / total) * 100 : 0
+                    const pendPct  = total ? (pending / total) * 100 : 0
+                    const availPct = total ? (avail   / total) * 100 : 100
+                    return (
+                      <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+                        {/* Numbers row */}
+                        <div className="grid grid-cols-4 divide-x text-center">
+                          {[
+                            { label: 'Total',      val: total,   color: 'text-foreground',     bg: '' },
+                            { label: 'Available',  val: avail,   color: 'text-emerald-600',    bg: '' },
+                            { label: 'Waiting for Payment',val: pending, color: 'text-amber-500',      bg: '' },
+                            { label: 'Booked',   val: paid,    color: 'text-red-500',        bg: '' },
+                          ].map(s => (
+                            <div key={s.label} className="px-3">
+                              <div className={`text-2xl font-bold ${s.color}`}>{s.val}</div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{s.label}</div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                        {/* Progress bar */}
+                        <div className="h-2.5 rounded-full overflow-hidden bg-muted flex">
+                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"    style={{ width: `${paidPct}%` }} />}
+                          {pending > 0 && <div className="h-full bg-amber-400 transition-all"  style={{ width: `${pendPct}%` }} />}
+                          {avail   > 0 && <div className="h-full bg-emerald-400 transition-all"style={{ width: `${availPct}%` }} />}
+                        </div>
+                        {/* Legend */}
+                        <div className="flex items-center gap-4">
+                          {[
+                            { dot: 'bg-emerald-400', label: 'Available' },
+                            { dot: 'bg-amber-400',   label: 'Waiting for Payment' },
+                            { dot: 'bg-red-400',     label: 'Booked' },
+                          ].map(l => (
+                            <div key={l.label} className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full ${l.dot} shrink-0`} />
+                              <span className="text-[10px] text-muted-foreground">{l.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* ── Cabin list ── */}
+                  <div className="rounded-xl border overflow-hidden">
+                    <div className="bg-muted/40 px-4 py-2 border-b">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabin Details</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="divide-y">
                       {otDetail.cabins?.map((c: any) => {
                         const isPaid    = c.isFull && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
                         const isPending = c.isFull && !isPaid
-                        const cardCls   = isPaid    ? 'bg-red-50 border-red-200'
-                                        : isPending ? 'bg-yellow-50 border-yellow-200'
-                                        :             'bg-green-50 border-green-200'
-                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700'
-                                        : isPending ? 'bg-yellow-100 text-yellow-700'
-                                        :             'bg-green-100 text-green-700'
-                        const badgeLabel = isPaid    ? 'DP Lunas'
-                                         : isPending ? 'Menunggu DP'
-                                         :             'Available'
+                        const dotCls    = isPaid    ? 'bg-red-400'     : isPending ? 'bg-amber-400'   : 'bg-emerald-400'
+                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700'   : isPending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                        const badgeLabel= isPaid    ? 'Booked'       : isPending ? 'Waiting for Payment'    : 'Available'
                         return (
-                          <div key={c.id} className={cn('rounded-lg border p-3 flex items-start justify-between gap-3', cardCls)}>
+                          <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                            {/* Status dot */}
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
+                            {/* Info */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold text-sm">{c.name}</span>
-                                {c.deck && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.deck}</span>}
+                                {c.deck    && <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-px">{c.deck}</span>}
                                 {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
                               </div>
-                              {c.guests.length > 0 && (
+                              {c.guests?.length > 0 && (
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   {c.guests.map((g: { id: string; name: string }) => (
                                     <button key={g.id} onClick={() => setEditGuestId(g.id)}
-                                      className="text-[10px] bg-white border rounded px-1.5 py-0.5 text-foreground hover:bg-muted hover:border-foreground/30 transition-colors cursor-pointer">
+                                      className="text-[10px] bg-muted border rounded px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
                                       {g.name}
                                     </button>
                                   ))}
                                 </div>
                               )}
                             </div>
-                            <span className={cn('text-[11px] font-semibold rounded-full px-2.5 py-1 shrink-0', badgeCls)}>
+                            {/* Badge */}
+                            <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 shrink-0 whitespace-nowrap', badgeCls)}>
                               {badgeLabel}
                             </span>
                           </div>
                         )
                       })}
                       {(!otDetail.cabins || otDetail.cabins.length === 0) && (
-                        <p className="text-sm text-muted-foreground text-center py-6">No cabins found for this yacht.</p>
+                        <p className="text-sm text-muted-foreground text-center py-8">No cabins found for this yacht.</p>
                       )}
                     </div>
                   </div>
@@ -1299,10 +1344,6 @@ export default function CalendarView() {
                             <SelectItem value="closed">Closed</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Price per Cabin (USD)</Label>
-                        <Input className="h-9" type="number" value={otEditForm.pricePerCabin} onChange={e => setOtEditForm(p => ({ ...p, pricePerCabin: e.target.value }))} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1357,7 +1398,7 @@ export default function CalendarView() {
       <BookingWizard
         open={wizardOpen}
         onOpenChange={v => { setWizardOpen(v); if (!v) setWizardOpenTripId(undefined) }}
-        onSuccess={fetchBookings}
+        onSuccess={() => { fetchBookings(); fetchOpenTrips() }}
         preselectedDate={selectedDate}
         preselectedOpenTripId={wizardOpenTripId}
       />

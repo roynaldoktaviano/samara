@@ -98,14 +98,32 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   if (!trip) notFound()
 
   /* Flatten guests */
-  const guests: Array<{ no: number; name: string; phone: string; email: string; cabin: string; isLead: boolean; bookingCode: string; salesperson: string }> = []
+  type GuestRow = {
+    no: number; name: string; phone: string; email: string; cabin: string
+    isLead: boolean; bookingCode: string; salesperson: string
+    nationality: string; passport: string; passportExpiry: string; dateOfBirth: string
+    arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
+    departurePickupTime: string; departureHotel: string; departureFlight: string
+    emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
+  }
+  const fmtDate = (d: Date | null | undefined) => d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
+  const makeRow = (c: any, bg: any, cabin: string, isLead: boolean, bookingCode: string, salesperson: string): GuestRow => ({
+    no: 0, name: c.name, phone: c.phone ?? '', email: c.email ?? '', cabin, isLead, bookingCode, salesperson,
+    nationality: c.nationality ?? '', passport: c.passport ?? '',
+    passportExpiry: fmtDate(c.passportExpiry), dateOfBirth: fmtDate(c.dateOfBirth),
+    arrivalPickupTime: bg?.arrivalPickupTime ?? '', arrivalHotel: bg?.arrivalHotel ?? '', arrivalFlight: bg?.arrivalFlight ?? '',
+    departurePickupTime: bg?.departurePickupTime ?? '', departureHotel: bg?.departureHotel ?? '', departureFlight: bg?.departureFlight ?? '',
+    emergencyContact: c.emergencyContact ?? '', dietaryRequirements: c.dietaryRequirements ?? '',
+    allergies: c.allergies ?? '', drinkPreferences: c.drinkPreferences ?? '',
+  })
+  const guests: GuestRow[] = []
   let gNo = 1
   trip.bookings.forEach(b => {
     const sales = b.salesperson || b.agent?.name || 'Direct'
     if (b.guests.length > 0) {
-      b.guests.forEach(g => guests.push({ no: gNo++, name: g.customer.name, phone: g.customer.phone ?? '', email: g.customer.email ?? '', cabin: g.cabin?.name ?? '', isLead: g.isLead, bookingCode: b.bookingCode, salesperson: sales }))
+      b.guests.forEach(g => { const r = makeRow(g.customer, g, g.cabin?.name ?? '', g.isLead, b.bookingCode, sales); r.no = gNo++; guests.push(r) })
     } else {
-      guests.push({ no: gNo++, name: b.customer.name, phone: b.customer.phone ?? '', email: b.customer.email ?? '', cabin: '', isLead: true, bookingCode: b.bookingCode, salesperson: sales })
+      const r = makeRow(b.customer, null, '', true, b.bookingCode, sales); r.no = gNo++; guests.push(r)
     }
   })
 
@@ -138,8 +156,16 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         p { margin: 0; }
         ul { margin: 0; }
+        .samara-page {
+          display: flex;
+          flex-direction: column;
+          min-height: 277mm;
+        }
+        .samara-page-body {
+          flex: 1;
+        }
         @media screen {
-          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; }
+          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; min-height: unset; }
           .samara-page:last-child { border-bottom: none; margin-bottom: 0; }
         }
       `}</style>
@@ -150,7 +176,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {page(
         <div className="samara-page">
           <Banner />
-          <div style={{ padding: '16px 32px' }}>
+          <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <p style={{ fontSize: 11, color: '#555', lineHeight: 1.8, marginBottom: 18 }}>
               Please fill in carefully the details in this sheet in order to prepare your departure the best possible way.
             </p>
@@ -179,7 +205,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {page(
         <div className="samara-page">
           <Banner />
-          <div style={{ padding: '16px 32px' }}>
+          <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <p style={{ fontWeight: 700, marginBottom: 14, fontSize: 13 }}>
               <span style={{ color: '#27ae60' }}>*DO</span> and <span style={{ color: '#e74c3c' }}>DONT&apos;S</span> while sailing in Komodo National Park Area
             </p>
@@ -212,7 +238,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {page(
         <div className="samara-page">
           <Banner sub={sub} />
-          <div style={{ padding: '16px 32px' }}>
+          <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>Cruise / Boat / Details:</p>
               <p style={{ fontSize: 12, marginBottom: 1 }}>{dateRange}</p>
@@ -235,8 +261,11 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                     <td style={{ ...td, fontWeight: g.isLead ? 700 : 400 }}>
                       {g.name}{g.isLead && <span style={{ fontSize: 8, color: GOLD, marginLeft: 3 }}>★</span>}
                     </td>
-                    {[...Array(4)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
-                    <td style={td}>&nbsp;</td>
+                    <td style={td}>{g.nationality || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={td}>{g.passport || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={td}>{g.passportExpiry || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={td}>{g.dateOfBirth || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={td}>{g.allergies || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
                   </tr>
                 ))}
@@ -258,7 +287,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {guests.map((g) => page(
         <div className="samara-page">
           <Banner sub={sub} />
-          <div style={{ padding: '14px 32px' }}>
+          <div className="samara-page-body" style={{ padding: '14px 32px' }}>
 
 
             {/* Identity strip */}
@@ -280,46 +309,52 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             {/* Personal Details — 4 col */}
             <Sec title="Personal Details">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
-                <Field label="Citizenship / Nationality" />
-                <Field label="Passport / ID Number" />
-                <Field label="Passport Expiry Date" />
-                <Field label="Date of Birth (DOB)" />
+                <Field label="Citizenship / Nationality" value={g.nationality || undefined} />
+                <Field label="Passport / ID Number" value={g.passport || undefined} />
+                <Field label="Passport Expiry Date" value={g.passportExpiry || undefined} />
+                <Field label="Date of Birth (DOB)" value={g.dateOfBirth || undefined} />
               </div>
             </Sec>
 
             {/* Travel + Contact — 3 col */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
               <Sec title="Arrival Details" last>
-                <Field label="Pick-up Date & Time" />
-                <Field label="Hotel / Airport" />
-                <Field label="Flight Number" />
+                <Field label="Pick-up Date & Time" value={g.arrivalPickupTime || undefined} />
+                <Field label="Hotel / Airport" value={g.arrivalHotel || undefined} />
+                <Field label="Flight Number" value={g.arrivalFlight || undefined} />
               </Sec>
               <Sec title="Departure Details" last>
-                <Field label="Pick-up Date & Time" />
-                <Field label="Hotel / Airport" />
-                <Field label="Flight Number" />
+                <Field label="Pick-up Date & Time" value={g.departurePickupTime || undefined} />
+                <Field label="Hotel / Airport" value={g.departureHotel || undefined} />
+                <Field label="Flight Number" value={g.departureFlight || undefined} />
               </Sec>
               <Sec title="Contact Person" accent last>
                 <Field label="Name" value={g.name} />
                 <Field label="Phone Number" value={g.phone || undefined} />
                 <Field label="Email Address" value={g.email || undefined} />
-                <Field label="Emergency Contact" />
+                <Field label="Emergency Contact" value={g.emergencyContact || undefined} />
               </Sec>
             </div>
 
             {/* Food + Drink — 2 col */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <Sec title="Food Preferences" last>
-                <Box height={54} />
+                {g.dietaryRequirements
+                  ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{g.dietaryRequirements}</div>
+                  : <Box height={54} />}
               </Sec>
               <Sec title="Drink Preferences" last>
-                <Box height={54} />
+                {g.drinkPreferences
+                  ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{g.drinkPreferences}</div>
+                  : <Box height={54} />}
               </Sec>
             </div>
 
             {/* Allergies */}
             <Sec title="Food Allergies">
-              <Box height={46} />
+              {g.allergies
+                ? <div style={{ fontSize: 12, color: DARK, minHeight: 46, lineHeight: 1.6 }}>{g.allergies}</div>
+                : <Box height={46} />}
             </Sec>
 
             {/* Extra Services */}

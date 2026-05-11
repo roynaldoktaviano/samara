@@ -419,15 +419,9 @@ export default function OpenTrips() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Destination <span className="text-destructive">*</span></Label>
-                  <Input placeholder="e.g. Komodo National Park" value={form.destination} onChange={e => set('destination', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Price per Cabin (USD)</Label>
-                  <Input type="number" placeholder="0" min="0" value={form.pricePerCabin} onChange={e => set('pricePerCabin', e.target.value)} />
-                </div>
+              <div className="space-y-1.5">
+                <Label>Destination <span className="text-destructive">*</span></Label>
+                <Input placeholder="e.g. Komodo National Park" value={form.destination} onChange={e => set('destination', e.target.value)} />
               </div>
 
               <div className="space-y-1.5">

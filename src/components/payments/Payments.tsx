@@ -30,6 +30,7 @@ interface Payment {
   status: string
   notes: string | null
   proofOfTransfer: string | null
+  hasProof?: boolean
   submittedByName: string | null
   confirmedBy: string | null
   confirmedAt: string | null
@@ -77,6 +78,7 @@ export default function Payments() {
   const [rejectNotes, setRejectNotes]   = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [proofPreview, setProofPreview] = useState<string | null>(null)
+  const [proofLoading, setProofLoading] = useState(false)
 
   const fetchPayments = useCallback(async () => {
     setLoading(true)
@@ -141,31 +143,62 @@ export default function Payments() {
   const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selected || !e.target.files?.[0]) return
     const file = e.target.files[0]
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const base64 = reader.result as string
-      try {
-        const res = await fetch(`/api/payments/${selected.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ proofOfTransfer: base64 }),
-        })
-        if (!res.ok) throw new Error()
-        toast.success('Bukti transfer berhasil diupload')
-        setSelected(prev => prev ? { ...prev, proofOfTransfer: base64 } : prev)
-        fetchPayments()
-      } catch {
-        toast.error('Gagal upload bukti transfer')
-      }
+
+    // Compress image via canvas before uploading (keeps payload under ~1MB)
+    const compressImage = (f: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const img = new Image()
+        const url = URL.createObjectURL(f)
+        img.onload = () => {
+          const MAX = 1200
+          let { width, height } = img
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+            else                { width  = Math.round(width  * MAX / height); height = MAX }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width; canvas.height = height
+          canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+          URL.revokeObjectURL(url)
+          resolve(canvas.toDataURL('image/jpeg', 0.82))
+        }
+        img.onerror = reject
+        img.src = url
+      })
+
+    try {
+      const base64 = await compressImage(file)
+      const res = await fetch(`/api/payments/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proofOfTransfer: base64 }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success('Bukti transfer berhasil diupload')
+      setSelected(prev => prev ? { ...prev, proofOfTransfer: base64, hasProof: true } : prev)
+      fetchPayments()
+    } catch (err) {
+      console.error('Upload proof failed:', err)
+      toast.error('Gagal upload bukti transfer')
     }
-    reader.readAsDataURL(file)
   }
 
-  const openDetail = (p: Payment) => {
+  const openDetail = async (p: Payment) => {
     setSelected(p)
     setShowRejectInput(false)
     setRejectNotes('')
     setProofPreview(null)
+    // Show loading spinner while fetching proof (list API strips base64 for performance)
+    setProofLoading(true)
+    try {
+      const res = await fetch(`/api/payments/${p.id}`)
+      if (res.ok) {
+        const full = await res.json()
+        setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null }) as Payment : prev)
+      }
+    } catch { /* non-critical */ } finally {
+      setProofLoading(false)
+    }
   }
 
   const tripLabel = (p: Payment) =>
@@ -340,7 +373,7 @@ export default function Payments() {
                                 </Button>
                               </>
                             ) : (
-                              !p.proofOfTransfer && (
+                              !p.hasProof && (
                                 <span className="text-[10px] text-amber-600 font-medium">Upload bukti</span>
                               )
                             )}
@@ -495,7 +528,12 @@ export default function Payments() {
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Bukti Transfer
                 </Label>
-                {selected.proofOfTransfer ? (
+                {proofLoading ? (
+                  <div className="mt-2 flex items-center gap-2.5 border-2 border-dashed rounded-md p-3 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    <span className="text-sm">Memeriksa bukti transfer...</span>
+                  </div>
+                ) : selected.proofOfTransfer ? (
                   <div className="mt-2 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />

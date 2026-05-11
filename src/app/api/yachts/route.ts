@@ -14,7 +14,10 @@ export async function GET() {
         hourlyRate: true, dailyRate: true, description: true,
         image: true, status: true, createdAt: true,
         cabins: {
-          select: { id: true, name: true, deck: true, bedType: true, capacity: true, extraBeds: true },
+          select: {
+            id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true,
+            pricingTiers: { select: { nights: true, price: true }, orderBy: { nights: 'asc' } },
+          },
           orderBy: { name: 'asc' },
         },
         _count: { select: { bookings: true, crew: true } },
@@ -38,9 +41,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const validRooms: { name: string; deck?: string; bedType?: string; capacity: number; extraBeds: number }[] =
-      (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
+    type RoomPayload = {
+      name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number
+      pricingTiers?: { nights: number; price: number }[]
+    }
+    const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
 
+    // Step 1: create yacht + cabins (no nested tiers — avoids query-engine cache issues)
     const yacht = await db.yacht.create({
       data: {
         name,
@@ -61,6 +68,7 @@ export async function POST(request: NextRequest) {
                 deck: r.deck || null,
                 bedType: r.bedType || null,
                 capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
+                price: r.price ? parseFloat(String(r.price)) : 0,
                 extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
               })),
             }
@@ -68,6 +76,16 @@ export async function POST(request: NextRequest) {
       },
       include: { cabins: true },
     })
+
+    // Step 2: create pricing tiers for each cabin
+    const tierInserts: { cabinId: string; nights: number; price: number }[] = []
+    yacht.cabins.forEach((cabin, i) => {
+      const tiers = (validRooms[i]?.pricingTiers ?? []).filter(t => t.price > 0)
+      tiers.forEach(t => tierInserts.push({ cabinId: cabin.id, nights: t.nights, price: t.price }))
+    })
+    if (tierInserts.length > 0) {
+      await db.cabinPricingTier.createMany({ data: tierInserts })
+    }
 
     logActivity({
       userId:   session?.user?.id   ?? '',
@@ -77,7 +95,11 @@ export async function POST(request: NextRequest) {
       detail: `Tambah yacht: ${yacht.name}`,
     }).catch(() => {})
 
-    return NextResponse.json(yacht, { status: 201 })
+    const result = await db.yacht.findUnique({
+      where: { id: yacht.id },
+      include: { cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } } },
+    })
+    return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.error('Error creating yacht:', error)
     return NextResponse.json({ error: 'Failed to create yacht' }, { status: 500 })

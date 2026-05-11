@@ -116,6 +116,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, gender, email, phone,
       passport, dateOfBirth, address,
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
+      nationality, passportExpiry, emergencyContact, drinkPreferences,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -127,7 +128,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         name, firstName, lastName, gender, email, phone,
         passport, address, dietaryRequirements, allergies,
         equipmentSizes, operationalNotes,
+        nationality, emergencyContact, drinkPreferences,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
       },
     })
 

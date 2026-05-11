@@ -220,10 +220,13 @@ export default function Guests() {
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             {detailLoading || !detail ? (
-              <div className="space-y-1.5">
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-4 w-32" />
-              </div>
+              <>
+                <DialogTitle className="sr-only">Customer Detail</DialogTitle>
+                <div className="space-y-1.5">
+                  <Skeleton className="h-6 w-48" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              </>
             ) : (
               <div className="flex items-start justify-between">
                 <div>

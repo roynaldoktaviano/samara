@@ -29,7 +29,7 @@ type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string }
-interface CabinOpt   { id: string; name: string; capacity: number; price: number; deck?: string; bedType?: string }
+interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
 interface OpenTripOpt{
   id: string; title: string; description?: string
   yachtId: string; startDate: string; endDate: string
@@ -135,6 +135,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
   const [submitting,setSubmitting]= useState(false)
 
+  /* extra beds per cabin (cabinId → requested count) */
+  const [cabinExtraBeds, setCabinExtraBeds] = useState<Record<string, number>>({})
+
   /* DnD state */
   const [dragGuest,  setDragGuest]  = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -215,9 +218,22 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* auto base price — computed in USD then converted to selected currency */
   useEffect(() => {
     let usdPrice = 0
-    if (tripType === 'OPEN_TRIP') {
-      const assignedCabinCount = new Set(guests.filter(g => g.cabinId).map(g => g.cabinId)).size
-      usdPrice = assignedCabinCount * (selectedOT?.pricePerCabin ?? 0)
+    const ot = openTrips.find(t => t.id === openTripId)
+    if (tripType === 'OPEN_TRIP' && ot) {
+      const nights = Math.max(1, Math.ceil(
+        (new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000
+      ))
+      const assignedCabinIds = [...new Set(guests.filter(g => g.cabinId).map(g => g.cabinId))]
+      const cabinTotal = assignedCabinIds.reduce((sum, id) => {
+        const c = cabins.find(x => x.id === id)
+        if (!c) return sum
+        const tier = c.pricingTiers?.find(t => t.nights === nights)
+        return sum + (tier ? tier.price : c.price * nights)
+      }, 0)
+      // fall back to pricePerCabin if no cabin prices at all
+      usdPrice = cabinTotal > 0
+        ? cabinTotal
+        : assignedCabinIds.length * (ot.pricePerCabin ?? 0)
     } else if (tripType === 'PRIVATE_CHARTER') {
       const y = yachts.find(x => x.id === yachtId)
       if (y && startDate && endDate) {
@@ -250,6 +266,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
+    setCabinExtraBeds({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
   }, [open])
@@ -277,6 +294,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
+
+  /* trip nights for open trip (endDate - startDate in full days) */
+  const tripNights = useMemo(() => {
+    if (!selectedOT) return 0
+    return Math.max(1, Math.ceil(
+      (new Date(selectedOT.endDate).getTime() - new Date(selectedOT.startDate).getTime()) / 86400000
+    ))
+  }, [selectedOT])
   const filteredCusts = customers.filter(c =>
     !guests.some(g => g.customerId === c.id) &&
     !bookedCustomerIds.includes(c.id) &&
@@ -378,7 +403,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           depositDueDate: depositDueDate || undefined,
           finalDueDate:   finalDueDate   || undefined,
           crewRequired:  crewReq,
-          notes:         notes || undefined,
+          notes: (() => {
+            const extraLines = Object.entries(cabinExtraBeds)
+              .filter(([, n]) => n > 0)
+              .map(([cid, n]) => `Extra bed ×${n} (${cabins.find(c => c.id === cid)?.name ?? cid})`)
+            const extraNote = extraLines.length ? `[Extra Beds] ${extraLines.join(', ')}` : ''
+            return [notes, extraNote].filter(Boolean).join('\n') || undefined
+          })(),
           guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
           services: services.filter(s => s.name.trim()),
         }),
@@ -391,6 +422,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         return
       }
 
+      window.dispatchEvent(new CustomEvent('booking-created'))
       onSuccess()
       onOpenChange(false)
     } catch (err) {
@@ -634,23 +666,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">Select an available scheduled trip</p>
         {openTripsLoading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="rounded-xl border-2 border-border p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-5 w-14 rounded-full" />
-                    </div>
-                    <Skeleton className="h-3 w-28" />
-                    <Skeleton className="h-3 w-36" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                  <div className="text-right space-y-1.5 shrink-0">
-                    <Skeleton className="h-4 w-24 ml-auto" />
-                    <Skeleton className="h-3 w-20 ml-auto" />
-                  </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-xl border p-4 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-5 w-12 rounded-full" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3 w-28" />
                 </div>
               </div>
             ))}
@@ -660,49 +685,58 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             No open trips available. All trips are either full, closed, or none have been scheduled.
           </div>
         ) : null}
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
           {!openTripsLoading && visibleTrips.map(t => {
-            const selected  = openTripId === t.id
-            const isFull    = t.status === 'full'
+            const selected = openTripId === t.id
+            const isFull   = t.status === 'full'
+            const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
             return (
               <button
                 key={t.id}
                 onClick={() => !isFull && setOTId(t.id)}
                 disabled={isFull}
                 className={cn(
-                  'w-full text-left p-4 rounded-xl border-2 transition-all',
+                  'w-full text-left rounded-xl border transition-all duration-150',
                   isFull
-                    ? 'border-border bg-muted/30 opacity-60 cursor-not-allowed'
-                    : selected ? 'bg-card' : 'border-border bg-card hover:shadow-sm'
+                    ? 'border-border bg-muted/20 opacity-50 cursor-not-allowed'
+                    : selected
+                      ? 'shadow-sm'
+                      : 'border-border bg-card hover:border-foreground/20 hover:shadow-sm'
                 )}
-                style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}08` } : {}}
+                style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}06` } : {}}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{t.title}</span>
-                      {statusBadge(t)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                      <div>🚢 {t.yacht.name}</div>
-                      <div>📅 {fmtDate(t.startDate)} → {fmtDate(t.endDate)}</div>
-                      <div>📍 {t.destination}</div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    {isFull ? (
-                      <div className="text-xs font-semibold text-red-600">No cabins left</div>
-                    ) : (
-                      <>
-                        <div className="font-semibold text-sm" style={{ color: ACCENT }}>
-                          ${t.pricePerCabin.toLocaleString()}/cabin
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {t.spotsAvailable}/{t.maxCapacity} cabins left
-                        </div>
-                        {selected && <Check className="w-4 h-4 ml-auto mt-1" style={{ color: ACCENT }} />}
-                      </>
+                {/* Top row */}
+                <div className="flex items-center justify-between px-4 pt-3.5 pb-2 gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {selected && !isFull && (
+                      <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: ACCENT }}>
+                        <Check className="w-2.5 h-2.5 text-white" />
+                      </div>
                     )}
+                    <span className="font-semibold text-sm truncate">{t.title}</span>
+                    {statusBadge(t)}
+                  </div>
+                  {/* Cabin availability pill */}
+                  {isFull ? (
+                    <span className="text-[10px] font-semibold bg-red-100 text-red-600 rounded-full px-2.5 py-0.5 shrink-0">Sold Out</span>
+                  ) : (
+                    <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded-full px-2.5 py-0.5 shrink-0 whitespace-nowrap">
+                      {t.spotsAvailable}/{t.maxCapacity} cabin tersedia
+                    </span>
+                  )}
+                </div>
+                {/* Info rows */}
+                <div className="px-4 pb-3.5 text-xs text-muted-foreground space-y-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className="opacity-60">🚢</span> {t.yacht.name}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="opacity-60">📅</span>
+                    {fmtDate(t.startDate)} → {fmtDate(t.endDate)}
+                    <span className="text-[10px] bg-muted rounded px-1 py-px">{nights}N</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="opacity-60">📍</span> {t.destination}
                   </div>
                 </div>
               </button>
@@ -896,17 +930,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   const extOcc     = existingCabinOccupancy[c.id] ?? 0
                   const totalOcc   = myOcc + extOcc
 
-                  // 1 cabin = 1 booking for open trips → any external booking = fully blocked
-                  const isFull = tripType === 'OPEN_TRIP'
-                    ? extOcc > 0 || myOcc > 0
-                    : totalOcc >= c.capacity
+                  // For open trips: external booking blocks the whole cabin; local occupancy respects cabin capacity
                   const isBlockedByOther = tripType === 'OPEN_TRIP' && extOcc > 0
-
+                  const isFull = isBlockedByOther || totalOcc >= c.capacity
                   const isOver      = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
-                  const available   = tripType === 'OPEN_TRIP'
-                    ? (isFull ? 0 : 1)
-                    : Math.max(0, c.capacity - totalOcc)
+                  const available   = Math.max(0, c.capacity - totalOcc)
 
                   return (
                     <div
@@ -946,11 +975,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                           {isBlockedByOther ? 'Booked' : isFull ? 'Selected' : `${available} left`}
                         </span>
                       </div>
-                      {c.price > 0 && (
-                        <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>
-                          ${c.price.toLocaleString()}/night
-                        </p>
-                      )}
+                      {(() => {
+                        if (tripType === 'OPEN_TRIP' && tripNights > 0) {
+                          const tier = c.pricingTiers?.find(t => t.nights === tripNights)
+                          const display = tier ? tier.price : (c.price > 0 ? c.price * tripNights : 0)
+                          if (!display) return null
+                          return (
+                            <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>
+                              ${display.toLocaleString()} ({tripNights}N{tier ? '' : ' est.'})
+                            </p>
+                          )
+                        }
+                        return c.price > 0
+                          ? <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>${c.price.toLocaleString()}/night</p>
+                          : null
+                      })()}
                       {/* occupancy bar */}
                       <div className="w-full h-1 rounded-full bg-muted my-1.5 overflow-hidden">
                         <div
@@ -972,6 +1011,26 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                           <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
                         )}
                       </div>
+                      {/* Extra beds stepper — only when cabin has guests and extraBeds available */}
+                      {!isBlockedByOther && cabinGuests.length > 0 && c.extraBeds > 0 && (
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-dashed border-border">
+                          <span className="text-[10px] text-muted-foreground font-medium">Extra bed</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setCabinExtraBeds(prev => ({ ...prev, [c.id]: Math.max(0, (prev[c.id] ?? 0) - 1) })) }}
+                              className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
+                            >−</button>
+                            <span className="text-[11px] font-semibold w-4 text-center">{cabinExtraBeds[c.id] ?? 0}</span>
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setCabinExtraBeds(prev => ({ ...prev, [c.id]: Math.min(c.extraBeds, (prev[c.id] ?? 0) + 1) })) }}
+                              className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
+                            >+</button>
+                            <span className="text-[10px] text-muted-foreground">/ {c.extraBeds}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1100,7 +1159,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               {(tripType === 'OPEN_TRIP' || selectedYacht) && (
                 <p className="text-xs text-muted-foreground">
                   {tripType === 'OPEN_TRIP'
-                    ? 'Auto-calculated from assigned cabin prices'
+                    ? `Cabin price/night × ${tripNights} night${tripNights !== 1 ? 's' : ''} per assigned cabin`
                     : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
                 </p>
               )}

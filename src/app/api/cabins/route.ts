@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
 
     const existingCabins = await db.cabin.findMany({
       where: { yachtId },
+      include: { pricingTiers: { orderBy: { nights: 'asc' } } },
       orderBy: { name: 'asc' },
     })
 
@@ -35,12 +36,8 @@ export async function GET(request: NextRequest) {
     const created = await db.$transaction(
       Array.from({ length: count }, (_, i) =>
         db.cabin.create({
-          data: {
-            yachtId,
-            name: `Cabin ${i + 1}`,
-            capacity: 2,
-            price: 0,
-          },
+          data: { yachtId, name: `Cabin ${i + 1}`, capacity: 2, price: 0 },
+          include: { pricingTiers: true },
         })
       )
     )

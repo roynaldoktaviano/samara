@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const from   = searchParams.get('from')
   const to     = searchParams.get('to')
   const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
-  const limit  = 50
+  const limit  = 10
 
   const where: Record<string, unknown> = {}
   if (userId) where.userId = userId
