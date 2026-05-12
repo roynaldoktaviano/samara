@@ -24,6 +24,7 @@ interface Payment {
   invoiceNumber: string
   bookingId: string
   paymentType: string
+  paymentMethod: string | null
   amount: number
   previouslyPaid: number
   currency: string
@@ -284,6 +285,7 @@ export default function Payments() {
                   <TableHead>Booking</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Jumlah</TableHead>
+                  <TableHead>Metode</TableHead>
                   <TableHead>Kapal / Trip</TableHead>
                   <TableHead>Dikirim Oleh</TableHead>
                   <TableHead>Tanggal</TableHead>
@@ -296,14 +298,14 @@ export default function Payments() {
                 {loading ? (
                   [...Array(5)].map((_, i) => (
                     <TableRow key={i}>
-                      {[...Array(10)].map((_, j) => (
+                      {[...Array(11)].map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-3.5 w-full" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-12 text-center text-muted-foreground text-sm">
+                    <TableCell colSpan={11} className="py-12 text-center text-muted-foreground text-sm">
                       Tidak ada payment ditemukan
                     </TableCell>
                   </TableRow>
@@ -328,6 +330,9 @@ export default function Payments() {
                       <TableCell className="font-medium">{p.booking.customer.name}</TableCell>
                       <TableCell className="font-semibold">
                         ${fmt(p.amount)}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {p.paymentMethod ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm">
                         <div className="font-medium leading-tight">
@@ -443,6 +448,18 @@ export default function Payments() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Payment type + method chips */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#1a5f6e]/10 text-[#1a5f6e] border border-[#1a5f6e]/20">
+                  {selected.paymentType}
+                </span>
+                {selected.paymentMethod && (
+                  <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-muted text-foreground border">
+                    {selected.paymentMethod}
+                  </span>
+                )}
+              </div>
 
               {/* Booking info */}
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">

@@ -22,6 +22,7 @@ export async function GET(_: NextRequest) {
         bookingId: true,
         invoiceNumber: true,
         paymentType: true,
+        paymentMethod: true,
         previouslyPaid: true,
         amount: true,
         currency: true,
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     const body = await request.json()
-    const { bookingId, amount, currency, notes } = body
+    const { bookingId, amount, currency, notes, paymentMethod } = body
 
     if (!bookingId || !amount) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
         bookingId,
         invoiceNumber,
         paymentType,
+        paymentMethod: paymentMethod || null,
         previouslyPaid,
         amount: parseFloat(amount),
         currency: currency || 'USD',

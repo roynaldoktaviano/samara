@@ -7,6 +7,7 @@ interface PaymentDetail {
   id: string
   invoiceNumber: string
   paymentType: string
+  paymentMethod?: string | null
   previouslyPaid: number
   amount: number
   currency: string
@@ -313,6 +314,14 @@ export default function InvoicePage() {
             </div>
           </div>
         </div>
+
+        {/* Payment Method */}
+        {payment.paymentMethod && (
+          <div style={{ margin: '0 22px 12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 5, flexShrink: 0 }}>
+            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#166534', textTransform: 'uppercase', marginBottom: 3 }}>Metode Pembayaran</div>
+            <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600 }}>{payment.paymentMethod}</div>
+          </div>
+        )}
 
         {/* Notes */}
         {payment.notes && (

@@ -145,12 +145,13 @@ export default function Bookings() {
   }>>({})
 
   /* payment invoice state */
-  const [paymentBooking, setPaymentBooking] = useState<BookingRecord | null>(null)
-  const [paymentAmount,  setPaymentAmount]  = useState('')
-  const [paymentNotes,   setPaymentNotes]   = useState('')
-  const [paymentSaving,  setPaymentSaving]  = useState(false)
-  const [payCurrency,    setPayCurrency]    = useState('USD')
-  const [payAmtFocused,  setPayAmtFocused]  = useState(false)
+  const [paymentBooking,  setPaymentBooking]  = useState<BookingRecord | null>(null)
+  const [paymentAmount,   setPaymentAmount]   = useState('')
+  const [paymentNotes,    setPaymentNotes]    = useState('')
+  const [paymentMethod,   setPaymentMethod]   = useState('Transfer Bank')
+  const [paymentSaving,   setPaymentSaving]   = useState(false)
+  const [payCurrency,     setPayCurrency]     = useState('USD')
+  const [payAmtFocused,   setPayAmtFocused]   = useState(false)
 
   /* proof upload */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -259,6 +260,7 @@ export default function Bookings() {
       setPaymentAmount('')
     }
     setPaymentNotes('')
+    setPaymentMethod('Transfer Bank')
   }
   const submitPayment = async () => {
     if (!paymentBooking || !paymentAmount) return
@@ -270,7 +272,7 @@ export default function Bookings() {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: paymentBooking.id, amount: amtUSD, currency: 'USD', notes: paymentNotes }),
+        body: JSON.stringify({ bookingId: paymentBooking.id, amount: amtUSD, currency: 'USD', notes: paymentNotes, paymentMethod }),
       })
       if (res.ok) {
         setPaymentBooking(null)
@@ -710,8 +712,27 @@ export default function Bookings() {
                     </p>
                   </div>
                   <div className="space-y-1.5">
+                    <Label>Metode Pembayaran <span className="text-red-500">*</span></Label>
+                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder="Pilih metode..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
+                        <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
+                        <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
+                        <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
+                        <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                        <SelectItem value="Wire Transfer">Wire Transfer (Internasional)</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Credit Card">Credit Card</SelectItem>
+                        <SelectItem value="PayPal">PayPal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
-                    <Textarea placeholder="e.g. Bank transfer via BCA, ref #123456"
+                    <Textarea placeholder="e.g. Ref #123456, atas nama PT. ABC..."
                       value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
                       rows={2} className="text-sm resize-none" />
                   </div>

@@ -269,6 +269,7 @@ model Payment {
   bookingId         String
   invoiceNumber     String    @unique
   paymentType       String    @default("DP")
+  paymentMethod     String?
   amount            Float
   previouslyPaid    Float     @default(0)
   currency          String    @default("USD")
