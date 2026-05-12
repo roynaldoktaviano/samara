@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { usePageTransition } from "@/components/PageTransitionOverlay";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { trigger } = usePageTransition();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,14 +24,13 @@ export default function LoginPage() {
       redirect: false,
     });
 
-    setLoading(false);
-
     if (result?.error) {
+      setLoading(false);
       setError("Email atau password salah. Silakan coba lagi.");
       return;
     }
 
-    window.location.href = "/";
+    trigger(() => { window.location.href = "/"; });
   };
 
   return (

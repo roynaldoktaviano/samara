@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
@@ -135,6 +136,7 @@ const pageVariants = {
 export default function Home() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
   const [showUserMenu, setShowUserMenu] = useState(false)
 
@@ -400,7 +402,7 @@ export default function Home() {
                     className="absolute bottom-full left-0 right-0 mb-1 rounded-md border bg-background shadow-md z-50"
                   >
                     <button
-                      onClick={() => signOut({ callbackUrl: '/login' })}
+                      onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
                       className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-md"
                     >
                       <LogOut className="h-4 w-4" />

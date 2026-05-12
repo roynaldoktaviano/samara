@@ -118,5 +118,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    animation: page-enter 0.35s ease-out;
   }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
