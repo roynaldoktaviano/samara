@@ -249,8 +249,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'FOOD ALLERGIES', 'SALES'].map((h, i) => (
-                    <th key={h} style={{ ...th, borderRight: i === 7 ? 'none' : undefined }}>{h}</th>
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES'].map((h, i) => (
+                    <th key={h} style={{ ...th, borderRight: i === 8 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}) }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -265,19 +265,37 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                     <td style={td}>{g.passport || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.passportExpiry || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.dateOfBirth || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
-                    <td style={td}>{g.allergies || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.cabin || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    <td style={{ ...td, textAlign: 'center', fontWeight: 700, fontSize: 10, color: g.allergies ? '#c0392b' : '#27ae60' }}>
+                      {g.allergies ? 'YES' : 'NO'}
+                    </td>
                     <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
                   </tr>
                 ))}
                 {Array.from({ length: BLANK }).map((_, i) => (
                   <tr key={`b${i}`}>
                     <td style={{ ...td, textAlign: 'center', color: '#ccc', width: 28 }}>{guests.length + i + 1}</td>
-                    {[...Array(5)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
+                    {[...Array(6)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
                     <td style={{ ...td, borderRight: 'none' }}>&nbsp;</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
+            {/* Allergy details */}
+            {guests.some(g => g.allergies) && (
+              <div style={{ marginTop: 12, padding: '8px 12px', border: `1px solid #f5c6c6`, borderRadius: 4, background: '#fff8f8' }}>
+                <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#c0392b', marginBottom: 6 }}>
+                  Allergy Notes
+                </p>
+                {guests.filter(g => g.allergies).map(g => (
+                  <p key={g.no} style={{ fontSize: 10, marginBottom: 3, color: DARK }}>
+                    <span style={{ fontWeight: 700 }}>{g.no}. {g.name}</span>
+                    <span style={{ color: '#555' }}> — {g.allergies}</span>
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
           <Footer />
         </div>

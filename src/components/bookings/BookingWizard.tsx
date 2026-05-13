@@ -151,13 +151,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [quickEmail,     setQuickEmail]     = useState('')
   const [quickSaving,    setQuickSaving]    = useState(false)
 
-  /* jump to open-trip step when pre-selected from calendar */
+  /* pre-select open trip from calendar — still ask source first */
   useEffect(() => {
     if (!open || !preselectedOpenTripId) return
-    setSource('DIRECT')
     setTrip('OPEN_TRIP')
-    setPhase('steps')
-    setStep(1)
     setOTId(preselectedOpenTripId)
   }, [open, preselectedOpenTripId])
 
@@ -480,7 +477,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             key={val}
             onClick={() => {
               setSource(val)
-              setPhase(val === 'AGENT' ? 'agentInfo' : 'tripType')
+              if (preselectedOpenTripId) {
+                // trip already pre-selected from calendar — skip tripType
+                setPhase(val === 'AGENT' ? 'agentInfo' : 'steps')
+                if (val !== 'AGENT') setStep(1)
+              } else {
+                setPhase(val === 'AGENT' ? 'agentInfo' : 'tripType')
+              }
             }}
             className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-border bg-card hover:shadow-md text-center cursor-pointer transition-all"
             style={{ borderColor: undefined }}
@@ -1424,6 +1427,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               onClick={() => {
                 if (phase === 'agentInfo') { setPhase('source'); setSource(null) }
                 else if (step > 1) setStep(step - 1)
+                else if (preselectedOpenTripId) setPhase(source === 'AGENT' ? 'agentInfo' : 'source')
                 else { setPhase('tripType'); setTrip(null) }
               }}
             >
@@ -1434,7 +1438,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             {phase === 'agentInfo' ? (
               <Button
                 disabled={!canNext()}
-                onClick={() => setPhase('tripType')}
+                onClick={() => { setPhase(preselectedOpenTripId ? 'steps' : 'tripType'); if (preselectedOpenTripId) setStep(1) }}
                 style={{ backgroundColor: ACCENT, color: 'white' }}
                 className="hover:opacity-90"
               >

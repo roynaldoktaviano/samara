@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
-  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2,
+  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff,
 } from 'lucide-react'
 import { BookingWizard } from './BookingWizard'
 
@@ -164,6 +164,15 @@ export default function Bookings() {
   const [payments,        setPayments]        = useState<PaymentRecord[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
 
+  /* edit invoice amount */
+  const [editAmtPayment, setEditAmtPayment] = useState<PaymentRecord | null>(null)
+  const [editAmtValue,   setEditAmtValue]   = useState('')
+  const [editAmtSaving,  setEditAmtSaving]  = useState(false)
+
+  /* guest travel dialog */
+  const [travelBooking, setTravelBooking] = useState<BookingRecord | null>(null)
+  const [travelSaving,  setTravelSaving]  = useState(false)
+
   /* ── fetchers ── */
   const fetchBookings = useCallback(async () => {
     setLoading(true)
@@ -196,41 +205,20 @@ export default function Bookings() {
     setEditDepDue(fmtDateInput(b.depositDueDate))
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
-    const travel: typeof guestTravel = {}
-    b.guests.forEach(g => {
-      travel[g.id] = {
-        arrivalPickupTime:   g.arrivalPickupTime   ?? '',
-        arrivalHotel:        g.arrivalHotel        ?? '',
-        arrivalFlight:       g.arrivalFlight       ?? '',
-        departurePickupTime: g.departurePickupTime ?? '',
-        departureHotel:      g.departureHotel      ?? '',
-        departureFlight:     g.departureFlight     ?? '',
-      }
-    })
-    setGuestTravel(travel)
   }
   const saveEdit = async () => {
     if (!editBooking) return
     setEditSaving(true)
     try {
-      const [bookingRes] = await Promise.all([
-        fetch(`/api/bookings/${editBooking.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
-            discount: editDiscount, depositDueDate: editDepDue || null,
-            finalDueDate: editFinalDue || null, notes: editNotes,
-          }),
+      const bookingRes = await fetch(`/api/bookings/${editBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
+          discount: editDiscount, depositDueDate: editDepDue || null,
+          finalDueDate: editFinalDue || null, notes: editNotes,
         }),
-        ...Object.entries(guestTravel).map(([guestId, travel]) =>
-          fetch(`/api/guests/${guestId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(travel),
-          })
-        ),
-      ])
+      })
       if (bookingRes.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
     finally { setEditSaving(false) }
@@ -281,6 +269,60 @@ export default function Bookings() {
       }
     } catch (e) { console.error(e) }
     finally { setPaymentSaving(false) }
+  }
+
+  const saveEditAmount = async () => {
+    if (!editAmtPayment) return
+    const amount = parseFloat(editAmtValue.replace(/,/g, '')) || 0
+    if (amount <= 0) return
+    setEditAmtSaving(true)
+    try {
+      const res = await fetch(`/api/payments/${editAmtPayment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_amount', amount }),
+      })
+      if (res.ok) {
+        setEditAmtPayment(null)
+        await fetchPayments()
+      }
+    } catch (e) { console.error(e) }
+    finally { setEditAmtSaving(false) }
+  }
+
+  const openTravel = (b: BookingRecord) => {
+    const travel: typeof guestTravel = {}
+    b.guests.forEach(g => {
+      travel[g.id] = {
+        arrivalPickupTime:   g.arrivalPickupTime   ?? '',
+        arrivalHotel:        g.arrivalHotel        ?? '',
+        arrivalFlight:       g.arrivalFlight       ?? '',
+        departurePickupTime: g.departurePickupTime ?? '',
+        departureHotel:      g.departureHotel      ?? '',
+        departureFlight:     g.departureFlight     ?? '',
+      }
+    })
+    setGuestTravel(travel)
+    setTravelBooking(b)
+  }
+
+  const saveTravel = async () => {
+    if (!travelBooking) return
+    setTravelSaving(true)
+    try {
+      await Promise.all(
+        Object.entries(guestTravel).map(([guestId, travel]) =>
+          fetch(`/api/guests/${guestId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(travel),
+          })
+        )
+      )
+      await fetchBookings()
+      setTravelBooking(null)
+    } catch (e) { console.error(e) }
+    finally { setTravelSaving(false) }
   }
 
   /* ── proof upload ── */
@@ -492,19 +534,23 @@ export default function Bookings() {
                       </span>
                     </TableCell>
                     {canManageBookings && (() => {
-                      const bookingPmts = payments.filter(p => p.bookingId === b.id)
-                      const pendingPmt  = bookingPmts.find(p => p.status === 'pending_confirmation')
-                      const hasAnyPmt   = bookingPmts.length > 0
-                      const canRecord   = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
-                      const nextType    = hasAnyPmt ? 'Pelunasan' : 'DP'
+                      const bookingPmts     = payments.filter(p => p.bookingId === b.id)
+                      const pendingPmt      = bookingPmts.find(p => p.status === 'pending_confirmation')
+                      const hasAnyPmt       = bookingPmts.length > 0
+                      const hasConfirmedPmt = bookingPmts.some(p => p.status === 'confirmed')
+                      const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
+                      const nextType        = hasAnyPmt ? 'Pelunasan' : 'DP'
+                      const pelunasanBlocked = nextType === 'Pelunasan' && !hasConfirmedPmt
                       return (
                         <TableCell>
                           <div className="flex flex-col gap-1 items-start">
                             {canRecord && (
                               <Button
                                 variant="ghost" size="sm"
-                                className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                onClick={() => openPayment(b)}
+                                disabled={pelunasanBlocked}
+                                title={pelunasanBlocked ? 'DP harus dikonfirmasi dulu sebelum buat invoice pelunasan' : undefined}
+                                className={`h-7 px-2 text-xs ${pelunasanBlocked ? 'opacity-40 cursor-not-allowed' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}`}
+                                onClick={() => !pelunasanBlocked && openPayment(b)}
                               >
                                 <CreditCard className="h-3 w-3 mr-1" /> Buat Invoice {nextType}
                               </Button>
@@ -520,17 +566,28 @@ export default function Bookings() {
                               </Button>
                             )}
                             {bookingPmts.map((p, idx) => (
-                              <Button
-                                key={p.id}
-                                variant="ghost" size="sm"
-                                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
-                              >
-                                <Receipt className="h-3 w-3 mr-1" />
-                                {p.paymentType === 'PELUNASAN'
-                                  ? 'Invoice Pelunasan'
-                                  : idx === 0 ? 'Invoice DP' : `Invoice ${idx + 1}`}
-                              </Button>
+                              <div key={p.id} className="flex items-center gap-0.5">
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                  onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
+                                >
+                                  <Receipt className="h-3 w-3 mr-1" />
+                                  {p.paymentType === 'PELUNASAN'
+                                    ? 'Invoice Pelunasan'
+                                    : idx === 0 ? 'Invoice DP' : `Invoice ${idx + 1}`}
+                                </Button>
+                                {p.status === 'pending_confirmation' && (
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    className="h-7 w-6 p-0 text-muted-foreground hover:text-blue-600"
+                                    title="Update nominal invoice"
+                                    onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)) }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
                             ))}
                           </div>
                         </TableCell>
@@ -539,6 +596,11 @@ export default function Bookings() {
                     {canManageBookings && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {b.guests.length > 0 && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-600 hover:bg-sky-50" title="Guest Travel Details" onClick={() => openTravel(b)}>
+                              <PlaneTakeoff className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
                             <Edit className="h-3.5 w-3.5" />
                           </Button>
@@ -862,55 +924,6 @@ export default function Bookings() {
                 </div>
               </div>
 
-              {/* ── Guest Travel Details ── */}
-              {editBooking.guests.length > 0 && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Guest Travel Details</p>
-                  {editBooking.guests.map(g => {
-                    const t = guestTravel[g.id] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
-                    const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
-                      setGuestTravel(prev => ({ ...prev, [g.id]: { ...t, [k]: e.target.value } }))
-                    return (
-                      <div key={g.id} className="rounded-lg border p-3 space-y-2.5">
-                        <p className="text-xs font-semibold">{g.customer?.name ?? '—'}{g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}</p>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1a5f6e]">Arrival</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} placeholder="e.g. 12 Jul, 09:00" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-7 text-xs" />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#1a5f6e]">Departure</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input value={t.departurePickupTime} onChange={setT('departurePickupTime')} placeholder="e.g. 15 Jul, 14:00" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-7 text-xs" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -957,6 +970,130 @@ export default function Bookings() {
                 <Button disabled={editSaving} onClick={saveEdit}
                   style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
                   {editSaving ? 'Saving…' : 'Save Changes'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Edit Invoice Amount Dialog ════ */}
+      <Dialog open={!!editAmtPayment} onOpenChange={v => !v && setEditAmtPayment(null)}>
+        <DialogContent className="sm:max-w-xs">
+          {editAmtPayment && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4" style={{ color: ACCENT }} />
+                  Update Nominal Invoice
+                </DialogTitle>
+              </DialogHeader>
+              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1 mb-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Invoice</span>
+                  <span className="font-mono font-semibold">{editAmtPayment.invoiceNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Nominal saat ini</span>
+                  <span className="font-semibold">${editAmtPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Nominal Baru (USD) <span className="text-red-500">*</span></Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="pl-7"
+                    placeholder="0.00"
+                    value={editAmtValue}
+                    onChange={e => setEditAmtValue(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">Invoice ID dan nomor tidak akan berubah.</p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditAmtPayment(null)}>Cancel</Button>
+                <Button
+                  disabled={editAmtSaving || !editAmtValue || (parseFloat(editAmtValue) || 0) <= 0}
+                  onClick={saveEditAmount}
+                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90"
+                >
+                  {editAmtSaving ? 'Menyimpan…' : 'Simpan'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Guest Travel Details Dialog ════ */}
+      <Dialog open={!!travelBooking} onOpenChange={v => !v && setTravelBooking(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          {travelBooking && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <PlaneTakeoff className="h-4 w-4 text-sky-500" />
+                  Guest Travel Details
+                  <span className="font-mono text-sm font-normal text-muted-foreground">— {travelBooking.bookingCode}</span>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                {travelBooking.guests.map(g => {
+                  const t = guestTravel[g.id] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
+                  const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
+                    setGuestTravel(prev => ({ ...prev, [g.id]: { ...t, [k]: e.target.value } }))
+                  return (
+                    <div key={g.id} className="rounded-lg border p-3 space-y-2.5">
+                      <p className="text-sm font-semibold">
+                        {g.customer?.name ?? '—'}
+                        {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}
+                        {g.cabin && <span className="ml-1.5 text-[10px] text-muted-foreground font-normal flex-inline items-center gap-0.5"><BedDouble className="inline w-3 h-3 mb-0.5" /> {g.cabin.name}</span>}
+                      </p>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                            <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className="h-8 text-xs" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                            <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-8 text-xs" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                            <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className="h-8 text-xs" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                            <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-8 text-xs" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setTravelBooking(null)}>Cancel</Button>
+                <Button disabled={travelSaving} onClick={saveTravel} className="bg-sky-600 hover:bg-sky-700 text-white">
+                  {travelSaving ? 'Menyimpan…' : 'Save Travel Details'}
                 </Button>
               </DialogFooter>
             </>

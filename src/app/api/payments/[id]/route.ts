@@ -58,6 +58,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ ok: true })
     }
 
+    // Update invoice amount (only when still pending_confirmation)
+    if (action === 'update_amount') {
+      const { amount } = body
+      if (!amount || typeof amount !== 'number' || amount <= 0) {
+        return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
+      }
+      const existing = await db.payment.findUnique({ where: { id } })
+      if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (existing.status !== 'pending_confirmation') {
+        return NextResponse.json({ error: 'Hanya bisa update invoice yang belum dikonfirmasi' }, { status: 400 })
+      }
+      await db.payment.update({ where: { id }, data: { amount } })
+      return NextResponse.json({ ok: true })
+    }
+
     // Finance confirm / reject
     if (!action) return NextResponse.json({ error: 'Missing action' }, { status: 400 })
 
