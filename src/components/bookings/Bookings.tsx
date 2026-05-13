@@ -15,9 +15,10 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
-  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff,
+  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User,
 } from 'lucide-react'
 import { BookingWizard } from './BookingWizard'
+import GuestEditSheet from '@/components/customers/GuestEditSheet'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
@@ -36,6 +37,7 @@ interface BookingRecord {
   finalDueDate?: string | null
   destination?: string
   notes?: string
+  salesperson?: string | null
   currency?: string
   exchangeRate?: number | null
   yacht?: { id: string; name: string; model?: string }
@@ -44,7 +46,7 @@ interface BookingRecord {
   agent?: { id: string; name: string; company?: string; commission?: number }
   guests: Array<{
     id: string; isLead: boolean; customerId: string
-    customer?: { name: string }; cabin?: { name: string }
+    customer?: { name: string }; cabin?: { id: string; name: string }
     arrivalPickupTime?: string | null; arrivalHotel?: string | null; arrivalFlight?: string | null
     departurePickupTime?: string | null; departureHotel?: string | null; departureFlight?: string | null
   }>
@@ -172,6 +174,13 @@ export default function Bookings() {
   /* guest travel dialog */
   const [travelBooking, setTravelBooking] = useState<BookingRecord | null>(null)
   const [travelSaving,  setTravelSaving]  = useState(false)
+
+  /* booking detail sheet */
+  const [detailBooking,       setDetailBooking]       = useState<BookingRecord | null>(null)
+  const [detailCabins,        setDetailCabins]        = useState<any[]>([])
+  const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
+  const [editGuestId,         setEditGuestId]         = useState<string | null>(null)
+  const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
 
   /* ── fetchers ── */
   const fetchBookings = useCallback(async () => {
@@ -325,6 +334,37 @@ export default function Bookings() {
     finally { setTravelSaving(false) }
   }
 
+  const openDetail = async (b: BookingRecord) => {
+    setDetailBooking(b)
+    setDetailCabins([])
+    if (b.tripType === 'OPEN_TRIP' && b.openTrip?.id) {
+      setDetailCabinsLoading(true)
+      try {
+        const res = await fetch(`/api/open-trips/${b.openTrip.id}`)
+        if (res.ok) setDetailCabins((await res.json()).cabins ?? [])
+      } catch (e) { console.error(e) }
+      finally { setDetailCabinsLoading(false) }
+    }
+  }
+
+  const saveCabin = async (bgId: string, cabinId: string) => {
+    setCabinSaving(bgId)
+    try {
+      await fetch(`/api/guests/${bgId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cabinId }),
+      })
+      await fetchBookings()
+      // refresh detail with updated data
+      const updated = await fetch('/api/bookings').then(r => r.json())
+      const fresh = (updated as BookingRecord[]).find(b => b.id === detailBooking?.id)
+      if (fresh) setDetailBooking(fresh)
+      await openDetail(fresh ?? detailBooking!)
+    } catch (e) { console.error(e) }
+    finally { setCabinSaving(null) }
+  }
+
   /* ── proof upload ── */
   const openProofUpload = async (p: PaymentRecord) => {
     setProofPayment(p)
@@ -475,7 +515,7 @@ export default function Bookings() {
                     </TableCell>
                   </TableRow>
                 ) : filtered.map(b => (
-                  <TableRow key={b.id} className="hover:bg-muted/30">
+                  <TableRow key={b.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(b)}>
                     <TableCell className="font-mono text-xs font-medium">{b.bookingCode}</TableCell>
                     <TableCell>
                       <div className="space-y-0.5">
@@ -542,7 +582,7 @@ export default function Bookings() {
                       const nextType        = hasAnyPmt ? 'Pelunasan' : 'DP'
                       const pelunasanBlocked = nextType === 'Pelunasan' && !hasConfirmedPmt
                       return (
-                        <TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
                           <div className="flex flex-col gap-1 items-start">
                             {canRecord && (
                               <Button
@@ -594,7 +634,7 @@ export default function Bookings() {
                       )
                     })()}
                     {canManageBookings && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-end gap-1">
                           {b.guests.length > 0 && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-600 hover:bg-sky-50" title="Guest Travel Details" onClick={() => openTravel(b)}>
@@ -1048,11 +1088,21 @@ export default function Bookings() {
                     setGuestTravel(prev => ({ ...prev, [g.id]: { ...t, [k]: e.target.value } }))
                   return (
                     <div key={g.id} className="rounded-lg border p-3 space-y-2.5">
-                      <p className="text-sm font-semibold">
-                        {g.customer?.name ?? '—'}
-                        {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}
-                        {g.cabin && <span className="ml-1.5 text-[10px] text-muted-foreground font-normal flex-inline items-center gap-0.5"><BedDouble className="inline w-3 h-3 mb-0.5" /> {g.cabin.name}</span>}
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">
+                          {g.customer?.name ?? '—'}
+                          {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}
+                          {g.cabin && <span className="ml-1.5 text-[10px] text-muted-foreground font-normal"><BedDouble className="inline w-3 h-3 mb-0.5" /> {g.cabin.name}</span>}
+                        </p>
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
+                          title="Print guest sheet"
+                          onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                        >
+                          <FileText className="h-3 w-3 mr-1" /> Guest Sheet
+                        </Button>
+                      </div>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
                         <div className="space-y-2">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
@@ -1100,6 +1150,188 @@ export default function Bookings() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ════ Booking Detail Modal ════ */}
+      <Dialog open={!!detailBooking} onOpenChange={v => !v && setDetailBooking(null)}>
+        <DialogContent className="p-0 gap-0 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+          <DialogTitle className="sr-only">Booking Detail</DialogTitle>
+          {detailBooking && (() => {
+            const db_ = detailBooking
+            const net = db_.totalPrice - db_.discount
+            const remaining = Math.max(0, net - db_.depositPaid)
+            const fmtAmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            return (
+              <>
+                {/* Header */}
+                <div style={{ backgroundColor: '#1a5f6e' }} className="px-5 pt-5 pb-4 text-white shrink-0 rounded-t-lg">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-mono tracking-widest text-white/50 mb-0.5">{db_.bookingCode}</p>
+                      <p className="text-lg font-bold leading-tight truncate">{db_.customer.name}</p>
+                      <p className="text-sm text-white/70 mt-0.5 truncate">
+                        {db_.tripType === 'OPEN_TRIP' ? db_.openTrip?.title : db_.yacht?.name}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-[11px] font-semibold rounded-full px-3 py-1 mt-0.5 ${STATUS_STYLES[db_.status] ?? 'bg-muted text-muted-foreground'}`}>
+                      {STATUS_LABELS[db_.status] ?? db_.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto">
+
+                  {/* Summary */}
+                  <div className="px-5 py-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {[
+                        { label: 'Check-in',  val: fmtDate(db_.startDate) },
+                        { label: 'Check-out', val: fmtDate(db_.endDate) },
+                        { label: 'Total',     val: fmtAmt(net) },
+                        { label: 'Paid',      val: fmtAmt(db_.depositPaid) },
+                      ].map(r => (
+                        <div key={r.label} className="rounded-lg border p-2.5">
+                          <p className="text-muted-foreground mb-0.5">{r.label}</p>
+                          <p className="font-semibold text-sm">{r.val}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {remaining > 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs flex justify-between">
+                        <span className="text-amber-700">Sisa pembayaran</span>
+                        <span className="font-semibold text-amber-700">{fmtAmt(remaining)}</span>
+                      </div>
+                    )}
+                    {(db_.salesperson || db_.agent?.name || db_.notes) && (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {(db_.salesperson || db_.agent?.name) && (
+                          <div className="rounded-lg border p-2.5">
+                            <p className="text-muted-foreground mb-0.5">Sales</p>
+                            <p className="font-semibold">{db_.salesperson || db_.agent?.name}</p>
+                          </div>
+                        )}
+                        {db_.notes && (
+                          <div className="rounded-lg border p-2.5 col-span-2">
+                            <p className="text-muted-foreground mb-0.5">Notes</p>
+                            <p>{db_.notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Guests */}
+                  <div className="px-5 py-4 space-y-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Guests ({db_.guests.length} pax)
+                    </p>
+
+                    {db_.guests.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Tidak ada guest terdaftar.</p>
+                    )}
+
+                    {db_.guests.map(g => {
+                      const isOwnCabin = (c: any) => c.guests?.some((cg: any) => cg.id === g.customerId)
+                      const currentCabinId = g.cabin?.id ?? ''
+
+                      return (
+                        <div key={g.id} className="rounded-xl border p-3 space-y-2.5">
+                          {/* Guest header */}
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              className="flex items-center gap-2 hover:opacity-75 transition-opacity text-left"
+                              onClick={() => setEditGuestId(g.customerId)}
+                            >
+                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
+                                <User className="w-3.5 h-3.5 text-muted-foreground" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold leading-tight">{g.customer?.name ?? '—'}</p>
+                                {g.isLead && <p className="text-[10px] text-amber-600">Group Leader</p>}
+                              </div>
+                            </button>
+
+                            {/* Cabin selector */}
+                            {detailCabinsLoading ? (
+                              <Skeleton className="h-7 w-28" />
+                            ) : detailCabins.length > 0 ? (
+                              <Select
+                                value={currentCabinId}
+                                onValueChange={v => saveCabin(g.id, v)}
+                                disabled={cabinSaving === g.id}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-36">
+                                  <BedDouble className="w-3 h-3 mr-1 shrink-0" />
+                                  <SelectValue placeholder="Pilih kabin…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {detailCabins.map((c: any) => {
+                                    const isMine = isOwnCabin(c)
+                                    const isTaken = c.isFull && !isMine
+                                    return (
+                                      <SelectItem key={c.id} value={c.id} disabled={isTaken}>
+                                        <span className={isTaken ? 'text-muted-foreground' : ''}>
+                                          {c.name}{c.deck ? ` · ${c.deck}` : ''}
+                                        </span>
+                                        {isTaken && (
+                                          <span className="ml-1.5 text-[10px] text-red-400 font-medium">• Full</span>
+                                        )}
+                                      </SelectItem>
+                                    )
+                                  })}
+                                </SelectContent>
+                              </Select>
+                            ) : g.cabin ? (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded px-2 py-1">
+                                <BedDouble className="w-3 h-3" /> {g.cabin.name}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">No cabin</span>
+                            )}
+                          </div>
+
+                          {/* Travel info */}
+                          {(g.arrivalPickupTime || g.arrivalFlight || g.departurePickupTime || g.departureFlight) && (
+                            <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground border-t pt-2">
+                              <div>
+                                <p className="font-semibold text-foreground mb-0.5">Arrival</p>
+                                {g.arrivalFlight && <p>✈ {g.arrivalFlight}</p>}
+                                {g.arrivalPickupTime && <p>🕐 {g.arrivalPickupTime}</p>}
+                                {g.arrivalHotel && <p>🏨 {g.arrivalHotel}</p>}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-foreground mb-0.5">Departure</p>
+                                {g.departureFlight && <p>✈ {g.departureFlight}</p>}
+                                {g.departurePickupTime && <p>🕐 {g.departurePickupTime}</p>}
+                                {g.departureHotel && <p>🏨 {g.departureHotel}</p>}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="shrink-0 border-t px-5 py-3 flex justify-end">
+                  <Button variant="outline" onClick={() => setDetailBooking(null)}>Close</Button>
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Guest Edit Sheet (from detail) ════ */}
+      <GuestEditSheet
+        open={!!editGuestId}
+        guestId={editGuestId}
+        onClose={() => setEditGuestId(null)}
+        onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
+      />
 
       <BookingWizard open={wizardOpen} onOpenChange={setWizardOpen} onSuccess={fetchBookings} />
     </div>

@@ -17,6 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           where: { status: { not: 'cancelled' } },
           include: {
             customer: { select: { id: true, name: true } },
+            agent: { select: { name: true } },
             guests: {
               include: {
                 customer: { select: { id: true, name: true } },
@@ -31,19 +32,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!trip) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     // Build cabin availability map
-    const occupancyMap: Record<string, { guests: { id: string; name: string }[]; bookingStatus: string | null }> = {}
+    const occupancyMap: Record<string, { guests: { id: string; name: string }[]; bookingStatus: string | null; salesperson: string }> = {}
     trip.bookings.forEach(b => {
+      const sales = b.salesperson || b.agent?.name || 'Direct'
       b.guests.forEach(g => {
         if (g.cabinId) {
-          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status }
+          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales }
           occupancyMap[g.cabinId].guests.push({ id: g.customer.id, name: g.customer.name })
         }
       })
     })
 
     const cabins = trip.yacht.cabins.map(c => {
-      const occ = occupancyMap[c.id] ?? { guests: [], bookingStatus: null }
-      // 1 booking = 1 cabin: any guest in this cabin means it's fully reserved
+      const occ = occupancyMap[c.id] ?? { guests: [], bookingStatus: null, salesperson: '' }
       const isBooked = occ.guests.length > 0
       return {
         id: c.id,
@@ -56,6 +57,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         isFull: isBooked,
         guests: occ.guests,
         bookingStatus: occ.bookingStatus,
+        salesperson: occ.salesperson,
       }
     })
 

@@ -99,7 +99,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
 
   /* Flatten guests */
   type GuestRow = {
-    no: number; name: string; phone: string; email: string; cabin: string
+    no: number; bgId: string; name: string; phone: string; email: string; cabin: string
     isLead: boolean; bookingCode: string; salesperson: string
     nationality: string; passport: string; passportExpiry: string; dateOfBirth: string
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
@@ -108,7 +108,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   }
   const fmtDate = (d: Date | null | undefined) => d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
   const makeRow = (c: any, bg: any, cabin: string, isLead: boolean, bookingCode: string, salesperson: string): GuestRow => ({
-    no: 0, name: c.name, phone: c.phone ?? '', email: c.email ?? '', cabin, isLead, bookingCode, salesperson,
+    no: 0, bgId: bg?.id ?? '', name: c.name, phone: c.phone ?? '', email: c.email ?? '', cabin, isLead, bookingCode, salesperson,
     nationality: c.nationality ?? '', passport: c.passport ?? '',
     passportExpiry: fmtDate(c.passportExpiry), dateOfBirth: fmtDate(c.dateOfBirth),
     arrivalPickupTime: bg?.arrivalPickupTime ?? '', arrivalHotel: bg?.arrivalHotel ?? '', arrivalFlight: bg?.arrivalFlight ?? '',
@@ -249,8 +249,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES'].map((h, i) => (
-                    <th key={h} style={{ ...th, borderRight: i === 8 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}) }}>{h}</th>
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES', ''].map((h, i) => (
+                    <th key={i} style={{ ...th, borderRight: i === 9 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}), ...(h === '' ? { width: 32, textAlign: 'center' } : {}) }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -269,13 +269,27 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                     <td style={{ ...td, textAlign: 'center', fontWeight: 700, fontSize: 10, color: g.allergies ? '#c0392b' : '#27ae60' }}>
                       {g.allergies ? 'YES' : 'NO'}
                     </td>
-                    <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
+                    <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.salesperson}</td>
+                    <td style={{ ...td, borderRight: 'none', textAlign: 'center', padding: '4px' }}>
+                      {g.bgId && (
+                        <a
+                          href={`/print/guest-sheet/${g.bgId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="no-print"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 4, background: `${GOLD}22`, border: `1px solid ${GOLD}`, color: DARK, textDecoration: 'none', fontSize: 11 }}
+                          title={`Print sheet for ${g.name}`}
+                        >
+                          ↗
+                        </a>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {Array.from({ length: BLANK }).map((_, i) => (
                   <tr key={`b${i}`}>
                     <td style={{ ...td, textAlign: 'center', color: '#ccc', width: 28 }}>{guests.length + i + 1}</td>
-                    {[...Array(6)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
+                    {[...Array(7)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
                     <td style={{ ...td, borderRight: 'none' }}>&nbsp;</td>
                   </tr>
                 ))}

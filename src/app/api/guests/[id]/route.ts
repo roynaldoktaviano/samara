@@ -4,13 +4,16 @@ import { db } from '@/lib/db'
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight } = await request.json()
+    const body = await request.json()
+    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight, cabinId } = body
 
-    const guest = await db.bookingGuest.update({
-      where: { id },
-      data: { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight },
-    })
+    const data: Record<string, unknown> = {
+      arrivalPickupTime, arrivalHotel, arrivalFlight,
+      departurePickupTime, departureHotel, departureFlight,
+    }
+    if (cabinId !== undefined) data.cabinId = cabinId || null
 
+    const guest = await db.bookingGuest.update({ where: { id }, data })
     return NextResponse.json(guest)
   } catch (error) {
     console.error('Error updating booking guest:', error)

@@ -1290,10 +1290,17 @@ export default function CalendarView() {
                                 </div>
                               )}
                             </div>
-                            {/* Badge */}
-                            <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 shrink-0 whitespace-nowrap', badgeCls)}>
-                              {badgeLabel}
-                            </span>
+                            {/* Badge + salesperson */}
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 whitespace-nowrap', badgeCls)}>
+                                {badgeLabel}
+                              </span>
+                              {c.salesperson && (
+                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                  by: {c.salesperson}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
