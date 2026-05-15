@@ -371,62 +371,19 @@ export default function Home() {
         </Sidebar>
 
         <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur-sm px-6">
+          <header className="sticky top-0 z-10 flex h-14 items-center border-b bg-background/95 backdrop-blur-sm px-6">
             <div className="flex items-center gap-2 lg:hidden">
               <Menu className="h-5 w-5" />
             </div>
             <div className="flex-1" />
 
-            {/* ── User Menu ── */}
-            <div className="relative" ref={userMenuRef}>
-              <button
-                onClick={() => setShowUserMenu(v => !v)}
-                className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-muted transition-colors"
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-xs font-semibold uppercase">
-                  {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
-                </div>
-                <div className="text-left hidden sm:block">
-                  <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium leading-none mb-0.5 ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {roleLabel[userRole] ?? userRole}
-                  </span>
-                  <p className="text-xs font-semibold text-foreground leading-none">
-                    {session.user.name ?? session.user.email}
-                  </p>
-                </div>
-                <motion.div animate={{ rotate: showUserMenu ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                </motion.div>
-              </button>
+            <div className="flex items-center gap-3">
 
-              <AnimatePresence>
-                {showUserMenu && (
-                  <motion.div
-                    variants={dropdownVariants}
-                    initial="hidden"
-                    animate="visible"
-                    exit="hidden"
-                    transition={{ duration: 0.15, ease: 'easeOut' }}
-                    style={{ transformOrigin: 'top right' }}
-                    className="absolute right-0 top-full mt-1 w-44 rounded-md border bg-background shadow-md z-50"
-                  >
-                    <button
-                      onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-md"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Sign Out
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* ── Notification Bell ── */}
-            <div className="relative" ref={notifRef}>
+              {/* ── Notification Bell ── */}
+              <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(v => !v)}
-                className="relative p-2 rounded-full hover:bg-muted transition-colors"
+                className="relative p-2.5 rounded-full hover:bg-muted transition-colors"
               >
                 <motion.div
                   animate={bellShake ? { rotate: [0, -22, 22, -14, 14, -6, 6, 0] } : { rotate: 0 }}
@@ -535,6 +492,56 @@ export default function Home() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              </div>
+
+              {/* ── Separator ── */}
+              <div className="h-6 w-px bg-border" />
+
+              {/* ── User Menu ── */}
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  onClick={() => setShowUserMenu(v => !v)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-muted transition-colors"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-sm font-semibold uppercase">
+                    {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
+                  </div>
+                  <div className="text-left hidden sm:block min-w-18">
+                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold leading-none mb-1 ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {roleLabel[userRole] ?? userRole}
+                    </span>
+                    <p className="text-sm font-medium text-foreground leading-none">
+                      {session.user.name ?? session.user.email}
+                    </p>
+                  </div>
+                  <motion.div animate={{ rotate: showUserMenu ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </motion.div>
+                </button>
+
+                <AnimatePresence>
+                  {showUserMenu && (
+                    <motion.div
+                      variants={dropdownVariants}
+                      initial="hidden"
+                      animate="visible"
+                      exit="hidden"
+                      transition={{ duration: 0.15, ease: 'easeOut' }}
+                      style={{ transformOrigin: 'top right' }}
+                      className="absolute right-0 top-full mt-1 w-44 rounded-md border bg-background shadow-md z-50"
+                    >
+                      <button
+                        onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-md"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
             </div>
           </header>
 

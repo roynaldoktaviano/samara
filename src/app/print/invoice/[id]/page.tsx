@@ -135,7 +135,33 @@ export default function InvoicePage() {
         fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif",
         fontSize: 11,
         color: '#1f2937',
+        position: 'relative',
       }}>
+
+        {/* ── LUNAS stamp ── */}
+        {payment.status === 'confirmed' && (
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            top: '44%',
+            transform: 'translateX(-50%) rotate(-22deg)',
+            border: '4px solid #16a34a',
+            borderRadius: 8,
+            color: '#16a34a',
+            fontSize: 42,
+            fontWeight: 900,
+            letterSpacing: 6,
+            padding: '6px 18px',
+            opacity: 0.82,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            textTransform: 'uppercase',
+            lineHeight: 1,
+            boxShadow: 'inset 0 0 0 2px #16a34a22',
+          }}>
+            PAID
+          </div>
+        )}
 
         {/* ── Top accent bar ── */}
         <div style={{ backgroundColor: ACCENT, height: 5, flexShrink: 0 }} />
@@ -306,7 +332,7 @@ export default function InvoicePage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 600 }}>
-                {remaining > 0 ? 'Balance Due' : 'Paid in Full ✓'}
+                {remaining > 0 ? 'Balance Due' : 'Remaining'}
               </span>
               <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 700 }}>
                 {fmtAmt(remaining)}

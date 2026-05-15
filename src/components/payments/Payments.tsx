@@ -55,8 +55,8 @@ interface Payment {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  pending_confirmation: { label: 'Menunggu Konfirmasi', color: 'bg-amber-100 text-amber-700 border-amber-200',  icon: Clock },
-  confirmed:            { label: 'Dikonfirmasi',         color: 'bg-green-100 text-green-700 border-green-200',  icon: CheckCircle2 },
+  pending_confirmation: { label: 'Unpaid', color: 'bg-amber-100 text-amber-700 border-amber-200',  icon: Clock },
+  confirmed:            { label: 'Paid',   color: 'bg-green-100 text-green-700 border-green-200',  icon: CheckCircle2 },
   rejected:             { label: 'Ditolak',              color: 'bg-red-100 text-red-700 border-red-200',        icon: XCircle },
 }
 
@@ -216,8 +216,8 @@ export default function Payments() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Menunggu Konfirmasi', value: counts.pending_confirmation, icon: Clock,         color: 'text-amber-600',  bg: 'bg-amber-50' },
-          { label: 'Dikonfirmasi',        value: counts.confirmed,            icon: CheckCircle2,  color: 'text-green-600',  bg: 'bg-green-50' },
+          { label: 'Unpaid', value: counts.pending_confirmation, icon: Clock,         color: 'text-amber-600',  bg: 'bg-amber-50' },
+          { label: 'Paid',   value: counts.confirmed,            icon: CheckCircle2,  color: 'text-green-600',  bg: 'bg-green-50' },
           { label: 'Ditolak',             value: counts.rejected,             icon: XCircle,       color: 'text-red-600',    bg: 'bg-red-50' },
           { label: 'Total Dikonfirmasi',  value: `$${fmt(totalConfirmed)}`, icon: TrendingUp,   color: 'text-blue-600',   bg: 'bg-blue-50' },
         ].map(s => (
@@ -290,7 +290,7 @@ export default function Payments() {
                   <TableHead>Dikirim Oleh</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Dikonfirmasi Oleh</TableHead>
+                  <TableHead>Confirmed By</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -605,7 +605,7 @@ export default function Payments() {
                   <Separator />
                   <div className={`rounded-md p-3 text-sm ${selected.status === 'confirmed' ? 'bg-green-50' : 'bg-red-50'}`}>
                     <p className={`font-medium ${selected.status === 'confirmed' ? 'text-green-700' : 'text-red-700'}`}>
-                      {selected.status === 'confirmed' ? '✓ Dikonfirmasi' : '✗ Ditolak'} oleh {selected.confirmedBy}
+                      {selected.status === 'confirmed' ? '✓ Confirmed' : '✗ Rejected'} by {selected.confirmedBy}
                     </p>
                     {selected.confirmedAt && (
                       <p className={`text-xs mt-0.5 ${selected.status === 'confirmed' ? 'text-green-600' : 'text-red-600'}`}>
