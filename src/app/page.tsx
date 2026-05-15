@@ -145,8 +145,9 @@ export default function Home() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [pendingPayments, setPendingPayments] = useState(0)
   const [bellShake, setBellShake] = useState(false)
-  const notifRef   = useRef<HTMLDivElement>(null)
-  const prevUnread = useRef(-1) // -1 = not yet initialised
+  const notifRef    = useRef<HTMLDivElement>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const prevUnread  = useRef(-1) // -1 = not yet initialised
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -222,12 +223,11 @@ export default function Home() {
     return () => window.removeEventListener('payment-updated', handler)
   }, [fetchNotifications, fetchPendingPayments])
 
-  // Close notif dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotifOpen(false)
-      }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -307,8 +307,6 @@ export default function Home() {
     }
   }
 
-  const currentNavItem = visibleNavItems.find((item) => item.id === activeView)
-
   return (
     <SidebarProvider>
       <div className="flex min-h-screen bg-background w-full">
@@ -365,27 +363,38 @@ export default function Home() {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="p-4 border-t">
-            <div className="relative">
+          <SidebarFooter className="px-4 py-3 border-t">
+            <p className="text-[10.5px] text-muted-foreground text-center">
+              © 2026 Samara Liveaboard.
+            </p>
+          </SidebarFooter>
+        </Sidebar>
+
+        <main className="flex-1 overflow-auto">
+          <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur-sm px-6">
+            <div className="flex items-center gap-2 lg:hidden">
+              <Menu className="h-5 w-5" />
+            </div>
+            <div className="flex-1" />
+
+            {/* ── User Menu ── */}
+            <div className="relative" ref={userMenuRef}>
               <button
-                onClick={() => setShowUserMenu((v) => !v)}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 hover:bg-muted transition-colors text-left"
+                onClick={() => setShowUserMenu(v => !v)}
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-muted transition-colors"
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-xs font-semibold uppercase">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-xs font-semibold uppercase">
                   {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-foreground truncate">
-                    {session.user.name ?? session.user.email}
-                  </p>
-                  <span className={`inline-block mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
+                <div className="text-left hidden sm:block">
+                  <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium leading-none mb-0.5 ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
                     {roleLabel[userRole] ?? userRole}
                   </span>
+                  <p className="text-xs font-semibold text-foreground leading-none">
+                    {session.user.name ?? session.user.email}
+                  </p>
                 </div>
-                <motion.div
-                  animate={{ rotate: showUserMenu ? 180 : 0 }}
-                  transition={{ duration: 0.2 }}
-                >
+                <motion.div animate={{ rotate: showUserMenu ? 180 : 0 }} transition={{ duration: 0.2 }}>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                 </motion.div>
               </button>
@@ -398,8 +407,8 @@ export default function Home() {
                     animate="visible"
                     exit="hidden"
                     transition={{ duration: 0.15, ease: 'easeOut' }}
-                    style={{ transformOrigin: 'bottom left' }}
-                    className="absolute bottom-full left-0 right-0 mb-1 rounded-md border bg-background shadow-md z-50"
+                    style={{ transformOrigin: 'top right' }}
+                    className="absolute right-0 top-full mt-1 w-44 rounded-md border bg-background shadow-md z-50"
                   >
                     <button
                       onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
@@ -410,32 +419,6 @@ export default function Home() {
                     </button>
                   </motion.div>
                 )}
-              </AnimatePresence>
-            </div>
-
-            <p className="mt-3 text-[10.5px] text-muted-foreground text-center">
-              © 2026 Samara Liveaboard.
-            </p>
-          </SidebarFooter>
-        </Sidebar>
-
-        <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur-sm px-6">
-            <div className="flex items-center gap-2 lg:hidden">
-              <Menu className="h-5 w-5" />
-            </div>
-            <div className="flex-1">
-              <AnimatePresence mode="wait">
-                <motion.h2
-                  key={activeView}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 8 }}
-                  transition={{ duration: 0.18 }}
-                  className="text-xl font-semibold capitalize"
-                >
-                  {currentNavItem?.label ?? activeView}
-                </motion.h2>
               </AnimatePresence>
             </div>
 
