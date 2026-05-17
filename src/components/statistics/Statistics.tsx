@@ -38,9 +38,8 @@ interface StatsData {
 }
 
 /* ── helpers ── */
-const GOLD   = '#bdac7e'
-const TEAL   = '#1a5f6e'
-const PURPLE = '#7c3aed'
+const GOLD = '#bdac7e'
+const TEAL = '#1a5f6e'
 
 const fmtMoney = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -73,11 +72,14 @@ const MoneyTooltip = ({ active, payload, label }: { active?: boolean; payload?: 
   )
 }
 
+type ChartFilter = 'all' | 'private' | 'open'
+
 /* ── Component ── */
 export default function Statistics() {
-  const [data,    setData]    = useState<StatsData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [year,    setYear]    = useState(CURRENT_YEAR)
+  const [data,        setData]        = useState<StatsData | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [year,        setYear]        = useState(CURRENT_YEAR)
+  const [chartFilter, setChartFilter] = useState<ChartFilter>('all')
 
   const fetchStats = useCallback(async () => {
     setLoading(true)
@@ -180,24 +182,45 @@ export default function Statistics() {
       {/* ── Monthly bookings chart ── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calendar className="h-4 w-4" style={{ color: GOLD }} />
-            Bookings per Month — {year}
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="h-4 w-4" style={{ color: GOLD }} />
+              Bookings per Month — {year}
+            </CardTitle>
+            {/* Filter toggle */}
+            <div className="flex items-center gap-1 rounded-lg border p-1">
+              {([['all', 'All'], ['private', 'Private Charter'], ['open', 'Open Trip']] as [ChartFilter, string][]).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setChartFilter(val)}
+                  className="px-3 py-1 rounded-md text-xs font-medium transition-colors"
+                  style={chartFilter === val
+                    ? { backgroundColor: val === 'open' ? GOLD : val === 'private' ? TEAL : '#1e293b', color: 'white' }
+                    : { color: '#6b7280' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <Skeleton className="h-52 w-full rounded-lg" />
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={monthlyChart} barSize={18} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+              <BarChart data={monthlyChart} barCategoryGap="35%" barGap={4} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<MoneyTooltip />} />
                 <Legend iconType="square" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="private" name="Private Charter" stackId="a" fill={TEAL}    radius={[0, 0, 0, 0]} />
-                <Bar dataKey="open"    name="Open Trip"       stackId="a" fill={GOLD}    radius={[4, 4, 0, 0]} />
+                {(chartFilter === 'all' || chartFilter === 'private') && (
+                  <Bar dataKey="private" name="Private Charter" fill={TEAL} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                )}
+                {(chartFilter === 'all' || chartFilter === 'open') && (
+                  <Bar dataKey="open" name="Open Trip" fill={GOLD} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                )}
               </BarChart>
             </ResponsiveContainer>
           )}

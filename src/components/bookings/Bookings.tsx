@@ -527,10 +527,10 @@ export default function Bookings() {
           {/* Filter row 2: dropdowns + date range */}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             {/* Trip Type */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg ${typeFilter !== 'all' ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : ''}`} style={{ width: 148 }}>
+                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-32 sm:w-[148px] ${typeFilter !== 'all' ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : ''}`}>
                   <SelectValue placeholder="Trip Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -542,10 +542,10 @@ export default function Bookings() {
             </div>
 
             {/* Status */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg ${statusFilter !== 'all' ? 'border-amber-400 bg-amber-50 text-amber-700 font-semibold' : ''}`} style={{ width: 148 }}>
+                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-32 sm:w-[148px] ${statusFilter !== 'all' ? 'border-amber-400 bg-amber-50 text-amber-700 font-semibold' : ''}`}>
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -560,10 +560,10 @@ export default function Bookings() {
             </div>
 
             {/* Source */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg ${sourceFilter !== 'all' ? 'border-sky-400 bg-sky-50 text-sky-700 font-semibold' : ''}`} style={{ width: 120 }}>
+                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-28 sm:w-[120px] ${sourceFilter !== 'all' ? 'border-sky-400 bg-sky-50 text-sky-700 font-semibold' : ''}`}>
                   <SelectValue placeholder="Source" />
                 </SelectTrigger>
                 <SelectContent>
@@ -575,14 +575,14 @@ export default function Bookings() {
             </div>
 
             {/* Date range */}
-            <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
               <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground">Trip date</span>
+              <span className="text-xs text-muted-foreground hidden sm:inline">Trip date</span>
               <Input
                 type="date"
                 value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
-                className={`h-8 text-xs w-36 ${dateFrom ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                className={`h-8 text-xs w-32 sm:w-36 ${dateFrom ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
                 title="From date"
               />
               <span className="text-xs text-muted-foreground">—</span>
@@ -591,7 +591,7 @@ export default function Bookings() {
                 value={dateTo}
                 min={dateFrom}
                 onChange={e => setDateTo(e.target.value)}
-                className={`h-8 text-xs w-36 ${dateTo ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                className={`h-8 text-xs w-32 sm:w-36 ${dateTo ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
                 title="To date"
               />
             </div>
@@ -603,16 +603,16 @@ export default function Bookings() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Code</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead className="hidden sm:table-cell">Type</TableHead>
                   <TableHead>Yacht / Trip</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Dates</TableHead>
-                  <TableHead>Guests</TableHead>
+                  <TableHead className="hidden md:table-cell">Guests</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Paid</TableHead>
-                  <TableHead>Due Dates</TableHead>
+                  <TableHead className="hidden md:table-cell">Paid</TableHead>
+                  <TableHead className="hidden lg:table-cell">Due Dates</TableHead>
                   <TableHead>Status</TableHead>
-                  {canManageBookings && <TableHead className="text-center">Payment</TableHead>}
+                  {canManageBookings && <TableHead className="hidden sm:table-cell text-center">Payment</TableHead>}
                   {canManageBookings && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -636,7 +636,7 @@ export default function Bookings() {
                 ) : filtered.map(b => (
                   <TableRow key={b.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(b)}>
                     <TableCell className="font-mono text-xs font-medium">{b.bookingCode}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <div className="space-y-0.5">
                         <Badge variant="outline" className="text-xs"
                           style={b.source === 'AGENT' ? { borderColor: ACCENT, color: ACCENT } : {}}>
@@ -666,15 +666,15 @@ export default function Bookings() {
                         <div className="text-muted-foreground">{getDays(b.startDate, b.endDate)}d</div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">{b.guestCount}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm">{b.guestCount}</TableCell>
                     <TableCell className="text-sm font-medium">
                       ${netBook(b).toLocaleString()}
                       {b.source === 'AGENT' && (b.agent?.commission ?? 0) > 0
                         ? <div className="text-xs text-blue-600">{b.agent!.commission}% comm</div>
                         : b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
                     </TableCell>
-                    <TableCell className="text-sm">${b.depositPaid.toLocaleString()}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell text-sm">${b.depositPaid.toLocaleString()}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <div className="text-xs space-y-0.5 min-w-20">
                         {b.depositDueDate ? (
                           <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
@@ -698,10 +698,10 @@ export default function Bookings() {
                       const hasAnyPmt       = bookingPmts.length > 0
                       const hasConfirmedPmt = bookingPmts.some(p => p.status === 'confirmed')
                       const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
-                      const nextType        = hasAnyPmt ? 'Pelunasan' : 'DP'
-                      const pelunasanBlocked = nextType === 'Pelunasan' && !hasConfirmedPmt
+                      const nextType        = hasAnyPmt ? 'Settlement' : 'Deposit'
+                      const pelunasanBlocked = nextType === 'Settlement' && !hasConfirmedPmt
                       return (
-                        <TableCell onClick={e => e.stopPropagation()}>
+                        <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex flex-col gap-1 items-start">
                             {canRecord && (
                               <Button
@@ -711,7 +711,7 @@ export default function Bookings() {
                                 className={`h-7 px-2 text-xs ${pelunasanBlocked ? 'opacity-40 cursor-not-allowed' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}`}
                                 onClick={() => !pelunasanBlocked && openPayment(b)}
                               >
-                                <CreditCard className="h-3 w-3 mr-1" /> Buat Invoice {nextType}
+                                <CreditCard className="h-3 w-3 mr-1" /> Invoice {nextType}
                               </Button>
                             )}
                             {pendingPmt && (
@@ -785,7 +785,7 @@ export default function Bookings() {
 
       {/* ════ Record Payment Dialog ════ */}
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
-        <DialogContent className={paymentBooking && payments.filter(p => p.bookingId === paymentBooking.id).length > 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'}>
+        <DialogContent className={`w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto ${paymentBooking && payments.filter(p => p.bookingId === paymentBooking.id).length > 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}>
           {paymentBooking && (() => {
             const prev        = payments.filter(p => p.bookingId === paymentBooking.id)
             const hasHistory  = prev.length > 0
@@ -1052,7 +1052,7 @@ export default function Bookings() {
 
       {/* ════ Edit Booking Dialog ════ */}
       <Dialog open={!!editBooking} onOpenChange={v => !v && setEditBooking(null)}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           {editBooking && (
             <>
               <DialogHeader>
@@ -1189,7 +1189,7 @@ export default function Bookings() {
 
       {/* ════ Guest Travel Details Dialog ════ */}
       <Dialog open={!!travelBooking} onOpenChange={v => !v && setTravelBooking(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {travelBooking && (
             <>
               <DialogHeader>

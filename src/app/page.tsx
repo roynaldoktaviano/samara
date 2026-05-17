@@ -7,7 +7,7 @@ import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -265,6 +265,7 @@ export default function Home() {
           className="flex flex-col items-center gap-4"
         >
           <motion.div
+            initial={{ rotate: 0 }}
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
             className="w-9 h-9 border-[3px] border-[#bdac7e] border-t-transparent rounded-full"
@@ -384,6 +385,7 @@ export default function Home() {
                 className="relative p-2.5 rounded-full hover:bg-muted transition-colors"
               >
                 <motion.div
+                  initial={{ rotate: 0 }}
                   animate={bellShake ? { rotate: [0, -22, 22, -14, 14, -6, 6, 0] } : { rotate: 0 }}
                   transition={{ duration: 0.65, ease: 'easeInOut' }}
                 >
@@ -415,7 +417,7 @@ export default function Home() {
                     exit="hidden"
                     transition={{ duration: 0.15, ease: 'easeOut' }}
                     style={{ transformOrigin: 'top right' }}
-                    className="absolute right-0 top-full mt-2 w-80 rounded-xl border bg-background shadow-xl z-50 overflow-hidden"
+                    className="absolute right-0 top-full mt-2 w-[calc(100vw-1rem)] sm:w-80 max-w-sm rounded-xl border bg-background shadow-xl z-50 overflow-hidden"
                   >
                     {/* Dropdown header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
@@ -460,7 +462,7 @@ export default function Home() {
                                 {n.title}
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
-                              <p className="text-[10px] text-muted-foreground/70 mt-1">{fmtRelative(n.createdAt)}</p>
+                              <p className="text-[10px] text-muted-foreground/70 mt-1" suppressHydrationWarning>{fmtRelative(n.createdAt)}</p>
                             </div>
                             {!n.isRead && (
                               <span className="shrink-0 mt-1.5 w-2 h-2 rounded-full bg-blue-500" />
@@ -543,7 +545,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="p-6 overflow-hidden">
+          <div className="p-3 sm:p-6 overflow-hidden">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeView}

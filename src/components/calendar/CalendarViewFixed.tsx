@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -516,6 +516,7 @@ export default function CalendarView() {
   // Guest management
   const [guestEditTarget, setGuestEditTarget]    = useState<any>(null)
   const [guestSheetOpen,  setGuestSheetOpen]     = useState(false)
+  const [statsCollapsed,  setStatsCollapsed]     = useState(false)
   const [guestSearchQ,    setGuestSearchQ]       = useState('')
   const [guestSearchRes,  setGuestSearchRes]     = useState<any[]>([])
   const [guestSearching,  setGuestSearching]     = useState(false)
@@ -685,6 +686,15 @@ export default function CalendarView() {
     window.addEventListener('booking-created', handler)
     return () => window.removeEventListener('booking-created', handler)
   }, [fetchBookings, fetchOpenTrips])
+
+  /* Auto switch to list view on small screens */
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onChange = (e: MediaQueryListEvent) => { if (e.matches) setViewMode('list') }
+    if (mq.matches) setViewMode('list')
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const navigate = (dir: 'prev' | 'next') =>
     setCurrentDate(prev => {
@@ -925,19 +935,27 @@ export default function CalendarView() {
             {/* Single unified stats row */}
             <div className="rounded-2xl overflow-hidden border bg-slate-50">
               {/* Header bar */}
-              <div className="flex items-center justify-between px-5 py-3 border-b bg-white">
+              <button
+                onClick={() => setStatsCollapsed(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-3 border-b bg-white hover:bg-slate-50 transition-colors"
+              >
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: yachtColor }} />
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Showing data for</span>
                   <span className="text-xs font-bold" style={{ color: yachtColor }}>{yachtLabel}</span>
                 </div>
-                <span className="text-[11px] text-slate-400">{MONTH_SHORT[viewMonth]} {viewYear}</span>
-              </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400">{MONTH_SHORT[viewMonth]} {viewYear}</span>
+                  {statsCollapsed
+                    ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                    : <ChevronUp className="h-3.5 w-3.5 text-slate-400" />}
+                </div>
+              </button>
 
-              {/* Stats row — Private Charter */}
-              <div className="grid grid-cols-3 divide-x divide-slate-200 bg-white">
+              {/* Stats body — collapsible */}
+              {!statsCollapsed && <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 bg-white">
                 {/* Active Bookings */}
-                <div className="px-6 py-5">
+                <div className="px-4 sm:px-6 py-4 sm:py-5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
                   </div>
@@ -945,11 +963,11 @@ export default function CalendarView() {
                     <BookOpen className="h-3.5 w-3.5 text-slate-400" />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Active Bookings</span>
                   </div>
-                  <p className="text-4xl font-black text-slate-800 leading-none">{activeBookings}</p>
+                  <p className="text-3xl sm:text-4xl font-black text-slate-800 leading-none">{activeBookings}</p>
                   <p className="text-[11px] text-slate-400 mt-2">confirmed & pending · {MONTH_SHORT[viewMonth]} {viewYear}</p>
                 </div>
                 {/* Total Bookings */}
-                <div className="px-6 py-5">
+                <div className="px-4 sm:px-6 py-4 sm:py-5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
                   </div>
@@ -957,11 +975,11 @@ export default function CalendarView() {
                     <Anchor className="h-3.5 w-3.5 text-slate-400" />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Total Bookings</span>
                   </div>
-                  <p className="text-4xl font-black text-slate-800 leading-none">{yearBookings}</p>
+                  <p className="text-3xl sm:text-4xl font-black text-slate-800 leading-none">{yearBookings}</p>
                   <p className="text-[11px] text-slate-400 mt-2">all of {viewYear}</p>
                 </div>
                 {/* Completed Trips */}
-                <div className="px-6 py-5">
+                <div className="px-4 sm:px-6 py-4 sm:py-5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
                   </div>
@@ -969,11 +987,12 @@ export default function CalendarView() {
                     <CheckCircle className="h-3.5 w-3.5 text-slate-400" />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Completed Trips</span>
                   </div>
-                  <p className="text-4xl font-black text-slate-800 leading-none">{completedTrips}</p>
+                  <p className="text-3xl sm:text-4xl font-black text-slate-800 leading-none">{completedTrips}</p>
                   <p className="text-[11px] text-slate-400 mt-2">{MONTH_SHORT[viewMonth]} {viewYear}</p>
                 </div>
-              </div>
+              </div>}
 
+              {!statsCollapsed && <>
               {/* Divider */}
               <div className="border-t border-slate-200 mx-5" />
 
@@ -984,7 +1003,7 @@ export default function CalendarView() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Open Trip</span>
                   <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Cabin Overview</span>
                 </div>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <LayoutGrid className="h-3.5 w-3.5 text-slate-500" />
@@ -995,7 +1014,7 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400">all open trips</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 border-x border-slate-200 px-4">
+                  <div className="flex items-center gap-3 sm:border-x sm:border-slate-200 sm:px-4">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <Waves className="h-3.5 w-3.5 text-slate-500" />
                     </div>
@@ -1005,7 +1024,7 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400">not yet departed</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 border-r border-slate-200 pr-4">
+                  <div className="flex items-center gap-3 sm:border-r sm:border-slate-200 sm:pr-4">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <CheckCircle className="h-3.5 w-3.5 text-slate-500" />
                     </div>
@@ -1027,6 +1046,7 @@ export default function CalendarView() {
                   </div>
                 </div>
               </div>
+              </>}
             </div>
           </div>
         )
@@ -1035,7 +1055,7 @@ export default function CalendarView() {
       {/* ── Calendar card ── */}
       <Card className="w-full">
         {/* Top nav */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b">
+        <div className="flex items-center gap-2 px-3 sm:px-5 py-3 border-b overflow-x-auto">
           {/* Year selector */}
           <div className="flex items-center gap-1 shrink-0">
             <button
@@ -1056,7 +1076,7 @@ export default function CalendarView() {
           </div>
 
           {/* Month tabs */}
-          <div className="flex flex-1 gap-0.5 overflow-x-auto">
+          <div className="flex flex-1 gap-0.5 overflow-x-auto min-w-0">
             {MONTH_SHORT.map((m, i) => (
               <button
                 key={m}
@@ -1074,7 +1094,7 @@ export default function CalendarView() {
           </div>
 
           {/* View toggle */}
-          <div className="flex gap-1 shrink-0">
+          <div className="flex gap-1 shrink-0 ml-auto">
             {([['calendar', CalendarIcon], ['list', List]] as const).map(([mode, Icon]) => (
               <button
                 key={mode}
@@ -1094,8 +1114,8 @@ export default function CalendarView() {
 
         {/* Legend + Filters */}
         <div className="border-b">
-          {/* Row 1: legend swatches */}
-          <div className="flex items-center gap-4 px-5 py-2 flex-wrap">
+          {/* Row 1: legend swatches — hidden on mobile */}
+          <div className="hidden sm:flex items-center gap-3 px-3 sm:px-5 py-2 flex-wrap">
             {/* Charter per-yacht colors */}
             {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
               const color = yachtColorMap[y.name] ?? '#64748b'
@@ -1109,11 +1129,11 @@ export default function CalendarView() {
             <div className="border-l border-border pl-3 flex items-center gap-4">
               <div className="flex items-center gap-1.5">
                 <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#22c55e'), outline: '1.5px solid #22c55e', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip (tersedia)</span>
+                <span className="text-[10px] text-muted-foreground">Open Trip (available)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#ef4444'), outline: '1.5px solid #ef4444', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip (penuh)</span>
+                <span className="text-[10px] text-muted-foreground">Open Trip (full)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#94a3b8'), outline: '1.5px solid #94a3b8', outlineOffset: -1 }} />
@@ -1123,80 +1143,82 @@ export default function CalendarView() {
           </div>
 
           {/* Row 2: Date filter */}
-          <div className="flex items-center gap-2 px-5 py-2 border-t flex-wrap">
-            <span className="text-[11px] text-muted-foreground font-medium shrink-0">Tanggal:</span>
-            {/* Presets */}
-            {(['today','week','month'] as const).map(p => (
-              <button key={p} onClick={() => handlePreset(p)}
-                className="text-[11px] px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
-                style={filterActive && (p === 'today' ? filterFrom === todayStr() && filterTo === todayStr() : false)
-                  ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e', color: 'white' } : {}}>
-                {p === 'today' ? 'Hari Ini' : p === 'week' ? 'Minggu Ini' : 'Bulan Ini'}
-              </button>
-            ))}
-            <div className="w-px h-4 bg-border mx-1" />
+          <div className="flex items-center gap-2 px-3 sm:px-5 py-2 border-t overflow-x-auto scrollbar-none">
+            <span className="hidden sm:inline text-[11px] text-muted-foreground font-medium shrink-0">Date:</span>
+            {/* Presets — hidden on mobile */}
+            <div className="hidden sm:flex gap-1">
+              {(['today','week','month'] as const).map(p => (
+                <button key={p} onClick={() => handlePreset(p)}
+                  className="text-[11px] px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
+                  style={filterActive && (p === 'today' ? filterFrom === todayStr() && filterTo === todayStr() : false)
+                    ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e', color: 'white' } : {}}>
+                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+                </button>
+              ))}
+            </div>
+            <div className="w-px h-4 bg-border mx-1 hidden sm:block" />
             {/* Mode toggle */}
-            <div className="flex rounded-lg border overflow-hidden text-[11px]">
+            <div className="flex rounded-lg border overflow-hidden text-[11px] shrink-0">
               {(['single','range'] as const).map(m => (
                 <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
                   className="px-2.5 py-1 transition-colors"
                   style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white' } : { color: '#6b7280' }}>
-                  {m === 'single' ? 'Tanggal' : 'Rentang'}
+                  {m === 'single' ? 'Single' : 'Range'}
                 </button>
               ))}
             </div>
             {/* Inputs */}
             <input type="date" value={filterFrom}
               onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
-              className="h-7 text-[11px] border rounded-lg px-2 bg-background" />
+              className="h-7 text-[11px] border rounded-lg px-2 bg-background w-32 shrink-0" />
             {filterMode === 'range' && (<>
-              <span className="text-muted-foreground text-[11px]">–</span>
+              <span className="text-muted-foreground text-[11px] shrink-0">–</span>
               <input type="date" value={filterTo} min={filterFrom}
                 onChange={e => setFilterTo(e.target.value)}
-                className="h-7 text-[11px] border rounded-lg px-2 bg-background" />
+                className="h-7 text-[11px] border rounded-lg px-2 bg-background w-32 shrink-0" />
             </>)}
             <button onClick={handleFilterApply}
-              className="h-7 px-3 text-[11px] font-semibold rounded-lg text-white transition-colors"
+              className="h-7 px-3 text-[11px] font-semibold rounded-lg text-white transition-colors shrink-0"
               style={{ backgroundColor: '#bdac7e' }}>
-              Tampilkan
+              Apply
             </button>
             {filterActive && (
               <button onClick={clearDateFilter}
-                className="h-7 w-7 flex items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground">
+                className="h-7 w-7 flex items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground shrink-0">
                 <X className="h-3 w-3" />
               </button>
             )}
             {filterActive && (
-              <span className="text-[11px] text-[#bdac7e] font-semibold ml-1">
+              <span className="text-[11px] text-[#bdac7e] font-semibold ml-1 shrink-0 whitespace-nowrap">
                 {filterFrom === filterTo
-                  ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })
-                  : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}`}
+                  ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
+                  : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
               </span>
             )}
           </div>
 
           {/* Row 3: trip type filter + yacht filter */}
-          <div className="flex items-center justify-between gap-4 px-5 py-2 border-t flex-wrap">
+          <div className="flex items-center gap-x-3 sm:gap-x-4 px-3 sm:px-5 py-2 border-t overflow-x-auto scrollbar-none">
             {/* Trip type */}
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium">Tipe:</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium shrink-0">Type:</span>
               {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setTripFilter(f)}
                   className={[
-                    'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors',
+                    'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 whitespace-nowrap',
                     tripFilter === f ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
                   ].join(' ')}
                 >
-                  {f === 'all' ? 'Semua' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
+                  {f === 'all' ? 'All' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
                 </button>
               ))}
             </div>
 
             {/* Yacht filter */}
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium">Kapal:</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium shrink-0">Yacht:</span>
               {(() => {
                 const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
                 const sorted = [...yachts].sort((a, b) => {
@@ -1214,7 +1236,7 @@ export default function CalendarView() {
                       key={y.id}
                       onClick={() => setYachtFilter(y.name)}
                       className={[
-                        'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border',
+                        'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border shrink-0 whitespace-nowrap',
                         active ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted',
                       ].join(' ')}
                       style={active ? { backgroundColor: color, borderColor: color } : {}}
@@ -1231,7 +1253,7 @@ export default function CalendarView() {
         {/* Body */}
         <CardContent className="p-0">
           {viewMode === 'calendar' ? (
-            <div className="flex items-start w-full px-4 py-5 gap-2">
+            <div className="flex items-start w-full px-1 sm:px-4 py-3 sm:py-5 gap-1 sm:gap-2 overflow-x-auto">
               {/* Prev */}
               <button
                 onClick={() => navigate('prev')}
@@ -1279,18 +1301,18 @@ export default function CalendarView() {
             </div>
           ) : (
             /* List view */
-            <div className="px-5 py-4 space-y-2">
+            <div className="px-3 sm:px-5 py-4 space-y-2">
               {filterActive && (
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">{upcomingBookings.length} trip</span> ditemukan
+                    <span className="font-semibold text-foreground">{upcomingBookings.length} trip{upcomingBookings.length !== 1 ? 's' : ''}</span> found
                     {' · '}
                     <span style={{ color: '#bdac7e' }} className="font-semibold">
                       {filterFrom === filterTo
-                        ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-                        : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}`}
+                        ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+                        : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
                     </span>
-                    {' · semua kapal'}
+                    {' · all yachts'}
                   </p>
                 </div>
               )}
@@ -1315,7 +1337,7 @@ export default function CalendarView() {
                         setBookingDetailLoading(false)
                       }).catch(() => setBookingDetailLoading(false))
                     }}
-                    className="w-full flex items-center gap-4 rounded-lg border border-border px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+                    className="w-full flex items-center gap-3 rounded-lg border border-border px-3 sm:px-4 py-3 hover:bg-muted/40 transition-colors text-left"
                   >
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
                     <div className="flex-1 min-w-0">
@@ -1328,7 +1350,7 @@ export default function CalendarView() {
                         {new Date(b.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                         {' – '}
                         {new Date(b.endDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-                        {' · '}{getDays(b.startDate, b.endDate)} hari
+                        {' · '}{getDays(b.startDate, b.endDate)} days
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -1351,7 +1373,7 @@ export default function CalendarView() {
 
       {/* ── Booking Detail Dialog ── */}
       <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null) } }}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
             <>
@@ -1681,7 +1703,7 @@ export default function CalendarView() {
 
       {/* ── Open Trip Detail Dialog ── */}
       <Dialog open={otDetailOpen} onOpenChange={v => { setOtDetailOpen(v); if (!v) setIsOtEditing(false) }}>
-        <DialogContent className="sm:max-w-4xl max-h-[88vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           {otDetailLoading || !otDetail ? (
             <>
               <DialogHeader><DialogTitle>Open Trip</DialogTitle></DialogHeader>

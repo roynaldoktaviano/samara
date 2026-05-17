@@ -117,12 +117,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       passport, dateOfBirth, address,
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
+      medicalData, foodData, drinksData, housekeepingData, serviceData, divingData, surfingData,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
-    const customer = await db.customer.update({
+    const customer = await (db.customer as any).update({
       where: { id },
       data: {
         name, firstName, lastName, gender, email, phone,
@@ -131,6 +132,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         nationality, emergencyContact, drinkPreferences,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
+        ...(medicalData      !== undefined && { medicalData }),
+        ...(foodData         !== undefined && { foodData }),
+        ...(drinksData       !== undefined && { drinksData }),
+        ...(housekeepingData !== undefined && { housekeepingData }),
+        ...(serviceData      !== undefined && { serviceData }),
+        ...(divingData       !== undefined && { divingData }),
+        ...(surfingData      !== undefined && { surfingData }),
       },
     })
 

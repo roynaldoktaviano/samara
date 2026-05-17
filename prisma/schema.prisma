@@ -54,6 +54,16 @@ model Customer {
   passportExpiry      DateTime?
   emergencyContact    String?
   drinkPreferences    String?
+  // Guest self-service form
+  guestFormToken      String?        @unique
+  guestFormExpiresAt  DateTime?
+  medicalData         Json?
+  foodData            Json?
+  drinksData          Json?
+  housekeepingData    Json?
+  serviceData         Json?
+  divingData          Json?
+  surfingData         Json?
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt

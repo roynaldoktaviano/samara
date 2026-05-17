@@ -221,7 +221,7 @@ export default function OpenTrips() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {[
           { label: 'Total Trips',  value: trips.length,                                  color: ACCENT },
           { label: 'Open',         value: trips.filter(t => t.status === 'open').length,  color: '#4a9f6e' },
@@ -249,7 +249,7 @@ export default function OpenTrips() {
               <CardDescription>{loading ? 'Loading...' : `${filtered.length} trip${filtered.length !== 1 ? 's' : ''}`}</CardDescription>
             </div>
             <Select value={statusFilter} onValueChange={setStatus}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-32 sm:w-36"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="open">Open</SelectItem>
@@ -267,7 +267,7 @@ export default function OpenTrips() {
               placeholder="Search by title, destination, yacht..."
               value={searchTerm}
               onChange={e => setSearch(e.target.value)}
-              className="max-w-sm"
+              className="w-full sm:max-w-sm"
             />
           </div>
 
@@ -288,8 +288,8 @@ export default function OpenTrips() {
                 const isFull = t.spotsAvailable === 0
 
                 return (
-                  <div key={t.id} className="border rounded-xl p-4 hover:shadow-sm transition-shadow">
-                    <div className="flex items-start justify-between gap-4">
+                  <div key={t.id} className="border rounded-xl p-3 sm:p-4 hover:shadow-sm transition-shadow">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       {/* Left info */}
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -304,7 +304,7 @@ export default function OpenTrips() {
                           )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
                           <div className="flex items-center gap-1.5">
                             <Ship className="w-3.5 h-3.5 shrink-0" />
                             {t.yacht.name}{t.yacht.model ? ` (${t.yacht.model})` : ''}
@@ -370,7 +370,7 @@ export default function OpenTrips() {
                       </div>
 
                       {/* Right — spot count + actions */}
-                      <div className="flex flex-col items-end gap-3 shrink-0">
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0">
                         <div className="text-right">
                           <div className="text-xs text-muted-foreground">Bookings</div>
                           <div className="font-bold text-2xl" style={{ color: ACCENT }}>{t.spotsBooked}</div>
@@ -399,7 +399,7 @@ export default function OpenTrips() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) setEditTrip(null) }}>
-        <DialogContent className="sm:max-w-2xl flex flex-col max-h-[92vh] overflow-hidden">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl flex flex-col max-h-[92vh] overflow-hidden">
           <DialogHeader className="shrink-0 border-b pb-3">
             <DialogTitle>{editTrip ? 'Edit Open Trip' : 'Schedule New Open Trip'}</DialogTitle>
           </DialogHeader>
@@ -543,7 +543,7 @@ export default function OpenTrips() {
 
       {/* Import results dialog */}
       <Dialog open={importOpen && !importing && !!importResults} onOpenChange={open => { if (!open) { setImportOpen(false); setImportResults(null) } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
           </DialogHeader>

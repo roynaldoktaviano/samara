@@ -38,7 +38,7 @@ const ACCENT = '#bdac7e'
 const today = () => new Date().toISOString().split('T')[0]
 
 const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const fmtMoney = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -153,7 +153,7 @@ export default function Dashboard() {
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Dashboard</h3>
           <p className="text-muted-foreground text-sm">
-            Trip aktif: <span className="font-semibold text-foreground">{filterLabel}</span>
+            Active trips: <span className="font-semibold text-foreground">{filterLabel}</span>
           </p>
         </div>
 
@@ -169,7 +169,7 @@ export default function Dashboard() {
                 (p === 'today' && isToday) ? { backgroundColor: ACCENT, borderColor: ACCENT, color: 'white' } : {}
               }
             >
-              {p === 'today' ? 'Hari Ini' : p === 'week' ? 'Minggu Ini' : p === 'month' ? 'Bulan Ini' : '30 Hari'}
+              {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : '30 Days'}
             </button>
           ))}
 
@@ -182,7 +182,7 @@ export default function Dashboard() {
                 className="px-3 py-1 transition-colors"
                 style={mode === m ? { backgroundColor: ACCENT, color: 'white' } : { color: '#6b7280' }}
               >
-                {m === 'single' ? 'Tanggal' : 'Rentang'}
+                {m === 'single' ? 'Single' : 'Range'}
               </button>
             ))}
           </div>
@@ -193,7 +193,7 @@ export default function Dashboard() {
               type="date"
               value={dateFrom}
               onChange={e => setDateFrom(e.target.value)}
-              className="h-8 text-xs w-36"
+              className="h-8 text-xs w-32 sm:w-36"
             />
             {mode === 'range' && (
               <>
@@ -203,7 +203,7 @@ export default function Dashboard() {
                   value={dateTo}
                   min={dateFrom}
                   onChange={e => setDateTo(e.target.value)}
-                  className="h-8 text-xs w-36"
+                  className="h-8 text-xs w-32 sm:w-36"
                 />
               </>
             )}
@@ -219,31 +219,31 @@ export default function Dashboard() {
       </div>
 
       {/* ── Stat cards ── */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {[
           {
-            title: 'Trip Aktif',
+            title: 'Active Trips',
             value: loading ? '—' : String(activeCount),
-            sub: isSingleDay ? `di tanggal ${fmtDate(dateFrom)}` : `dalam rentang ini`,
+            sub: isSingleDay ? `on ${fmtDate(dateFrom)}` : 'in this range',
             icon: <Ship className="h-4 w-4 text-muted-foreground" />,
           },
           {
             title: 'Total Revenue',
             value: loading ? '—' : fmtMoney(totalRevenue),
-            sub: `${fmtMoney(totalPaid)} sudah dibayar`,
+            sub: `${fmtMoney(totalPaid)} paid`,
             icon: <DollarSign className="h-4 w-4 text-muted-foreground" />,
           },
           {
-            title: 'Sisa Tagihan',
+            title: 'Outstanding',
             value: loading ? '—' : fmtMoney(outstanding),
-            sub: outstanding > 0 ? 'belum dilunasi' : 'semua lunas ✓',
+            sub: outstanding > 0 ? 'unpaid balance' : 'all settled ✓',
             icon: <TrendingUp className="h-4 w-4 text-muted-foreground" />,
             accent: outstanding > 0,
           },
           {
-            title: 'Total Tamu',
+            title: 'Total Guests',
             value: loading ? '—' : String(totalGuests),
-            sub: `dari ${activeCount} booking`,
+            sub: `across ${activeCount} booking${activeCount !== 1 ? 's' : ''}`,
             icon: <Users className="h-4 w-4 text-muted-foreground" />,
           },
         ].map(card => (
@@ -284,8 +284,8 @@ export default function Dashboard() {
           ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Tidak ada trip aktif di periode ini</p>
-              <p className="text-xs mt-1 opacity-60">Coba ubah rentang tanggal</p>
+              <p className="text-sm">No active trips in this period</p>
+              <p className="text-xs mt-1 opacity-60">Try changing the date range</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -298,9 +298,9 @@ export default function Dashboard() {
                 const isFullyPaid = b.status === 'fully_paid' || b.status === 'completed'
 
                 return (
-                  <div key={b.id} className="flex items-center gap-4 rounded-xl border px-4 py-3 hover:bg-muted/30 transition-colors">
+                  <div key={b.id} className="flex items-start sm:items-center gap-3 rounded-xl border px-3 sm:px-4 py-3 hover:bg-muted/30 transition-colors">
                     {/* Icon */}
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full mt-0.5 sm:mt-0"
                       style={{ backgroundColor: `${ACCENT}20` }}>
                       {b.tripType === 'OPEN_TRIP'
                         ? <Anchor className="h-4 w-4" style={{ color: ACCENT }} />
@@ -312,36 +312,34 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs text-muted-foreground">{b.bookingCode}</span>
                         <span className="font-semibold text-sm truncate">{tripName}</span>
-                        {dest !== '—' && <span className="text-xs text-muted-foreground truncate">{dest}</span>}
+                        {dest !== '—' && <span className="text-xs text-muted-foreground truncate hidden sm:inline">{dest}</span>}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0 mt-0.5 text-xs text-muted-foreground">
                         <span>{b.customer.name}</span>
-                        <span>·</span>
-                        <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {b.guestCount} tamu</span>
-                        <span>·</span>
+                        <span className="hidden sm:inline">·</span>
+                        <span className="hidden sm:flex items-center gap-1"><Users className="h-3 w-3" /> {b.guestCount} guests</span>
+                        <span className="hidden sm:inline">·</span>
                         <span>{fmtDate(b.startDate)} – {fmtDate(b.endDate)}</span>
-                        {b.agent && <><span>·</span><span>via {b.agent.name}</span></>}
+                        {b.agent && <><span className="hidden sm:inline">·</span><span className="hidden sm:inline">via {b.agent.name}</span></>}
                       </div>
                     </div>
 
-                    {/* Financial */}
-                    <div className="text-right shrink-0">
+                    {/* Financial + Status stacked on mobile */}
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
                       <div className="font-semibold text-sm">{fmtMoney(b.totalPrice)}</div>
                       {!isFullyPaid && remaining > 0 && (
-                        <div className="flex items-center gap-1 text-xs text-amber-600 justify-end mt-0.5">
+                        <div className="flex items-center gap-1 text-xs text-amber-600">
                           <AlertCircle className="h-3 w-3" />
-                          sisa {fmtMoney(remaining)}
+                          <span className="hidden sm:inline">bal </span>{fmtMoney(remaining)}
                         </div>
                       )}
                       {isFullyPaid && (
-                        <div className="text-xs text-emerald-600 mt-0.5">Lunas ✓</div>
+                        <div className="text-xs text-emerald-600">Settled ✓</div>
                       )}
+                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[b.status] ?? ''}`}>
+                        {STATUS_LABELS[b.status] ?? b.status}
+                      </Badge>
                     </div>
-
-                    {/* Status */}
-                    <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_STYLES[b.status] ?? ''}`}>
-                      {STATUS_LABELS[b.status] ?? b.status}
-                    </Badge>
                   </div>
                 )
               })}
