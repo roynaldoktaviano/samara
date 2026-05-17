@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter } from '@/components/ui/sidebar'
-import { LayoutDashboard, Anchor, Calendar, Users, DollarSign, Wrench, Menu, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield } from 'lucide-react'
+import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
+import { LayoutDashboard, Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -21,8 +21,9 @@ import Payments from '@/components/payments/Payments'
 import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
+import Statistics from '@/components/statistics/Statistics'
 
-type View = 'dashboard' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log'
+type View = 'dashboard' | 'statistics' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log'
 
 type NavItem = {
   id: View
@@ -38,9 +39,7 @@ const navigationItems: NavItem[] = [
   { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
-  { id: 'dashboard',   label: 'Statistics',  icon: LayoutDashboard, roles: ['ADMIN', 'FINANCE'] },
-  { id: 'expenses',    label: 'Expenses',    icon: DollarSign,      roles: ['ADMIN', 'FINANCE'] },
-  { id: 'maintenance', label: 'Maintenance', icon: Wrench,          roles: ['ADMIN', 'FINANCE'] },
+  { id: 'statistics',  label: 'Statistics',  icon: TrendingUp,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
   { id: 'vouchers',      label: 'Vouchers',    icon: Tag,    roles: ['ADMIN'] },
   { id: 'users',         label: 'Team',        icon: UserCog, roles: ['ADMIN'] },
@@ -92,11 +91,11 @@ const NOTIF_COLOR: Record<string, string> = {
 function fmtRelative(d: string) {
   const diff = Date.now() - new Date(d).getTime()
   const min  = Math.floor(diff / 60000)
-  if (min < 1)   return 'Baru saja'
-  if (min < 60)  return `${min} menit lalu`
+  if (min < 1)   return 'Just now'
+  if (min < 60)  return `${min} min ago`
   const hr = Math.floor(min / 60)
-  if (hr < 24)   return `${hr} jam lalu`
-  return `${Math.floor(hr / 24)} hari lalu`
+  if (hr < 24)   return `${hr} hr ago`
+  return `${Math.floor(hr / 24)} days ago`
 }
 
 function playChime() {
@@ -303,6 +302,7 @@ export default function Home() {
       case 'agents':       return <Agents />
       case 'vouchers':      return <Vouchers />
       case 'activity-log':  return <ActivityLog />
+      case 'statistics':    return <Statistics />
       default:              return <CalendarView />
     }
   }
@@ -371,10 +371,8 @@ export default function Home() {
         </Sidebar>
 
         <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-10 flex h-14 items-center border-b bg-background/95 backdrop-blur-sm px-6">
-            <div className="flex items-center gap-2 lg:hidden">
-              <Menu className="h-5 w-5" />
-            </div>
+          <header className="sticky top-0 z-10 flex h-14 items-center border-b bg-background/95 backdrop-blur-sm px-4">
+            <SidebarTrigger className="h-8 w-8 shrink-0" />
             <div className="flex-1" />
 
             <div className="flex items-center gap-3">
@@ -421,14 +419,14 @@ export default function Home() {
                   >
                     {/* Dropdown header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
-                      <span className="font-semibold text-sm">Notifikasi</span>
+                      <span className="font-semibold text-sm">Notifications</span>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllRead}
                           className="flex items-center gap-1 text-xs text-[#1a5f6e] hover:underline"
                         >
                           <CheckCheck className="h-3 w-3" />
-                          Tandai semua dibaca
+                          Mark all as read
                         </button>
                       )}
                     </div>
@@ -437,7 +435,7 @@ export default function Home() {
                     <div className="max-h-80 overflow-y-auto divide-y">
                       {notifications.length === 0 ? (
                         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                          Tidak ada notifikasi
+                          No notifications
                         </div>
                       ) : notifications.slice(0, 20).map((n, i) => {
                         const Icon  = NOTIF_ICON[n.type]  ?? Bell
@@ -479,14 +477,14 @@ export default function Home() {
                           onClick={() => { setCurrentView('bookings'); setNotifOpen(false) }}
                           className="text-xs text-[#bdac7e] hover:underline"
                         >
-                          Lihat bookings →
+                          View bookings →
                         </button>
                       )}
                       <button
                         onClick={() => { setCurrentView('payments'); setNotifOpen(false) }}
                         className="text-xs text-[#1a5f6e] hover:underline"
                       >
-                        Lihat payments →
+                        View payments →
                       </button>
                     </div>
                   </motion.div>

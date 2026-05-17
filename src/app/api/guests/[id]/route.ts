@@ -5,7 +5,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body = await request.json()
-    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight, cabinId } = body
+    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight, cabinId, isLead } = body
 
     const data: Record<string, unknown> = {
       arrivalPickupTime, arrivalHotel, arrivalFlight,
@@ -13,10 +13,35 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     if (cabinId !== undefined) data.cabinId = cabinId || null
 
+    // When setting as lead, clear isLead on all other guests in the same booking first
+    if (isLead === true) {
+      const current = await db.bookingGuest.findUnique({ where: { id }, select: { bookingId: true } })
+      if (current) {
+        await db.bookingGuest.updateMany({
+          where: { bookingId: current.bookingId, id: { not: id } },
+          data:  { isLead: false },
+        })
+      }
+      data.isLead = true
+    } else if (isLead === false) {
+      data.isLead = false
+    }
+
     const guest = await db.bookingGuest.update({ where: { id }, data })
     return NextResponse.json(guest)
   } catch (error) {
     console.error('Error updating booking guest:', error)
     return NextResponse.json({ error: 'Failed to update guest' }, { status: 500 })
+  }
+}
+
+export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    await db.bookingGuest.delete({ where: { id } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Error deleting booking guest:', error)
+    return NextResponse.json({ error: 'Failed to delete guest' }, { status: 500 })
   }
 }

@@ -32,13 +32,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!trip) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     // Build cabin availability map
-    const occupancyMap: Record<string, { guests: { id: string; name: string }[]; bookingStatus: string | null; salesperson: string }> = {}
+    const occupancyMap: Record<string, { guests: { id: string; bgId: string; name: string }[]; bookingStatus: string | null; salesperson: string; bookingId: string }> = {}
     trip.bookings.forEach(b => {
       const sales = b.salesperson || b.agent?.name || 'Direct'
       b.guests.forEach(g => {
         if (g.cabinId) {
-          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales }
-          occupancyMap[g.cabinId].guests.push({ id: g.customer.id, name: g.customer.name })
+          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales, bookingId: b.id }
+          occupancyMap[g.cabinId].guests.push({ id: g.customer.id, bgId: g.id, name: g.customer.name })
         }
       })
     })
@@ -58,6 +58,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         guests: occ.guests,
         bookingStatus: occ.bookingStatus,
         salesperson: occ.salesperson,
+        bookingId: occ.bookingId ?? null,
       }
     })
 

@@ -16,15 +16,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     const booking = await db.booking.findUnique({
       where: { id },
       include: {
-        yacht:    { select: { id: true, name: true, model: true } },
+        yacht:    { select: { id: true, name: true, model: true, cabins: { select: { id: true, name: true, deck: true }, orderBy: { name: 'asc' } } } },
         customer: { select: { id: true, name: true, email: true, phone: true } },
         agent:    { select: { id: true, name: true, company: true } },
         openTrip: { select: { id: true, title: true, destination: true } },
         guests: {
           include: {
-            customer: { select: { id: true, name: true, phone: true } },
+            customer: { select: { id: true, name: true, phone: true, email: true, passport: true, nationality: true } },
             cabin:    { select: { id: true, name: true } },
           },
+          orderBy: [{ isLead: 'desc' }, { id: 'asc' }],
         },
         services: true,
       },
@@ -42,7 +43,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -67,7 +68,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(destination    !== undefined && { destination:    destination || null }),
         ...(depositDueDate !== undefined && { depositDueDate: depositDueDate ? new Date(depositDueDate) : null }),
         ...(finalDueDate   !== undefined && { finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null }),
-        ...(salesperson    !== undefined && { salesperson:    salesperson || null }),
+        ...(salesperson !== undefined && { salesperson: salesperson || null }),
+        ...(startDate   !== undefined && { startDate:   new Date(startDate) }),
+        ...(endDate     !== undefined && { endDate:     new Date(endDate) }),
+        ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },

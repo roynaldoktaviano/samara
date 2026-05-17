@@ -3,102 +3,142 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    // Get total yacht count
-    const totalYachts = await db.yacht.count()
-
-    // Get yacht status counts
-    const availableYachts = await db.yacht.count({ where: { status: 'available' } })
-    const bookedYachts = await db.yacht.count({ where: { status: 'booked' } })
-    const maintenanceYachts = await db.yacht.count({ where: { status: 'maintenance' } })
-
-    // Get booking statistics
-    const totalBookings = await db.booking.count()
-    const confirmedBookings = await db.booking.count({ where: { status: 'confirmed' } })
-    const pendingBookings = await db.booking.count({ where: { status: 'pending' } })
-    const completedBookings = await db.booking.count({ where: { status: 'completed' } })
-
-    // Get customer count
-    const totalCustomers = await db.customer.count()
-
-    // Get revenue statistics
-    const allBookings = await db.booking.findMany({
-      select: { totalPrice: true, createdAt: true }
-    })
-    
-    const totalRevenue = allBookings.reduce((sum, b) => sum + b.totalPrice, 0)
-    
-    // Calculate this month's revenue
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    // ── Basic counts ──────────────────────────────────────────────────
+    const [
+      totalYachts, availableYachts, bookedYachts, maintenanceYachts,
+      totalBookings, confirmedBookings, pendingBookings, completedBookings,
+      totalCustomers,
+    ] = await Promise.all([
+      db.yacht.count(),
+      db.yacht.count({ where: { status: 'available' } }),
+      db.yacht.count({ where: { status: 'booked' } }),
+      db.yacht.count({ where: { status: 'maintenance' } }),
+      db.booking.count(),
+      db.booking.count({ where: { status: 'confirmed' } }),
+      db.booking.count({ where: { status: 'pending' } }),
+      db.booking.count({ where: { status: 'completed' } }),
+      db.customer.count(),
+    ])
+
+    // ── Revenue & expense totals ───────────────────────────────────────
+    const [allBookings, allExpenses] = await Promise.all([
+      db.booking.findMany({ select: { totalPrice: true, createdAt: true } }),
+      db.expense.findMany({ select: { amount: true, date: true } }),
+    ])
+
+    const totalRevenue  = allBookings.reduce((s, b) => s + b.totalPrice, 0)
     const monthlyRevenue = allBookings
       .filter(b => b.createdAt >= startOfMonth)
-      .reduce((sum, b) => sum + b.totalPrice, 0)
-
-    // Get total expenses
-    const allExpenses = await db.expense.findMany({
-      select: { amount: true, date: true }
-    })
-    
-    const totalExpenses = allExpenses.reduce((sum, e) => sum + e.amount, 0)
+      .reduce((s, b) => s + b.totalPrice, 0)
+    const totalExpenses  = allExpenses.reduce((s, e) => s + e.amount, 0)
     const monthlyExpenses = allExpenses
       .filter(e => e.date >= startOfMonth)
-      .reduce((sum, e) => sum + e.amount, 0)
+      .reduce((s, e) => s + e.amount, 0)
 
-    // Get recent bookings
+    // ── Recent bookings ───────────────────────────────────────────────
     const recentBookings = await db.booking.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
-        yacht: {
-          select: { name: true }
-        },
-        customer: {
-          select: { name: true }
-        }
-      }
+        yacht:    { select: { name: true } },
+        customer: { select: { name: true } },
+      },
     })
 
-    // Get upcoming maintenance
+    // ── Upcoming maintenance ──────────────────────────────────────────
     const upcomingMaintenance = await db.maintenance.findMany({
-      where: {
-        status: { in: ['scheduled', 'in-progress'] }
-      },
+      where: { status: { in: ['scheduled', 'in-progress'] } },
       orderBy: { scheduledDate: 'asc' },
       take: 5,
     })
 
+    // ── Top salesperson (by booking count, exclude cancelled) ─────────
+    const salesAgg = await db.booking.groupBy({
+      by: ['salesperson'],
+      where: {
+        status: { not: 'cancelled' },
+        salesperson: { not: null },
+      },
+      _count: { id: true },
+      _sum:   { totalPrice: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 10,
+    })
+    const topSales = salesAgg
+      .filter(r => r.salesperson)
+      .map(r => ({
+        name:    r.salesperson as string,
+        count:   r._count.id,
+        revenue: r._sum.totalPrice ?? 0,
+      }))
+
+    // ── Top yachts (by booking count, exclude cancelled) ──────────────
+    const yachtAgg = await db.booking.groupBy({
+      by: ['yachtId'],
+      where: {
+        status:  { not: 'cancelled' },
+        yachtId: { not: null },
+      },
+      _count: { id: true },
+      _sum:   { totalPrice: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 10,
+    })
+    const yachtIds = yachtAgg.map(r => r.yachtId).filter(Boolean) as string[]
+    const yachts   = await db.yacht.findMany({
+      where: { id: { in: yachtIds } },
+      select: { id: true, name: true },
+    })
+    const yachtMap = Object.fromEntries(yachts.map(y => [y.id, y.name]))
+    const topYachts = yachtAgg
+      .filter(r => r.yachtId)
+      .map(r => ({
+        yachtId: r.yachtId as string,
+        name:    yachtMap[r.yachtId as string] ?? 'Unknown',
+        count:   r._count.id,
+        revenue: r._sum.totalPrice ?? 0,
+      }))
+
+    // ── Monthly bookings (per year, private vs open) ───────────────────
+    // Pull all non-cancelled bookings with startDate + tripType
+    const bookingsForMonthly = await db.booking.findMany({
+      where: { status: { not: 'cancelled' } },
+      select: { startDate: true, tripType: true, totalPrice: true },
+    })
+
+    type MonthBucket = { private: number; open: number; revenue: number }
+    const monthMap: Record<string, MonthBucket> = {}
+
+    for (const b of bookingsForMonthly) {
+      const d   = new Date(b.startDate)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!monthMap[key]) monthMap[key] = { private: 0, open: 0, revenue: 0 }
+      if (b.tripType === 'OPEN_TRIP') monthMap[key].open++
+      else                            monthMap[key].private++
+      monthMap[key].revenue += b.totalPrice
+    }
+
+    const monthlyStats = Object.entries(monthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, v]) => ({ month, ...v, total: v.private + v.open }))
+
     return NextResponse.json({
-      yachts: {
-        total: totalYachts,
-        available: availableYachts,
-        booked: bookedYachts,
-        maintenance: maintenanceYachts
-      },
-      bookings: {
-        total: totalBookings,
-        confirmed: confirmedBookings,
-        pending: pendingBookings,
-        completed: completedBookings
-      },
-      customers: {
-        total: totalCustomers
-      },
-      revenue: {
-        total: totalRevenue,
-        monthly: monthlyRevenue
-      },
-      expenses: {
-        total: totalExpenses,
-        monthly: monthlyExpenses
-      },
+      yachts:    { total: totalYachts, available: availableYachts, booked: bookedYachts, maintenance: maintenanceYachts },
+      bookings:  { total: totalBookings, confirmed: confirmedBookings, pending: pendingBookings, completed: completedBookings },
+      customers: { total: totalCustomers },
+      revenue:   { total: totalRevenue, monthly: monthlyRevenue },
+      expenses:  { total: totalExpenses, monthly: monthlyExpenses },
       recentBookings,
-      upcomingMaintenance
+      upcomingMaintenance,
+      topSales,
+      topYachts,
+      monthlyStats,
     })
   } catch (error) {
     console.error('Error fetching statistics:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch statistics' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch statistics' }, { status: 500 })
   }
 }

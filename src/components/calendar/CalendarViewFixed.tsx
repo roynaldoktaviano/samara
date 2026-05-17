@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Plus, Clock, DollarSign, Pencil, X, Loader2, Check } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -151,9 +151,11 @@ function MonthGrid({
     }
 
     bookings.forEach(b => addSegs(
-      b.id, b.yachtName, yachtColorMap[b.yachtName] ?? '#64748b', false, false,
+      b.id,
+      [b.yachtName, b.customerName, b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
+      yachtColorMap[b.yachtName] ?? '#64748b', false, false,
       new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
-      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}`,
+      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${b.salesperson ? ` · Sales: ${b.salesperson}` : ''}`,
       b, undefined,
     ))
 
@@ -178,7 +180,7 @@ function MonthGrid({
         .sort((a, b) => a.startCol - b.startCol || (b.endCol - b.startCol) - (a.endCol - a.startCol))
       const laneEnds: number[] = []
       segs.forEach(seg => {
-        const span = seg.isStripe ? 2 : 1
+        const span = (seg.isStripe || !!seg.bookingRef) ? 2 : 1
         let lane = -1
         outer: for (let l = 0; l <= laneEnds.length; l++) {
           for (let s = 0; s < span; s++) {
@@ -281,7 +283,7 @@ function MonthGrid({
                   color: 'white',
                   overflow: 'hidden',
                   display: 'flex',
-                  alignItems: seg.isStripe ? 'flex-start' : 'center',
+                  alignItems: 'flex-start',
                   zIndex: 10,
                   cursor: 'pointer',
                 }
@@ -370,15 +372,71 @@ function MonthGrid({
                           </div>
                         </div>
                       ) : (
-                        /* Regular booking — white text on solid bar */
-                        <span style={{
-                          fontSize: 9, fontWeight: 600, color: 'white',
-                          padding: '0 6px', overflow: 'hidden',
-                          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          textShadow: '0 1px 2px rgba(0,0,0,0.35)',
-                        }}>
-                          {seg.label}
-                        </span>
+                        /* Private charter — white text on solid color bar */
+                        (() => {
+                          const bk = seg.bookingRef
+                          if (!bk) return (
+                            <span style={{ fontSize: 9, fontWeight: 600, color: 'white', padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {seg.label}
+                            </span>
+                          )
+                          const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
+                            pending:         { bg: 'rgba(234,179,8,0.85)',   label: 'PENDING'   },
+                            confirmed:       { bg: 'rgba(34,197,94,0.85)',   label: 'CONFIRMED' },
+                            partially_paid:  { bg: 'rgba(59,130,246,0.85)',  label: 'PARTIAL'   },
+                            fully_paid:      { bg: 'rgba(16,185,129,0.85)',  label: 'PAID'      },
+                            completed:       { bg: 'rgba(139,92,246,0.85)',  label: 'DONE'      },
+                            cancelled:       { bg: 'rgba(239,68,68,0.85)',   label: 'CANCELLED' },
+                          }
+                          const sbadge = STATUS_BADGE[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
+                          return (
+                            <div style={{
+                              position: 'absolute', inset: 0,
+                              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                              padding: '0 10px',
+                              overflow: 'hidden',
+                            }}>
+                              {/* Row 1: Yacht name + status */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 700, color: 'white',
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  flexShrink: 1, minWidth: 0,
+                                  textShadow: '0 1px 2px rgba(0,0,0,0.25)',
+                                }}>
+                                  {bk.customerName || bk.yachtName}
+                                </span>
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'white',
+                                  background: sbadge.bg,
+                                  borderRadius: 3, padding: '1px 5px',
+                                  whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.4,
+                                }}>
+                                  {sbadge.label}
+                                </span>
+                              </div>
+                              {/* Row 2: Yacht name + salesperson */}
+                              {(bk.yachtName || bk.salesperson) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, marginTop: 2 }}>
+                                  {bk.yachtName && (
+                                    <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
+                                      {bk.yachtName}
+                                    </span>
+                                  )}
+                                  {bk.yachtName && bk.salesperson && (
+                                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, flexShrink: 0 }}>·</span>
+                                  )}
+                                  {bk.salesperson && (
+                                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
+                                      {bk.salesperson}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()
                       )
                     )}
                   </div>
@@ -447,8 +505,21 @@ export default function CalendarView() {
 
   // Booking edit state
   const [isBookingEditing, setIsBookingEditing] = useState(false)
-  const [bookingEditForm, setBookingEditForm]   = useState({ status: '', totalPrice: '', depositPaid: '', notes: '' })
-  const [bookingSaving, setBookingSaving]       = useState(false)
+  const [bookingEditForm, setBookingEditForm]   = useState({
+    status: '', totalPrice: '', depositPaid: '', discount: '',
+    notes: '', destination: '', salesperson: '', guestCount: '',
+    startDate: '', endDate: '', depositDueDate: '', finalDueDate: '',
+  })
+  const [bookingFullDetail, setBookingFullDetail] = useState<any>(null)
+  const [bookingDetailLoading, setBookingDetailLoading] = useState(false)
+  const [bookingSaving, setBookingSaving]        = useState(false)
+  // Guest management
+  const [guestEditTarget, setGuestEditTarget]    = useState<any>(null)
+  const [guestSheetOpen,  setGuestSheetOpen]     = useState(false)
+  const [guestSearchQ,    setGuestSearchQ]       = useState('')
+  const [guestSearchRes,  setGuestSearchRes]     = useState<any[]>([])
+  const [guestSearching,  setGuestSearching]     = useState(false)
+  const [addingGuest,     setAddingGuest]        = useState(false)
 
   // Open trip edit state
   const [isOtEditing, setIsOtEditing]           = useState(false)
@@ -467,15 +538,30 @@ export default function CalendarView() {
     }
   }, [])
 
-  const startBookingEdit = useCallback(() => {
+  const startBookingEdit = useCallback(async () => {
     if (!selectedBooking) return
-    setBookingEditForm({
-      status:      selectedBooking.status,
-      totalPrice:  String(selectedBooking.totalPrice ?? ''),
-      depositPaid: String(selectedBooking.depositAmount ?? ''),
-      notes:       selectedBooking.notes ?? '',
-    })
     setIsBookingEditing(true)
+    setBookingDetailLoading(true)
+    try {
+      const data = await fetch(`/api/bookings/${selectedBooking.id}`).then(r => r.json())
+      setBookingFullDetail(data)
+      setBookingEditForm({
+        status:        data.status ?? '',
+        totalPrice:    String(data.totalPrice ?? ''),
+        depositPaid:   String(data.depositPaid ?? ''),
+        discount:      String(data.discount ?? '0'),
+        notes:         data.notes ?? '',
+        destination:   data.destination ?? '',
+        salesperson:   data.salesperson ?? '',
+        guestCount:    String(data.guestCount ?? ''),
+        startDate:     data.startDate?.split('T')[0] ?? '',
+        endDate:       data.endDate?.split('T')[0]   ?? '',
+        depositDueDate: data.depositDueDate?.split('T')[0] ?? '',
+        finalDueDate:   data.finalDueDate?.split('T')[0]   ?? '',
+      })
+    } finally {
+      setBookingDetailLoading(false)
+    }
   }, [selectedBooking])
 
   const saveBooking = useCallback(async () => {
@@ -486,10 +572,15 @@ export default function CalendarView() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status:      bookingEditForm.status,
-          totalPrice:  bookingEditForm.totalPrice,
-          depositPaid: bookingEditForm.depositPaid,
-          notes:       bookingEditForm.notes,
+          status:         bookingEditForm.status,
+          totalPrice:     bookingEditForm.totalPrice,
+          discount:       bookingEditForm.discount,
+          notes:          bookingEditForm.notes,
+          destination:    bookingEditForm.destination,
+          startDate:      bookingEditForm.startDate,
+          endDate:        bookingEditForm.endDate,
+          depositDueDate: bookingEditForm.depositDueDate || null,
+          finalDueDate:   bookingEditForm.finalDueDate   || null,
         }),
       })
       if (!res.ok) throw new Error()
@@ -663,6 +754,65 @@ export default function CalendarView() {
   const getDays = (s: string, e: string) =>
     Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000)
 
+  // ── Guest management helpers ─────────────────────────────────────────
+  const reloadBookingDetail = useCallback(async () => {
+    if (!selectedBooking) return
+    const data = await fetch(`/api/bookings/${selectedBooking.id}`).then(r => r.json())
+    setBookingFullDetail(data)
+  }, [selectedBooking])
+
+  const handleSetLead = useCallback((guestId: string) => {
+    // Optimistic update — flip isLead instantly in local state
+    setBookingFullDetail((prev: any) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        guests: prev.guests.map((g: any) => ({ ...g, isLead: g.id === guestId })),
+      }
+    })
+    // Fire API in background
+    fetch(`/api/guests/${guestId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isLead: true }),
+    })
+  }, [])
+
+  const handleRemoveGuest = useCallback(async (guestId: string) => {
+    await fetch(`/api/guests/${guestId}`, { method: 'DELETE' })
+    await reloadBookingDetail()
+  }, [reloadBookingDetail])
+
+  const handleCabinChange = useCallback(async (guestId: string, cabinId: string) => {
+    await fetch(`/api/guests/${guestId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cabinId: cabinId || null }),
+    })
+    await reloadBookingDetail()
+  }, [reloadBookingDetail])
+
+  const searchGuests = useCallback(async (q: string) => {
+    if (!q.trim()) { setGuestSearchRes([]); return }
+    setGuestSearching(true)
+    try {
+      const res = await fetch(`/api/customers?search=${encodeURIComponent(q)}`).then(r => r.json())
+      setGuestSearchRes(Array.isArray(res) ? res.slice(0, 8) : [])
+    } finally { setGuestSearching(false) }
+  }, [])
+
+  const handleAddGuest = useCallback(async (customerId: string) => {
+    if (!bookingFullDetail) return
+    setAddingGuest(true)
+    try {
+      await fetch('/api/guests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: bookingFullDetail.id, customerId, isLead: false }),
+      })
+      await reloadBookingDetail()
+      setGuestSearchQ('')
+      setGuestSearchRes([])
+    } finally { setAddingGuest(false) }
+  }, [bookingFullDetail, reloadBookingDetail])
+
   const upcomingBookings = useMemo(() => {
     const monthStart = new Date(leftYear, leftMonth, 1)
     const monthEnd   = new Date(leftYear, leftMonth + 1, 0)
@@ -740,24 +890,147 @@ export default function CalendarView() {
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Active Bookings',  value: bookings.filter(b => b.status === 'confirmed' || b.status === 'pending').length, dot: '#e8547a' },
-          { label: 'Available Yachts', value: yachts.length, dot: '#f5a623' },
-          { label: 'Completed Trips',  value: bookings.filter(b => b.status === 'completed').length, dot: '#4a9f6e' },
-          { label: 'Total Revenue',    value: `$${bookings.reduce((s, b) => s + (b.totalPrice ?? 0), 0).toLocaleString()}`, dot: '#4b8bca' },
-        ].map(s => (
-          <Card key={s.label}>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.dot }} />
-                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+      {(() => {
+        const todayDate = new Date(); todayDate.setHours(0,0,0,0)
+        const filterOtByYacht = (t: OpenTripEvent) => yachtFilter === 'all' || t.yacht?.name === yachtFilter
+        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
+        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
+        const filteredOt   = openTrips.filter(filterOtByYacht)
+        const activeCabins = activeTrips.reduce((s, t) => s + t.maxCapacity, 0)
+        const closedCabins = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const totalCabins  = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
+        const bookedCabins = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
+        const viewYear  = currentDate.getFullYear()
+        const viewMonth = currentDate.getMonth()
+        const yachtLabel = yachtFilter === 'all' ? 'All Yachts' : yachtFilter
+        const yachtColor = yachtFilter !== 'all' ? (yachtColorMap[yachtFilter] ?? '#64748b') : '#64748b'
+        const filterByYacht = (b: BookingEvent) => yachtFilter === 'all' || b.yachtName === yachtFilter
+        const inViewMonth = (b: BookingEvent) => {
+          const start = new Date(b.startDate + 'T00:00:00')
+          const end   = new Date(b.endDate   + 'T00:00:00')
+          const mStart = new Date(viewYear, viewMonth, 1)
+          const mEnd   = new Date(viewYear, viewMonth + 1, 0)
+          return start <= mEnd && end >= mStart
+        }
+        const activeBookings = bookings.filter(b => filterByYacht(b) && (b.status === 'confirmed' || b.status === 'pending') && inViewMonth(b)).length
+        const completedTrips = bookings.filter(b => filterByYacht(b) && b.status === 'completed' && inViewMonth(b)).length
+        const yearBookings   = bookings.filter(b => {
+          if (!filterByYacht(b) || b.status === 'cancelled') return false
+          const s = new Date(b.startDate + 'T00:00:00')
+          const e = new Date(b.endDate   + 'T00:00:00')
+          return s.getFullYear() === viewYear || e.getFullYear() === viewYear
+        }).length
+        return (
+          <div className="space-y-3">
+            {/* Single unified stats row */}
+            <div className="rounded-2xl overflow-hidden border bg-slate-50">
+              {/* Header bar */}
+              <div className="flex items-center justify-between px-5 py-3 border-b bg-white">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: yachtColor }} />
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Showing data for</span>
+                  <span className="text-xs font-bold" style={{ color: yachtColor }}>{yachtLabel}</span>
+                </div>
+                <span className="text-[11px] text-slate-400">{MONTH_SHORT[viewMonth]} {viewYear}</span>
               </div>
-              <div className="text-2xl font-bold">{s.value}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+
+              {/* Stats row — Private Charter */}
+              <div className="grid grid-cols-3 divide-x divide-slate-200 bg-white">
+                {/* Active Bookings */}
+                <div className="px-6 py-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3 mt-2">
+                    <BookOpen className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Active Bookings</span>
+                  </div>
+                  <p className="text-4xl font-black text-slate-800 leading-none">{activeBookings}</p>
+                  <p className="text-[11px] text-slate-400 mt-2">confirmed & pending · {MONTH_SHORT[viewMonth]} {viewYear}</p>
+                </div>
+                {/* Total Bookings */}
+                <div className="px-6 py-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3 mt-2">
+                    <Anchor className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Total Bookings</span>
+                  </div>
+                  <p className="text-4xl font-black text-slate-800 leading-none">{yearBookings}</p>
+                  <p className="text-[11px] text-slate-400 mt-2">all of {viewYear}</p>
+                </div>
+                {/* Completed Trips */}
+                <div className="px-6 py-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Private Charter</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3 mt-2">
+                    <CheckCircle className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Completed Trips</span>
+                  </div>
+                  <p className="text-4xl font-black text-slate-800 leading-none">{completedTrips}</p>
+                  <p className="text-[11px] text-slate-400 mt-2">{MONTH_SHORT[viewMonth]} {viewYear}</p>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-slate-200 mx-5" />
+
+              {/* Open Trip Cabins sub-row */}
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <BedDouble className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Open Trip</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Cabin Overview</span>
+                </div>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                      <LayoutGrid className="h-3.5 w-3.5 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium">Total Cabins</p>
+                      <p className="text-xl font-bold text-slate-700 leading-none">{totalCabins}</p>
+                      <p className="text-[10px] text-slate-400">all open trips</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 border-x border-slate-200 px-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                      <Waves className="h-3.5 w-3.5 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium">Active Cabins</p>
+                      <p className="text-xl font-bold text-slate-700 leading-none">{activeCabins}</p>
+                      <p className="text-[10px] text-slate-400">not yet departed</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 border-r border-slate-200 pr-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                      <CheckCircle className="h-3.5 w-3.5 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium">Booked Cabins</p>
+                      <p className="text-xl font-bold text-slate-700 leading-none">{bookedCabins}</p>
+                      <p className="text-[10px] text-slate-400">confirmed / paid</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                      <BedDouble className="h-3.5 w-3.5 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium">Closed Cabins</p>
+                      <p className="text-xl font-bold text-slate-700 leading-none">{closedCabins}</p>
+                      <p className="text-[10px] text-slate-400">past / closed trips</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Calendar card ── */}
       <Card className="w-full">
@@ -983,7 +1256,15 @@ export default function CalendarView() {
                 }
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
-                onBookingClick={b => { setSelectedBooking(b); setIsDetailOpen(true) }}
+                onBookingClick={b => {
+                  setSelectedBooking(b)
+                  setIsDetailOpen(true)
+                  setBookingDetailLoading(true)
+                  fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
+                    setBookingFullDetail(data)
+                    setBookingDetailLoading(false)
+                  }).catch(() => setBookingDetailLoading(false))
+                }}
                 onOpenTripClick={handleOpenTripClick}
                 isInFilterRange={isInFilterRange}
               />
@@ -1018,14 +1299,22 @@ export default function CalendarView() {
                 return listItems.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">
                   {filterActive
-                    ? 'Tidak ada trip yang aktif di tanggal ini.'
-                    : `Tidak ada booking di ${MONTH_FULL[leftMonth]} ${leftYear}.`}
+                    ? 'No trips found for the selected date range.'
+                    : `No bookings in ${MONTH_FULL[leftMonth]} ${leftYear}.`}
                 </div>
               ) : (
                 listItems.map(b => (
                   <button
                     key={b.id}
-                    onClick={() => { setSelectedBooking(b); setIsDetailOpen(true) }}
+                    onClick={() => {
+                      setSelectedBooking(b)
+                      setIsDetailOpen(true)
+                      setBookingDetailLoading(true)
+                      fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
+                        setBookingFullDetail(data)
+                        setBookingDetailLoading(false)
+                      }).catch(() => setBookingDetailLoading(false))
+                    }}
                     className="w-full flex items-center gap-4 rounded-lg border border-border px-4 py-3 hover:bg-muted/40 transition-colors text-left"
                   >
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
@@ -1061,7 +1350,7 @@ export default function CalendarView() {
       </Card>
 
       {/* ── Booking Detail Dialog ── */}
-      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) setIsBookingEditing(false) }}>
+      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null) } }}>
         <DialogContent className="sm:max-w-2xl">
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
@@ -1121,8 +1410,54 @@ export default function CalendarView() {
                       )}
                     </div>
                   )}
+
+                  {/* Guests */}
+                  <div className="rounded-xl border overflow-hidden">
+                    <div className="bg-muted/40 px-4 py-2 border-b">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Guests</p>
+                    </div>
+                    {bookingDetailLoading ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : bookingFullDetail?.guests?.length > 0 ? (
+                      <div className="divide-y">
+                        {bookingFullDetail.guests.map((g: any) => (
+                          <div key={g.id} className="flex items-center gap-3 px-4 py-2.5">
+                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
+                              {g.customer?.name?.[0] ?? '?'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
+                                {g.isLead && (
+                                  <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
+                                )}
+                              </div>
+                              {g.cabin && (
+                                <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+                                  <BedDouble className="w-3 h-3" />
+                                  <span>{g.cabin.name}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-4">No guests registered</p>
+                    )}
+                  </div>
+
                   <DialogFooter className="gap-2 pt-1">
                     <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+                    <Button
+                      variant="outline"
+                      className="border-sky-300 text-sky-700 hover:bg-sky-50"
+                      onClick={() => window.open(`/print/crew-sheet/booking/${selectedBooking.id}`, '_blank')}
+                    >
+                      <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
+                    </Button>
                     {new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
                       <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                         <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
@@ -1132,34 +1467,202 @@ export default function CalendarView() {
                 </div>
               ) : (
                 /* ── Edit mode ── */
-                <div className="space-y-4 py-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Status</Label>
-                      <Select value={bookingEditForm.status} onValueChange={v => setBookingEditForm(p => ({ ...p, status: v }))}>
-                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="confirmed">Confirmed</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Total Price (USD)</Label>
-                      <Input className="h-9" type="number" value={bookingEditForm.totalPrice} onChange={e => setBookingEditForm(p => ({ ...p, totalPrice: e.target.value }))} />
+                bookingDetailLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
+
+                  {/* Trip Info */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Trip Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Check-in</Label>
+                        <Input className="h-9" type="date" value={bookingEditForm.startDate} onChange={e => setBookingEditForm(p => ({ ...p, startDate: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Check-out</Label>
+                        <Input className="h-9" type="date" value={bookingEditForm.endDate} onChange={e => setBookingEditForm(p => ({ ...p, endDate: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Destination</Label>
+                        <Input className="h-9" value={bookingEditForm.destination} onChange={e => setBookingEditForm(p => ({ ...p, destination: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Guest Count</Label>
+                        <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm gap-2">
+                          <span className="font-medium text-foreground">{bookingFullDetail?.guests?.length ?? 0}</span>
+                          <span className="text-[10px] text-muted-foreground">— based on guest list</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 col-span-2">
+                        <Label className="text-xs text-muted-foreground">Salesperson</Label>
+                        <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm gap-2">
+                          <span className="font-medium text-foreground">{bookingEditForm.salesperson || '—'}</span>
+                          <span className="text-[10px] text-muted-foreground">— set by booking creator</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Deposit Paid (USD)</Label>
-                    <Input className="h-9" type="number" value={bookingEditForm.depositPaid} onChange={e => setBookingEditForm(p => ({ ...p, depositPaid: e.target.value }))} />
+
+                  {/* Payment */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Payment</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Status</Label>
+                        <Select value={bookingEditForm.status} onValueChange={v => setBookingEditForm(p => ({ ...p, status: v }))}>
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                            <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Total Price (USD)</Label>
+                        <Input className="h-9" type="number" value={bookingEditForm.totalPrice} onChange={e => setBookingEditForm(p => ({ ...p, totalPrice: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Deposit Paid (USD)</Label>
+                        <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground gap-2">
+                          <span className="font-medium text-foreground">${Number(bookingEditForm.depositPaid).toLocaleString()}</span>
+                          <span className="text-[10px]">— via Finance approval only</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Discount (%)</Label>
+                        <Input className="h-9" type="number" min="0" max="100" value={bookingEditForm.discount} onChange={e => setBookingEditForm(p => ({ ...p, discount: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Deposit Due Date</Label>
+                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate} onChange={e => setBookingEditForm(p => ({ ...p, depositDueDate: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Final Due Date</Label>
+                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate} onChange={e => setBookingEditForm(p => ({ ...p, finalDueDate: e.target.value }))} />
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Guests */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Guests</p>
+                    <div className="space-y-2">
+                      {(bookingFullDetail?.guests ?? []).map((g: any) => (
+                        <div key={g.id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${g.isLead ? 'border-amber-300 bg-amber-50/50' : ''}`}>
+                          {/* Lead badge */}
+                          <div className="shrink-0">
+                            {g.isLead
+                              ? <div className="flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5">
+                                  <Crown className="h-3 w-3 text-amber-500" />
+                                  <span className="text-[10px] font-bold text-amber-600">Lead</span>
+                                </div>
+                              : <button
+                                  onClick={() => handleSetLead(g.id)}
+                                  title="Set as lead guest"
+                                  className="flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 hover:border-amber-400 hover:bg-amber-50 transition-colors"
+                                >
+                                  <Crown className="h-3 w-3 text-muted-foreground/40" />
+                                  <span className="text-[10px] text-muted-foreground/50">Set lead</span>
+                                </button>}
+                          </div>
+                          {/* Name */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {g.customer?.name}
+                              {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-semibold">LEAD</span>}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">{g.customer?.email ?? g.customer?.phone ?? '—'}</p>
+                          </div>
+                          {/* Cabin */}
+                          <Select
+                            value={g.cabinId ?? 'none'}
+                            onValueChange={v => handleCabinChange(g.id, v === 'none' ? '' : v)}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-32 shrink-0">
+                              <SelectValue placeholder="No cabin" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No cabin</SelectItem>
+                              {(bookingFullDetail?.yacht?.cabins ?? []).map((c: any) => (
+                                <SelectItem key={c.id} value={c.id}>{c.name}{c.deck ? ` (${c.deck})` : ''}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {/* Edit + Remove */}
+                          <button
+                            onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
+                            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                            title="Edit guest details"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          {!g.isLead && (
+                            <button
+                              onClick={() => handleRemoveGuest(g.id)}
+                              className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500"
+                              title="Remove guest"
+                            >
+                              <UserMinus className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add guest */}
+                      <div className="rounded-lg border border-dashed p-2 space-y-1.5">
+                        <div className="relative flex items-center gap-2">
+                          <SearchIcon className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                          <Input
+                            className="h-8 text-xs pl-7"
+                            placeholder="Search customer to add..."
+                            value={guestSearchQ}
+                            disabled={addingGuest}
+                            onChange={e => { setGuestSearchQ(e.target.value); searchGuests(e.target.value) }}
+                          />
+                          {(guestSearching || addingGuest) && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                        </div>
+                        {guestSearchRes.length > 0 && (
+                          <div className="rounded-md border bg-background shadow-sm divide-y max-h-36 overflow-y-auto">
+                            {guestSearchRes.map((c: any) => {
+                              const alreadyAdded = (bookingFullDetail?.guests ?? []).some((g: any) => g.customerId === c.id)
+                              const isBeingAdded = addingGuest
+                              return (
+                                <button
+                                  key={c.id}
+                                  disabled={alreadyAdded || isBeingAdded}
+                                  onClick={() => handleAddGuest(c.id)}
+                                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted transition-colors ${alreadyAdded || isBeingAdded ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                  {isBeingAdded
+                                    ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />
+                                    : <UserPlus className="h-3 w-3 text-muted-foreground shrink-0" />}
+                                  <span className="font-medium">{c.name}</span>
+                                  {c.email && <span className="text-muted-foreground">{c.email}</span>}
+                                  {alreadyAdded && <span className="ml-auto text-muted-foreground italic">already added</span>}
+                                  {isBeingAdded && !alreadyAdded && <span className="ml-auto text-muted-foreground italic">Adding...</span>}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Notes</Label>
                     <Textarea rows={3} className="resize-none text-sm" value={bookingEditForm.notes} onChange={e => setBookingEditForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
-                  <DialogFooter className="gap-2 pt-1">
+
+                  <DialogFooter className="gap-2 pt-1 sticky bottom-0 bg-background pb-1">
                     <Button variant="outline" onClick={() => setIsBookingEditing(false)} disabled={bookingSaving}>
                       <X className="w-3.5 h-3.5 mr-2" /> Cancel
                     </Button>
@@ -1169,6 +1672,7 @@ export default function CalendarView() {
                     </Button>
                   </DialogFooter>
                 </div>
+                )
               )}
             </>
           )}
@@ -1258,8 +1762,15 @@ export default function CalendarView() {
 
                   {/* ── Cabin list ── */}
                   <div className="rounded-xl border overflow-hidden">
-                    <div className="bg-muted/40 px-4 py-2 border-b">
+                    <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabin Details</p>
+                      <button
+                        onClick={() => window.open(`/print/crew-sheet/${otDetail.id}`, '_blank')}
+                        className="flex items-center gap-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors"
+                      >
+                        <BookOpen className="h-3 w-3" />
+                        Download Crew Sheet
+                      </button>
                     </div>
                     <div className="divide-y">
                       {otDetail.cabins?.map((c: any) => {
@@ -1280,12 +1791,23 @@ export default function CalendarView() {
                                 {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
                               </div>
                               {c.guests?.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {c.guests.map((g: { id: string; name: string }) => (
-                                    <button key={g.id} onClick={() => setEditGuestId(g.id)}
-                                      className="text-[10px] bg-muted border rounded px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
-                                      {g.name}
-                                    </button>
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
+                                    <div key={g.id} className="flex items-center gap-0.5">
+                                      <button onClick={() => setEditGuestId(g.id)}
+                                        className="text-[10px] bg-muted border rounded-l px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
+                                        {g.name}
+                                      </button>
+                                      {g.bgId && (
+                                        <button
+                                          onClick={() => window.open(`/print/guest-sheet/${g.bgId}`, '_blank')}
+                                          className="text-[10px] bg-sky-50 border border-sky-200 rounded-r px-1.5 py-px text-sky-600 hover:bg-sky-100 transition-colors"
+                                          title="Guest Sheet"
+                                        >
+                                          <BookOpen className="h-2.5 w-2.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   ))}
                                 </div>
                               )}
@@ -1394,11 +1916,19 @@ export default function CalendarView() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Guest Edit Sheet ── */}
+      {/* ── Guest Edit Sheet (open trip guests) ── */}
       <GuestEditSheet
         open={!!editGuestId}
         guestId={editGuestId}
         onClose={() => setEditGuestId(null)}
+      />
+
+      {/* ── Guest Edit Sheet (booking edit dialog guests) ── */}
+      <GuestEditSheet
+        open={guestSheetOpen}
+        guestId={guestEditTarget?.customer?.id ?? null}
+        onClose={() => { setGuestSheetOpen(false); setGuestEditTarget(null) }}
+        onSaved={() => reloadBookingDetail()}
       />
 
       {/* ── New Booking Wizard ── */}

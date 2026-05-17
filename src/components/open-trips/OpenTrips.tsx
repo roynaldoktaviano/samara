@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -69,6 +69,11 @@ export default function OpenTrips() {
 
   const [deleteTarget, setDeleteTarget] = useState<OpenTripRecord | null>(null)
   const [deleting,     setDeleting]    = useState(false)
+
+  // CSV import state
+  const [importOpen,     setImportOpen]     = useState(false)
+  const [importing,      setImporting]      = useState(false)
+  const [importResults,  setImportResults]  = useState<{ created: number; errors: number; results: { row: number; status: string; title?: string; error?: string }[] } | null>(null)
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
 
@@ -157,6 +162,29 @@ export default function OpenTrips() {
     finally { setDeleting(false) }
   }
 
+  const downloadTemplate = () => {
+    window.location.href = '/api/open-trips/import'
+  }
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setImportResults(null)
+    try {
+      const text = await file.text()
+      const res  = await fetch('/api/open-trips/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+        body: text,
+      })
+      const data = await res.json()
+      setImportResults(data)
+      if (data.created > 0) await fetchTrips()
+    } catch (e) { console.error(e) }
+    finally { setImporting(false); e.target.value = '' }
+  }
+
   const filtered = trips.filter(t => {
     const q = searchTerm.toLowerCase()
     const matchSearch = t.title.toLowerCase().includes(q) ||
@@ -174,9 +202,22 @@ export default function OpenTrips() {
           <h3 className="text-2xl font-bold tracking-tight">Open Trips</h3>
           <p className="text-sm text-muted-foreground">Manage pre-scheduled shared trips sold per cabin</p>
         </div>
-        <Button onClick={openAdd} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-          <Plus className="mr-2 h-4 w-4" /> Schedule Trip
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Download template */}
+          <Button variant="outline" onClick={downloadTemplate} className="gap-2">
+            <Download className="h-4 w-4" /> Download Template
+          </Button>
+          {/* Import CSV */}
+          <label className="cursor-pointer">
+            <input type="file" accept=".csv" className="hidden" onChange={e => { setImportOpen(true); handleImportFile(e) }} />
+            <Button variant="outline" className="gap-2 pointer-events-none" asChild>
+              <span>{importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import CSV</span>
+            </Button>
+          </label>
+          <Button onClick={openAdd} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90 gap-2">
+            <Plus className="h-4 w-4" /> Schedule Trip
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -499,6 +540,50 @@ export default function OpenTrips() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import results dialog */}
+      <Dialog open={importOpen && !importing && !!importResults} onOpenChange={open => { if (!open) { setImportOpen(false); setImportResults(null) } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Results</DialogTitle>
+          </DialogHeader>
+          {importResults && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="flex gap-3">
+                <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+                  <div className="text-2xl font-bold text-emerald-700">{importResults.created}</div>
+                  <div className="text-xs text-emerald-600 font-medium mt-0.5">Trips Created</div>
+                </div>
+                <div className="flex-1 rounded-xl bg-red-50 border border-red-100 p-3 text-center">
+                  <div className="text-2xl font-bold text-red-700">{importResults.errors}</div>
+                  <div className="text-xs text-red-600 font-medium mt-0.5">Errors</div>
+                </div>
+              </div>
+              {/* Row details */}
+              {importResults.results.length > 0 && (
+                <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-lg border p-2">
+                  {importResults.results.map(r => (
+                    <div key={r.row} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${r.status === 'created' ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                      {r.status === 'created'
+                        ? <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                        : <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{r.title ?? `Row ${r.row}`}</span>
+                        {r.error && <p className="text-xs text-red-600 mt-0.5">{r.error}</p>}
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">row {r.row}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => { setImportOpen(false); setImportResults(null) }}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
