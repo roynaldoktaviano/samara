@@ -522,6 +522,13 @@ export default function CalendarView() {
   const [guestSearching,  setGuestSearching]     = useState(false)
   const [addingGuest,     setAddingGuest]        = useState(false)
 
+  const [otAddCabinId,    setOtAddCabinId]       = useState<string | null>(null)
+  const [otAddBookingId,  setOtAddBookingId]     = useState<string | null>(null)
+  const [otAddQ,          setOtAddQ]             = useState('')
+  const [otAddResults,    setOtAddResults]       = useState<any[]>([])
+  const [otAddSearching,  setOtAddSearching]     = useState(false)
+  const [otAddSaving,     setOtAddSaving]        = useState(false)
+
   // Open trip edit state
   const [isOtEditing, setIsOtEditing]           = useState(false)
   const [otEditForm, setOtEditForm]             = useState({ title: '', description: '', destination: '', region: '', departurePort: '', arrivalPort: '', status: '', pricePerCabin: '' })
@@ -823,6 +830,30 @@ export default function CalendarView() {
     } finally { setAddingGuest(false) }
   }, [bookingFullDetail, reloadBookingDetail])
 
+  const searchOtGuest = useCallback(async (q: string) => {
+    setOtAddQ(q)
+    if (!q.trim()) { setOtAddResults([]); return }
+    setOtAddSearching(true)
+    try {
+      const res = await fetch(`/api/customers?search=${encodeURIComponent(q)}`).then(r => r.json())
+      setOtAddResults(Array.isArray(res) ? res.slice(0, 6) : [])
+    } finally { setOtAddSearching(false) }
+  }, [])
+
+  const addGuestToOtBooking = useCallback(async (customerId: string) => {
+    if (!otAddBookingId || !otAddCabinId || !otDetail) return
+    setOtAddSaving(true)
+    try {
+      await fetch('/api/guests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: otAddBookingId, customerId, cabinId: otAddCabinId, isLead: false }),
+      })
+      const updated = await fetch(`/api/open-trips/${otDetail.id}`).then(r => r.json())
+      setOtDetail(updated)
+      setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([])
+    } finally { setOtAddSaving(false) }
+  }, [otAddBookingId, otAddCabinId, otDetail])
+
   const upcomingBookings = useMemo(() => {
     const monthStart = new Date(leftYear, leftMonth, 1)
     const monthEnd   = new Date(leftYear, leftMonth + 1, 0)
@@ -906,7 +937,7 @@ export default function CalendarView() {
         const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
         const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
         const filteredOt   = openTrips.filter(filterOtByYacht)
-        const activeCabins = activeTrips.reduce((s, t) => s + t.maxCapacity, 0)
+        const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const closedCabins = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const totalCabins  = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
         const bookedCabins = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
@@ -1019,9 +1050,9 @@ export default function CalendarView() {
                       <Waves className="h-3.5 w-3.5 text-slate-500" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 font-medium">Active Cabins</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Available Cabins</p>
                       <p className="text-xl font-bold text-slate-700 leading-none">{activeCabins}</p>
-                      <p className="text-[10px] text-slate-400">not yet departed</p>
+                      <p className="text-[10px] text-slate-400">open to book</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 sm:border-r sm:border-slate-200 sm:pr-4">
@@ -1796,55 +1827,110 @@ export default function CalendarView() {
                     </div>
                     <div className="divide-y">
                       {otDetail.cabins?.map((c: any) => {
-                        const isPaid    = c.isFull && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
-                        const isPending = c.isFull && !isPaid
-                        const dotCls    = isPaid    ? 'bg-red-400'     : isPending ? 'bg-amber-400'   : 'bg-emerald-400'
-                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700'   : isPending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                        const badgeLabel= isPaid    ? 'Booked'       : isPending ? 'Waiting for Payment'    : 'Available'
+                        const hasGuests = c.guests?.length > 0
+                        const isPaid    = hasGuests && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
+                        const isPending = hasGuests && !isPaid
+                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit
+                        const dotCls    = c.isFull
+                          ? (isPaid ? 'bg-red-400' : 'bg-amber-400')
+                          : (hasGuests ? 'bg-amber-300' : 'bg-emerald-400')
+                        const badgeCls  = c.isFull
+                          ? (isPaid ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')
+                          : (hasGuests ? 'bg-amber-50 text-amber-700' : 'bg-emerald-100 text-emerald-700')
+                        const badgeLabel = c.isFull
+                          ? (isPaid ? 'Booked' : 'Waiting for Payment')
+                          : (hasGuests ? `${c.spotsLeft} spot${c.spotsLeft !== 1 ? 's' : ''} left` : 'Available')
+                        const isAddingHere = otAddCabinId === c.id
                         return (
-                          <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                            {/* Status dot */}
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold text-sm">{c.name}</span>
-                                {c.deck    && <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-px">{c.deck}</span>}
-                                {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
-                              </div>
-                              {c.guests?.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                  {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
-                                    <div key={g.id} className="flex items-center gap-0.5">
-                                      <button onClick={() => setEditGuestId(g.id)}
-                                        className="text-[10px] bg-muted border rounded-l px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
-                                        {g.name}
-                                      </button>
-                                      {g.bgId && (
-                                        <button
-                                          onClick={() => window.open(`/print/guest-sheet/${g.bgId}`, '_blank')}
-                                          className="text-[10px] bg-sky-50 border border-sky-200 rounded-r px-1.5 py-px text-sky-600 hover:bg-sky-100 transition-colors"
-                                          title="Guest Sheet"
-                                        >
-                                          <BookOpen className="h-2.5 w-2.5" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ))}
+                          <div key={c.id} className="px-4 py-3 hover:bg-muted/20 transition-colors">
+                            <div className="flex items-center gap-3">
+                              {/* Status dot */}
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-sm">{c.name}</span>
+                                  {c.deck    && <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-px">{c.deck}</span>}
+                                  {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
                                 </div>
-                              )}
-                            </div>
-                            {/* Badge + salesperson */}
-                            <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 whitespace-nowrap', badgeCls)}>
-                                {badgeLabel}
-                              </span>
-                              {c.salesperson && (
-                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                  by: {c.salesperson}
+                                {hasGuests && (
+                                  <div className="mt-1 flex flex-wrap gap-1.5 items-center">
+                                    {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
+                                      <div key={g.id} className="flex items-center gap-0.5">
+                                        <button onClick={() => setEditGuestId(g.id)}
+                                          className="text-[10px] bg-muted border rounded-l px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
+                                          {g.name}
+                                        </button>
+                                        {g.bgId && (
+                                          <button
+                                            onClick={() => window.open(`/print/guest-sheet/${g.bgId}`, '_blank')}
+                                            className="text-[10px] bg-sky-50 border border-sky-200 rounded-r px-1.5 py-px text-sky-600 hover:bg-sky-100 transition-colors"
+                                            title="Guest Sheet"
+                                          >
+                                            <BookOpen className="h-2.5 w-2.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {canAddMore && (
+                                      <button
+                                        onClick={() => {
+                                          if (isAddingHere) { setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([]) }
+                                          else { setOtAddCabinId(c.id); setOtAddBookingId(c.bookingId); setOtAddQ(''); setOtAddResults([]) }
+                                        }}
+                                        className="text-[10px] text-[#bdac7e] border border-[#bdac7e]/40 rounded px-1.5 py-px hover:bg-[#bdac7e]/10 transition-colors font-semibold"
+                                      >
+                                        {isAddingHere ? '✕' : '+ Add Guest'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Badge + salesperson */}
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 whitespace-nowrap', badgeCls)}>
+                                  {badgeLabel}
                                 </span>
-                              )}
+                                {c.salesperson && (
+                                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                    by: {c.salesperson}
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            {/* Inline add-guest form */}
+                            {isAddingHere && (
+                              <div className="mt-2 ml-5 border rounded-lg bg-muted/30 p-2 space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    autoFocus
+                                    className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                                    placeholder="Search guest by name..."
+                                    value={otAddQ}
+                                    onChange={e => searchOtGuest(e.target.value)}
+                                  />
+                                  {otAddSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                                </div>
+                                {otAddResults.length > 0 && (
+                                  <div className="border rounded-md bg-background divide-y max-h-40 overflow-y-auto">
+                                    {otAddResults.map((r: any) => (
+                                      <button
+                                        key={r.id}
+                                        disabled={otAddSaving}
+                                        onClick={() => addGuestToOtBooking(r.id)}
+                                        className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors"
+                                      >
+                                        <span className="text-xs font-medium">{r.name}</span>
+                                        {otAddSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 text-muted-foreground" />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {otAddQ.length > 0 && !otAddSearching && otAddResults.length === 0 && (
+                                  <p className="text-[10px] text-muted-foreground px-1">No guests found.</p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )
                       })}

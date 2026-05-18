@@ -44,17 +44,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     const cabins = trip.yacht.cabins.map(c => {
-      const occ = occupancyMap[c.id] ?? { guests: [], bookingStatus: null, salesperson: '' }
-      const isBooked = occ.guests.length > 0
+      const occ      = occupancyMap[c.id] ?? { guests: [], bookingStatus: null, salesperson: '' }
+      const cap      = c.capacity ?? 2
+      const occupied = occ.guests.length
+      const spotsLeft = Math.max(0, cap - occupied)
+      const isFull   = occupied >= cap
       return {
         id: c.id,
         name: c.name,
         deck: c.deck,
         bedType: c.bedType,
-        capacity: c.capacity,
-        occupied: occ.guests.length,
-        spotsLeft: isBooked ? 0 : 1,
-        isFull: isBooked,
+        capacity: cap,
+        occupied,
+        spotsLeft,
+        isFull,
         guests: occ.guests,
         bookingStatus: occ.bookingStatus,
         salesperson: occ.salesperson,

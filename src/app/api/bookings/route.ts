@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       totalPrice, depositPaid, discount, voucherCode,
       currency, exchangeRate,
       depositDueDate, finalDueDate,
-      crewRequired, notes,
+      crewRequired, hasDiving, notes,
       guests,   // Array<{ customerId, cabinId?, isLead }>
       services, // Array<{ name, price }>
     } = body
@@ -157,6 +157,7 @@ export async function POST(request: NextRequest) {
         status:         paymentStatus(paid, total),
         guestCount:     guests.length,
         crewRequired:   crewRequired ?? false,
+        hasDiving:      hasDiving ?? false,
         notes:          notes || null,
         voucherCode:    voucherCode || null,
         currency:       currency || 'USD',

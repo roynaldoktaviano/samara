@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       passport, dateOfBirth, address,
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
+      isChild,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
         nationality, emergencyContact, drinkPreferences,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
+        isChild: isChild ?? false,
       },
     })
 

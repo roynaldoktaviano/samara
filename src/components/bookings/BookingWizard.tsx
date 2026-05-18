@@ -28,7 +28,7 @@ type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
-interface CustomerOpt{ id: string; name: string; phone?: string; email?: string }
+interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
 interface OpenTripOpt{
   id: string; title: string; description?: string
@@ -44,6 +44,7 @@ interface SelectedGuest {
   phone?: string
   cabinId: string
   isLead: boolean
+  isChild?: boolean
 }
 interface ServiceEntry { tempId: string; name: string; price: string }
 
@@ -104,6 +105,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
   const [custSearch,setCSearch] = useState('')
   const [crewReq,   setCrewReq] = useState(false)
+  const [hasDiving, setHasDiving] = useState(false)
 
   /* step-3 */
   const [currency,       setCurrency]   = useState<CurrencyCode>('USD')
@@ -144,12 +146,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [dropError,  setDropError]  = useState<string | null>(null)
 
   /* quick guest creation */
-  const [showQuickAdd,   setShowQuickAdd]   = useState(false)
-  const [quickFirstName, setQuickFirstName] = useState('')
-  const [quickLastName,  setQuickLastName]  = useState('')
-  const [quickPhone,     setQuickPhone]     = useState('')
-  const [quickEmail,     setQuickEmail]     = useState('')
-  const [quickSaving,    setQuickSaving]    = useState(false)
+  const [showQuickAdd,        setShowQuickAdd]        = useState(false)
+  const [quickFirstName,      setQuickFirstName]      = useState('')
+  const [quickLastName,       setQuickLastName]       = useState('')
+  const [quickDob,            setQuickDob]            = useState('')
+  const [quickPhone,          setQuickPhone]          = useState('')
+  const [quickEmail,          setQuickEmail]          = useState('')
+  const [quickPhoneSameAsLead, setQuickPhoneSameAsLead] = useState(false)
+  const [quickEmailSameAsLead, setQuickEmailSameAsLead] = useState(false)
+  const [quickSetAsLead,       setQuickSetAsLead]       = useState(false)
+  const [quickSaving,         setQuickSaving]         = useState(false)
 
   /* pre-select open trip from calendar — still ask source first */
   useEffect(() => {
@@ -258,7 +264,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setPhase('source'); setSource(null); setTrip(null); setStep(1)
     setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
-    setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false)
+    setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false); setHasDiving(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
@@ -316,7 +322,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const addGuest = (c: CustomerOpt) => {
     setGuests(prev => [
       ...prev,
-      { customerId: c.id, name: c.name, phone: c.phone, cabinId: '', isLead: prev.length === 0 },
+      { customerId: c.id, name: c.name, phone: c.phone, cabinId: '', isLead: prev.length === 0, isChild: c.isChild },
     ])
     setCSearch('')
   }
@@ -335,20 +341,30 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const createAndAddGuest = async () => {
     const firstName = quickFirstName.trim()
     const lastName  = quickLastName.trim()
-    if (!firstName) return
+    if (!firstName || !quickDob) return
+    const leadCustomer = customers.find(c => c.id === guests.find(g => g.isLead)?.customerId)
+    const resolvedPhone = quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone.trim()
+    const resolvedEmail = quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail.trim()
+    const dob     = new Date(quickDob)
+    const ageDiff = Date.now() - dob.getTime()
+    const ageYears = new Date(ageDiff).getUTCFullYear() - 1970
+    const isChild  = ageYears < 12
     setQuickSaving(true)
     try {
       const res = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, phone: quickPhone.trim(), email: quickEmail.trim() }),
+        body: JSON.stringify({ firstName, lastName, phone: resolvedPhone, email: resolvedEmail, dateOfBirth: quickDob, isChild }),
       })
       if (res.ok) {
         const created: CustomerOpt = await res.json()
         setCustomers(prev => [created, ...prev])
         addGuest(created)
+        if (quickSetAsLead) setLead(created.id)
         setShowQuickAdd(false)
-        setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
+        setQuickFirstName(''); setQuickLastName(''); setQuickDob('')
+        setQuickPhone(''); setQuickEmail('')
+        setQuickPhoneSameAsLead(false); setQuickEmailSameAsLead(false); setQuickSetAsLead(false)
       }
     } finally { setQuickSaving(false) }
   }
@@ -400,6 +416,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           depositDueDate: depositDueDate || undefined,
           finalDueDate:   finalDueDate   || undefined,
           crewRequired:  crewReq,
+          hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
           notes: (() => {
             const extraLines = Object.entries(cabinExtraBeds)
               .filter(([, n]) => n > 0)
@@ -797,6 +814,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         )}
       >
         {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
+        {g.isChild && <span className="text-[9px] font-bold text-blue-600 shrink-0">👶</span>}
         <span className="truncate max-w-24">{g.name}</span>
         {!inCabin && !g.isLead && (
           <button onClick={e => { e.stopPropagation(); setLead(g.customerId) }}
@@ -858,7 +876,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           )}
 
           {/* Inline quick-add form */}
-          {showQuickAdd && (
+          {showQuickAdd && (() => {
+            const leadGuest     = guests.find(g => g.isLead)
+            const leadCustomer  = customers.find(c => c.id === leadGuest?.customerId)
+            const hasLead       = !!leadCustomer
+            const dob           = quickDob ? new Date(quickDob) : null
+            const ageYears      = dob ? new Date(Date.now() - dob.getTime()).getUTCFullYear() - 1970 : null
+            const isChildPreview = ageYears !== null && ageYears < 12
+            return (
             <div className="border rounded-lg bg-muted/30 p-3 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Guest</p>
@@ -873,24 +898,66 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <Label className="text-xs">Last Name</Label>
                   <Input className="h-8 text-sm mt-1" value={quickLastName} onChange={e => setQuickLastName(e.target.value)} placeholder="Last name" />
                 </div>
+                <div className="col-span-2">
+                  <Label className="text-xs">Date of Birth *</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input type="date" className="h-8 text-sm flex-1" value={quickDob} onChange={e => setQuickDob(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+                    {isChildPreview && (
+                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        Child · {ageYears} yr
+                      </span>
+                    )}
+                    {ageYears !== null && !isChildPreview && (
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">{ageYears} yr</span>
+                    )}
+                  </div>
+                </div>
                 <div>
                   <Label className="text-xs">Phone</Label>
-                  <Input className="h-8 text-sm mt-1" value={quickPhone} onChange={e => setQuickPhone(e.target.value)} placeholder="+62 812..." />
+                  {hasLead && (
+                    <label className="flex items-center gap-1 mt-0.5 mb-1 cursor-pointer">
+                      <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickPhoneSameAsLead}
+                        onChange={e => { setQuickPhoneSameAsLead(e.target.checked); if (e.target.checked) setQuickPhone('') }} />
+                      <span className="text-[10px] text-muted-foreground">Same as {leadCustomer?.name ?? 'lead'}</span>
+                    </label>
+                  )}
+                  <Input className="h-8 text-sm" value={quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone}
+                    onChange={e => { if (!quickPhoneSameAsLead) setQuickPhone(e.target.value) }}
+                    disabled={quickPhoneSameAsLead} placeholder="+62 812..." />
                 </div>
                 <div>
                   <Label className="text-xs">Email</Label>
-                  <Input className="h-8 text-sm mt-1" value={quickEmail} onChange={e => setQuickEmail(e.target.value)} placeholder="email@..." />
+                  {hasLead && (
+                    <label className="flex items-center gap-1 mt-0.5 mb-1 cursor-pointer">
+                      <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickEmailSameAsLead}
+                        onChange={e => { setQuickEmailSameAsLead(e.target.checked); if (e.target.checked) setQuickEmail('') }} />
+                      <span className="text-[10px] text-muted-foreground">Same as {leadCustomer?.name ?? 'lead'}</span>
+                    </label>
+                  )}
+                  <Input className="h-8 text-sm" value={quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail}
+                    onChange={e => { if (!quickEmailSameAsLead) setQuickEmail(e.target.value) }}
+                    disabled={quickEmailSameAsLead} placeholder="email@..." />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex items-center justify-between pt-1">
+                {hasLead && ageYears !== null && !isChildPreview ? (
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickSetAsLead}
+                      onChange={e => setQuickSetAsLead(e.target.checked)} />
+                    <span className="text-[10px] text-muted-foreground">Set as group lead</span>
+                  </label>
+                ) : <span />}
+                <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowQuickAdd(false)}>Cancel</Button>
-                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || quickSaving} onClick={createAndAddGuest}>
+                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || !quickDob || quickSaving} onClick={createAndAddGuest}>
                   {quickSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
                   Add Guest
                 </Button>
+                </div>
               </div>
             </div>
-          )}
+            )
+          })()}
         </div>
 
         {dropError && (
@@ -1050,6 +1117,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           </div>
           <Switch checked={crewReq} onCheckedChange={setCrewReq} />
         </div>
+        {tripType === 'PRIVATE_CHARTER' && (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Diving</Label>
+                <p className="text-xs text-muted-foreground">Include diving section in guest form</p>
+              </div>
+              <Switch checked={hasDiving} onCheckedChange={setHasDiving} />
+            </div>
+          </>
+        )}
       </div>
     )
   }

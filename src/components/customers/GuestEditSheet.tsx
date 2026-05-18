@@ -321,11 +321,12 @@ const SURFING_FIELDS = [
 interface Props {
   open: boolean
   guestId?: string | null
+  bookingGuestId?: string | null
   onClose: () => void
   onSaved?: (guest: any) => void
 }
 
-export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Props) {
+export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose, onSaved }: Props) {
   const isEdit = !!guestId
   const [activeTab, setActiveTab] = useState<SheetTab>('profile')
 
@@ -355,21 +356,26 @@ export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Prop
       return
     }
     setLoading(true)
-    fetch(`/api/customers/${guestId}`)
-      .then(r => r.json())
-      .then(data => {
+    const customerReq = fetch(`/api/customers/${guestId}`).then(r => r.json())
+    const bgReq = bookingGuestId
+      ? fetch(`/api/guests/${bookingGuestId}`).then(r => r.json())
+      : Promise.resolve(null)
+
+    Promise.all([customerReq, bgReq])
+      .then(([data, bg]) => {
         setGuestName(data.name ?? '')
         setForm(toGuestFormState(data))
-        setMedData(data.medicalData      ?? {})
-        setFoodData(data.foodData        ?? {})
-        setDrinkData(data.drinksData     ?? {})
-        setRoomData(data.housekeepingData ?? {})
-        setSvcData(data.serviceData      ?? {})
-        setDivData(data.divingData       ?? {})
-        setSurfData(data.surfingData     ?? {})
+        setMedData(data.medicalData  ?? {})
+        setFoodData(data.foodData    ?? {})
+        setDrinkData(data.drinksData ?? {})
+        setDivData(data.divingData   ?? {})
+        setSurfData(data.surfingData ?? {})
+        // room & service come from BookingGuest if available, else Customer (legacy)
+        setRoomData(bg?.housekeepingData ?? data.housekeepingData ?? {})
+        setSvcData(bg?.serviceData      ?? data.serviceData      ?? {})
       })
       .finally(() => setLoading(false))
-  }, [open, guestId])
+  }, [open, guestId, bookingGuestId])
 
   const jsonSetter = (setter: (d: any) => void) => (k: string, v: string) =>
     setter((prev: any) => ({ ...prev, [k]: v }))
@@ -381,7 +387,7 @@ export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Prop
       const res = await fetch(`/api/customers/${guestId}/generate-link`, { method: 'POST' })
       if (!res.ok) throw new Error()
       const { link } = await res.json()
-      setGuestLink(link)
+      setGuestLink(bookingGuestId ? `${link}?bg=${bookingGuestId}` : link)
     } catch {
       toast.error('Failed to generate link')
     } finally {
@@ -403,19 +409,28 @@ export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Prop
       const body = {
         ...form,
         ...(isEdit && {
-          medicalData:      medData,
-          foodData:         foodData,
-          drinksData:       drinkData,
-          housekeepingData: roomData,
-          serviceData:      svcData,
-          divingData:       divData,
-          surfingData:      surfData,
+          medicalData:  medData,
+          foodData:     foodData,
+          drinksData:   drinkData,
+          divingData:   divData,
+          surfingData:  surfData,
+          // only save room/service to Customer when no bookingGuestId context
+          ...(!bookingGuestId && { housekeepingData: roomData, serviceData: svcData }),
         }),
       }
       const res = isEdit
         ? await fetch(`/api/customers/${guestId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         : await fetch('/api/customers',             { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) throw new Error()
+
+      // Save room/service to BookingGuest if in a booking context
+      if (isEdit && bookingGuestId) {
+        await fetch(`/api/guests/${bookingGuestId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ housekeepingData: roomData, serviceData: svcData }),
+        })
+      }
       const saved = await res.json()
       toast.success(isEdit ? 'Guest profile updated' : 'Guest added successfully')
       onSaved?.(saved)
@@ -502,16 +517,24 @@ export default function GuestEditSheet({ open, guestId, onClose, onSaved }: Prop
             )}
             {activeTab === 'room' && (
               <>
-                <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-[11px] text-amber-700 font-medium">Booking-specific preferences — update per trip via guest form link</p>
+                <div className={`mb-3 px-3 py-2 rounded-lg border ${bookingGuestId ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <p className={`text-[11px] font-medium ${bookingGuestId ? 'text-blue-700' : 'text-amber-700'}`}>
+                    {bookingGuestId
+                      ? 'Data ini tersimpan per-booking, tidak akan mempengaruhi booking lain.'
+                      : 'Buka dari detail booking untuk mengedit preferensi kamar per-trip.'}
+                  </p>
                 </div>
                 <JsonTab data={roomData} onChange={jsonSetter(setRoomData)} fields={ROOM_FIELDS} />
               </>
             )}
             {activeTab === 'service' && (
               <>
-                <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-[11px] text-amber-700 font-medium">Booking-specific details — update per trip via guest form link</p>
+                <div className={`mb-3 px-3 py-2 rounded-lg border ${bookingGuestId ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <p className={`text-[11px] font-medium ${bookingGuestId ? 'text-blue-700' : 'text-amber-700'}`}>
+                    {bookingGuestId
+                      ? 'Data ini tersimpan per-booking, tidak akan mempengaruhi booking lain.'
+                      : 'Buka dari detail booking untuk mengedit detail servis per-trip.'}
+                  </p>
                 </div>
                 <JsonTab data={svcData} onChange={jsonSetter(setSvcData)} fields={SERVICE_FIELDS} />
               </>

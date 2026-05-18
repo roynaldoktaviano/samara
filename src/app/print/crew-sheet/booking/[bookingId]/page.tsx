@@ -30,15 +30,6 @@ function Banner({ sub }: { sub?: string }) {
   )
 }
 
-function Footer() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: `2px solid ${GOLD}`, paddingTop: 10, margin: '12px 32px 16px' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={LOGO} alt="Samara" style={{ width: 22, height: 22 }} />
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '4px', color: DARK }}>SAMARA</span>
-    </div>
-  )
-}
 
 function Field({ label, value }: { label: string; value?: string }) {
   return (
@@ -57,8 +48,8 @@ function Box({ height = 52 }: { height?: number }) {
 
 function Sec({ title, children, accent, last }: { title: string; children: React.ReactNode; accent?: boolean; last?: boolean }) {
   return (
-    <div style={{ marginBottom: last ? 0 : 10 }}>
-      <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0' }}>
+    <div style={{ marginBottom: last ? 0 : 10, pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
+      <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}>
         {title}
       </div>
       <div style={{ border: '1px solid #ddd', borderTop: 'none', borderRadius: '0 0 3px 3px', padding: '10px 12px' }}>
@@ -102,9 +93,11 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     no: number; bgId: string; name: string; phone: string; email: string; cabin: string
     isLead: boolean; bookingCode: string; salesperson: string
     nationality: string; passport: string; passportExpiry: string; dateOfBirth: string
+    gender: string; address: string
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
     departurePickupTime: string; departureHotel: string; departureFlight: string
     emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
+    medicalData: any; foodData: any; drinksData: any; divingData: any
   }
 
   const salesperson = booking.salesperson || booking.agent?.name || 'Direct'
@@ -122,6 +115,8 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     passport: g.customer.passport ?? '',
     passportExpiry: fmtDate(g.customer.passportExpiry),
     dateOfBirth: fmtDate(g.customer.dateOfBirth),
+    gender: (g.customer as any).gender ?? '',
+    address: (g.customer as any).address ?? '',
     arrivalPickupTime: fmtPickupTime(g.arrivalPickupTime),
     arrivalHotel: g.arrivalHotel ?? '',
     arrivalFlight: g.arrivalFlight ?? '',
@@ -132,6 +127,10 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     dietaryRequirements: g.customer.dietaryRequirements ?? '',
     allergies: g.customer.allergies ?? '',
     drinkPreferences: g.customer.drinkPreferences ?? '',
+    medicalData: (g.customer as any).medicalData ?? {},
+    foodData:    (g.customer as any).foodData    ?? {},
+    drinksData:  (g.customer as any).drinksData  ?? {},
+    divingData:  (g.customer as any).divingData  ?? {},
   }))
 
   const totalDays   = Math.ceil((new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000)
@@ -140,6 +139,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
   const yachtName   = booking.yacht?.name ?? ''
   const sub         = `${dateRange}  ·  Private Charter ${totalDays}D${totalNights}N  ·  ${yachtName}`
   const BLANK       = Math.max(0, 12 - guests.length)
+  const showDiving  = (booking as any).hasDiving === true
 
   const th: React.CSSProperties = { padding: '8px 7px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.4px', borderRight: '1px solid #444' }
   const td: React.CSSProperties = { padding: '8px 7px', fontSize: 11, borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }
@@ -195,7 +195,6 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
               .map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </div>
-          <Footer />
         </div>,
         true
       )}
@@ -229,7 +228,6 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             </ul>
             <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>Samara Liveaboard Team</p>
           </div>
-          <Footer />
         </div>
       )}
 
@@ -309,7 +307,6 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
               </div>
             )}
           </div>
-          <Footer />
         </div>
       )}
 
@@ -335,11 +332,13 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             </div>
 
             <Sec title="Personal Details">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                 <Field label="Citizenship / Nationality" value={g.nationality || undefined} />
+                <Field label="Date of Birth (DOB)" value={g.dateOfBirth || undefined} />
+                <Field label="Gender" value={g.gender || undefined} />
+                <Field label="Address" value={g.address || undefined} />
                 <Field label="Passport / ID Number" value={g.passport || undefined} />
                 <Field label="Passport Expiry Date" value={g.passportExpiry || undefined} />
-                <Field label="Date of Birth (DOB)" value={g.dateOfBirth || undefined} />
               </div>
             </Sec>
 
@@ -362,31 +361,85 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
               </Sec>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-              <Sec title="Food Preferences" last>
-                {g.dietaryRequirements
-                  ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{g.dietaryRequirements}</div>
-                  : <Box height={54} />}
-              </Sec>
-              <Sec title="Drink Preferences" last>
-                {g.drinkPreferences
-                  ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{g.drinkPreferences}</div>
-                  : <Box height={54} />}
-              </Sec>
-            </div>
-
-            <Sec title="Food Allergies">
-              {g.allergies
-                ? <div style={{ fontSize: 12, color: DARK, minHeight: 46, lineHeight: 1.6 }}>{g.allergies}</div>
-                : <Box height={46} />}
+            {/* Medical */}
+            <Sec title="Medical & Health">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Field label="Medical Conditions"   value={g.medicalData?.medicalConditions || undefined} />
+                <Field label="Medications"          value={g.medicalData?.medications || undefined} />
+                <Field label="Motion Sickness"      value={g.medicalData?.motionSickness || undefined} />
+                <Field label="Special Assistance"   value={g.medicalData?.specialAssistance || undefined} />
+                <Field label="Food Allergy"         value={g.medicalData?.foodAllergy || undefined} />
+                <Field label="Food Allergy Details" value={g.medicalData?.foodAllergyDetails || undefined} />
+                <Field label="Other Allergies"      value={g.medicalData?.otherAllergies || undefined} />
+                <Field label="Physical Limitations" value={g.medicalData?.physicalLimitations || undefined} />
+              </div>
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee' }}>
+                <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#999', fontWeight: 700, margin: '0 0 4px' }}>Emergency Contact</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <Field label="Name"         value={g.medicalData?.emergencyContactName || undefined} />
+                  <Field label="Relationship" value={g.medicalData?.emergencyContactRelationship || undefined} />
+                  <Field label="Phone"        value={g.medicalData?.emergencyContactPhone || undefined} />
+                  <Field label="Email"        value={g.medicalData?.emergencyContactEmail || undefined} />
+                </div>
+              </div>
             </Sec>
 
-            <Sec title="Extra Services / Special Requests" last>
-              <Box height={50} />
+            {/* Food */}
+            <Sec title="Food Preferences">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Field label="Dietary Type"     value={g.foodData?.dietaryType || undefined} />
+                <Field label="Allergy"          value={g.foodData?.allergy || undefined} />
+                <Field label="Allergy Details"  value={g.foodData?.allergyDetails || undefined} />
+                <Field label="Dislikes"         value={g.foodData?.dislikes || undefined} />
+                <Field label="Favorite Foods"   value={g.foodData?.favoriteFoods || undefined} />
+                <Field label="Breakfast"        value={g.foodData?.breakfastPreference || undefined} />
+                <Field label="Snack Preference" value={g.foodData?.snackPreference || undefined} />
+              </div>
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee', display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+                {[['Halal','halal'],['Vegetarian','vegetarian'],['Vegan','vegan'],['Pescatarian','pescatarian'],['Gluten Free','glutenFree'],['Lactose Intolerant','lactoseIntolerant'],['Kosher','kosher']].map(([lbl,k]) => (
+                  <span key={k} style={{ fontSize: 10, color: g.foodData?.[k] === 'yes' ? '#16a34a' : '#bbb', fontWeight: 600 }}>
+                    {g.foodData?.[k] === 'yes' ? '✓' : '○'} {lbl}
+                  </span>
+                ))}
+              </div>
             </Sec>
+
+            {/* Drinks */}
+            <Sec title="Drink Preferences" last={!showDiving}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Field label="Drinks Alcohol" value={g.drinksData?.drinksAlcohol || undefined} />
+                <Field label="Wine"           value={g.drinksData?.winePreference || undefined} />
+                <Field label="Spirits"        value={g.drinksData?.spiritsPreference || undefined} />
+                <Field label="Cocktail"       value={g.drinksData?.cocktailPreference || undefined} />
+                <Field label="Beer"           value={g.drinksData?.beerPreference || undefined} />
+                <Field label="Coffee"         value={g.drinksData?.coffeePreference || undefined} />
+                <Field label="Tea"            value={g.drinksData?.teaPreference || undefined} />
+                <Field label="Soft Drink"     value={g.drinksData?.softDrinkPreference || undefined} />
+                <Field label="Water"          value={g.drinksData?.waterPreference || undefined} />
+                <Field label="Drink Notes"    value={g.drinksData?.drinkNotes || undefined} />
+              </div>
+            </Sec>
+
+            {/* Diving — only for Private Charter with hasDiving */}
+            {showDiving && (
+              <Sec title="Diving" last>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <Field label="Is Diver"         value={g.divingData?.isDiver || undefined} />
+                  <Field label="Dive Level"       value={g.divingData?.diveLevel || undefined} />
+                  <Field label="Cert. Agency"     value={g.divingData?.certAgency || undefined} />
+                  <Field label="No. of Dives"     value={g.divingData?.diveCount || undefined} />
+                  <Field label="Last Dive Date"   value={g.divingData?.lastDiveDate || undefined} />
+                  <Field label="Equipment Rental" value={g.divingData?.diveRentalRequired || undefined} />
+                  <Field label="Wetsuit Size"     value={g.divingData?.wetsuitSize || undefined} />
+                  <Field label="BCD Size"         value={g.divingData?.bcdSize || undefined} />
+                  <Field label="Fins Size"        value={g.divingData?.finsSize || undefined} />
+                  <Field label="Mask Size"        value={g.divingData?.maskSize || undefined} />
+                  <Field label="Diving Notes"     value={g.divingData?.divingNotes || undefined} />
+                </div>
+              </Sec>
+            )}
 
           </div>
-          <Footer />
         </div>,
         false,
         g.no

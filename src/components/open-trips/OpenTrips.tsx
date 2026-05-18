@@ -221,12 +221,21 @@ export default function OpenTrips() {
       </div>
 
       {/* Stats */}
+      {(() => {
+        const today = new Date(); today.setHours(0,0,0,0)
+        const activeTrips = trips.filter(t => new Date(t.startDate) > today && t.status !== 'closed' && t.status !== 'cancelled')
+        const closedTrips = trips.filter(t => new Date(t.startDate) <= today || t.status === 'closed' || t.status === 'cancelled')
+        const totalCabins  = trips.reduce((s, t) => s + t.maxCapacity, 0)
+        const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const bookedCabins = trips.reduce((s, t) => s + t.spotsBooked, 0)
+        const lostCabins   = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        return (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {[
-          { label: 'Total Trips',  value: trips.length,                                  color: ACCENT },
-          { label: 'Open',         value: trips.filter(t => t.status === 'open').length,  color: '#4a9f6e' },
-          { label: 'Full',         value: trips.filter(t => t.status === 'full').length,  color: '#e8547a' },
-          { label: 'Cabins Sold',  value: trips.reduce((s, t) => s + t.spotsBooked, 0),  color: '#4b8bca' },
+          { label: 'Total Cabins',  value: totalCabins,   color: ACCENT },
+          { label: 'Active Cabins', value: activeCabins,  color: '#4a9f6e' },
+          { label: 'Booked Cabins', value: bookedCabins,  color: '#4b8bca' },
+          { label: 'Lost Cabins',   value: lostCabins,    color: '#e8547a' },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3 px-4">
@@ -239,6 +248,8 @@ export default function OpenTrips() {
           </Card>
         ))}
       </div>
+        )
+      })()}
 
       {/* Filters + List */}
       <Card>

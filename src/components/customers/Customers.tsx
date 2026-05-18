@@ -23,6 +23,7 @@ interface Guest {
   phone?: string
   passport?: string
   dateOfBirth?: string
+  isChild?: boolean
   address?: string
   dietaryRequirements?: string
   allergies?: string
@@ -172,7 +173,10 @@ export default function Guests() {
                           <Users className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{g.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-sm">{g.name}</p>
+                            {g.isChild && <span className="text-[9px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Child</span>}
+                          </div>
                           {g.gender && <p className="text-xs text-muted-foreground">{g.gender}</p>}
                         </div>
                       </div>

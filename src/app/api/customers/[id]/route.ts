@@ -123,6 +123,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
+    const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null
+    const isChild = parsedDob
+      ? (new Date(Date.now() - parsedDob.getTime()).getUTCFullYear() - 1970) < 12
+      : undefined
+
     const customer = await (db.customer as any).update({
       where: { id },
       data: {
@@ -130,8 +135,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         passport, address, dietaryRequirements, allergies,
         equipmentSizes, operationalNotes,
         nationality, emergencyContact, drinkPreferences,
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        dateOfBirth: parsedDob,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
+        ...(isChild !== undefined && { isChild }),
         ...(medicalData      !== undefined && { medicalData }),
         ...(foodData         !== undefined && { foodData }),
         ...(drinksData       !== undefined && { drinksData }),

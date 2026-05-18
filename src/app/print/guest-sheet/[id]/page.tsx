@@ -20,15 +20,6 @@ function Banner({ sub }: { sub?: string }) {
   )
 }
 
-function Footer() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: `2px solid ${GOLD}`, paddingTop: 10, margin: '12px 32px 16px' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={LOGO} alt="Samara" style={{ width: 22, height: 22 }} />
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '4px', color: DARK }}>SAMARA</span>
-    </div>
-  )
-}
 
 function Field({ label, value }: { label: string; value?: string }) {
   return (
@@ -47,8 +38,8 @@ function Box({ height = 52 }: { height?: number }) {
 
 function Sec({ title, children, accent, last }: { title: string; children: React.ReactNode; accent?: boolean; last?: boolean }) {
   return (
-    <div style={{ marginBottom: last ? 0 : 10 }}>
-      <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0' }}>
+    <div style={{ marginBottom: last ? 0 : 10, pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
+      <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}>
         {title}
       </div>
       <div style={{ border: '1px solid #ddd', borderTop: 'none', borderRadius: '0 0 3px 3px', padding: '10px 12px' }}>
@@ -120,6 +111,13 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
   const sub       = `${dateRange}  ·  ${tripTitle}${yachtName ? `  ·  ${yachtName}` : ''}`
   const salesperson = b.salesperson || b.agent?.name || 'Direct'
 
+  const med  = (c as any).medicalData  as Record<string,string> | null
+  const food = (c as any).foodData     as Record<string,string> | null
+  const drk  = (c as any).drinksData   as Record<string,string> | null
+  const div  = (c as any).divingData   as Record<string,string> | null
+  const showDiving = (b as any).hasDiving && b.tripType === 'PRIVATE_CHARTER'
+  const v = (obj: Record<string,string> | null | undefined, key: string) => obj?.[key] ? String(obj[key]) : undefined
+
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, color: DARK, background: 'white' }}>
       <style>{`
@@ -156,11 +154,13 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
 
         {/* Personal Details */}
         <Sec title="Personal Details">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <Field label="Citizenship / Nationality" value={c.nationality ?? undefined} />
+            <Field label="Date of Birth (DOB)" value={fmtDate(c.dateOfBirth)} />
+            <Field label="Gender" value={c.gender ?? undefined} />
+            <Field label="Address" value={c.address ?? undefined} />
             <Field label="Passport / ID Number" value={c.passport ?? undefined} />
             <Field label="Passport Expiry Date" value={fmtDate(c.passportExpiry)} />
-            <Field label="Date of Birth (DOB)" value={fmtDate(c.dateOfBirth)} />
           </div>
         </Sec>
 
@@ -184,35 +184,86 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
           </Sec>
         </div>
 
-        {/* Food + Drink */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <Sec title="Food Preferences" last>
-            {c.dietaryRequirements
-              ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{c.dietaryRequirements}</div>
-              : <Box height={54} />}
-          </Sec>
-          <Sec title="Drink Preferences" last>
-            {c.drinkPreferences
-              ? <div style={{ fontSize: 12, color: DARK, minHeight: 54, lineHeight: 1.6 }}>{c.drinkPreferences}</div>
-              : <Box height={54} />}
-          </Sec>
-        </div>
-
-        {/* Allergies */}
-        <Sec title="Food Allergies">
-          {c.allergies
-            ? <div style={{ fontSize: 12, color: DARK, minHeight: 46, lineHeight: 1.6 }}>{c.allergies}</div>
-            : <Box height={46} />}
+        {/* Medical & Health */}
+        <Sec title="Medical & Health">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Field label="Medical Conditions"    value={v(med,'medicalConditions')} />
+            <Field label="Medications"           value={v(med,'medications')} />
+            <Field label="Motion Sickness"       value={v(med,'motionSickness')} />
+            <Field label="Special Assistance"    value={v(med,'specialAssistance')} />
+            <Field label="Food Allergy"          value={v(med,'foodAllergy')} />
+            <Field label="Food Allergy Details"  value={v(med,'foodAllergyDetails')} />
+            <Field label="Other Allergies"       value={v(med,'otherAllergies')} />
+            <Field label="Physical Limitations"  value={v(med,'physicalLimitations')} />
+          </div>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee' }}>
+            <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#999', fontWeight: 700, margin: '0 0 4px' }}>Emergency Contact</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <Field label="Name"           value={v(med,'emergencyContactName')} />
+              <Field label="Relationship"   value={v(med,'emergencyContactRelationship')} />
+              <Field label="Phone"          value={v(med,'emergencyContactPhone')} />
+              <Field label="Email"          value={v(med,'emergencyContactEmail')} />
+            </div>
+          </div>
         </Sec>
 
-        {/* Extra Services */}
-        <Sec title="Extra Services / Special Requests" last>
-          <Box height={50} />
+        {/* Food Preferences */}
+        <Sec title="Food Preferences">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Field label="Dietary Type"        value={v(food,'dietaryType')} />
+            <Field label="Allergy"             value={v(food,'allergy')} />
+            <Field label="Allergy Details"     value={v(food,'allergyDetails')} />
+            <Field label="Dislikes"            value={v(food,'dislikes')} />
+            <Field label="Favorite Foods"      value={v(food,'favoriteFoods')} />
+            <Field label="Breakfast"           value={v(food,'breakfastPreference')} />
+            <Field label="Snack Preference"    value={v(food,'snackPreference')} />
+          </div>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee', display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+            {[['Halal','halal'],['Vegetarian','vegetarian'],['Vegan','vegan'],['Pescatarian','pescatarian'],['Gluten Free','glutenFree'],['Lactose Intolerant','lactoseIntolerant'],['Kosher','kosher']].map(([lbl,k]) => (
+              <span key={k} style={{ fontSize: 10, color: food?.[k] === 'yes' ? '#16a34a' : food?.[k] === 'no' ? '#aaa' : '#ccc', fontWeight: 600 }}>
+                {food?.[k] === 'yes' ? '✓' : '○'} {lbl}
+              </span>
+            ))}
+          </div>
         </Sec>
+
+        {/* Drink Preferences */}
+        <Sec title="Drink Preferences" last={!showDiving}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Field label="Drinks Alcohol"      value={v(drk,'drinksAlcohol')} />
+            <Field label="Wine"                value={v(drk,'winePreference')} />
+            <Field label="Spirits"             value={v(drk,'spiritsPreference')} />
+            <Field label="Cocktail"            value={v(drk,'cocktailPreference')} />
+            <Field label="Beer"                value={v(drk,'beerPreference')} />
+            <Field label="Coffee"              value={v(drk,'coffeePreference')} />
+            <Field label="Tea"                 value={v(drk,'teaPreference')} />
+            <Field label="Soft Drink"          value={v(drk,'softDrinkPreference')} />
+            <Field label="Water"               value={v(drk,'waterPreference')} />
+            <Field label="Drink Notes"         value={v(drk,'drinkNotes')} />
+          </div>
+        </Sec>
+
+        {/* Diving — only for Private Charter with hasDiving */}
+        {showDiving && (
+          <Sec title="Diving" last>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <Field label="Is Diver"            value={v(div,'isDiver')} />
+              <Field label="Dive Level"          value={v(div,'diveLevel')} />
+              <Field label="Cert. Agency"        value={v(div,'certAgency')} />
+              <Field label="No. of Dives"        value={v(div,'diveCount')} />
+              <Field label="Last Dive Date"      value={v(div,'lastDiveDate')} />
+              <Field label="Equipment Rental"    value={v(div,'diveRentalRequired')} />
+              <Field label="Wetsuit Size"        value={v(div,'wetsuitSize')} />
+              <Field label="BCD Size"            value={v(div,'bcdSize')} />
+              <Field label="Fins Size"           value={v(div,'finsSize')} />
+              <Field label="Mask Size"           value={v(div,'maskSize')} />
+              <Field label="Diving Notes"        value={v(div,'divingNotes')} />
+            </div>
+          </Sec>
+        )}
 
       </div>
 
-      <Footer />
     </div>
   )
 }

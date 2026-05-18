@@ -184,6 +184,7 @@ export default function Bookings() {
   const [detailCabins,        setDetailCabins]        = useState<any[]>([])
   const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
   const [editGuestId,         setEditGuestId]         = useState<string | null>(null)
+  const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
 
   /* ── fetchers ── */
@@ -306,31 +307,17 @@ export default function Bookings() {
   const SHARED_KEY = '__shared__'
 
   const openTravel = (b: BookingRecord) => {
-    const travel: typeof guestTravel = {}
-    if (b.tripType === 'PRIVATE_CHARTER') {
-      // One shared form — seed from first guest's data
-      const first = b.guests[0]
-      travel[SHARED_KEY] = {
+    const first = b.guests[0]
+    setGuestTravel({
+      [SHARED_KEY]: {
         arrivalPickupTime:   first?.arrivalPickupTime   ?? '',
         arrivalHotel:        first?.arrivalHotel        ?? '',
         arrivalFlight:       first?.arrivalFlight       ?? '',
         departurePickupTime: first?.departurePickupTime ?? '',
         departureHotel:      first?.departureHotel      ?? '',
         departureFlight:     first?.departureFlight     ?? '',
-      }
-    } else {
-      b.guests.forEach(g => {
-        travel[g.id] = {
-          arrivalPickupTime:   g.arrivalPickupTime   ?? '',
-          arrivalHotel:        g.arrivalHotel        ?? '',
-          arrivalFlight:       g.arrivalFlight       ?? '',
-          departurePickupTime: g.departurePickupTime ?? '',
-          departureHotel:      g.departureHotel      ?? '',
-          departureFlight:     g.departureFlight     ?? '',
-        }
-      })
-    }
-    setGuestTravel(travel)
+      },
+    })
     setTravelBooking(b)
   }
 
@@ -338,27 +325,14 @@ export default function Bookings() {
     if (!travelBooking) return
     setTravelSaving(true)
     try {
-      if (travelBooking.tripType === 'PRIVATE_CHARTER') {
-        // Apply the shared form to every guest in the booking
-        const shared = guestTravel[SHARED_KEY]
-        if (shared) {
-          await Promise.all(
-            travelBooking.guests.map(g =>
-              fetch(`/api/guests/${g.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(shared),
-              })
-            )
-          )
-        }
-      } else {
+      const shared = guestTravel[SHARED_KEY]
+      if (shared) {
         await Promise.all(
-          Object.entries(guestTravel).map(([guestId, travel]) =>
-            fetch(`/api/guests/${guestId}`, {
+          travelBooking.guests.map(g =>
+            fetch(`/api/guests/${g.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(travel),
+              body: JSON.stringify(shared),
             })
           )
         )
@@ -1200,171 +1174,97 @@ export default function Bookings() {
                 </DialogTitle>
               </DialogHeader>
 
-              {travelBooking.tripType === 'PRIVATE_CHARTER' ? (
-                /* ── Private Charter: one shared form + guest list ── */
-                <div className="space-y-4">
-                  {/* Shared travel form */}
-                  {(() => {
-                    const t = guestTravel[SHARED_KEY] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
-                    const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
-                      setGuestTravel(prev => ({ ...prev, [SHARED_KEY]: { ...t, [k]: e.target.value } }))
-                    return (
-                      <div className="rounded-xl border bg-sky-50/40 p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
-                            <PlaneTakeoff className="h-3.5 w-3.5" />
-                            Group Travel Details
-                            <span className="text-muted-foreground font-normal">— applies to all guests</span>
-                          </p>
-                          <Button
-                            variant="outline" size="sm"
-                            className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50"
-                            onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            Download All Guest Sheets
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className="h-8 text-xs bg-white" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs bg-white" />
-                            </div>
+              {/* ── Shared travel form (applies to all guests) ── */}
+              {(() => {
+                const t = guestTravel[SHARED_KEY] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
+                const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
+                  setGuestTravel(prev => ({ ...prev, [SHARED_KEY]: { ...t, [k]: e.target.value } }))
+                return (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border bg-sky-50/40 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
+                          <PlaneTakeoff className="h-3.5 w-3.5" />
+                          Group Travel Details
+                          <span className="text-muted-foreground font-normal">— applies to all guests</span>
+                        </p>
+                        <Button
+                          variant="outline" size="sm"
+                          className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50"
+                          onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          Download All Guest Sheets
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                            <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className="h-8 text-xs bg-white" />
                           </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className="h-8 text-xs bg-white" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs bg-white" />
-                            </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                            <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs bg-white" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
+                            <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className="h-8 text-xs bg-white" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
+                            <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs bg-white" />
                           </div>
                         </div>
                       </div>
-                    )
-                  })()}
+                    </div>
 
-                  {/* Guest list — sheet only */}
-                  <div className="rounded-xl border p-4">
-                    <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-widest">
-                      Guests ({travelBooking.guests.length} pax)
-                    </p>
-                    <div className="space-y-1.5">
-                      {travelBooking.guests.map(g => (
-                        <div key={g.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                              <User className="w-3.5 h-3.5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium leading-tight">{g.customer?.name ?? '—'}</p>
-                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                {g.isLead && <span className="text-amber-600 font-semibold">Group Leader</span>}
-                                {g.cabin && <span className="flex items-center gap-0.5"><BedDouble className="w-3 h-3" /> {g.cabin.name}</span>}
+                    {/* Guest list — sheet only */}
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-widest">
+                        Guests ({travelBooking.guests.length} pax)
+                      </p>
+                      <div className="space-y-1.5">
+                        {travelBooking.guests.map(g => (
+                          <div key={g.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
+                                <User className="w-3.5 h-3.5 text-muted-foreground" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium leading-tight">{g.customer?.name ?? '—'}</p>
+                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                  {g.isLead && <span className="text-amber-600 font-semibold">Group Leader</span>}
+                                  {g.cabin && <span className="flex items-center gap-0.5"><BedDouble className="w-3 h-3" /> {g.cabin.name}</span>}
+                                </div>
                               </div>
                             </div>
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
+                              onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                            >
+                              <FileText className="h-3 w-3 mr-1" /> Guest Sheet
+                            </Button>
                           </div>
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
-                            onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                          >
-                            <FileText className="h-3 w-3 mr-1" /> Guest Sheet
-                          </Button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                /* ── Open Trip: per-guest form ── */
-                <div className="space-y-3">
-                  {/* Header: Download All */}
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">Each guest has their own travel details</p>
-                    <Button
-                      variant="outline" size="sm"
-                      className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50"
-                      onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      Download All Guest Sheets
-                    </Button>
-                  </div>
-                  {travelBooking.guests.map(g => {
-                    const t = guestTravel[g.id] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
-                    const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
-                      setGuestTravel(prev => ({ ...prev, [g.id]: { ...t, [k]: e.target.value } }))
-                    return (
-                      <div key={g.id} className="rounded-lg border p-3 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">
-                            {g.customer?.name ?? '—'}
-                            {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-normal">Group Leader</span>}
-                            {g.cabin && <span className="ml-1.5 text-[10px] text-muted-foreground font-normal"><BedDouble className="inline w-3 h-3 mb-0.5" /> {g.cabin.name}</span>}
-                          </p>
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
-                            onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                          >
-                            <FileText className="h-3 w-3 mr-1" /> Guest Sheet
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className="h-8 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-8 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs" />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                              <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className="h-8 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                              <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-8 text-xs" />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                              <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                )
+              })()}
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setTravelBooking(null)}>Cancel</Button>
@@ -1468,7 +1368,7 @@ export default function Bookings() {
                           <div className="flex items-center justify-between gap-2">
                             <button
                               className="flex items-center gap-2 hover:opacity-75 transition-opacity text-left"
-                              onClick={() => setEditGuestId(g.customerId)}
+                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id) }}
                             >
                               <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
                                 <User className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1555,7 +1455,8 @@ export default function Bookings() {
       <GuestEditSheet
         open={!!editGuestId}
         guestId={editGuestId}
-        onClose={() => setEditGuestId(null)}
+        bookingGuestId={editGuestBgId}
+        onClose={() => { setEditGuestId(null); setEditGuestBgId(null) }}
         onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
       />
 
