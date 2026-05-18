@@ -1954,10 +1954,15 @@ export default function CalendarView() {
                         <Plus className="w-3.5 h-3.5 mr-2" /> Book This Trip
                       </Button>
                     )}
-                    {canEdit && new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
+                    {canEdit && otDetail.status !== 'closed' && new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
                       <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                         <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
                       </Button>
+                    )}
+                    {otDetail.status === 'closed' && (
+                      <p className="text-xs text-muted-foreground italic text-right">
+                        This trip cannot be edited — it has already occurred or been closed.
+                      </p>
                     )}
                   </DialogFooter>
                 </>
