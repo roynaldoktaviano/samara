@@ -7,9 +7,9 @@ import { logActivity } from '@/lib/activity'
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
 /** Compute payment status from amounts (never overrides 'completed' or 'cancelled'). */
-function paymentStatus(depositPaid: number, totalPrice: number): string {
-  if (depositPaid <= 0)           return 'pending'
-  if (depositPaid >= totalPrice)  return 'fully_paid'
+function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
+  if (depositPaid <= 0)          return 'pending'
+  if (depositPaid >= totalPrice) return 'fully_paid'
   return 'partially_paid'
 }
 

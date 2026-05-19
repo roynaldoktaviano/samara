@@ -441,7 +441,7 @@ async function main() {
         title: 'Navigation System Update',
         description: 'Update GPS and navigation charts',
         scheduledDate: new Date('2025-02-20'),
-        status: 'in-progress',
+        status: 'in_progress',
         cost: 350,
       },
     }),

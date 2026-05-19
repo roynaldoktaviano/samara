@@ -15,7 +15,7 @@ export async function GET() {
         image: true, status: true, createdAt: true,
         cabins: {
           select: {
-            id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true,
+            id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true, extraBedPrice: true,
             pricingTiers: { select: { nights: true, price: true }, orderBy: { nights: 'asc' } },
           },
           orderBy: { name: 'asc' },
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     type RoomPayload = {
-      name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number
+      name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number; extraBedPrice?: number
       pricingTiers?: { nights: number; price: number }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
                 capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
                 price: r.price ? parseFloat(String(r.price)) : 0,
                 extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
+                extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
               })),
             }
           : undefined,

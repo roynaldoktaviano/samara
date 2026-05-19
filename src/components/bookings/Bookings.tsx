@@ -38,6 +38,7 @@ interface BookingRecord {
   finalDueDate?: string | null
   destination?: string
   notes?: string
+  cancelReason?: string | null
   salesperson?: string | null
   currency?: string
   exchangeRate?: number | null
@@ -183,6 +184,9 @@ export default function Bookings() {
   const [detailBooking,       setDetailBooking]       = useState<BookingRecord | null>(null)
   const [detailCabins,        setDetailCabins]        = useState<any[]>([])
   const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
+  const [cancelDialogBooking, setCancelDialogBooking] = useState<BookingRecord | null>(null)
+  const [cancelReasonText,    setCancelReasonText]    = useState('')
+  const [cancelSaving,        setCancelSaving]        = useState(false)
   const [editGuestId,         setEditGuestId]         = useState<string | null>(null)
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
@@ -245,6 +249,28 @@ export default function Bookings() {
       await fetch(`/api/bookings/${b.id}`, { method: 'DELETE' })
       await fetchBookings()
     } catch (e) { console.error(e) }
+  }
+
+  /* ── cancel booking ── */
+  const openCancelDialog = (b: BookingRecord) => {
+    setCancelReasonText('')
+    setCancelDialogBooking(b)
+  }
+
+  const confirmCancelBooking = async () => {
+    if (!cancelDialogBooking) return
+    setCancelSaving(true)
+    try {
+      await fetch(`/api/bookings/${cancelDialogBooking.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled', cancelReason: cancelReasonText.trim() || null }),
+      })
+      await fetchBookings()
+      setCancelDialogBooking(null)
+      setDetailBooking(null)
+    } catch (e) { console.error(e) }
+    finally { setCancelSaving(false) }
   }
 
   /* ── record payment ── */
@@ -1279,7 +1305,7 @@ export default function Bookings() {
 
       {/* ════ Booking Detail Modal ════ */}
       <Dialog open={!!detailBooking} onOpenChange={v => !v && setDetailBooking(null)}>
-        <DialogContent className="p-0 gap-0 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+        <DialogContent showCloseButton={false} className="p-0 gap-0 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
           <DialogTitle className="sr-only">Booking Detail</DialogTitle>
           {detailBooking && (() => {
             const db_ = detailBooking
@@ -1298,9 +1324,17 @@ export default function Bookings() {
                         {db_.tripType === 'OPEN_TRIP' ? db_.openTrip?.title : db_.yacht?.name}
                       </p>
                     </div>
-                    <span className={`shrink-0 text-[11px] font-semibold rounded-full px-3 py-1 mt-0.5 ${STATUS_STYLES[db_.status] ?? 'bg-muted text-muted-foreground'}`}>
-                      {STATUS_LABELS[db_.status] ?? db_.status}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                      <span className={`text-[11px] font-semibold rounded-full px-3 py-1 ${STATUS_STYLES[db_.status] ?? 'bg-muted text-muted-foreground'}`}>
+                        {STATUS_LABELS[db_.status] ?? db_.status}
+                      </span>
+                      <button
+                        onClick={() => setDetailBooking(null)}
+                        className="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1442,12 +1476,65 @@ export default function Bookings() {
                 </div>
 
                 {/* Footer */}
-                <div className="shrink-0 border-t px-5 py-3 flex justify-end">
+                <div className="shrink-0 border-t px-5 py-3 flex justify-between items-center">
+                  {db_.status !== 'cancelled' ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => openCancelDialog(db_)}
+                      className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      Cancel Booking
+                    </Button>
+                  ) : (
+                    <div />
+                  )}
                   <Button variant="outline" onClick={() => setDetailBooking(null)}>Close</Button>
                 </div>
               </>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Cancel Booking Confirm Dialog ════ */}
+      <Dialog open={!!cancelDialogBooking} onOpenChange={v => !v && setCancelDialogBooking(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <X className="w-4 h-4" /> Cancel Booking
+            </DialogTitle>
+          </DialogHeader>
+          {cancelDialogBooking && (
+            <div className="space-y-4 py-1">
+              <p className="text-sm text-muted-foreground">
+                Yakin mau cancel booking <span className="font-semibold text-foreground">{cancelDialogBooking.bookingCode}</span> atas nama <span className="font-semibold text-foreground">{cancelDialogBooking.customer.name}</span>?
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="cancel-reason">Alasan cancel <span className="text-red-500">*</span></Label>
+                <Textarea
+                  id="cancel-reason"
+                  placeholder="Tulis alasan pembatalan..."
+                  value={cancelReasonText}
+                  onChange={e => setCancelReasonText(e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={cancelSaving} onClick={() => setCancelDialogBooking(null)}>
+              Batal
+            </Button>
+            <Button
+              disabled={cancelSaving || !cancelReasonText.trim()}
+              onClick={confirmCancelBooking}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {cancelSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+              Ya, Cancel Booking
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

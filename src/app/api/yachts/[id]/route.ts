@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     type RoomPayload = {
       id?: string; name: string; deck?: string; bedType?: string
-      capacity?: number; price?: number; extraBeds?: number
+      capacity?: number; price?: number; extraBeds?: number; extraBedPrice?: number
       pricingTiers?: { nights: number; price: number }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
@@ -66,6 +66,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
               price: r.price ? parseFloat(String(r.price)) : 0,
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
+              extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
             },
           })
           // replace all pricing tiers for this cabin
@@ -85,6 +86,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
               price: r.price ? parseFloat(String(r.price)) : 0,
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
+              extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
             },
           })
           if (tiers.length > 0) {

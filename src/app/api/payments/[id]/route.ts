@@ -3,11 +3,12 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
+import { BookingStatus } from '@prisma/client'
 
-function paymentStatus(depositPaid: number, totalPrice: number): string {
-  if (depositPaid <= 0)          return 'pending'
-  if (depositPaid >= totalPrice) return 'fully_paid'
-  return 'partially_paid'
+function paymentStatus(depositPaid: number, totalPrice: number): BookingStatus {
+  if (depositPaid <= 0)          return BookingStatus.pending
+  if (depositPaid >= totalPrice) return BookingStatus.fully_paid
+  return BookingStatus.partially_paid
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {

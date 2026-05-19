@@ -8,7 +8,10 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
 enum Role {
+  SUPER_ADMIN
   ADMIN
   SALES
   FINANCE
@@ -24,6 +27,49 @@ enum TripType {
   PRIVATE_CHARTER
   OPEN_TRIP
 }
+
+enum BookingStatus {
+  pending
+  partially_paid
+  fully_paid
+  completed
+  cancelled
+  confirmed
+}
+
+enum OpenTripStatus {
+  open
+  closed
+  full
+  completed
+  cancelled
+}
+
+enum MaintenanceStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum YachtStatus {
+  available
+  booked
+  maintenance
+}
+
+enum VoucherType {
+  PERCENTAGE
+  FIXED
+}
+
+enum PaymentStatus {
+  pending_confirmation
+  confirmed
+  rejected
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
   id        String   @id @default(cuid())
@@ -55,7 +101,6 @@ model Customer {
   passportExpiry      DateTime?
   emergencyContact    String?
   drinkPreferences    String?
-  // Guest self-service form
   guestFormToken      String?        @unique
   guestFormExpiresAt  DateTime?
   medicalData         Json?
@@ -67,6 +112,8 @@ model Customer {
   updatedAt           DateTime       @updatedAt
   bookings            Booking[]
   guestOf             BookingGuest[]
+
+  @@index([deletedAt])
 }
 
 model Agent {
@@ -93,7 +140,7 @@ model Yacht {
   description  String?
   hourlyRate   Float
   dailyRate    Float
-  status       String        @default("available")
+  status       YachtStatus   @default(available)
   image        String?
   deletedAt    DateTime?
   createdAt    DateTime      @default(now())
@@ -107,17 +154,18 @@ model Yacht {
 }
 
 model Cabin {
-  id           String             @id @default(cuid())
-  yachtId      String
-  name         String
-  capacity     Int                @default(2)
-  price        Float              @default(0)
-  deck         String?
-  bedType      String?
-  extraBeds    Int                @default(0)
-  yacht        Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  guests       BookingGuest[]
-  pricingTiers CabinPricingTier[]
+  id            String             @id @default(cuid())
+  yachtId       String
+  name          String
+  capacity      Int                @default(2)
+  price         Float              @default(0)
+  deck          String?
+  bedType       String?
+  extraBeds     Int                @default(0)
+  extraBedPrice Float              @default(0)
+  yacht         Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  guests        BookingGuest[]
+  pricingTiers  CabinPricingTier[]
 }
 
 model CabinPricingTier {
@@ -132,57 +180,62 @@ model CabinPricingTier {
 }
 
 model OpenTrip {
-  id             String    @id @default(cuid())
-  title          String
-  description    String?
-  yachtId        String
-  startDate      DateTime
-  endDate        DateTime
-  destination    String
-  region         String?
-  departurePort  String?
-  arrivalPort    String?
-  pricePerCabin  Float     @default(0)
-  maxCapacity    Int       @default(0)
-  status         String    @default("open")
-  bookings       Booking[]
-  yacht          Yacht     @relation(fields: [yachtId], references: [id])
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  yachtId       String
+  startDate     DateTime
+  endDate       DateTime
+  destination   String
+  region        String?
+  departurePort String?
+  arrivalPort   String?
+  pricePerCabin Float    @default(0)
+  maxCapacity   Int      @default(0)
+  status        OpenTripStatus @default(open)
+  bookings      Booking[]
+  yacht         Yacht    @relation(fields: [yachtId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([yachtId])
+  @@index([status])
+  @@index([startDate, endDate])
 }
 
 model Booking {
-  id             String         @id @default(cuid())
-  bookingCode    String         @unique
+  id             String          @id @default(cuid())
+  bookingCode    String          @unique
   customerId     String
   agentId        String?
   openTripId     String?
-  source         BookingSource  @default(DIRECT)
-  tripType       TripType       @default(PRIVATE_CHARTER)
+  source         BookingSource   @default(DIRECT)
+  tripType       TripType        @default(PRIVATE_CHARTER)
   yachtId        String?
   startDate      DateTime
   endDate        DateTime
   destination    String?
-  status         String         @default("pending")
+  status         BookingStatus   @default(pending)
   totalPrice     Float
-  depositPaid    Float          @default(0)
-  discount       Float          @default(0)
+  depositPaid    Float           @default(0)
+  discount       Float           @default(0)
   depositDueDate DateTime?
   finalDueDate   DateTime?
-  guestCount     Int            @default(1)
-  crewRequired   Boolean        @default(false)
-  hasDiving      Boolean        @default(false)
+  guestCount     Int             @default(1)
+  crewRequired   Boolean         @default(false)
+  hasDiving      Boolean         @default(false)
   salesperson    String?
   notes          String?
+  cancelReason   String?
   voucherCode    String?
-  currency       String         @default("USD")
+  currency       String          @default("USD")
   exchangeRate   Float?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  customer       Customer       @relation(fields: [customerId], references: [id])
-  agent          Agent?         @relation(fields: [agentId], references: [id])
-  yacht          Yacht?         @relation(fields: [yachtId], references: [id])
-  openTrip       OpenTrip?      @relation(fields: [openTripId], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  agent          Agent?          @relation(fields: [agentId], references: [id])
+  yacht          Yacht?          @relation(fields: [yachtId], references: [id])
+  openTrip       OpenTrip?       @relation(fields: [openTripId], references: [id])
   guests         BookingGuest[]
   services       BookingService[]
   payments       Payment[]
@@ -194,6 +247,9 @@ model Booking {
   @@index([status, depositDueDate])
   @@index([customerId])
   @@index([startDate, endDate])
+  @@index([yachtId])
+  @@index([agentId])
+  @@index([createdAt])
 }
 
 model BookingGuest {
@@ -213,6 +269,8 @@ model BookingGuest {
   cabin               Cabin?   @relation(fields: [cabinId], references: [id])
 
   @@unique([bookingId, customerId])
+  @@index([customerId])
+  @@index([cabinId])
 }
 
 model BookingService {
@@ -221,6 +279,8 @@ model BookingService {
   name      String
   price     Float
   booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
 }
 
 model Crew {
@@ -236,6 +296,8 @@ model Crew {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   yacht     Yacht     @relation(fields: [yachtId], references: [id])
+
+  @@index([yachtId])
 }
 
 model Maintenance {
@@ -245,7 +307,7 @@ model Maintenance {
   description   String?
   scheduledDate DateTime
   completedAt   DateTime?
-  status        String    @default("scheduled")
+  status        MaintenanceStatus @default(scheduled)
   cost          Float?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -303,7 +365,7 @@ model Voucher {
   code        String    @unique
   name        String
   description String?
-  type        String    // PERCENTAGE | FIXED
+  type        VoucherType
   value       Float
   minBooking  Float?
   maxUses     Int?
@@ -345,6 +407,5 @@ model Notification {
   booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
-  @@index([userId])
   @@unique([userId, type, bookingId])
 }

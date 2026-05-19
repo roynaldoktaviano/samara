@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 
-function paymentStatus(depositPaid: number, totalPrice: number): string {
+function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
   if (depositPaid >= totalPrice) return 'fully_paid'
   return 'partially_paid'
@@ -56,7 +56,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // 'completed' and 'cancelled' are manual overrides
     const manualOverride = status === 'completed' || status === 'cancelled'
-    const computedStatus = manualOverride ? status : paymentStatus(newDeposit, newTotal)
+    const computedStatus = manualOverride
+      ? (status as 'completed' | 'cancelled')
+      : paymentStatus(newDeposit, newTotal)
 
     const booking = await db.booking.update({
       where: { id },
@@ -89,6 +91,49 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error updating booking:', error)
+    return NextResponse.json({ error: 'Failed to update booking' }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getServerSession(authOptions)
+    const { id }  = await params
+    const body    = await request.json()
+    const { status, cancelReason } = body
+
+    const existing = await db.booking.findUnique({
+      where:  { id },
+      select: { totalPrice: true, depositPaid: true, status: true },
+    })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const manualOverride = status === 'completed' || status === 'cancelled'
+    const computedStatus = manualOverride
+      ? (status as 'completed' | 'cancelled')
+      : paymentStatus(existing.depositPaid, existing.totalPrice)
+
+    const booking = await db.booking.update({
+      where: { id },
+      data: {
+        status: computedStatus,
+        ...(cancelReason !== undefined && { cancelReason: cancelReason || null }),
+      },
+      select: { id: true, bookingCode: true, status: true },
+    })
+
+    const userId   = session?.user?.id   ?? ''
+    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+    logActivity({
+      userId, userName, userRole,
+      action: 'UPDATE', entity: 'Booking', entityId: id,
+      detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${cancelReason ? ` (alasan: ${cancelReason})` : ''}`,
+    }).catch(() => {})
+
+    return NextResponse.json(booking)
+  } catch (error) {
+    console.error('Error patching booking:', error)
     return NextResponse.json({ error: 'Failed to update booking' }, { status: 500 })
   }
 }

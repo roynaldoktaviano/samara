@@ -19,14 +19,14 @@ interface MaintenanceTask {
   yachtName: string
   scheduledDate: string
   completedAt?: string
-  status: 'scheduled' | 'in-progress' | 'completed' | 'cancelled'
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
   cost?: number
 }
 
 const mockMaintenance: MaintenanceTask[] = [
   { id: '1', title: 'Engine Oil Change', description: 'Regular oil change for the main engine', yachtName: 'Sea Breeze', scheduledDate: '2025-02-15', status: 'scheduled', cost: 450 },
   { id: '2', title: 'Hull Inspection', description: 'Annual hull inspection and cleaning', yachtName: 'Ocean Pearl', scheduledDate: '2025-02-10', completedAt: '2025-02-10', status: 'completed', cost: 1200 },
-  { id: '3', title: 'Navigation System Update', description: 'Update GPS and navigation charts', yachtName: 'Blue Horizon', scheduledDate: '2025-02-20', status: 'in-progress', cost: 350 },
+  { id: '3', title: 'Navigation System Update', description: 'Update GPS and navigation charts', yachtName: 'Blue Horizon', scheduledDate: '2025-02-20', status: 'in_progress', cost: 350 },
   { id: '4', title: 'AC System Repair', description: 'Fix malfunctioning air conditioning in cabin 2', yachtName: 'Sunset Voyager', scheduledDate: '2025-02-25', status: 'scheduled', cost: 800 },
   { id: '5', title: 'Safety Equipment Check', description: 'Monthly safety equipment inspection', yachtName: 'Starlight', scheduledDate: '2025-02-05', completedAt: '2025-02-05', status: 'completed', cost: 200 },
   { id: '6', title: 'Propeller Replacement', description: 'Replace damaged propeller', yachtName: 'Ocean Pearl', scheduledDate: '2025-02-28', status: 'scheduled', cost: 2500 },
@@ -49,13 +49,13 @@ export default function Maintenance() {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
       'scheduled': 'default',
-      'in-progress': 'secondary',
+      'in_progress': 'secondary',
       'completed': 'outline',
       'cancelled': 'destructive',
     }
     const icons: Record<string, React.ReactNode> = {
       'scheduled': <Clock className="h-3 w-3 mr-1" />,
-      'in-progress': <AlertCircle className="h-3 w-3 mr-1" />,
+      'in_progress': <AlertCircle className="h-3 w-3 mr-1" />,
       'completed': <CheckCircle2 className="h-3 w-3 mr-1" />,
       'cancelled': <AlertCircle className="h-3 w-3 mr-1" />,
     }
@@ -68,7 +68,7 @@ export default function Maintenance() {
   }
 
   const scheduledCount = tasks.filter(t => t.status === 'scheduled').length
-  const inProgressCount = tasks.filter(t => t.status === 'in-progress').length
+  const inProgressCount = tasks.filter(t => t.status === 'in_progress').length
   const completedCount = tasks.filter(t => t.status === 'completed').length
   const totalCost = tasks.filter(t => t.cost).reduce((sum, t) => sum + (t.cost || 0), 0)
 
@@ -194,7 +194,7 @@ export default function Maintenance() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="scheduled">Scheduled</SelectItem>
-                <SelectItem value="in-progress">In Progress</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>

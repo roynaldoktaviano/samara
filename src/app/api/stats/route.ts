@@ -50,7 +50,7 @@ export async function GET() {
 
     // ── Upcoming maintenance ──────────────────────────────────────────
     const upcomingMaintenance = await db.maintenance.findMany({
-      where: { status: { in: ['scheduled', 'in-progress'] } },
+      where: { status: { in: ['scheduled', 'in_progress'] } },
       orderBy: { scheduledDate: 'asc' },
       take: 5,
     })
