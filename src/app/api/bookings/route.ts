@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
         services: { select: { id: true, name: true, price: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     })
 
     return NextResponse.json(bookings)

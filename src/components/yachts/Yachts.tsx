@@ -35,7 +35,6 @@ interface CabinRecord {
   deck?: string
   bedType?: string
   extraBeds: number
-  extraBedPrice: number
   pricingTiers: PricingTier[]
 }
 
@@ -49,6 +48,7 @@ interface YachtRecord {
   length?: number
   hourlyRate: number
   dailyRate: number
+  extraBedPrice: number
   status: string
   description?: string
   cabins: CabinRecord[]
@@ -66,7 +66,6 @@ interface RoomInput {
   capacity: string
   price: string      // per-night fallback
   extraBeds: string
-  extraBedPrice: string
   pricingTiers: TierInput[]
 }
 
@@ -98,9 +97,10 @@ export default function Yachts() {
   const [year,        setYear]    = useState('')
   const [capacity,    setCap]     = useState('')
   const [length,      setLen]     = useState('')
-  const [dailyRate,   setDaily]   = useState('')
-  const [description, setDesc]    = useState('')
-  const [rooms,       setRooms]   = useState<RoomInput[]>([])
+  const [dailyRate,      setDaily]        = useState('')
+  const [extraBedPrice,  setExtraBedPrice] = useState('')
+  const [description,    setDesc]         = useState('')
+  const [rooms,          setRooms]        = useState<RoomInput[]>([])
 
   const fetchYachts = useCallback(async () => {
     setLoading(true)
@@ -115,7 +115,7 @@ export default function Yachts() {
 
   const resetForm = () => {
     setName(''); setModel(''); setYear(''); setCap(''); setLen('')
-    setDaily(''); setDesc('')
+    setDaily(''); setExtraBedPrice(''); setDesc('')
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
   }
 
@@ -132,6 +132,7 @@ export default function Yachts() {
     setCap(y.capacity.toString())
     setLen(y.length?.toString() ?? '')
     setDaily(y.dailyRate.toString())
+    setExtraBedPrice((y.extraBedPrice ?? 0).toString())
     setDesc(y.description ?? '')
     setRooms(y.cabins.map(c => ({
       tempId: c.id,
@@ -142,7 +143,6 @@ export default function Yachts() {
       capacity: (c.capacity ?? 0).toString(),
       price: (c.price ?? 0).toString(),
       extraBeds: (c.extraBeds ?? 0).toString(),
-      extraBedPrice: (c.extraBedPrice ?? 0).toString(),
       pricingTiers: [2, 3, 4].map(n => ({
         nights: n,
         price: (c.pricingTiers?.find(t => t.nights === n)?.price ?? 0).toString(),
@@ -154,7 +154,7 @@ export default function Yachts() {
   }
 
   const addRoom = () => setRooms(r => [...r, {
-    tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0', extraBedPrice: '0',
+    tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0',
     pricingTiers: [{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }],
   }])
 
@@ -177,11 +177,11 @@ export default function Yachts() {
     setError('')
     try {
       const payload = {
-        name, model, year, capacity, length, hourlyRate: '0', dailyRate, description,
+        name, model, year, capacity, length, hourlyRate: '0', dailyRate, extraBedPrice, description,
         rooms: rooms.filter(r => r.name.trim()).map(r => ({
           id: r.id,
           name: r.name, deck: r.deck, bedType: r.bedType,
-          capacity: r.capacity, extraBeds: r.extraBeds, extraBedPrice: r.extraBedPrice,
+          capacity: r.capacity, extraBeds: r.extraBeds,
           pricingTiers: r.pricingTiers
             .filter(t => t.price && parseFloat(t.price) > 0)
             .map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
@@ -309,6 +309,10 @@ export default function Yachts() {
                     <Label>Private Charter Rate (USD/day) <span className="text-destructive">*</span></Label>
                     <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
                   </div>
+                  <div className="space-y-1.5">
+                    <Label>Extra Bed Price (USD/bed/night)</Label>
+                    <Input type="number" min="0" step="10" placeholder="0" value={extraBedPrice} onChange={e => setExtraBedPrice(e.target.value)} />
+                  </div>
                   <div className="col-span-2 space-y-1.5">
                     <Label>Description</Label>
                     <Textarea placeholder="About this yacht..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
@@ -342,10 +346,10 @@ export default function Yachts() {
                   ) : (
                     <div className="rounded-xl border overflow-hidden">
                       {/* Column headers */}
-                      <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 76px 32px' }}>
-                        {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra', 'Bed$/night', '3D/2N', '4D/3N', '5D/4N', ''].map((h, i) => (
+                      <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
+                        {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra', '3D/2N', '4D/3N', '5D/4N', ''].map((h, i) => (
                           <div key={i} className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-                            style={{ color: i === 6 ? '#e07b54' : i >= 7 && i <= 9 ? ACCENT : undefined }}>
+                            style={{ color: i >= 6 && i <= 8 ? ACCENT : undefined }}>
                             {h}
                           </div>
                         ))}
@@ -355,7 +359,7 @@ export default function Yachts() {
                       <div className="divide-y">
                         {rooms.map((r, idx) => (
                           <div key={r.tempId} className="grid items-center gap-0 hover:bg-muted/10 transition-colors"
-                            style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 76px 32px' }}>
+                            style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
 
                             {/* # */}
                             <div className="px-2 py-2 text-xs font-medium text-muted-foreground text-center">{idx + 1}</div>
@@ -415,20 +419,6 @@ export default function Yachts() {
                                   updateRoom(r.tempId, { extraBeds: v.toString() })
                                 }}
                               />
-                            </div>
-
-                            {/* Extra bed price */}
-                            <div className="px-1 py-1 border-l">
-                              <div className="flex items-center">
-                                <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
-                                <Input
-                                  className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium"
-                                  type="number" min="0" step="10"
-                                  placeholder="—"
-                                  value={r.extraBedPrice === '0' ? '' : r.extraBedPrice}
-                                  onChange={e => updateRoom(r.tempId, { extraBedPrice: e.target.value })}
-                                />
-                              </div>
                             </div>
 
                             {/* Pricing tiers */}
@@ -658,7 +648,7 @@ export default function Yachts() {
                                         {c.bedType && <Badge variant="outline" className="text-xs px-1.5 py-0">{c.bedType}</Badge>}
                                         <Badge variant="outline" className="text-xs px-1.5 py-0">{c.capacity} pax</Badge>
                                         {c.extraBeds > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">+{c.extraBeds} extra bed</Badge>}
-                                        {c.extraBeds > 0 && c.extraBedPrice > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0" style={{ color: '#e07b54', borderColor: '#e07b54' }}>${c.extraBedPrice}/bed</Badge>}
+                                        {c.extraBeds > 0 && y.extraBedPrice > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0" style={{ color: '#e07b54', borderColor: '#e07b54' }}>${y.extraBedPrice}/bed</Badge>}
                                       </div>
                                       {c.pricingTiers?.length > 0 && (
                                         <div className="pt-1 space-y-0.5">

@@ -9,30 +9,38 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
 
+    const where: Record<string, unknown> = { deletedAt: null }
+    if (search) {
+      where.OR = [
+        { name:     { contains: search, mode: 'insensitive' } },
+        { email:    { contains: search, mode: 'insensitive' } },
+        { phone:    { contains: search, mode: 'insensitive' } },
+        { passport: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
     const customers = await db.customer.findMany({
-      where: { deletedAt: null },
-      include: {
+      where,
+      select: {
+        id: true, name: true, firstName: true, lastName: true,
+        gender: true, email: true, phone: true, passport: true,
+        dateOfBirth: true, address: true, nationality: true,
+        passportExpiry: true, emergencyContact: true,
+        dietaryRequirements: true, allergies: true,
+        drinkPreferences: true, equipmentSizes: true, operationalNotes: true,
+        isChild: true, deletedAt: true, createdAt: true, updatedAt: true,
         _count: { select: { bookings: true, guestOf: true } },
         bookings: { select: { totalPrice: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     })
 
-    let result = customers.map(c => ({
+    const result = customers.map(c => ({
       ...c,
       totalBookings: c._count.bookings + c._count.guestOf,
       totalSpent: c.bookings.reduce((s, b) => s + b.totalPrice, 0),
     }))
-
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.toLowerCase().includes(q) ||
-        c.passport?.toLowerCase().includes(q)
-      )
-    }
 
     return NextResponse.json(result)
   } catch (error) {

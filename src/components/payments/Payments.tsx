@@ -50,7 +50,6 @@ interface Payment {
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
     agent: { name: string; company: string | null; commission: number | null } | null
-    services: { name: string; price: number }[]
   }
 }
 

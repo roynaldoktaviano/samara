@@ -24,7 +24,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, description, status, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedPrice, description, status, rooms } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     type RoomPayload = {
       id?: string; name: string; deck?: string; bedType?: string
-      capacity?: number; price?: number; extraBeds?: number; extraBedPrice?: number
+      capacity?: number; price?: number; extraBeds?: number
       pricingTiers?: { nights: number; price: number }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
@@ -49,6 +49,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           length: length ? parseFloat(length) : null,
           hourlyRate: parseFloat(hourlyRate),
           dailyRate: parseFloat(dailyRate),
+          extraBedPrice: extraBedPrice ? parseFloat(String(extraBedPrice)) : 0,
           description: description || null,
           status: status || 'available',
         },
@@ -66,7 +67,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
               price: r.price ? parseFloat(String(r.price)) : 0,
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
-              extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
             },
           })
           // replace all pricing tiers for this cabin
@@ -86,7 +86,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
               price: r.price ? parseFloat(String(r.price)) : 0,
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
-              extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
             },
           })
           if (tiers.length > 0) {

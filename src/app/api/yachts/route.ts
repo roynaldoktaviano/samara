@@ -15,7 +15,7 @@ export async function GET() {
         image: true, status: true, createdAt: true,
         cabins: {
           select: {
-            id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true, extraBedPrice: true,
+            id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true,
             pricingTiers: { select: { nights: true, price: true }, orderBy: { nights: 'asc' } },
           },
           orderBy: { name: 'asc' },
@@ -35,14 +35,14 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, description, image, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedPrice, description, image, rooms } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     type RoomPayload = {
-      name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number; extraBedPrice?: number
+      name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number
       pricingTiers?: { nights: number; price: number }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
         length: length ? parseFloat(length) : null,
         hourlyRate: parseFloat(hourlyRate),
         dailyRate: parseFloat(dailyRate),
+        extraBedPrice: extraBedPrice ? parseFloat(String(extraBedPrice)) : 0,
         description: description || null,
         image: image || null,
         status: 'available',
@@ -70,7 +71,6 @@ export async function POST(request: NextRequest) {
                 capacity: r.capacity ? parseInt(String(r.capacity)) : 2,
                 price: r.price ? parseFloat(String(r.price)) : 0,
                 extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
-                extraBedPrice: r.extraBedPrice ? parseFloat(String(r.extraBedPrice)) : 0,
               })),
             }
           : undefined,

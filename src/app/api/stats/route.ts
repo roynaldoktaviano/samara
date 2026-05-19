@@ -23,20 +23,17 @@ export async function GET() {
       db.customer.count(),
     ])
 
-    // ── Revenue & expense totals ───────────────────────────────────────
-    const [allBookings, allExpenses] = await Promise.all([
-      db.booking.findMany({ select: { totalPrice: true, createdAt: true } }),
-      db.expense.findMany({ select: { amount: true, date: true } }),
+    // ── Revenue & expense totals (DB-level aggregation) ──────────────
+    const [revTotal, revMonthly, expTotal, expMonthly] = await Promise.all([
+      db.booking.aggregate({ _sum: { totalPrice: true }, where: { status: { not: 'cancelled' } } }),
+      db.booking.aggregate({ _sum: { totalPrice: true }, where: { status: { not: 'cancelled' }, createdAt: { gte: startOfMonth } } }),
+      db.expense.aggregate({ _sum: { amount: true } }),
+      db.expense.aggregate({ _sum: { amount: true }, where: { date: { gte: startOfMonth } } }),
     ])
-
-    const totalRevenue  = allBookings.reduce((s, b) => s + b.totalPrice, 0)
-    const monthlyRevenue = allBookings
-      .filter(b => b.createdAt >= startOfMonth)
-      .reduce((s, b) => s + b.totalPrice, 0)
-    const totalExpenses  = allExpenses.reduce((s, e) => s + e.amount, 0)
-    const monthlyExpenses = allExpenses
-      .filter(e => e.date >= startOfMonth)
-      .reduce((s, e) => s + e.amount, 0)
+    const totalRevenue    = revTotal._sum.totalPrice   ?? 0
+    const monthlyRevenue  = revMonthly._sum.totalPrice ?? 0
+    const totalExpenses   = expTotal._sum.amount       ?? 0
+    const monthlyExpenses = expMonthly._sum.amount     ?? 0
 
     // ── Recent bookings ───────────────────────────────────────────────
     const recentBookings = await db.booking.findMany({
@@ -103,10 +100,11 @@ export async function GET() {
       }))
 
     // ── Monthly bookings (per year, private vs open) ───────────────────
-    // Pull all non-cancelled bookings with startDate + tripType
+    const twoYearsAgo = new Date(now.getFullYear() - 2, 0, 1)
     const bookingsForMonthly = await db.booking.findMany({
-      where: { status: { not: 'cancelled' } },
+      where: { status: { not: 'cancelled' }, startDate: { gte: twoYearsAgo } },
       select: { startDate: true, tripType: true, totalPrice: true },
+      take: 2000,
     })
 
     type MonthBucket = { private: number; open: number; revenue: number }

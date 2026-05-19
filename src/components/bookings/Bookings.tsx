@@ -1061,25 +1061,31 @@ export default function Bookings() {
                   <span className="text-sm font-normal text-muted-foreground">— Edit Booking</span>
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="rounded-lg bg-muted/40 p-3">
-                  <p className="text-muted-foreground mb-0.5">Customer</p>
-                  <p className="font-semibold">{editBooking.customer.name}</p>
-                  {editBooking.agent && <p className="text-muted-foreground">via {editBooking.agent.name}</p>}
-                </div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-muted/40 p-3">
                   <p className="text-muted-foreground mb-0.5">{editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}</p>
                   <p className="font-semibold">{editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
                   <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
                 </div>
                 <div className="rounded-lg bg-muted/40 p-3">
-                  <p className="text-muted-foreground mb-0.5">Guests & Cabins</p>
-                  {editBooking.guests.map(g => (
-                    <div key={g.id} className="flex items-center gap-1">
-                      <span className="font-medium">{g.customer?.name ?? '—'}</span>
-                      {g.cabin && <span className="text-muted-foreground flex items-center gap-0.5"><BedDouble className="w-2.5 h-2.5" /> {g.cabin.name}</span>}
-                    </div>
-                  ))}
+                  <p className="text-muted-foreground mb-1">Guests & Cabins</p>
+                  <div className="space-y-1">
+                    {editBooking.guests.map(g => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => setEditGuestId(g.customerId)}
+                        className="flex items-center gap-1.5 w-full text-left hover:opacity-70 transition-opacity"
+                      >
+                        {g.isLead
+                          ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
+                          : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
+                        }
+                        <span className="font-medium truncate">{g.customer?.name ?? '—'}</span>
+                        {g.cabin && <span className="text-muted-foreground flex items-center gap-0.5 shrink-0"><BedDouble className="w-2.5 h-2.5" />{g.cabin.name}</span>}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1087,7 +1093,8 @@ export default function Bookings() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>Status</Label>
-                  <Select value={editStatus} onValueChange={setEditStatus}>
+                  <Select value={editStatus} onValueChange={setEditStatus}
+                    disabled={editStatus !== 'completed' && editStatus !== 'cancelled'}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">Pending</SelectItem>
@@ -1097,7 +1104,7 @@ export default function Bookings() {
                       <SelectItem value="cancelled">Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Auto-computed from payments. Only Completed & Cancelled are manual.</p>
+                  <p className="text-xs text-muted-foreground">Auto-computed from payments. Only Completed & Cancelled are editable.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Discount (%)</Label>

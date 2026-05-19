@@ -49,11 +49,11 @@ export async function GET(_: NextRequest) {
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
             agent: { select: { name: true, company: true, commission: true } },
-            services: { select: { name: true, price: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     })
     // Strip base64 proof from list; return a boolean flag instead
     const result = payments.map(({ proofOfTransfer, ...p }) => ({

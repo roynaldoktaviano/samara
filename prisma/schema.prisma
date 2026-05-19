@@ -114,6 +114,9 @@ model Customer {
   guestOf             BookingGuest[]
 
   @@index([deletedAt])
+  @@index([name])
+  @@index([email])
+  @@index([createdAt])
 }
 
 model Agent {
@@ -138,9 +141,10 @@ model Yacht {
   cabinCount   Int           @default(0)
   length       Float?
   description  String?
-  hourlyRate   Float
-  dailyRate    Float
-  status       YachtStatus   @default(available)
+  hourlyRate     Float
+  dailyRate      Float
+  extraBedPrice  Float         @default(0)
+  status         YachtStatus   @default(available)
   image        String?
   deletedAt    DateTime?
   createdAt    DateTime      @default(now())
@@ -162,7 +166,6 @@ model Cabin {
   deck          String?
   bedType       String?
   extraBeds     Int                @default(0)
-  extraBedPrice Float              @default(0)
   yacht         Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   guests        BookingGuest[]
   pricingTiers  CabinPricingTier[]
@@ -249,6 +252,7 @@ model Booking {
   @@index([startDate, endDate])
   @@index([yachtId])
   @@index([agentId])
+  @@index([salesperson])
   @@index([createdAt])
 }
 
