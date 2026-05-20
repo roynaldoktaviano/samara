@@ -1137,11 +1137,11 @@ export default function Bookings() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Payment Due Date</Label>
-                  <Input type="date" value={editDepDue} onChange={e => setEditDepDue(e.target.value)} />
+                  <Input type="date" value={editDepDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditDepDue(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Final Balance Due Date</Label>
-                  <Input type="date" value={editFinalDue} min={editDepDue} onChange={e => setEditFinalDue(e.target.value)} />
+                  <Input type="date" value={editFinalDue} min={editDepDue || new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
                 </div>
                 <div className="col-span-2 space-y-1.5">
                   <Label>Notes</Label>

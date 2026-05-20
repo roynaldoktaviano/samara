@@ -1570,11 +1570,11 @@ export default function CalendarView() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Check-in</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.startDate} onChange={e => setBookingEditForm(p => ({ ...p, startDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, startDate: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Check-out</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.endDate} onChange={e => setBookingEditForm(p => ({ ...p, endDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.endDate} min={bookingEditForm.startDate || new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, endDate: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Destination</Label>
@@ -1631,11 +1631,11 @@ export default function CalendarView() {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Deposit Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate} onChange={e => setBookingEditForm(p => ({ ...p, depositDueDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate} min={new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, depositDueDate: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Final Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate} onChange={e => setBookingEditForm(p => ({ ...p, finalDueDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate} min={bookingEditForm.depositDueDate || new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, finalDueDate: e.target.value }))} />
                       </div>
                     </div>
                   </div>

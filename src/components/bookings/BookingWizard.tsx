@@ -1711,11 +1711,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Deposit Due Date <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={depositDueDate} onChange={e => setDepDue(e.target.value)} />
+                  <Input type="date" value={depositDueDate} min={new Date().toISOString().split('T')[0]} onChange={e => setDepDue(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Final Balance Due <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={finalDueDate} min={depositDueDate} onChange={e => setFinalDue(e.target.value)} />
+                  <Input type="date" value={finalDueDate} min={depositDueDate || new Date().toISOString().split('T')[0]} onChange={e => setFinalDue(e.target.value)} />
                 </div>
               </div>
 

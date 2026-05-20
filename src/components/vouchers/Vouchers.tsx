@@ -398,6 +398,7 @@ export default function Vouchers() {
                 <Input
                   type="date"
                   value={form.validFrom}
+                  min={new Date().toISOString().split('T')[0]}
                   onChange={e => setForm(f => ({ ...f, validFrom: e.target.value }))}
                 />
               </div>

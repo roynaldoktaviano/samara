@@ -468,11 +468,11 @@ export default function OpenTrips() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Start Date <span className="text-destructive">*</span></Label>
-                  <Input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
+                  <Input type="date" value={form.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => set('startDate', e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>End Date <span className="text-destructive">*</span></Label>
-                  <Input type="date" value={form.endDate} min={form.startDate} onChange={e => set('endDate', e.target.value)} />
+                  <Input type="date" value={form.endDate} min={form.startDate || new Date().toISOString().split('T')[0]} onChange={e => set('endDate', e.target.value)} />
                 </div>
               </div>
 
