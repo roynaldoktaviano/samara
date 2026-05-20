@@ -30,23 +30,48 @@ export async function GET(request: NextRequest) {
 
     const now = new Date()
 
+    // Fetch all private charter bookings for these yachts (one query, not N)
+    const yachtIds = [...new Set(trips.map(t => t.yachtId))]
+    const privateCharters = await db.booking.findMany({
+      where: {
+        yachtId:  { in: yachtIds },
+        tripType: 'PRIVATE_CHARTER',
+        status:   { not: 'cancelled' },
+      },
+      select: { yachtId: true, startDate: true, endDate: true, bookingCode: true },
+    })
+
     const tripsWithAvailability = trips.map((t) => {
       const totalCabins = t.yacht.cabins.length || t.yacht.cabinCount
 
-      // Build per-cabin booking status — same data used for both dots and availability
       const cabinStatuses = t.yacht.cabins.map(c => {
         const booking = t.bookings.find(b => b.guests.some(g => g.cabinId === c.id))
         return { id: c.id, name: c.name, bookingStatus: booking?.status ?? null }
       })
 
-      // Count occupied cabins from assignments (not booking records) so one booking
-      // with multiple guests in different cabins is counted correctly
       const occupiedCabins = cabinStatuses.filter(c => c.bookingStatus !== null).length
       const spotsAvailable = Math.max(0, totalCabins - occupiedCabins)
 
-      // Auto-compute status; only 'cancelled' is a manual override that is never touched
+      // Check if a private charter overlaps this open trip's dates
+      const blockingPC = privateCharters.find(pc =>
+        pc.yachtId === t.yachtId &&
+        new Date(pc.startDate) < new Date(t.endDate) &&
+        new Date(pc.endDate)   > new Date(t.startDate)
+      )
+
       let effectiveStatus = t.status
-      if (t.status !== 'cancelled') {
+      let closedReason    = (t as any).closedReason ?? null
+      if (blockingPC && t.status !== 'cancelled') {
+        effectiveStatus = 'closed'
+        closedReason    = closedReason ?? `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
+        // Sync DB silently if not yet closed
+        if (t.status !== 'closed') {
+          db.openTrip.update({
+            where: { id: t.id },
+            data:  { status: 'closed' },
+          }).catch(() => {})
+        }
+      } else if (t.status !== 'cancelled' && t.status !== 'closed') {
         if (now >= new Date(t.startDate)) effectiveStatus = 'closed'
         else if (spotsAvailable === 0)   effectiveStatus = 'full'
         else                             effectiveStatus = 'open'
@@ -55,6 +80,7 @@ export async function GET(request: NextRequest) {
       return {
         ...t,
         status: effectiveStatus,
+        closedReason,
         spotsBooked: occupiedCabins,
         spotsAvailable,
         cabinStatuses,

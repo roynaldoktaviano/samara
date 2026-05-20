@@ -69,9 +69,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const totalCabins     = cabins.length
     const spotsAvailable  = Math.max(0, totalCabins - bookedCabins)
 
-    // Auto-compute effective status (same logic as list route)
+    // Check for overlapping private charter (handles legacy data before auto-close)
+    const blockingPC = trip.status !== 'cancelled' ? await db.booking.findFirst({
+      where: {
+        yachtId:  trip.yachtId,
+        tripType: 'PRIVATE_CHARTER',
+        status:   { not: 'cancelled' },
+        startDate: { lt: trip.endDate },
+        endDate:   { gt: trip.startDate },
+      },
+      select: { bookingCode: true },
+    }) : null
+
     let effectiveStatus = trip.status
-    if (trip.status !== 'cancelled') {
+    let closedReason    = (trip as any).closedReason ?? null
+    if (blockingPC) {
+      effectiveStatus = 'closed'
+      closedReason    = closedReason ?? `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
+      if (trip.status !== 'closed') {
+        db.openTrip.update({ where: { id }, data: { status: 'closed' } }).catch(() => {})
+      }
+    } else if (trip.status !== 'cancelled' && trip.status !== 'closed') {
       if (new Date() >= new Date(trip.startDate)) effectiveStatus = 'closed'
       else if (spotsAvailable === 0)              effectiveStatus = 'full'
       else                                        effectiveStatus = 'open'
@@ -80,6 +98,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({
       ...trip,
       status: effectiveStatus,
+      closedReason,
       cabins,
       spotsBooked: bookedCabins,
       spotsAvailable,

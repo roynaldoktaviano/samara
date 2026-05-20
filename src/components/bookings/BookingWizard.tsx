@@ -39,6 +39,7 @@ interface OpenTripOpt{
   destination: string; pricePerCabin: number
   maxCapacity: number; spotsAvailable: number; status: string
   yacht: { name: string }
+  _count?: { bookings: number }
 }
 
 interface SelectedGuest {
@@ -152,11 +153,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* extra beds per cabin (cabinId → requested count) */
   const [cabinExtraBeds, setCabinExtraBeds] = useState<Record<string, number>>({})
 
-  /* yacht date conflict */
-  const [yachtConflict, setYachtConflict] = useState<{ name: string; start: string; end: string } | null>(null)
+  /* yacht date conflict — null = no conflict, isOpenTrip = true means it's overrideable */
+  const [yachtConflict, setYachtConflict] = useState<{ name: string; start: string; end: string; isOpenTrip?: boolean } | null>(null)
+
+  /* open trip conflict (private charter override) */
+  type OpenTripConflict = { id: string; title: string; startDate: string; endDate: string }
+  const [openTripConflicts, setOpenTripConflicts] = useState<OpenTripConflict[]>([])
+  const [showOpenTripConflictDialog, setShowOpenTripConflictDialog] = useState(false)
 
   /* blocked date ranges for the selected yacht (for calendar display) */
-  const [blockedRanges, setBlockedRanges] = useState<{ from: Date; to: Date }[]>([])
+  const [blockedRanges,       setBlockedRanges]       = useState<{ from: Date; to: Date }[]>([])
+  const [openTripFreeRanges,  setOpenTripFreeRanges]  = useState<{ from: Date; to: Date }[]>([])
   const [startPickerOpen, setStartPickerOpen] = useState(false)
   const [endPickerOpen,   setEndPickerOpen]   = useState(false)
 
@@ -248,28 +255,28 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     const e = new Date(endDate).getTime()
     const overlaps = (a: string, b: string) => new Date(a).getTime() < e && new Date(b).getTime() > s
 
-    // Check open trips for this yacht
-    const otConflict = openTrips.find(t =>
-      t.yachtId === yachtId &&
-      t.status !== 'cancelled' &&
-      overlaps(t.startDate, t.endDate)
-    )
-    if (otConflict) {
-      setYachtConflict({ name: otConflict.title, start: otConflict.startDate, end: otConflict.endDate })
-      return
-    }
-
-    // Check existing bookings for this yacht
+    // Check existing bookings for this yacht (hard block)
     fetch(`/api/bookings?yachtId=${yachtId}`)
       .then(r => r.json())
       .then((data: any[]) => {
-        if (!Array.isArray(data)) return
-        const conflict = data.find(b =>
+        if (!Array.isArray(data)) { setYachtConflict(null); return }
+        const bookingConflict = data.find(b =>
           b.status !== 'cancelled' &&
+          b.tripType !== 'OPEN_TRIP' &&
           overlaps(b.startDate, b.endDate)
         )
-        setYachtConflict(conflict
-          ? { name: conflict.bookingCode, start: conflict.startDate, end: conflict.endDate }
+        if (bookingConflict) {
+          setYachtConflict({ name: bookingConflict.bookingCode, start: bookingConflict.startDate, end: bookingConflict.endDate, isOpenTrip: false })
+          return
+        }
+        // Check open trips — soft warning only (overrideable)
+        const otConflict = openTrips.find(t =>
+          t.yachtId === yachtId &&
+          t.status !== 'cancelled' &&
+          overlaps(t.startDate, t.endDate)
+        )
+        setYachtConflict(otConflict
+          ? { name: otConflict.title, start: otConflict.startDate, end: otConflict.endDate, isOpenTrip: true }
           : null
         )
       })
@@ -278,20 +285,28 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* load blocked date ranges for the selected yacht (calendar display) */
   useEffect(() => {
-    if (!yachtId || tripType !== 'PRIVATE_CHARTER') { setBlockedRanges([]); return }
-    const otRanges = openTrips
-      .filter(t => t.yachtId === yachtId && t.status !== 'cancelled')
+    if (!yachtId || tripType !== 'PRIVATE_CHARTER') {
+      setBlockedRanges([]); setOpenTripFreeRanges([]); return
+    }
+    const yachtOpenTrips = openTrips.filter(t => t.yachtId === yachtId && t.status !== 'cancelled')
+    // open trips with ≥1 booking → red (blocked); 0 bookings → blue (available but scheduled)
+    const otBooked = yachtOpenTrips
+      .filter(t => (t._count?.bookings ?? 0) > 0)
       .map(t => ({ from: new Date(t.startDate), to: new Date(t.endDate) }))
+    const otFree = yachtOpenTrips
+      .filter(t => (t._count?.bookings ?? 0) === 0)
+      .map(t => ({ from: new Date(t.startDate), to: new Date(t.endDate) }))
+    setOpenTripFreeRanges(otFree)
     fetch(`/api/bookings?yachtId=${yachtId}`)
       .then(r => r.json())
       .then((data: any[]) => {
-        if (!Array.isArray(data)) { setBlockedRanges(otRanges); return }
+        if (!Array.isArray(data)) { setBlockedRanges(otBooked); return }
         const bkRanges = data
           .filter(b => b.status !== 'cancelled')
           .map(b => ({ from: new Date(b.startDate), to: new Date(b.endDate) }))
-        setBlockedRanges([...otRanges, ...bkRanges])
+        setBlockedRanges([...otBooked, ...bkRanges])
       })
-      .catch(() => setBlockedRanges(otRanges))
+      .catch(() => setBlockedRanges(otBooked))
   }, [yachtId, tripType, openTrips])
 
   /* auto base price — computed in USD then converted to selected currency */
@@ -364,7 +379,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setCabinExtraBeds({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
-    setBlockedRanges([]); setStartPickerOpen(false); setEndPickerOpen(false)
+    setBlockedRanges([]); setOpenTripFreeRanges([]); setStartPickerOpen(false); setEndPickerOpen(false)
   }, [open])
 
   /* voucher remove */
@@ -480,7 +495,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const canNext = () => {
     if (phase === 'agentInfo') return !!agentId
     if (step === 1) {
-      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && !yachtConflict
+      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && (!yachtConflict || !!yachtConflict.isOpenTrip)
       return !!openTripId
     }
     if (step === 2) return guests.length > 0
@@ -489,46 +504,57 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }
 
   /* submit */
-  const handleSubmit = async () => {
+  const handleSubmit = async (confirmCloseOpenTrips = false) => {
     setSubmitting(true)
     try {
       const resolvedAgentId = source === 'AGENT' ? agentId : undefined
-
       const ot = openTrips.find(t => t.id === openTripId)
+
+      const payload = {
+        tripType,
+        source,
+        agentId: resolvedAgentId,
+        yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
+        openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
+        startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
+        endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
+        destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
+        totalPrice:    total,
+        depositPaid:   parseFloat(deposit) || 0,
+        discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
+        voucherCode:   voucherApplied?.code ?? undefined,
+        currency,
+        exchangeRate:  currency !== 'USD' ? manualRate : undefined,
+        depositDueDate: depositDueDate || undefined,
+        finalDueDate:   finalDueDate   || undefined,
+        crewRequired:  crewReq,
+        hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
+        notes: (() => {
+          const extraLines = Object.entries(cabinExtraBeds)
+            .filter(([, n]) => n > 0)
+            .map(([cid, n]) => `Extra bed ×${n} (${cabins.find(c => c.id === cid)?.name ?? cid})`)
+          const extraNote = extraLines.length ? `[Extra Beds] ${extraLines.join(', ')}` : ''
+          return [notes, extraNote].filter(Boolean).join('\n') || undefined
+        })(),
+        guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
+        services: services.filter(s => s.name.trim()),
+        confirmCloseOpenTrips,
+      }
 
       const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tripType,
-          source,
-          agentId: resolvedAgentId,
-          yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
-          openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
-          startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
-          endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
-          destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
-          totalPrice:    total,
-          depositPaid:   parseFloat(deposit) || 0,
-          discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
-          voucherCode:   voucherApplied?.code ?? undefined,
-          currency,
-          exchangeRate:  currency !== 'USD' ? manualRate : undefined,
-          depositDueDate: depositDueDate || undefined,
-          finalDueDate:   finalDueDate   || undefined,
-          crewRequired:  crewReq,
-          hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
-          notes: (() => {
-            const extraLines = Object.entries(cabinExtraBeds)
-              .filter(([, n]) => n > 0)
-              .map(([cid, n]) => `Extra bed ×${n} (${cabins.find(c => c.id === cid)?.name ?? cid})`)
-            const extraNote = extraLines.length ? `[Extra Beds] ${extraLines.join(', ')}` : ''
-            return [notes, extraNote].filter(Boolean).join('\n') || undefined
-          })(),
-          guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
-          services: services.filter(s => s.name.trim()),
-        }),
+        body: JSON.stringify(payload),
       })
+
+      if (res.status === 409) {
+        const data = await res.json()
+        if (data.conflict && data.openTrips?.length) {
+          setOpenTripConflicts(data.openTrips)
+          setShowOpenTripConflictDialog(true)
+          return
+        }
+      }
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -770,11 +796,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              {blockedRanges.length > 0 && (
-                <p className="px-3 pt-2.5 pb-0.5 text-xs text-muted-foreground flex items-center gap-1.5">
-                  <span className="inline-block w-2 h-2 rounded-sm bg-red-200 border border-red-300" />
-                  Tanggal sudah ada bookingan
-                </p>
+              {(blockedRanges.length > 0 || openTripFreeRanges.length > 0) && (
+                <div className="px-3 pt-2.5 pb-0.5 flex flex-col gap-1">
+                  {blockedRanges.length > 0 && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span className="inline-block w-2 h-2 rounded-sm bg-red-200 border border-red-300" />
+                      Sudah ada booking / open trip terisi
+                    </p>
+                  )}
+                  {openTripFreeRanges.length > 0 && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span className="inline-block w-2 h-2 rounded-sm bg-blue-200 border border-blue-300" />
+                      Ada jadwal open trip (masih kosong)
+                    </p>
+                  )}
+                </div>
               )}
               {placeholder.includes('Start') ? (
                 <Calendar
@@ -783,8 +819,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   onSelect={d => { if (!d) return; setStart(toDateStr(d)); if (endDate && toDateStr(d) >= endDate) setEnd(''); setStartPickerOpen(false) }}
                   disabled={disabledStart}
                   defaultMonth={startDate ? new Date(startDate + 'T00:00:00') : todayMidnight}
-                  modifiers={{ booked: blockedRanges }}
-                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through' }}
+                  modifiers={{ booked: blockedRanges, openFree: openTripFreeRanges }}
+                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through', openFree: 'bg-blue-100 text-blue-600' }}
                   className="p-3"
                 />
               ) : (
@@ -794,8 +830,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   onSelect={d => { if (!d) return; setEnd(toDateStr(d)); setEndPickerOpen(false) }}
                   disabled={disabledEnd}
                   defaultMonth={endDate ? new Date(endDate + 'T00:00:00') : (startDate ? new Date(startDate + 'T00:00:00') : todayMidnight)}
-                  modifiers={{ booked: blockedRanges }}
-                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through' }}
+                  modifiers={{ booked: blockedRanges, openFree: openTripFreeRanges }}
+                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through', openFree: 'bg-blue-100 text-blue-600' }}
                   className="p-3"
                 />
               )}
@@ -818,15 +854,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       })()}
 
       {yachtConflict && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${yachtConflict.isOpenTrip ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold">Yacht tidak tersedia pada tanggal ini</p>
-            <p className="text-xs mt-0.5 text-red-600">
+            <p className="font-semibold">
+              {yachtConflict.isOpenTrip ? 'Ada open trip pada tanggal ini' : 'Yacht tidak tersedia pada tanggal ini'}
+            </p>
+            <p className={`text-xs mt-0.5 ${yachtConflict.isOpenTrip ? 'text-amber-600' : 'text-red-600'}`}>
               Sudah ada jadwal <span className="font-medium">{yachtConflict.name}</span> pada{' '}
               {new Date(yachtConflict.start).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
               {' – '}
               {new Date(yachtConflict.end).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {yachtConflict.isOpenTrip && ' — open trip akan ditutup otomatis saat booking dikonfirmasi.'}
             </p>
           </div>
         </div>
@@ -1030,7 +1069,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               value={custSearch}
               onChange={e => setCSearch(e.target.value)}
               onFocus={() => setCustFocused(true)}
-              onBlur={() => setTimeout(() => setCustFocused(false), 150)}
+              onBlur={() => setCustFocused(false)}
             />
           </div>
           {(custSearch || custFocused) && (
@@ -1048,7 +1087,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     const cIsInfant = cAge !== null && cAge < 4
                     const cIsChild  = !cIsInfant && (c.isChild === true || (cAge !== null && cAge < 12))
                     return (
-                      <button key={c.id} onClick={() => { addGuest(c); setCustFocused(false) }}
+                      <button key={c.id}
+                        onMouseDown={e => { e.preventDefault(); addGuest(c); setCustFocused(false) }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <span className="truncate">{c.name}</span>
@@ -1062,7 +1102,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 </div>
               )}
               <button
-                onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
+                onMouseDown={e => { e.preventDefault(); setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
                 className="w-full text-left px-3 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t shrink-0">
                 <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Add new guest'}
               </button>
@@ -1769,6 +1809,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     STEPS[step - 1].label
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex flex-col overflow-hidden gap-0 p-0" style={{ width: 'min(96vw, 64rem)', maxHeight: 'calc(100dvh - 4rem)' }}>
         <DialogHeader className="shrink-0 px-6 pt-3 pb-3 border-b">
@@ -1837,7 +1878,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             ) : (
               <Button
                 disabled={submitting || !canNext()}
-                onClick={handleSubmit}
+                onClick={() => handleSubmit()}
                 style={{ backgroundColor: ACCENT, color: 'white' }}
                 className="hover:opacity-90"
               >
@@ -1848,5 +1889,53 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Open Trip conflict confirmation dialog */}
+    <Dialog open={showOpenTripConflictDialog} onOpenChange={setShowOpenTripConflictDialog}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <AlertCircle className="w-5 h-5" />
+            Open Trip Konflik
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Kapal yang dipilih memiliki <span className="font-semibold text-foreground">{openTripConflicts.length} open trip</span> yang tanggalnya bertabrakan dengan Private Charter ini:
+          </p>
+          <div className="rounded-lg border divide-y">
+            {openTripConflicts.map(ot => (
+              <div key={ot.id} className="px-3 py-2">
+                <p className="font-medium">{ot.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {new Date(ot.startDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {' – '}
+                  {new Date(ot.endDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="text-muted-foreground">
+            Open trip di atas akan ditutup otomatis dengan keterangan <span className="font-medium text-foreground">"Dialihkan ke Private Charter"</span>. Lanjutkan?
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 mt-2">
+          <Button variant="outline" onClick={() => setShowOpenTripConflictDialog(false)}>
+            Batal
+          </Button>
+          <Button
+            style={{ backgroundColor: ACCENT, color: 'white' }}
+            className="hover:opacity-90"
+            onClick={() => {
+              setShowOpenTripConflictDialog(false)
+              handleSubmit(true)
+            }}
+          >
+            Ya, Tutup & Buat Booking
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

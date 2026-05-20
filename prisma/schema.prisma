@@ -197,6 +197,7 @@ model OpenTrip {
   pricePerCabin Float    @default(0)
   maxCapacity   Int      @default(0)
   status        OpenTripStatus @default(open)
+  closedReason  String?
   bookings      Booking[]
   yacht         Yacht    @relation(fields: [yachtId], references: [id])
   createdAt     DateTime @default(now())

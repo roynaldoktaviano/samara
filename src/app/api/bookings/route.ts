@@ -107,8 +107,9 @@ export async function POST(request: NextRequest) {
       currency, exchangeRate,
       depositDueDate, finalDueDate,
       crewRequired, hasDiving, notes,
-      guests,   // Array<{ customerId, cabinId?, isLead }>
-      services, // Array<{ name, price }>
+      guests,              // Array<{ customerId, cabinId?, isLead }>
+      services,            // Array<{ name, price }>
+      confirmCloseOpenTrips, // boolean: user confirmed closing conflicting open trips
     } = body
 
     if (!startDate || !endDate || !guests?.length) {
@@ -118,6 +119,27 @@ export async function POST(request: NextRequest) {
     const lead = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
     const paid  = parseFloat(depositPaid) || 0
     const total = parseFloat(totalPrice)  || 0
+
+    // ── Conflict check: overlapping open trips on same yacht (private charter only) ──
+    if (tripType === 'PRIVATE_CHARTER' && yachtId) {
+      const start = new Date(startDate)
+      const end   = new Date(endDate)
+      const conflicting = await db.openTrip.findMany({
+        where: {
+          yachtId,
+          status: { in: ['open', 'full'] },
+          startDate: { lt: end },
+          endDate:   { gt: start },
+        },
+        select: { id: true, title: true, startDate: true, endDate: true },
+      })
+      if (conflicting.length > 0 && !confirmCloseOpenTrips) {
+        return NextResponse.json(
+          { conflict: true, openTrips: conflicting },
+          { status: 409 }
+        )
+      }
+    }
 
     // Resolve yacht name for booking code
     let yachtName: string | null = null
@@ -181,6 +203,24 @@ export async function POST(request: NextRequest) {
       },
       select: { id: true, bookingCode: true, status: true },
     })
+
+    // Close any conflicting open trips (private charter override)
+    if (tripType === 'PRIVATE_CHARTER' && yachtId && confirmCloseOpenTrips) {
+      const start = new Date(startDate)
+      const end   = new Date(endDate)
+      await (db.openTrip as any).updateMany({
+        where: {
+          yachtId,
+          status: { in: ['open', 'full'] },
+          startDate: { lt: end },
+          endDate:   { gt: start },
+        },
+        data: {
+          status: 'closed',
+          closedReason: `Dialihkan ke Private Charter ${booking.bookingCode}`,
+        },
+      })
+    }
 
     // Increment voucher usage count if one was applied
     if (voucherCode) {

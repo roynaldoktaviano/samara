@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -76,9 +76,9 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 28   /* px per event lane */
-const DAY_H     = 36   /* px for day-number row — extra space below date number */
-const MIN_ROW_H = 160  /* minimum row height — guaranteed space for 4 event lanes */
+const LANE_H    = 34   /* px per event lane */
+const DAY_H     = 40   /* px for day-number row — extra space below date number */
+const MIN_ROW_H = 185  /* minimum row height — guaranteed space for 4 event lanes */
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -86,7 +86,7 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange,
+  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange, onPrev, onNext, fillHeight,
 }: {
   year: number; month: number
   bookings: BookingEvent[]; openTrips: OpenTripEvent[]
@@ -96,6 +96,9 @@ function MonthGrid({
   onBookingClick: (b: BookingEvent) => void
   onOpenTripClick: (t: OpenTripEvent) => void
   isInFilterRange: (dateStr: string) => boolean
+  onPrev?: () => void
+  onNext?: () => void
+  fillHeight?: boolean
 }) {
   const today = new Date()
   const isToday = (d: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === d
@@ -160,14 +163,16 @@ function MonthGrid({
     ))
 
     openTrips.forEach(t => {
-      const isClosed = t.status === 'closed'
-      const isFull   = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
-      const otColor  = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
-      const tooltip  = isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
+      const isClosed    = t.status === 'closed'
+      const isPrivatePC = isClosed && t.closedReason?.includes('Private Charter')
+      const isFull      = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
+      const otColor     = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const tooltip     = isPrivatePC ? `PRIVATE CHARTER` : isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
+      const barLabel    = isPrivatePC ? `Private Charter` : t.title
       addSegs(
-        t.id, t.title, otColor, true, isFull,
+        t.id, barLabel, otColor, true, isFull,
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
-        `[Open Trip] ${t.title} · ${t.yacht.name} — ${tooltip}`,
+        `[${isPrivatePC ? 'Private Charter' : 'Open Trip'}] ${t.title} · ${t.yacht.name} — ${tooltip}`,
         undefined, t,
       )
     })
@@ -200,30 +205,44 @@ function MonthGrid({
   }, [bookings, openTrips, yachtColorMap, year, month, weeks])
 
   return (
-    <div className="flex-1 min-w-0">
-      <div className="text-center mb-3">
-        <p className="text-sm font-semibold text-foreground">
-          {MONTH_FULL[month]} {year}
-        </p>
-        {yachtFilter !== 'all' && (
-          <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? '#64748b' }}>
-            {yachtFilter}
-          </p>
-        )}
-      </div>
+    <div className={fillHeight ? 'h-full flex flex-col' : 'flex-1 min-w-0'}>
+      {!fillHeight && (
+        <div className="flex items-center justify-center gap-2 mb-3">
+          {onPrev && (
+            <button onClick={onPrev} className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
+          <div className="text-center">
+            <p className="text-sm font-semibold text-foreground">
+              {MONTH_FULL[month]} {year}
+            </p>
+            {yachtFilter !== 'all' && (
+              <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? '#64748b' }}>
+                {yachtFilter}
+              </p>
+            )}
+          </div>
+          {onNext && (
+            <button onClick={onNext} className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-7">
         {DAY_NAMES.map(d => (
           <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1.5">{d}</div>
         ))}
       </div>
 
-      <div className="border-t border-l border-border">
+      <div className={fillHeight ? 'flex-1 flex flex-col border-t border-l border-border overflow-hidden' : 'border-t border-l border-border'}>
         {weeks.map((week, wi) => {
           const maxLaneEnd = segsByWeek[wi].length > 0 ? Math.max(...segsByWeek[wi].map(s => s.lane + s.laneSpan)) : 0
           const rowH = Math.max(MIN_ROW_H, DAY_H + maxLaneEnd * LANE_H + 8)
 
           return (
-            <div key={wi} className="relative" style={{ height: rowH }}>
+            <div key={wi} className="relative" style={fillHeight ? { flex: 1, minHeight: DAY_H + maxLaneEnd * LANE_H + 8 } : { height: rowH }}>
 
               {/* ── Day cell background layer ── */}
               <div className="absolute inset-0 grid grid-cols-7">
@@ -282,7 +301,7 @@ function MonthGrid({
                   top,
                   left:   `calc(${lPct}% + ${lOff}px)`,
                   width:  `calc(${wPct}% - ${lOff + rOff}px)`,
-                  height: seg.laneSpan * LANE_H - 3,
+                  height: seg.laneSpan * LANE_H - 12,
                   borderRadius: seg.isRealStart && seg.isRealEnd ? 4
                     : seg.isRealStart ? '4px 0 0 4px'
                     : seg.isRealEnd   ? '0 4px 4px 0'
@@ -364,11 +383,12 @@ function MonthGrid({
                             )}
                           </div>
                           {/* Row 2: Per-cabin dots */}
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px' }}>
                             {(ot.cabinStatuses ?? []).map(c => {
+                              const isTripClosed = ot.status === 'closed'
                               const isPaid    = c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'confirmed' || c.bookingStatus === 'completed'
                               const isPending = c.bookingStatus !== null && !isPaid
-                              const dotColor  = isPaid ? '#ef4444' : isPending ? '#f59e0b' : '#22c55e'
+                              const dotColor  = isTripClosed ? '#ef4444' : isPaid ? '#ef4444' : isPending ? '#f59e0b' : '#22c55e'
                               return (
                                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                                   <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }} />
@@ -488,6 +508,11 @@ export default function CalendarView() {
 
   const [currentDate, setCurrentDate]   = useState(new Date())
   const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  useEffect(() => {
+    document.body.style.overflow = isFullscreen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [isFullscreen])
   const [bookings, setBookings]         = useState<BookingEvent[]>([])
   const [yachts, setYachts]             = useState<DbYacht[]>([])
   const [loading, setLoading]           = useState(true)
@@ -982,10 +1007,11 @@ export default function CalendarView() {
           const mEnd   = new Date(viewYear, viewMonth + 1, 0)
           return start <= mEnd && end >= mStart
         }
-        const activeBookings = bookings.filter(b => filterByYacht(b) && (b.status === 'confirmed' || b.status === 'pending') && inViewMonth(b)).length
-        const completedTrips = bookings.filter(b => filterByYacht(b) && b.status === 'completed' && inViewMonth(b)).length
+        const isPC = (b: BookingEvent) => b.tripType === 'PRIVATE_CHARTER'
+        const activeBookings = bookings.filter(b => filterByYacht(b) && isPC(b) && (b.status === 'confirmed' || b.status === 'pending') && inViewMonth(b)).length
+        const completedTrips = bookings.filter(b => filterByYacht(b) && isPC(b) && b.status === 'completed' && inViewMonth(b)).length
         const yearBookings   = bookings.filter(b => {
-          if (!filterByYacht(b) || b.status === 'cancelled') return false
+          if (!filterByYacht(b) || !isPC(b) || b.status === 'cancelled') return false
           const s = new Date(b.startDate + 'T00:00:00')
           const e = new Date(b.endDate   + 'T00:00:00')
           return s.getFullYear() === viewYear || e.getFullYear() === viewYear
@@ -1114,216 +1140,234 @@ export default function CalendarView() {
 
       {/* ── Calendar card ── */}
       <Card className="w-full">
-        {/* Top nav */}
-        <div className="flex items-center gap-2 px-3 sm:px-5 py-3 border-b overflow-x-auto">
+        {/* Top nav — single row: year left · months center · icons right */}
+        <div className="flex items-center gap-2 px-3 sm:px-5 py-2 border-b">
+
           {/* Year selector */}
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => jumpYear('prev')}
-              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors"
-            >
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button onClick={() => jumpYear('prev')}
+              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors">
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="bg-[#bdac7e] text-white text-xs font-semibold px-3 py-1 rounded-full min-w-13 text-center select-none">
+            <span className="bg-[#bdac7e] text-white text-xs font-semibold px-3 py-1 rounded-full min-w-[52px] text-center select-none">
               {currentDate.getFullYear()}
             </span>
-            <button
-              onClick={() => jumpYear('next')}
-              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors"
-            >
+            <button onClick={() => jumpYear('next')}
+              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors">
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Month tabs */}
-          <div className="flex flex-1 gap-0.5 overflow-x-auto min-w-0">
+          {/* Month tabs — centered */}
+          <div className="flex flex-1 justify-center gap-0.5 overflow-x-auto min-w-0">
             {MONTH_SHORT.map((m, i) => (
-              <button
-                key={m}
-                onClick={() => jumpToMonth(i)}
+              <button key={m} onClick={() => jumpToMonth(i)}
                 className={[
-                  'px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-                  leftMonth === i
-                    ? 'bg-[#bdac7e] text-white'
-                    : 'text-muted-foreground hover:bg-muted',
-                ].join(' ')}
-              >
+                  'px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
+                  leftMonth === i ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
+                ].join(' ')}>
                 {m}
               </button>
             ))}
           </div>
 
-          {/* View toggle */}
-          <div className="flex gap-1 shrink-0 ml-auto">
+          {/* View toggle + fullscreen */}
+          <div className="flex items-center gap-1 shrink-0">
             {([['calendar', CalendarIcon], ['list', List]] as const).map(([mode, Icon]) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
+              <button key={mode} onClick={() => setViewMode(mode)}
                 className={[
                   'p-1.5 rounded-full border transition-colors',
                   viewMode === mode
                     ? 'bg-[#bdac7e] text-white border-[#bdac7e]'
                     : 'border-border text-muted-foreground hover:bg-muted',
-                ].join(' ')}
-              >
+                ].join(' ')}>
                 <Icon className="w-3.5 h-3.5" />
               </button>
             ))}
+            <button onClick={() => setIsFullscreen(true)} title="Full screen"
+              className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
           </div>
+
         </div>
 
-        {/* Legend + Filters */}
-        <div className="border-b">
-          {/* Row 1: legend swatches — hidden on mobile */}
-          <div className="hidden sm:flex items-center gap-3 px-3 sm:px-5 py-2 flex-wrap">
-            {/* Charter per-yacht colors */}
-            {[...yachts].sort((a, b) => a.name.localeCompare(b.name)).map(y => {
-              const color = yachtColorMap[y.name] ?? '#64748b'
-              return (
-                <div key={y.id} className="flex items-center gap-1.5">
-                  <span className="w-6 h-3 rounded-sm shrink-0 inline-block" style={{ backgroundColor: color }} />
-                  <span className="text-[11px] text-muted-foreground font-semibold">{y.name}</span>
-                </div>
-              )
-            })}
-            <div className="border-l border-border pl-3 flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#22c55e'), outline: '1.5px solid #22c55e', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip (available)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#ef4444'), outline: '1.5px solid #ef4444', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip (full)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-6 h-3 rounded-sm inline-block" style={{ ...stripeStyle('#94a3b8'), outline: '1.5px solid #94a3b8', outlineOffset: -1 }} />
-                <span className="text-[10px] text-muted-foreground">Open Trip (closed)</span>
-              </div>
-            </div>
-          </div>
+        {/* Toolbar — single compact bar */}
+        <div className="border-b bg-white">
+          <div className="flex items-center gap-0 px-3 sm:px-5 py-0 overflow-x-auto scrollbar-none divide-x divide-border">
 
-          {/* Row 2: Date filter */}
-          <div className="flex items-center gap-2 px-3 sm:px-5 py-2 border-t overflow-x-auto scrollbar-none">
-            <span className="hidden sm:inline text-[11px] text-muted-foreground font-medium shrink-0">Date:</span>
-            {/* Presets — hidden on mobile */}
-            <div className="hidden sm:flex gap-1">
-              {(['today','week','month'] as const).map(p => (
-                <button key={p} onClick={() => handlePreset(p)}
-                  className="text-[11px] px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
-                  style={filterActive && (p === 'today' ? filterFrom === todayStr() && filterTo === todayStr() : false)
-                    ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e', color: 'white' } : {}}>
-                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
-                </button>
-              ))}
-            </div>
-            <div className="w-px h-4 bg-border mx-1 hidden sm:block" />
-            {/* Mode toggle */}
-            <div className="flex rounded-lg border overflow-hidden text-[11px] shrink-0">
-              {(['single','range'] as const).map(m => (
-                <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
-                  className="px-2.5 py-1 transition-colors"
-                  style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white' } : { color: '#6b7280' }}>
-                  {m === 'single' ? 'Single' : 'Range'}
-                </button>
-              ))}
-            </div>
-            {/* Inputs */}
-            <input type="date" value={filterFrom}
-              onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
-              className="h-7 text-[11px] border rounded-lg px-2 bg-background w-32 shrink-0" />
-            {filterMode === 'range' && (<>
-              <span className="text-muted-foreground text-[11px] shrink-0">–</span>
-              <input type="date" value={filterTo} min={filterFrom}
-                onChange={e => setFilterTo(e.target.value)}
-                className="h-7 text-[11px] border rounded-lg px-2 bg-background w-32 shrink-0" />
-            </>)}
-            <button onClick={handleFilterApply}
-              className="h-7 px-3 text-[11px] font-semibold rounded-lg text-white transition-colors shrink-0"
-              style={{ backgroundColor: '#bdac7e' }}>
-              Apply
-            </button>
-            {filterActive && (
-              <button onClick={clearDateFilter}
-                className="h-7 w-7 flex items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground shrink-0">
-                <X className="h-3 w-3" />
+            {/* Group: Yacht */}
+            <div className="flex items-center gap-1.5 pr-4 py-2.5 shrink-0">
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Yacht</span>
+              <button onClick={() => setYachtFilter('all')}
+                className={['h-6 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0',
+                  yachtFilter === 'all' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}>
+                All
               </button>
-            )}
-            {filterActive && (
-              <span className="text-[11px] text-[#bdac7e] font-semibold ml-1 shrink-0 whitespace-nowrap">
-                {filterFrom === filterTo
-                  ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
-                  : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
-              </span>
-            )}
-          </div>
-
-          {/* Row 3: trip type filter + yacht filter */}
-          <div className="flex items-center gap-x-3 sm:gap-x-4 px-3 sm:px-5 py-2 border-t overflow-x-auto scrollbar-none">
-            {/* Trip type */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-muted-foreground mr-1 font-medium shrink-0">Type:</span>
-              {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setTripFilter(f)}
-                  className={[
-                    'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 whitespace-nowrap',
-                    tripFilter === f ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
-                  ].join(' ')}
-                >
-                  {f === 'all' ? 'All' : f === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
-                </button>
-              ))}
-            </div>
-
-            <div className="w-px h-4 bg-border shrink-0" />
-
-            {/* Yacht filter */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-muted-foreground mr-1 font-medium shrink-0">Yacht:</span>
               {(() => {
                 const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
-                const sorted = [...yachts].sort((a, b) => {
-                  const ai = ORDER.indexOf(a.name); const bi = ORDER.indexOf(b.name)
-                  if (ai === -1 && bi === -1) return a.name.localeCompare(b.name)
-                  if (ai === -1) return 1
-                  if (bi === -1) return -1
-                  return ai - bi
-                })
-                return sorted.map(y => {
-                  const color = yachtColorMap[y.name] ?? '#64748b'
+                return [...yachts].sort((a, b) => {
+                  const ai = ORDER.indexOf(a.name), bi = ORDER.indexOf(b.name)
+                  return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+                }).map(y => {
+                  const color  = yachtColorMap[y.name] ?? '#64748b'
                   const active = yachtFilter === y.name
                   return (
-                    <button
-                      key={y.id}
-                      onClick={() => setYachtFilter(y.name)}
-                      className={[
-                        'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border shrink-0 whitespace-nowrap',
-                        active ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted',
-                      ].join(' ')}
-                      style={active ? { backgroundColor: color, borderColor: color } : {}}
-                    >
+                    <button key={y.id} onClick={() => setYachtFilter(y.name)}
+                      className={['h-6 flex items-center gap-1 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
+                        active ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}
+                      style={active ? { backgroundColor: color } : {}}>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }} />
                       {y.name}
                     </button>
                   )
                 })
               })()}
             </div>
+
+            {/* Group: Type */}
+            <div className="flex items-center gap-1.5 px-4 py-2.5 shrink-0">
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Type</span>
+              {([
+                { val: 'all',             label: 'All' },
+                { val: 'PRIVATE_CHARTER', label: 'Private Charter' },
+                { val: 'OPEN_TRIP',       label: 'Open Trip' },
+              ] as const).map(f => (
+                <button key={f.val} onClick={() => setTripFilter(f.val)}
+                  className={['h-6 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
+                    tripFilter === f.val ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}
+                  style={tripFilter === f.val ? { backgroundColor: '#bdac7e' } : {}}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Group: Date */}
+            <div className="flex items-center gap-1.5 px-4 py-2.5 shrink-0">
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Date</span>
+              {(['today','week','month'] as const).map(p => (
+                <button key={p} onClick={() => handlePreset(p)}
+                  className="h-6 px-2.5 text-[11px] font-medium rounded-full transition-all text-slate-500 hover:bg-slate-100 shrink-0 whitespace-nowrap">
+                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+                </button>
+              ))}
+              <div className="flex rounded-full bg-slate-100 overflow-hidden text-[11px] shrink-0 ml-1">
+                {(['single','range'] as const).map(m => (
+                  <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
+                    className="h-6 px-2.5 transition-all font-medium"
+                    style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white', borderRadius: '9999px' } : { color: '#94a3b8' }}>
+                    {m === 'single' ? 'Single' : 'Range'}
+                  </button>
+                ))}
+              </div>
+              <input type="date" value={filterFrom}
+                onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
+                className="h-6 text-[11px] border rounded-full px-2.5 bg-slate-50 w-30 shrink-0" />
+              {filterMode === 'range' && (<>
+                <span className="text-slate-400 text-[11px] shrink-0">–</span>
+                <input type="date" value={filterTo} min={filterFrom}
+                  onChange={e => setFilterTo(e.target.value)}
+                  className="h-6 text-[11px] border rounded-full px-2.5 bg-slate-50 w-30 shrink-0" />
+              </>)}
+              <button onClick={handleFilterApply}
+                className="h-6 px-3 text-[11px] font-semibold rounded-full text-white shrink-0 transition-all hover:opacity-90"
+                style={{ backgroundColor: '#bdac7e' }}>
+                Apply
+              </button>
+              {filterActive && (
+                <button onClick={clearDateFilter} title="Clear"
+                  className="h-6 w-6 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 shrink-0 transition-all">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+              {filterActive && (
+                <span className="text-[11px] font-semibold shrink-0 whitespace-nowrap" style={{ color: '#bdac7e' }}>
+                  {filterFrom === filterTo
+                    ? new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
+                    : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
+                </span>
+              )}
+            </div>
+
+            {/* Legend — flush right */}
+            <div className="hidden sm:flex items-center gap-3 ml-auto pl-4 py-2.5 shrink-0">
+              {[
+                { color: '#22c55e', label: 'Open' },
+                { color: '#ef4444', label: 'Full' },
+                { color: '#94a3b8', label: 'Closed' },
+              ].map(l => (
+                <div key={l.label} className="flex items-center gap-1.5">
+                  <span className="w-4 h-2.5 rounded-sm shrink-0" style={{ ...stripeStyle(l.color), outline: `1px solid ${l.color}`, outlineOffset: -1 }} />
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap">{l.label}</span>
+                </div>
+              ))}
+            </div>
+
           </div>
         </div>
+
+        {/* Fullscreen calendar overlay */}
+        {isFullscreen && (
+          <div className="fixed inset-0 z-50 bg-white flex flex-col overflow-hidden">
+            {/* Minimal header: prev · Month Year · next · close */}
+            <div className="flex items-center justify-between px-6 py-2.5 border-b shrink-0">
+              <button onClick={() => navigate('prev')}
+                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <span className="text-sm font-semibold text-foreground select-none">
+                {MONTH_FULL[leftMonth]} {leftYear}
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => navigate('next')}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+                <button onClick={() => setIsFullscreen(false)} title="Exit fullscreen"
+                  className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
+                  <Minimize2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {/* Calendar grid — fills remaining height, no scroll */}
+            <div className="flex-1 min-h-0 h-full px-4 py-2">
+              <MonthGrid
+                year={leftYear} month={leftMonth}
+                yachtFilter={yachtFilter}
+                bookings={
+                  (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
+                    ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
+                    : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
+                  ).filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+                }
+                openTrips={
+                  (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
+                    .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
+                }
+                yachtColorMap={yachtColorMap}
+                onDateClick={handleDateClick}
+                onBookingClick={b => {
+                  setIsFullscreen(false)
+                  setSelectedBooking(b)
+                  setIsDetailOpen(true)
+                  setBookingDetailLoading(true)
+                  fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
+                    setBookingFullDetail(data)
+                    setBookingDetailLoading(false)
+                  }).catch(() => setBookingDetailLoading(false))
+                }}
+                onOpenTripClick={t => { setIsFullscreen(false); handleOpenTripClick(t) }}
+                isInFilterRange={isInFilterRange}
+                fillHeight
+              />
+            </div>
+          </div>
+        )}
 
         {/* Body */}
         <CardContent className="p-0">
           {viewMode === 'calendar' ? (
-            <div className="flex items-start w-full px-1 sm:px-4 py-3 sm:py-5 gap-1 sm:gap-2 overflow-x-auto">
-              {/* Prev */}
-              <button
-                onClick={() => navigate('prev')}
-                className="mt-8 p-2 rounded-full hover:bg-muted text-muted-foreground shrink-0 transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-
+            <div className="w-full px-1 sm:px-4 py-3 sm:py-5 overflow-x-auto">
               {/* Single month — full width */}
               <MonthGrid
                 year={leftYear} month={leftMonth}
@@ -1351,15 +1395,9 @@ export default function CalendarView() {
                 }}
                 onOpenTripClick={handleOpenTripClick}
                 isInFilterRange={isInFilterRange}
+                onPrev={() => navigate('prev')}
+                onNext={() => navigate('next')}
               />
-
-              {/* Next */}
-              <button
-                onClick={() => navigate('next')}
-                className="mt-8 p-2 rounded-full hover:bg-muted text-muted-foreground shrink-0 transition-colors"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
             </div>
           ) : (
             /* List view */
@@ -1805,9 +1843,11 @@ export default function CalendarView() {
                   {/* ── Capacity bar ── */}
                   {(() => {
                     const total    = otDetail.cabins?.length ?? 0
-                    const paid     = otDetail.cabins?.filter((c: any) => c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed').length ?? 0
-                    const pending  = otDetail.cabins?.filter((c: any) => c.isFull && c.bookingStatus === 'pending').length ?? 0
-                    const avail    = total - paid - pending
+                    const isClosed = otDetail.status === 'closed'
+                    const isPaidStatus = (b: string | null) => b === 'partially_paid' || b === 'fully_paid' || b === 'completed' || b === 'confirmed'
+                    const paid     = isClosed ? total : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && isPaidStatus(c.bookingStatus)).length ?? 0)
+                    const pending  = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && !isPaidStatus(c.bookingStatus)).length ?? 0)
+                    const avail    = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => !c.guests?.length).length ?? 0)
                     const paidPct  = total ? (paid    / total) * 100 : 0
                     const pendPct  = total ? (pending / total) * 100 : 0
                     const availPct = total ? (avail   / total) * 100 : 100
@@ -1816,10 +1856,10 @@ export default function CalendarView() {
                         {/* Numbers row */}
                         <div className="grid grid-cols-4 divide-x text-center">
                           {[
-                            { label: 'Total',      val: total,   color: 'text-foreground',     bg: '' },
-                            { label: 'Available',  val: avail,   color: 'text-emerald-600',    bg: '' },
-                            { label: 'Waiting for Payment',val: pending, color: 'text-amber-500',      bg: '' },
-                            { label: 'Booked',   val: paid,    color: 'text-red-500',        bg: '' },
+                            { label: 'Total',               val: total,   color: 'text-foreground'  },
+                            { label: 'Available',           val: avail,   color: 'text-emerald-600' },
+                            { label: 'Waiting for Payment', val: pending, color: 'text-amber-500'   },
+                            { label: 'Booked',              val: paid,    color: 'text-red-500'     },
                           ].map(s => (
                             <div key={s.label} className="px-3">
                               <div className={`text-2xl font-bold ${s.color}`}>{s.val}</div>
@@ -1829,9 +1869,9 @@ export default function CalendarView() {
                         </div>
                         {/* Progress bar */}
                         <div className="h-2.5 rounded-full overflow-hidden bg-muted flex">
-                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"    style={{ width: `${paidPct}%` }} />}
-                          {pending > 0 && <div className="h-full bg-amber-400 transition-all"  style={{ width: `${pendPct}%` }} />}
-                          {avail   > 0 && <div className="h-full bg-emerald-400 transition-all"style={{ width: `${availPct}%` }} />}
+                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"     style={{ width: `${paidPct}%` }} />}
+                          {pending > 0 && <div className="h-full bg-amber-400 transition-all"   style={{ width: `${pendPct}%` }} />}
+                          {avail   > 0 && <div className="h-full bg-emerald-400 transition-all" style={{ width: `${availPct}%` }} />}
                         </div>
                         {/* Legend */}
                         <div className="flex items-center gap-4">
@@ -1854,29 +1894,42 @@ export default function CalendarView() {
                   <div className="rounded-xl border overflow-hidden">
                     <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabin Details</p>
-                      <button
-                        onClick={() => window.open(`/print/crew-sheet/${otDetail.id}`, '_blank')}
-                        className="flex items-center gap-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors"
-                      >
-                        <BookOpen className="h-3 w-3" />
-                        Download Crew Sheet
-                      </button>
+                      {otDetail.status !== 'closed' && (
+                        <button
+                          onClick={() => window.open(`/print/crew-sheet/${otDetail.id}`, '_blank')}
+                          className="flex items-center gap-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors"
+                        >
+                          <BookOpen className="h-3 w-3" />
+                          Download Crew Sheet
+                        </button>
+                      )}
                     </div>
+                    {otDetail.status === 'closed' ? (
+                      <div className="px-4 py-6 flex flex-col items-center justify-center gap-2 text-center">
+                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                          <AlertCircle className="w-4 h-4 text-amber-600" />
+                        </div>
+                        <p className="text-sm font-semibold text-amber-700">
+                          {otDetail.closedReason ?? 'Trip ini sudah ditutup'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Kabin tidak tersedia untuk open trip ini.</p>
+                      </div>
+                    ) : (
                     <div className="divide-y">
                       {otDetail.cabins?.map((c: any) => {
                         const hasGuests = c.guests?.length > 0
                         const isPaid    = hasGuests && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
                         const isPending = hasGuests && !isPaid
                         const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit
-                        const dotCls    = c.isFull
-                          ? (isPaid ? 'bg-red-400' : 'bg-amber-400')
-                          : (hasGuests ? 'bg-amber-300' : 'bg-emerald-400')
-                        const badgeCls  = c.isFull
-                          ? (isPaid ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')
-                          : (hasGuests ? 'bg-amber-50 text-amber-700' : 'bg-emerald-100 text-emerald-700')
-                        const badgeLabel = c.isFull
-                          ? (isPaid ? 'Booked' : 'Waiting for Payment')
-                          : (hasGuests ? `${c.spotsLeft} spot${c.spotsLeft !== 1 ? 's' : ''} left` : 'Available')
+                        const dotCls    = isPaid    ? 'bg-red-400'
+                                        : isPending ? 'bg-amber-400'
+                                        : 'bg-emerald-400'
+                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700 border border-red-200'
+                                        : isPending ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        const badgeLabel = isPaid    ? 'Booked'
+                                         : isPending ? 'Waiting for Payment'
+                                         : 'Available'
                         const isAddingHere = otAddCabinId === c.id
                         return (
                           <div key={c.id} className="px-4 py-3 hover:bg-muted/20 transition-colors">
@@ -1975,6 +2028,7 @@ export default function CalendarView() {
                         <p className="text-sm text-muted-foreground text-center py-8">No cabins found for this yacht.</p>
                       )}
                     </div>
+                    )}
                   </div>
 
                   <DialogFooter className="gap-2">
@@ -1995,11 +2049,6 @@ export default function CalendarView() {
                       <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                         <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
                       </Button>
-                    )}
-                    {otDetail.status === 'closed' && (
-                      <p className="text-xs text-muted-foreground italic text-right">
-                        This trip cannot be edited — it has already occurred or been closed.
-                      </p>
                     )}
                   </DialogFooter>
                 </>
