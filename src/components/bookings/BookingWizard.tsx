@@ -549,27 +549,27 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* ── Step indicator ── */
   const stepIndicator = () => (
-    <div className="flex items-center justify-center mb-6">
+    <div className="flex items-center justify-center gap-0 mb-4">
       {STEPS.map((s, i) => (
         <div key={s.num} className="flex items-center">
-          <div className="flex flex-col items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div
-              className={cn('w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold')}
+              className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0')}
               style={step >= s.num
                 ? { backgroundColor: ACCENT, color: 'white' }
                 : { backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)' }}
             >
-              {step > s.num ? <Check className="w-4 h-4" /> : s.num}
+              {step > s.num ? <Check className="w-2.5 h-2.5" /> : s.num}
             </div>
             <span
-              className="text-xs whitespace-nowrap font-medium"
+              className="text-[11px] whitespace-nowrap font-medium"
               style={{ color: step === s.num ? ACCENT : 'var(--muted-foreground)' }}
             >
               {s.label}
             </span>
           </div>
           {i < STEPS.length - 1 && (
-            <div className="h-px w-12 mx-2 mb-5 transition-colors"
+            <div className="h-px w-8 mx-2 transition-colors"
               style={{ backgroundColor: step > s.num ? ACCENT : 'var(--border)' }} />
           )}
         </div>
@@ -1770,8 +1770,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] sm:w-[90vw] md:max-w-4xl lg:max-w-5xl flex flex-col overflow-hidden gap-0 p-0" style={{ maxHeight: 'calc(100dvh - 4rem)' }}>
-        <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
+      <DialogContent className="flex flex-col overflow-hidden gap-0 p-0" style={{ width: 'min(96vw, 64rem)', maxHeight: 'calc(100dvh - 4rem)' }}>
+        <DialogHeader className="shrink-0 px-6 pt-3 pb-3 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
               <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
@@ -1783,8 +1783,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           <DialogTitle>{dialogTitle}</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-6 py-5">
+        <ScrollArea className="flex-1 min-h-0 overflow-x-hidden">
+          <div className="px-6 py-3 min-w-0 overflow-x-hidden">
             {phase === 'source'    && phaseSource()}
             {phase === 'agentInfo' && phaseAgentInfo()}
             {phase === 'tripType'  && phaseTripType()}
@@ -1802,7 +1802,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
         {/* footer nav — only in agentInfo + steps phases */}
         {(phase === 'agentInfo' || phase === 'steps') && (
-          <div className="flex items-center justify-between px-6 py-4 border-t shrink-0 bg-muted/20">
+          <div className="flex items-center justify-between px-6 py-2.5 border-t shrink-0 bg-muted/20">
             <Button
               variant="outline"
               onClick={() => {
