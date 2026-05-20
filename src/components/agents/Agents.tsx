@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
-  Loader2, Phone, Mail, Building2, Percent,
+  Loader2, Phone, Mail, Building2, Percent, RotateCw,
 } from 'lucide-react'
 
 interface AgentRecord {
@@ -130,7 +130,12 @@ export default function Agents() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Agents</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold tracking-tight">Agents</h3>
+            <button onClick={() => fetchAgents()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-muted-foreground text-sm">
             {loading ? '…' : `${activeCount} agen aktif`}
           </p>

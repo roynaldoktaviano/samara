@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2, RotateCw } from 'lucide-react'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -199,7 +199,12 @@ export default function OpenTrips() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Open Trips</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold tracking-tight">Open Trips</h3>
+            <button onClick={() => fetchTrips()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground">Manage pre-scheduled shared trips sold per cabin</p>
         </div>
         <div className="flex items-center gap-2">

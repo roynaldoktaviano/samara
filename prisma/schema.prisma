@@ -144,6 +144,7 @@ model Yacht {
   hourlyRate     Float
   dailyRate      Float
   extraBedTiers  Json          @default("[]")
+  canDiving      Boolean       @default(false)
   status         YachtStatus   @default(available)
   image        String?
   deletedAt    DateTime?

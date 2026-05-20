@@ -51,17 +51,13 @@ export function toGuestFormState(data: any): GuestFormState {
   }
 }
 
-type SheetTab = 'profile' | 'medical' | 'food' | 'drinks' | 'room' | 'service' | 'diving' | 'surfing'
+type SheetTab = 'profile' | 'medical' | 'food' | 'drinks' | 'diving'
 
-const TABS: { id: SheetTab; label: string }[] = [
+const BASE_TABS: { id: SheetTab; label: string }[] = [
   { id: 'profile',  label: 'Profile'  },
   { id: 'medical',  label: 'Medical'  },
   { id: 'food',     label: 'Food'     },
   { id: 'drinks',   label: 'Drinks'   },
-  { id: 'room',     label: 'Room'     },
-  { id: 'service',  label: 'Service'  },
-  { id: 'diving',   label: 'Diving'   },
-  { id: 'surfing',  label: 'Surfing'  },
 ]
 
 /* ── Small helpers ── */
@@ -266,29 +262,6 @@ const DRINKS_FIELDS = [
   { key: 'drinkNotes',         label: 'Notes',                 rows: 2, col2: true },
 ]
 
-const ROOM_FIELDS = [
-  { key: 'bedSetup',          label: 'Bed Setup',              options: ['Twin beds','Double / Queen','King','No preference'] },
-  { key: 'pillowPreference',  label: 'Pillow Preference',      },
-  { key: 'towelChange',       label: 'Towel Change',           },
-  { key: 'babyCotRequired',   label: 'Baby Cot Required',      type: 'yesno' },
-  { key: 'umbrellaRequired',  label: 'Umbrella Required',      type: 'yesno' },
-  { key: 'beachSetupRequired',label: 'Beach Setup Required',   type: 'yesno' },
-  { key: 'bathroomNotes',     label: 'Bathroom Notes',         rows: 2 },
-  { key: 'cleaningNotes',     label: 'Cleaning Notes',         rows: 2 },
-  { key: 'roomComfortNotes',  label: 'Room Comfort Notes',     rows: 2, col2: true },
-]
-
-const SERVICE_FIELDS = [
-  { key: 'vipLevel',              label: 'VIP Level',              options: ['Standard','Silver','Gold','Platinum'] },
-  { key: 'celebrationType',       label: 'Celebration Type',       },
-  { key: 'celebrationNotes',      label: 'Celebration Notes',      rows: 2 },
-  { key: 'beachDiningRequested',  label: 'Beach Dining Requested', type: 'yesno' },
-  { key: 'excursionRequests',     label: 'Excursion Requests',     rows: 2 },
-  { key: 'activityPreferences',   label: 'Activity Preferences',   rows: 2 },
-  { key: 'guestHandlingNotes',    label: 'Guest Handling Notes',   rows: 2 },
-  { key: 'specialRequests',       label: 'Special Requests',       rows: 2 },
-]
-
 const DIVING_FIELDS = [
   { key: 'isDiver',           label: 'Is Diver',               type: 'yesno' },
   { key: 'diveLevel',         label: 'Dive Level',             options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
@@ -303,30 +276,16 @@ const DIVING_FIELDS = [
   { key: 'divingNotes',       label: 'Diving Notes',           rows: 2, col2: true },
 ]
 
-const SURFING_FIELDS = [
-  { key: 'isSurfer',          label: 'Is Surfer',              type: 'yesno' },
-  { key: 'surfLevel',         label: 'Surf Level',             options: ['Beginner','Intermediate','Advanced','Expert'] },
-  { key: 'bringingOwnBoard',  label: 'Bringing Own Board',     type: 'yesno' },
-  { key: 'boardCount',        label: 'Board Count',            type: 'number' },
-  { key: 'boardType',         label: 'Board Type',             },
-  { key: 'boardLength',       label: 'Board Length',           },
-  { key: 'boardWidth',        label: 'Board Width',            },
-  { key: 'boardVolume',       label: 'Board Volume',           },
-  { key: 'surfRentalRequired',label: 'Rental Required',        type: 'yesno' },
-  { key: 'coachingRequired',  label: 'Coaching Required',      type: 'yesno' },
-  { key: 'photoVideoInterest',label: 'Photo / Video Interest', type: 'yesno' },
-  { key: 'surfingNotes',      label: 'Surfing Notes',          rows: 2, col2: true },
-]
-
 interface Props {
   open: boolean
   guestId?: string | null
   bookingGuestId?: string | null
+  hasDiving?: boolean
   onClose: () => void
   onSaved?: (guest: any) => void
 }
 
-export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose, onSaved }: Props) {
+export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDiving = false, onClose, onSaved }: Props) {
   const isEdit = !!guestId
   const [activeTab, setActiveTab] = useState<SheetTab>('profile')
 
@@ -334,10 +293,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose,
   const [medData, setMedData]     = useState<any>({})
   const [foodData, setFoodData]   = useState<any>({})
   const [drinkData, setDrinkData] = useState<any>({})
-  const [roomData, setRoomData]   = useState<any>({})
-  const [svcData, setSvcData]     = useState<any>({})
   const [divData, setDivData]     = useState<any>({})
-  const [surfData, setSurfData]   = useState<any>({})
 
   const [loading, setLoading]         = useState(false)
   const [saving, setSaving]           = useState(false)
@@ -350,29 +306,20 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose,
     if (!open) { setGuestLink(''); setLinkCopied(false); setActiveTab('profile'); return }
     if (!guestId) {
       setForm(GUEST_FORM_EMPTY)
-      setMedData({}); setFoodData({}); setDrinkData({})
-      setRoomData({}); setSvcData({}); setDivData({}); setSurfData({})
+      setMedData({}); setFoodData({}); setDrinkData({}); setDivData({})
       setGuestName('')
       return
     }
     setLoading(true)
-    const customerReq = fetch(`/api/customers/${guestId}`).then(r => r.json())
-    const bgReq = bookingGuestId
-      ? fetch(`/api/guests/${bookingGuestId}`).then(r => r.json())
-      : Promise.resolve(null)
-
-    Promise.all([customerReq, bgReq])
-      .then(([data, bg]) => {
+    fetch(`/api/customers/${guestId}`)
+      .then(r => r.json())
+      .then(data => {
         setGuestName(data.name ?? '')
         setForm(toGuestFormState(data))
         setMedData(data.medicalData  ?? {})
         setFoodData(data.foodData    ?? {})
         setDrinkData(data.drinksData ?? {})
         setDivData(data.divingData   ?? {})
-        setSurfData(data.surfingData ?? {})
-        // room & service come from BookingGuest if available, else Customer (legacy)
-        setRoomData(bg?.housekeepingData ?? data.housekeepingData ?? {})
-        setSvcData(bg?.serviceData      ?? data.serviceData      ?? {})
       })
       .finally(() => setLoading(false))
   }, [open, guestId, bookingGuestId])
@@ -412,25 +359,13 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose,
           medicalData:  medData,
           foodData:     foodData,
           drinksData:   drinkData,
-          divingData:   divData,
-          surfingData:  surfData,
-          // only save room/service to Customer when no bookingGuestId context
-          ...(!bookingGuestId && { housekeepingData: roomData, serviceData: svcData }),
+          ...(hasDiving && { divingData: divData }),
         }),
       }
       const res = isEdit
         ? await fetch(`/api/customers/${guestId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         : await fetch('/api/customers',             { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (!res.ok) throw new Error()
-
-      // Save room/service to BookingGuest if in a booking context
-      if (isEdit && bookingGuestId) {
-        await fetch(`/api/guests/${bookingGuestId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ housekeepingData: roomData, serviceData: svcData }),
-        })
-      }
       const saved = await res.json()
       toast.success(isEdit ? 'Guest profile updated' : 'Guest added successfully')
       onSaved?.(saved)
@@ -444,7 +379,10 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose,
 
   const displayName = [form.firstName, form.lastName].filter(Boolean).join(' ') || guestName
 
-  const visibleTabs = isEdit ? TABS : TABS.filter(t => t.id === 'profile')
+  const allTabs: { id: SheetTab; label: string }[] = hasDiving
+    ? [...BASE_TABS, { id: 'diving', label: 'Diving' }]
+    : BASE_TABS
+  const visibleTabs = isEdit ? allTabs : allTabs.filter(t => t.id === 'profile')
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
@@ -515,35 +453,8 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, onClose,
             {activeTab === 'drinks' && (
               <JsonTab data={drinkData} onChange={jsonSetter(setDrinkData)} fields={DRINKS_FIELDS} />
             )}
-            {activeTab === 'room' && (
-              <>
-                <div className={`mb-3 px-3 py-2 rounded-lg border ${bookingGuestId ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <p className={`text-[11px] font-medium ${bookingGuestId ? 'text-blue-700' : 'text-amber-700'}`}>
-                    {bookingGuestId
-                      ? 'Data ini tersimpan per-booking, tidak akan mempengaruhi booking lain.'
-                      : 'Buka dari detail booking untuk mengedit preferensi kamar per-trip.'}
-                  </p>
-                </div>
-                <JsonTab data={roomData} onChange={jsonSetter(setRoomData)} fields={ROOM_FIELDS} />
-              </>
-            )}
-            {activeTab === 'service' && (
-              <>
-                <div className={`mb-3 px-3 py-2 rounded-lg border ${bookingGuestId ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <p className={`text-[11px] font-medium ${bookingGuestId ? 'text-blue-700' : 'text-amber-700'}`}>
-                    {bookingGuestId
-                      ? 'Data ini tersimpan per-booking, tidak akan mempengaruhi booking lain.'
-                      : 'Buka dari detail booking untuk mengedit detail servis per-trip.'}
-                  </p>
-                </div>
-                <JsonTab data={svcData} onChange={jsonSetter(setSvcData)} fields={SERVICE_FIELDS} />
-              </>
-            )}
             {activeTab === 'diving' && (
               <JsonTab data={divData} onChange={jsonSetter(setDivData)} fields={DIVING_FIELDS} />
-            )}
-            {activeTab === 'surfing' && (
-              <JsonTab data={surfData} onChange={jsonSetter(setSurfData)} fields={SURFING_FIELDS} />
             )}
 
           </div>

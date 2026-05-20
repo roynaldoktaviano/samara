@@ -15,18 +15,21 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
 import {
   User, Users, Ship, Map, Plus, Trash2,
-  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag,
+  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown,
 } from 'lucide-react'
+import type { DateRange } from 'react-day-picker'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type Source  = 'AGENT' | 'DIRECT'
 type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
-interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; extraBedTiers?: { nights: number; price: number }[] }
+interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; extraBedTiers?: { nights: number; price: number }[] }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
@@ -141,6 +144,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* extra beds per cabin (cabinId → requested count) */
   const [cabinExtraBeds, setCabinExtraBeds] = useState<Record<string, number>>({})
 
+  /* yacht date conflict */
+  const [yachtConflict, setYachtConflict] = useState<{ name: string; start: string; end: string } | null>(null)
+
+  /* blocked date ranges for the selected yacht (for calendar display) */
+  const [blockedRanges, setBlockedRanges] = useState<{ from: Date; to: Date }[]>([])
+  const [startPickerOpen, setStartPickerOpen] = useState(false)
+  const [endPickerOpen,   setEndPickerOpen]   = useState(false)
+
   /* DnD state */
   const [dragGuest,  setDragGuest]  = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -219,6 +230,62 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       .catch(() => {})
   }, [openTripId])
 
+  /* yacht date conflict check — Private Charter only */
+  useEffect(() => {
+    if (tripType !== 'PRIVATE_CHARTER' || !yachtId || !startDate || !endDate) {
+      setYachtConflict(null)
+      return
+    }
+    const s = new Date(startDate).getTime()
+    const e = new Date(endDate).getTime()
+    const overlaps = (a: string, b: string) => new Date(a).getTime() < e && new Date(b).getTime() > s
+
+    // Check open trips for this yacht
+    const otConflict = openTrips.find(t =>
+      t.yachtId === yachtId &&
+      t.status !== 'cancelled' &&
+      overlaps(t.startDate, t.endDate)
+    )
+    if (otConflict) {
+      setYachtConflict({ name: otConflict.title, start: otConflict.startDate, end: otConflict.endDate })
+      return
+    }
+
+    // Check existing bookings for this yacht
+    fetch(`/api/bookings?yachtId=${yachtId}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        if (!Array.isArray(data)) return
+        const conflict = data.find(b =>
+          b.status !== 'cancelled' &&
+          overlaps(b.startDate, b.endDate)
+        )
+        setYachtConflict(conflict
+          ? { name: conflict.bookingCode, start: conflict.startDate, end: conflict.endDate }
+          : null
+        )
+      })
+      .catch(() => setYachtConflict(null))
+  }, [tripType, yachtId, startDate, endDate, openTrips])
+
+  /* load blocked date ranges for the selected yacht (calendar display) */
+  useEffect(() => {
+    if (!yachtId || tripType !== 'PRIVATE_CHARTER') { setBlockedRanges([]); return }
+    const otRanges = openTrips
+      .filter(t => t.yachtId === yachtId && t.status !== 'cancelled')
+      .map(t => ({ from: new Date(t.startDate), to: new Date(t.endDate) }))
+    fetch(`/api/bookings?yachtId=${yachtId}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        if (!Array.isArray(data)) { setBlockedRanges(otRanges); return }
+        const bkRanges = data
+          .filter(b => b.status !== 'cancelled')
+          .map(b => ({ from: new Date(b.startDate), to: new Date(b.endDate) }))
+        setBlockedRanges([...otRanges, ...bkRanges])
+      })
+      .catch(() => setBlockedRanges(otRanges))
+  }, [yachtId, tripType, openTrips])
+
   /* auto base price — computed in USD then converted to selected currency */
   useEffect(() => {
     let usdPrice = 0
@@ -289,6 +356,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setCabinExtraBeds({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
+    setBlockedRanges([]); setStartPickerOpen(false); setEndPickerOpen(false)
   }, [open])
 
   /* voucher remove */
@@ -345,7 +413,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }
   const removeGuest = (id: string) =>
     setGuests(prev => {
-      const next = prev.filter(g => g.customerId !== id)
+      const removing = prev.find(g => g.customerId === id)
+      let next = prev.filter(g => g.customerId !== id)
+      // if an adult is removed from a cabin, evict any children left alone in that cabin
+      if (removing && !removing.isChild && removing.cabinId) {
+        const stillHasAdult = next.some(g => g.cabinId === removing.cabinId && !g.isChild)
+        if (!stillHasAdult)
+          next = next.map(g => g.cabinId === removing.cabinId && g.isChild ? { ...g, cabinId: '' } : g)
+      }
       if (next.length > 0 && !next.some(g => g.isLead)) next[0].isLead = true
       return next
     })
@@ -396,7 +471,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const canNext = () => {
     if (phase === 'agentInfo') return !!agentId
     if (step === 1) {
-      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate)
+      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && !yachtConflict
       return !!openTripId
     }
     if (step === 2) return guests.length > 0
@@ -658,16 +733,95 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         </Select>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label>Start Date <span className="text-destructive">*</span></Label>
-          <Input type="date" value={startDate} onChange={e => setStart(e.target.value)} />
+      {(() => {
+        const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
+        const toDateStr = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const displayDate = (s: string) =>
+          s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null
+        const disabledStart = [{ before: todayMidnight }, ...blockedRanges]
+        const endMin = startDate ? (() => { const d = new Date(startDate + 'T00:00:00'); d.setDate(d.getDate() + 1); return d })() : todayMidnight
+        const disabledEnd = [{ before: endMin }, ...blockedRanges]
+
+        const DateBtn = ({ value, placeholder, open, onOpenChange }: { value: string; placeholder: string; open: boolean; onOpenChange: (v: boolean) => void }) => (
+          <Popover open={open} onOpenChange={onOpenChange}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'w-full flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-left transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring',
+                  !value && 'text-muted-foreground'
+                )}
+              >
+                <CalendarIcon className="h-4 w-4 shrink-0 opacity-40" />
+                <span className="flex-1">{displayDate(value) ?? placeholder}</span>
+                {value && (
+                  <X className="h-3 w-3 opacity-40 hover:opacity-80" onClick={e => { e.stopPropagation(); onOpenChange(false); if (placeholder.includes('Start')) { setStart(''); setEnd('') } else setEnd('') }} />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              {blockedRanges.length > 0 && (
+                <p className="px-3 pt-2.5 pb-0.5 text-xs text-muted-foreground flex items-center gap-1.5">
+                  <span className="inline-block w-2 h-2 rounded-sm bg-red-200 border border-red-300" />
+                  Tanggal sudah ada bookingan
+                </p>
+              )}
+              {placeholder.includes('Start') ? (
+                <Calendar
+                  mode="single"
+                  selected={startDate ? new Date(startDate + 'T00:00:00') : undefined}
+                  onSelect={d => { if (!d) return; setStart(toDateStr(d)); if (endDate && toDateStr(d) >= endDate) setEnd(''); setStartPickerOpen(false) }}
+                  disabled={disabledStart}
+                  defaultMonth={startDate ? new Date(startDate + 'T00:00:00') : todayMidnight}
+                  modifiers={{ booked: blockedRanges }}
+                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through' }}
+                  className="p-3"
+                />
+              ) : (
+                <Calendar
+                  mode="single"
+                  selected={endDate ? new Date(endDate + 'T00:00:00') : undefined}
+                  onSelect={d => { if (!d) return; setEnd(toDateStr(d)); setEndPickerOpen(false) }}
+                  disabled={disabledEnd}
+                  defaultMonth={endDate ? new Date(endDate + 'T00:00:00') : (startDate ? new Date(startDate + 'T00:00:00') : todayMidnight)}
+                  modifiers={{ booked: blockedRanges }}
+                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through' }}
+                  className="p-3"
+                />
+              )}
+            </PopoverContent>
+          </Popover>
+        )
+
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Start Date <span className="text-destructive">*</span></Label>
+              <DateBtn value={startDate} placeholder="Start date" open={startPickerOpen} onOpenChange={setStartPickerOpen} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>End Date <span className="text-destructive">*</span></Label>
+              <DateBtn value={endDate} placeholder="End date" open={endPickerOpen} onOpenChange={setEndPickerOpen} />
+            </div>
+          </div>
+        )
+      })()}
+
+      {yachtConflict && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Yacht tidak tersedia pada tanggal ini</p>
+            <p className="text-xs mt-0.5 text-red-600">
+              Sudah ada jadwal <span className="font-medium">{yachtConflict.name}</span> pada{' '}
+              {new Date(yachtConflict.start).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {' – '}
+              {new Date(yachtConflict.end).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label>End Date <span className="text-destructive">*</span></Label>
-          <Input type="date" value={endDate} min={startDate} onChange={e => setEnd(e.target.value)} />
-        </div>
-      </div>
+      )}
 
       <div className="space-y-1.5">
         <Label>Destination</Label>
@@ -815,6 +969,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setDropError(`${cabin?.name} is full (capacity ${effectiveCapDrop})`)
         return
       }
+      // Child cannot be in a cabin without at least one adult
+      const droppingGuest = guests.find(g => g.customerId === gId)
+      if (droppingGuest?.isChild && !already) {
+        const hasAdultInCabin = guests.some(g => g.cabinId === targetId && !g.isChild)
+        if (!hasAdultInCabin) {
+          setDropError(`Anak-anak harus bersama orang dewasa di kabin yang sama`)
+          return
+        }
+      }
       updateGuest(gId, { cabinId: targetId })
     }
 
@@ -834,10 +997,6 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
         {g.isChild && <span className="text-[9px] font-bold text-blue-600 shrink-0">👶</span>}
         <span className="truncate max-w-24">{g.name}</span>
-        {!inCabin && !g.isLead && (
-          <button onClick={e => { e.stopPropagation(); setLead(g.customerId) }}
-            className="text-[9px] text-muted-foreground hover:text-foreground ml-0.5 shrink-0">★</button>
-        )}
         <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
           className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
           <X className="w-2.5 h-2.5" />
@@ -979,6 +1138,27 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             )
           })()}
         </div>
+
+        {/* Lead Guest selector — booking level */}
+        {guests.length > 0 && (
+          <div className="flex items-center gap-3 rounded-lg border border-[#bdac7e]/40 bg-[#bdac7e]/5 px-3 py-2">
+            <Crown className="h-4 w-4 text-[#bdac7e] shrink-0" />
+            <Label className="text-sm shrink-0">Lead Guest</Label>
+            <Select
+              value={guests.find(g => g.isLead)?.customerId ?? ''}
+              onValueChange={id => setLead(id)}
+            >
+              <SelectTrigger className="h-8 text-sm flex-1 border-[#bdac7e]/30 bg-background">
+                <SelectValue placeholder="Pilih lead guest…" />
+              </SelectTrigger>
+              <SelectContent>
+                {guests.filter(g => !g.isChild).map(g => (
+                  <SelectItem key={g.customerId} value={g.customerId}>{g.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {dropError && (
           <p className="text-xs text-destructive bg-destructive/8 rounded-lg px-3 py-2 border border-destructive/20">{dropError}</p>
@@ -1178,21 +1358,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           </div>
         </div>
 
-        <Separator />
-        <div className="flex items-center justify-between">
-          <div>
-            <Label>Crew Required</Label>
-            <p className="text-xs text-muted-foreground">Assign crew to this booking</p>
-          </div>
-          <Switch checked={crewReq} onCheckedChange={setCrewReq} />
-        </div>
-        {tripType === 'PRIVATE_CHARTER' && (
+        {tripType === 'PRIVATE_CHARTER' && yachts.find(y => y.id === yachtId)?.canDiving && (
           <>
             <Separator />
             <div className="flex items-center justify-between">
               <div>
                 <Label>Diving</Label>
-                <p className="text-xs text-muted-foreground">Include diving section in guest form</p>
+                <p className="text-xs text-muted-foreground">Tamu akan melakukan kegiatan diving</p>
               </div>
               <Switch checked={hasDiving} onCheckedChange={setHasDiving} />
             </div>

@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -74,6 +74,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(startDate   !== undefined && { startDate:   new Date(startDate) }),
         ...(endDate     !== undefined && { endDate:     new Date(endDate) }),
         ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
+        ...(hasDiving   !== undefined && { hasDiving:   Boolean(hasDiving) }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },

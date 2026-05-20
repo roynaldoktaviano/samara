@@ -16,7 +16,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Plus, Pencil, Trash2, Tag, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, Loader2, RotateCw } from 'lucide-react'
 
 const ACCENT = '#bdac7e'
 
@@ -177,7 +177,12 @@ export default function Vouchers() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vouchers</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Vouchers</h1>
+            <button onClick={() => load()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground mt-0.5">Manage discount codes for campaigns and bookings</p>
         </div>
         <Button onClick={openCreate} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">

@@ -48,7 +48,7 @@ function Box({ height = 52 }: { height?: number }) {
 
 function Sec({ title, children, accent, last }: { title: string; children: React.ReactNode; accent?: boolean; last?: boolean }) {
   return (
-    <div style={{ marginBottom: last ? 0 : 10, pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
+    <div style={{ marginBottom: last ? 0 : 10, pageBreakInside: 'avoid', breakInside: 'avoid', pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
       <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}>
         {title}
       </div>
@@ -91,7 +91,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
 
   type GuestRow = {
     no: number; bgId: string; name: string; phone: string; email: string; cabin: string
-    isLead: boolean; bookingCode: string; salesperson: string
+    isLead: boolean; isChild: boolean; bookingCode: string; salesperson: string
     nationality: string; passport: string; passportExpiry: string; dateOfBirth: string
     gender: string; address: string
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
@@ -109,6 +109,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     email: g.customer.email ?? '',
     cabin: g.cabin?.name ?? '',
     isLead: g.isLead,
+    isChild: (g.customer as any).isChild ?? false,
     bookingCode: booking.bookingCode,
     salesperson,
     nationality: g.customer.nationality ?? '',
@@ -140,6 +141,8 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
   const sub         = `${dateRange}  ·  Private Charter ${totalDays}D${totalNights}N  ·  ${yachtName}`
   const BLANK       = Math.max(0, 12 - guests.length)
   const showDiving  = (booking as any).hasDiving === true
+  const adultCount  = guests.filter(g => !g.isChild).length
+  const childCount  = guests.filter(g => g.isChild).length
 
   const th: React.CSSProperties = { padding: '8px 7px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.4px', borderRight: '1px solid #444' }
   const td: React.CSSProperties = { padding: '8px 7px', fontSize: 11, borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }
@@ -157,7 +160,8 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
           body { background: white !important; margin: 0 !important; }
           .no-print { display: none !important; }
         }
-        @page { size: A4 portrait; margin: 1cm; }
+        @page { size: A4 portrait; margin: 1cm 1cm 1.5cm; }
+        @page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #aaa; font-family: Arial, sans-serif; } }
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         p { margin: 0; }
         ul { margin: 0; }
@@ -240,7 +244,14 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
               <p style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>Cruise / Boat / Details:</p>
               <p style={{ fontSize: 12, marginBottom: 1 }}>{dateRange}</p>
               <p style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Private Charter {totalDays}D{totalNights}N {yachtName.toUpperCase()}</p>
-              <p style={{ fontSize: 11, marginBottom: 1 }}>Number of Guests: <strong>{guests.length} Pax</strong></p>
+              <p style={{ fontSize: 11, marginBottom: 1 }}>
+                Number of Guests: <strong>{guests.length} Pax</strong>
+                {childCount > 0 && (
+                  <span style={{ color: '#555', fontWeight: 400 }}>
+                    {' '}(<strong>{adultCount}</strong> Adult{adultCount !== 1 ? 's' : ''}, <strong style={{ color: '#2563eb' }}>{childCount}</strong> Child{childCount !== 1 ? 'ren' : ''})
+                  </span>
+                )}
+              </p>
               <p style={{ fontSize: 11 }}>Sales: <strong>{salesperson}</strong></p>
             </div>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
@@ -256,7 +267,13 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                   <tr key={g.no} style={{ background: i % 2 ? '#f9f9f9' : 'white' }}>
                     <td style={{ ...td, textAlign: 'center', color: '#888', width: 28 }}>{g.no}</td>
                     <td style={{ ...td, fontWeight: g.isLead ? 700 : 400 }}>
-                      {g.name}{g.isLead && <span style={{ fontSize: 8, color: GOLD, marginLeft: 3 }}>★</span>}
+                      {g.name}
+                      {g.isLead && <span style={{ fontSize: 8, color: GOLD, marginLeft: 3 }}>★</span>}
+                      {g.isChild && (
+                        <span style={{ display: 'inline-block', marginLeft: 4, fontSize: 8, fontWeight: 700, color: '#2563eb', background: '#dbeafe', border: '1px solid #93c5fd', borderRadius: 3, padding: '0 4px', lineHeight: '14px', verticalAlign: 'middle' }}>
+                          CHILD
+                        </span>
+                      )}
                     </td>
                     <td style={td}>{g.nationality || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.passport || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
@@ -319,7 +336,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             <div style={{ background: `${GOLD}18`, border: `1.5px solid ${GOLD}`, borderRadius: 5, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#999', marginBottom: 3 }}>
-                  Guest {g.no} of {guests.length}{g.cabin ? `  ·  ${g.cabin}` : ''}{g.isLead ? '  ·  Group Leader' : ''}
+                  Guest {g.no} of {guests.length}{g.cabin ? `  ·  ${g.cabin}` : ''}{g.isLead ? '  ·  Group Leader' : ''}{g.isChild ? '  ·  Child' : ''}
                 </p>
                 <p style={{ fontSize: 19, fontWeight: 800, color: DARK, margin: 0 }}>{g.name}</p>
               </div>

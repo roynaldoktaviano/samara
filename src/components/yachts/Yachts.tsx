@@ -23,7 +23,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw } from 'lucide-react'
 
 interface PricingTier { nights: number; price: number }
 
@@ -49,6 +50,7 @@ interface YachtRecord {
   hourlyRate: number
   dailyRate: number
   extraBedTiers: PricingTier[]
+  canDiving: boolean
   status: string
   description?: string
   cabins: CabinRecord[]
@@ -101,6 +103,7 @@ export default function Yachts() {
   const [extraBedTiers, setExtraBedTiers] = useState<{ nights: number; price: string }[]>([
     { nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' },
   ])
+  const [canDiving,     setCanDiving]     = useState(false)
   const [description,   setDesc]          = useState('')
   const [rooms,          setRooms]        = useState<RoomInput[]>([])
 
@@ -117,7 +120,7 @@ export default function Yachts() {
 
   const resetForm = () => {
     setName(''); setModel(''); setYear(''); setCap(''); setLen('')
-    setDaily(''); setDesc('')
+    setDaily(''); setCanDiving(false); setDesc('')
     setExtraBedTiers([{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }])
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
   }
@@ -139,6 +142,7 @@ export default function Yachts() {
       nights: n,
       price: ((y.extraBedTiers ?? []).find((t: PricingTier) => t.nights === n)?.price ?? 0).toString(),
     })))
+    setCanDiving(y.canDiving ?? false)
     setDesc(y.description ?? '')
     setRooms(y.cabins.map(c => ({
       tempId: c.id,
@@ -183,7 +187,7 @@ export default function Yachts() {
     setError('')
     try {
       const payload = {
-        name, model, year, capacity, length, hourlyRate: '0', dailyRate, description,
+        name, model, year, capacity, length, hourlyRate: '0', dailyRate, canDiving, description,
         extraBedTiers: extraBedTiers.filter(t => t.price && parseFloat(t.price) > 0).map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
         rooms: rooms.filter(r => r.name.trim()).map(r => ({
           id: r.id,
@@ -238,7 +242,12 @@ export default function Yachts() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Yachts</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold tracking-tight">Yachts</h3>
+            <button onClick={() => fetchYachts()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground">Manage your fleet and cabins</p>
         </div>
         {canEdit && (
@@ -319,6 +328,13 @@ export default function Yachts() {
                   <div className="col-span-2 space-y-1.5">
                     <Label>Description</Label>
                     <Textarea placeholder="About this yacht..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
+                  </div>
+                  <div className="col-span-2 flex items-center justify-between rounded-lg border px-4 py-3">
+                    <div>
+                      <Label>Can Diving</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Kapal ini bisa digunakan untuk kegiatan diving</p>
+                    </div>
+                    <Switch checked={canDiving} onCheckedChange={setCanDiving} />
                   </div>
                 </div>
               )}

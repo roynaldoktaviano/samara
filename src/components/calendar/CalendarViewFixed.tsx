@@ -233,13 +233,19 @@ function MonthGrid({
                   const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
                   const isPast     = day > 0 && new Date(dateStr) <= todayMidnight
                   const inRange    = day > 0 && isInFilterRange(dateStr)
+                  // Block clicking on dates already occupied by this yacht's trips
+                  const isOccupied = day > 0 && !isPast && yachtFilter !== 'all' && (
+                    bookings.some(b => dateStr >= b.startDate && dateStr <= b.endDate) ||
+                    openTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate)
+                  )
                   return (
                     <div
                       key={col}
-                      onClick={() => day > 0 && !isPast && onDateClick(dateStr)}
+                      onClick={() => day > 0 && !isPast && !isOccupied && onDateClick(dateStr)}
                       className={cn(
                         'border-r border-b border-border p-1.5 transition-colors',
-                        day === 0   ? 'bg-muted/20' :
+                        day === 0    ? 'bg-muted/20' :
+                        isOccupied  ? 'bg-red-50 dark:bg-red-950/20 cursor-not-allowed' :
                         inRange     ? 'bg-[#bdac7e]/10 cursor-pointer hover:bg-[#bdac7e]/20' :
                         isPast      ? 'bg-muted/10 cursor-not-allowed' :
                                       'cursor-pointer hover:bg-muted/40',
@@ -249,10 +255,11 @@ function MonthGrid({
                       {day > 0 && (
                         <span className={cn(
                           'text-xs font-semibold leading-none',
-                          todayCell ? 'text-[#bdac7e]' :
-                          inRange   ? 'text-[#8a7a55]' :
-                          isPast    ? 'text-muted-foreground/40' :
-                                      'text-foreground'
+                          todayCell  ? 'text-[#bdac7e]' :
+                          isOccupied ? 'text-red-400' :
+                          inRange    ? 'text-[#8a7a55]' :
+                          isPast     ? 'text-muted-foreground/40' :
+                                       'text-foreground'
                         )}>
                           {day}
                         </span>
@@ -764,6 +771,28 @@ export default function CalendarView() {
   const handleDateClick = (dateStr: string) => {
     const today = new Date(); today.setHours(0,0,0,0)
     if (new Date(dateStr) <= today) return
+
+    // Block if clicked date is occupied by a trip for the currently filtered yacht
+    if (yachtFilter !== 'all') {
+      const occupied =
+        bookings.some(b =>
+          b.yachtName === yachtFilter &&
+          b.status !== 'cancelled' &&
+          dateStr >= b.startDate.slice(0, 10) &&
+          dateStr <= b.endDate.slice(0, 10)
+        ) ||
+        openTrips.some(t =>
+          t.yacht?.name === yachtFilter &&
+          t.status !== 'cancelled' &&
+          dateStr >= t.startDate.slice(0, 10) &&
+          dateStr <= t.endDate.slice(0, 10)
+        )
+      if (occupied) {
+        toast.error(`${yachtFilter} sudah ada jadwal pada tanggal ini.`)
+        return
+      }
+    }
+
     setSelectedDate(dateStr)
     setWizardOpen(true)
   }
@@ -1478,7 +1507,12 @@ export default function CalendarView() {
                     ) : bookingFullDetail?.guests?.length > 0 ? (
                       <div className="divide-y">
                         {bookingFullDetail.guests.map((g: any) => (
-                          <div key={g.id} className="flex items-center gap-3 px-4 py-2.5">
+                          <div
+                            key={g.id}
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 cursor-pointer transition-colors group"
+                            onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
+                            title="Edit guest details"
+                          >
                             <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
                               {g.customer?.name?.[0] ?? '?'}
                             </div>
@@ -1496,6 +1530,7 @@ export default function CalendarView() {
                                 </div>
                               )}
                             </div>
+                            <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity" />
                           </div>
                         ))}
                       </div>

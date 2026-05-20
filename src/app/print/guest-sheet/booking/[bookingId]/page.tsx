@@ -38,7 +38,7 @@ function Box({ height = 52 }: { height?: number }) {
 
 function Sec({ title, children, accent, last }: { title: string; children: React.ReactNode; accent?: boolean; last?: boolean }) {
   return (
-    <div style={{ marginBottom: last ? 0 : 10, pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
+    <div style={{ marginBottom: last ? 0 : 10, pageBreakInside: 'avoid', breakInside: 'avoid', pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
       <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}>
         {title}
       </div>
@@ -116,7 +116,8 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
           .page-sheet { page-break-after: always; }
           .page-sheet:last-child { page-break-after: avoid; }
         }
-        @page { size: A4 portrait; margin: 1cm; }
+        @page { size: A4 portrait; margin: 1cm 1cm 1.5cm; }
+        @page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #aaa; font-family: Arial, sans-serif; } }
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         p { margin: 0; }
         .page-sheet { border-bottom: 2px dashed #e2e8f0; margin-bottom: 32px; padding-bottom: 8px; }
@@ -154,7 +155,7 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
               <div style={{ background: `${GOLD}18`, border: `1.5px solid ${GOLD}`, borderRadius: 5, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#999', marginBottom: 3 }}>
-                    {bg.cabin ? `Cabin: ${bg.cabin.name}  ·  ` : ''}{bg.isLead ? 'Group Leader' : 'Guest'}
+                    {bg.cabin ? `Cabin: ${bg.cabin.name}  ·  ` : ''}{bg.isLead ? 'Group Leader' : 'Guest'}{(c as any).isChild ? '  ·  Child' : ''}
                   </p>
                   <p style={{ fontSize: 22, fontWeight: 800, color: DARK, margin: 0 }}>{c.name}</p>
                 </div>

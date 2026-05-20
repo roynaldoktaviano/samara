@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   FileText, Search, X, Loader2, CheckCircle2, XCircle, Clock,
   Upload, Eye, DollarSign, TrendingUp, AlertCircle, Check, Ban,
-  Receipt, Building2, User, Ship, Calendar, Download, UserCheck
+  Receipt, Building2, User, Ship, Calendar, Download, UserCheck, RotateCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -208,7 +208,12 @@ export default function Payments() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-2xl font-bold tracking-tight">Payment Management</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-2xl font-bold tracking-tight">Payment Management</h3>
+          <button onClick={() => fetchPayments()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+            <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
         <p className="text-muted-foreground">Kelola dan konfirmasi pembayaran dari tim sales</p>
       </div>
 

@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Loader2, X, CreditCard, Calendar } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Loader2, X, CreditCard, Calendar, RotateCw } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -106,7 +106,12 @@ export default function Guests() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Guest Management</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold tracking-tight">Guest Management</h3>
+            <button onClick={() => fetchGuests()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-muted-foreground">Manage guest profiles and view trip history</p>
         </div>
         <Button onClick={() => { setSheetGuestId(null); setSheetOpen(true) }}>

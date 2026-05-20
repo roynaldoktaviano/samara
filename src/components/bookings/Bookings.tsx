@@ -16,8 +16,9 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User,
-  SlidersHorizontal, X, Calendar, Ship, Tag, Layers,
+  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves,
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 
@@ -42,7 +43,9 @@ interface BookingRecord {
   salesperson?: string | null
   currency?: string
   exchangeRate?: number | null
-  yacht?: { id: string; name: string; model?: string }
+  createdAt?: string
+  hasDiving?: boolean
+  yacht?: { id: string; name: string; model?: string; canDiving?: boolean }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
   agent?: { id: string; name: string; company?: string; commission?: number }
@@ -189,6 +192,7 @@ export default function Bookings() {
   const [cancelSaving,        setCancelSaving]        = useState(false)
   const [editGuestId,         setEditGuestId]         = useState<string | null>(null)
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
+  const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
 
   /* ── fetchers ── */
@@ -473,7 +477,12 @@ export default function Bookings() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Bookings</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold tracking-tight">Bookings</h3>
+            <button onClick={() => fetchBookings()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <p className="text-muted-foreground text-sm">Manage all yacht reservations</p>
         </div>
         {canManageBookings && (
@@ -635,7 +644,14 @@ export default function Bookings() {
                   </TableRow>
                 ) : filtered.map(b => (
                   <TableRow key={b.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(b)}>
-                    <TableCell className="font-mono text-xs font-medium">{b.bookingCode}</TableCell>
+                    <TableCell>
+                      <div className="font-mono text-xs font-medium">{b.bookingCode}</div>
+                      {b.createdAt && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(b.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       <div className="space-y-0.5">
                         <Badge variant="outline" className="text-xs"
@@ -697,13 +713,14 @@ export default function Bookings() {
                       const pendingPmt      = bookingPmts.find(p => p.status === 'pending_confirmation')
                       const hasAnyPmt       = bookingPmts.length > 0
                       const hasConfirmedPmt = bookingPmts.some(p => p.status === 'confirmed')
+                      const hasSettlement   = bookingPmts.some(p => p.paymentType === 'PELUNASAN')
                       const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
                       const nextType        = hasAnyPmt ? 'Settlement' : 'Deposit'
                       const pelunasanBlocked = nextType === 'Settlement' && !hasConfirmedPmt
                       return (
                         <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex flex-col gap-1 items-start">
-                            {canRecord && (
+                            {canRecord && !hasSettlement && (
                               <Button
                                 variant="ghost" size="sm"
                                 disabled={pelunasanBlocked}
@@ -1385,6 +1402,32 @@ export default function Bookings() {
                         )}
                       </div>
                     )}
+
+                    {/* Diving toggle — only if yacht supports diving */}
+                    {db_.yacht?.canDiving && (
+                      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <Waves className="w-4 h-4 text-sky-500" />
+                          <div>
+                            <p className="text-sm font-medium leading-tight">Diving Trip</p>
+                            <p className="text-[11px] text-muted-foreground">Tamu akan melakukan diving</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={db_.hasDiving ?? false}
+                          onCheckedChange={async (val) => {
+                            await fetch(`/api/bookings/${db_.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ hasDiving: val }),
+                            })
+                            await fetchBookings()
+                            const updated = bookings.find(b => b.id === db_.id)
+                            if (updated) setDetailBooking({ ...updated, hasDiving: val })
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <Separator />
@@ -1408,16 +1451,17 @@ export default function Bookings() {
                           {/* Guest header */}
                           <div className="flex items-center justify-between gap-2">
                             <button
-                              className="flex items-center gap-2 hover:opacity-75 transition-opacity text-left"
-                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id) }}
+                              className="group flex items-center gap-2 hover:bg-muted/50 rounded-lg px-1.5 py-1 -mx-1.5 -my-1 transition-colors text-left flex-1 min-w-0"
+                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id); setEditGuestHasDiving(db_.hasDiving ?? false) }}
                             >
                               <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
                                 <User className="w-3.5 h-3.5 text-muted-foreground" />
                               </div>
-                              <div>
+                              <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold leading-tight">{g.customer?.name ?? '—'}</p>
                                 {g.isLead && <p className="text-[10px] text-amber-600">Group Leader</p>}
                               </div>
+                              <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
                             </button>
 
                             {/* Cabin selector */}
@@ -1550,7 +1594,8 @@ export default function Bookings() {
         open={!!editGuestId}
         guestId={editGuestId}
         bookingGuestId={editGuestBgId}
-        onClose={() => { setEditGuestId(null); setEditGuestBgId(null) }}
+        hasDiving={editGuestHasDiving}
+        onClose={() => { setEditGuestId(null); setEditGuestBgId(null); setEditGuestHasDiving(false) }}
         onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
       />
 
