@@ -53,7 +53,7 @@ function Box({ height = 52 }: { height?: number }) {
 /* Section with dark/gold title bar */
 function Sec({ title, children, accent, last }: { title: string; children: React.ReactNode; accent?: boolean; last?: boolean }) {
   return (
-    <div style={{ marginBottom: last ? 0 : 10, pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
+    <div style={{ marginBottom: last ? 0 : 10, pageBreakInside: 'avoid', breakInside: 'avoid', pageBreakAfter: last ? 'avoid' : 'auto', breakAfter: last ? 'avoid' : 'auto' }}>
       <div style={{ background: accent ? GOLD : DARK, color: 'white', padding: '5px 10px', fontSize: 9, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', borderRadius: '3px 3px 0 0', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}>
         {title}
       </div>
@@ -91,7 +91,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   /* Flatten guests */
   type GuestRow = {
     no: number; bgId: string; name: string; phone: string; email: string; cabin: string
-    isLead: boolean; bookingCode: string; salesperson: string
+    isLead: boolean; isChild: boolean; isInfant: boolean; bookingCode: string; salesperson: string
     nationality: string; passport: string; passportExpiry: string; dateOfBirth: string
     gender: string; address: string
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
@@ -101,18 +101,27 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   }
   const fmtDate = (d: Date | null | undefined) => d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
   const v = (obj: any, key: string) => obj?.[key] ? String(obj[key]) : undefined
-  const makeRow = (c: any, bg: any, cabin: string, isLead: boolean, bookingCode: string, salesperson: string): GuestRow => ({
-    no: 0, bgId: bg?.id ?? '', name: c.name, phone: c.phone ?? '', email: c.email ?? '', cabin, isLead, bookingCode, salesperson,
-    nationality: c.nationality ?? '', passport: c.passport ?? '',
-    passportExpiry: fmtDate(c.passportExpiry), dateOfBirth: fmtDate(c.dateOfBirth),
-    gender: c.gender ?? '', address: c.address ?? '',
-    arrivalPickupTime: bg?.arrivalPickupTime ?? '', arrivalHotel: bg?.arrivalHotel ?? '', arrivalFlight: bg?.arrivalFlight ?? '',
-    departurePickupTime: bg?.departurePickupTime ?? '', departureHotel: bg?.departureHotel ?? '', departureFlight: bg?.departureFlight ?? '',
-    emergencyContact: c.emergencyContact ?? '', dietaryRequirements: c.dietaryRequirements ?? '',
-    allergies: c.allergies ?? '', drinkPreferences: c.drinkPreferences ?? '',
-    medicalData: c.medicalData ?? {}, foodData: c.foodData ?? {}, drinksData: c.drinksData ?? {},
-    divingData: c.divingData ?? {},
-  })
+  const getAgeYears = (dob: Date | null | undefined): number | null => {
+    if (!dob) return null
+    return new Date(Date.now() - dob.getTime()).getUTCFullYear() - 1970
+  }
+  const makeRow = (c: any, bg: any, cabin: string, isLead: boolean, bookingCode: string, salesperson: string): GuestRow => {
+    const age = getAgeYears(c.dateOfBirth)
+    const isInfant = age !== null ? age < 4 : false
+    const isChild = isInfant ? false : (c.isChild === true || (age !== null && age < 12))
+    return {
+      no: 0, bgId: bg?.id ?? '', name: c.name, phone: c.phone ?? '', email: c.email ?? '', cabin, isLead, isChild, isInfant, bookingCode, salesperson,
+      nationality: c.nationality ?? '', passport: c.passport ?? '',
+      passportExpiry: fmtDate(c.passportExpiry), dateOfBirth: fmtDate(c.dateOfBirth),
+      gender: c.gender ?? '', address: c.address ?? '',
+      arrivalPickupTime: bg?.arrivalPickupTime ?? '', arrivalHotel: bg?.arrivalHotel ?? '', arrivalFlight: bg?.arrivalFlight ?? '',
+      departurePickupTime: bg?.departurePickupTime ?? '', departureHotel: bg?.departureHotel ?? '', departureFlight: bg?.departureFlight ?? '',
+      emergencyContact: c.emergencyContact ?? '', dietaryRequirements: c.dietaryRequirements ?? '',
+      allergies: c.allergies ?? '', drinkPreferences: c.drinkPreferences ?? '',
+      medicalData: c.medicalData ?? {}, foodData: c.foodData ?? {}, drinksData: c.drinksData ?? {},
+      divingData: c.divingData ?? {},
+    }
+  }
   const guests: GuestRow[] = []
   let gNo = 1
   trip.bookings.forEach(b => {
@@ -131,13 +140,22 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
   const salesName   = trip.bookings[0]?.agent?.name ?? 'Direct'
   const BLANK       = Math.max(0, 12 - guests.length)
 
+  const infantCount = guests.filter(g => g.isInfant).length
+  const childCount  = guests.filter(g => g.isChild).length
+  const adultCount  = guests.length - infantCount - childCount
+  const paxBreakdown = [
+    `${adultCount} Adult${adultCount !== 1 ? 's' : ''}`,
+    childCount  > 0 ? `${childCount} Child${childCount > 1 ? 'ren' : ''}` : null,
+    infantCount > 0 ? `${infantCount} Infant${infantCount > 1 ? 's' : ''}` : null,
+  ].filter(Boolean).join(', ')
+
   /* shared table cell styles */
   const th: React.CSSProperties = { padding: '8px 7px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.4px', borderRight: '1px solid #444' }
   const td: React.CSSProperties = { padding: '8px 7px', fontSize: 11, borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }
 
-  /* page wrapper — NO minHeight; page-break-before handles pagination */
+  /* page wrapper — page-break-before handles pagination; no break-inside to avoid blank pages */
   const page = (content: React.ReactNode, first = false, key?: string | number) => (
-    <div key={key} style={{ pageBreakBefore: first ? 'avoid' : 'always', breakBefore: first ? 'avoid' : 'page', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+    <div key={key} style={{ pageBreakBefore: first ? 'avoid' : 'always', breakBefore: first ? 'avoid' : 'page' }}>
       {content}
     </div>
   )
@@ -149,20 +167,20 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
           body { background: white !important; margin: 0 !important; }
           .no-print { display: none !important; }
         }
-        @page { size: A4 portrait; margin: 1cm; }
+        @page { size: A4 portrait; margin: 1cm 1cm 1.5cm; }
+        @page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #aaa; font-family: Arial, sans-serif; } }
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         p { margin: 0; }
         ul { margin: 0; }
         .samara-page {
           display: flex;
           flex-direction: column;
-          min-height: 277mm;
         }
         .samara-page-body {
           flex: 1;
         }
         @media screen {
-          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; min-height: unset; }
+          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; }
           .samara-page:last-child { border-bottom: none; margin-bottom: 0; }
         }
       `}</style>
@@ -238,7 +256,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
               <p style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>Cruise / Boat / Details:</p>
               <p style={{ fontSize: 12, marginBottom: 1 }}>{dateRange}</p>
               <p style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Open Trip {totalDays}D{totalNights}N {trip.yacht.name.toUpperCase()}</p>
-              <p style={{ fontSize: 11, marginBottom: 1 }}>Number of Guests: <strong>{guests.length} Pax</strong></p>
+              <p style={{ fontSize: 11, marginBottom: 1 }}>Number of Guests: <strong>{guests.length} Pax</strong>{(childCount > 0 || infantCount > 0) && <span style={{ color: '#555', fontWeight: 400 }}> ({paxBreakdown})</span>}</p>
               <p style={{ fontSize: 11 }}>Sales: <strong>{salesName}</strong></p>
             </div>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
@@ -255,6 +273,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                     <td style={{ ...td, textAlign: 'center', color: '#888', width: 28 }}>{g.no}</td>
                     <td style={{ ...td, fontWeight: g.isLead ? 700 : 400 }}>
                       {g.name}{g.isLead && <span style={{ fontSize: 8, color: GOLD, marginLeft: 3 }}>★</span>}
+                      {g.isInfant && <span style={{ display: 'inline-block', marginLeft: 4, fontSize: 8, fontWeight: 700, color: '#d97706', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 3, padding: '0 4px' }}>INFANT</span>}
+                      {g.isChild  && !g.isInfant && <span style={{ display: 'inline-block', marginLeft: 4, fontSize: 8, fontWeight: 700, color: '#2563eb', background: '#dbeafe', border: '1px solid #93c5fd', borderRadius: 3, padding: '0 4px' }}>CHILD</span>}
                     </td>
                     <td style={td}>{g.nationality || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.passport || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
@@ -320,7 +340,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             <div style={{ background: `${GOLD}18`, border: `1.5px solid ${GOLD}`, borderRadius: 5, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#999', marginBottom: 3 }}>
-                  Guest {g.no} of {guests.length}{g.cabin ? `  ·  ${g.cabin}` : ''}{g.isLead ? '  ·  Group Leader' : ''}
+                  Guest {g.no} of {guests.length}{g.cabin ? `  ·  ${g.cabin}` : ''}{g.isLead ? '  ·  Group Leader' : ''}{g.isInfant ? '  ·  Infant' : g.isChild ? '  ·  Child' : ''}
                 </p>
                 <p style={{ fontSize: 19, fontWeight: 800, color: DARK, margin: 0 }}>{g.name}</p>
               </div>

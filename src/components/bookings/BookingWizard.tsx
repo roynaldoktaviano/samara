@@ -31,7 +31,7 @@ type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; extraBedTiers?: { nights: number; price: number }[] }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
-interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean }
+interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
 interface OpenTripOpt{
   id: string; title: string; description?: string
@@ -48,6 +48,7 @@ interface SelectedGuest {
   cabinId: string
   isLead: boolean
   isChild?: boolean
+  isInfant?: boolean
 }
 interface ServiceEntry { tempId: string; name: string; price: string }
 
@@ -57,6 +58,13 @@ interface Props {
   onSuccess: () => void
   preselectedDate?: string
   preselectedOpenTripId?: string
+}
+
+function getAgeYears(dob: string | Date | null | undefined): number | null {
+  if (!dob) return null
+  const d = typeof dob === 'string' ? new Date(dob) : dob
+  if (isNaN(d.getTime())) return null
+  return new Date(Date.now() - d.getTime()).getUTCFullYear() - 1970
 }
 
 /* ─── Step nav config ────────────────────────────────────────────────────── */
@@ -397,17 +405,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      (c.phone ?? '').includes(custSearch))
   )
 
-  /* cabin occupancy map: cabinId → guest count */
+  /* cabin occupancy map: cabinId → guest count (infants don't count) */
   const cabinOccupancy = guests.reduce<Record<string, number>>((acc, g) => {
-    if (g.cabinId) acc[g.cabinId] = (acc[g.cabinId] ?? 0) + 1
+    if (g.cabinId && !g.isInfant) acc[g.cabinId] = (acc[g.cabinId] ?? 0) + 1
     return acc
   }, {})
 
   /* guest helpers */
   const addGuest = (c: CustomerOpt) => {
+    const age = getAgeYears(c.dateOfBirth)
+    const isInfant = age !== null && age < 4
     setGuests(prev => [
       ...prev,
-      { customerId: c.id, name: c.name, phone: c.phone, cabinId: '', isLead: prev.length === 0, isChild: c.isChild },
+      { customerId: c.id, name: c.name, phone: c.phone, cabinId: '', isLead: prev.length === 0, isChild: c.isChild, isInfant },
     ])
     setCSearch('')
   }
@@ -437,10 +447,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     const leadCustomer = customers.find(c => c.id === guests.find(g => g.isLead)?.customerId)
     const resolvedPhone = quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone.trim()
     const resolvedEmail = quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail.trim()
-    const dob     = new Date(quickDob)
-    const ageDiff = Date.now() - dob.getTime()
-    const ageYears = new Date(ageDiff).getUTCFullYear() - 1970
+    const ageYears = getAgeYears(quickDob) ?? 0
     const isChild  = ageYears < 12
+    const isInfant = ageYears < 4
     setQuickSaving(true)
     try {
       const res = await fetch('/api/customers', {
@@ -964,17 +973,20 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setDropError(`${cabin?.name} is already reserved by another booking`)
         return
       }
+      const droppingGuest = guests.find(g => g.customerId === gId)
       const effectiveCapDrop = (cabin?.capacity ?? 0) + (cabin ? (cabinExtraBeds[cabin.id] ?? 0) : 0)
-      if (!already && myOccDrop >= effectiveCapDrop) {
+      // Infants don't count toward capacity — skip the full check for them
+      if (!already && !droppingGuest?.isInfant && myOccDrop >= effectiveCapDrop) {
         setDropError(`${cabin?.name} is full (capacity ${effectiveCapDrop})`)
         return
       }
-      // Child cannot be in a cabin without at least one adult
-      const droppingGuest = guests.find(g => g.customerId === gId)
+      // Infant/Child cannot be in a cabin without at least one adult
       if (droppingGuest?.isChild && !already) {
         const hasAdultInCabin = guests.some(g => g.cabinId === targetId && !g.isChild)
         if (!hasAdultInCabin) {
-          setDropError(`Anak-anak harus bersama orang dewasa di kabin yang sama`)
+          setDropError(droppingGuest.isInfant
+            ? `Bayi harus bersama orang dewasa di kabin yang sama`
+            : `Anak-anak harus bersama orang dewasa di kabin yang sama`)
           return
         }
       }
@@ -995,7 +1007,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         )}
       >
         {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
-        {g.isChild && <span className="text-[9px] font-bold text-blue-600 shrink-0">👶</span>}
+        {g.isInfant && <span className="text-[9px] font-bold text-rose-500 shrink-0 bg-rose-50 px-1 rounded">Infant</span>}
+        {g.isChild && !g.isInfant && <span className="text-[9px] font-bold text-blue-600 shrink-0 bg-blue-50 px-1 rounded">Child</span>}
         <span className="truncate max-w-24">{g.name}</span>
         <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
           className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
@@ -1021,36 +1034,38 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             />
           </div>
           {(custSearch || custFocused) && (
-            <div className="border rounded-lg bg-popover shadow-md overflow-hidden z-10 relative">
+            <div className="border rounded-lg bg-popover shadow-md z-10 relative flex flex-col">
               {filteredCusts.length === 0 ? (
-                <div>
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    {custSearch && customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
-                      ? '⚠ Already booked on this trip'
-                      : custSearch ? 'No guest found' : 'All guests already added'}
-                  </div>
-                  <button
-                    onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
-                    className="w-full text-left px-3 py-2 text-sm text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t">
-                    <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Create new guest'}
-                  </button>
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  {custSearch && customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
+                    ? '⚠ Already booked on this trip'
+                    : custSearch ? 'No guest found' : 'All guests already added'}
                 </div>
               ) : (
-                <ScrollArea className="max-h-48">
-                  {filteredCusts.slice(0, 10).map(c => (
-                    <button key={c.id} onClick={() => { addGuest(c); setCustFocused(false) }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex justify-between">
-                      <span>{c.name}</span>
-                      {c.phone && <span className="text-muted-foreground text-xs">{c.phone}</span>}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => { setShowQuickAdd(true); setCSearch(''); setCustFocused(false) }}
-                    className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors flex items-center gap-2 border-t">
-                    <Plus className="h-3 w-3" /> Create new guest
-                  </button>
-                </ScrollArea>
+                <div className="overflow-y-auto max-h-48">
+                  {filteredCusts.slice(0, 10).map(c => {
+                    const cAge = getAgeYears(c.dateOfBirth)
+                    const cIsInfant = cAge !== null && cAge < 4
+                    const cIsChild  = !cIsInfant && (c.isChild === true || (cAge !== null && cAge < 12))
+                    return (
+                      <button key={c.id} onClick={() => { addGuest(c); setCustFocused(false) }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="truncate">{c.name}</span>
+                          {cIsInfant && <span className="text-[9px] font-bold text-rose-500 bg-rose-50 border border-rose-200 px-1 rounded shrink-0">Infant</span>}
+                          {cIsChild  && <span className="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-1 rounded shrink-0">Child</span>}
+                        </span>
+                        {c.phone && <span className="text-muted-foreground text-xs shrink-0">{c.phone}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
               )}
+              <button
+                onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
+                className="w-full text-left px-3 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t shrink-0">
+                <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Add new guest'}
+              </button>
             </div>
           )}
 
@@ -1059,9 +1074,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             const leadGuest     = guests.find(g => g.isLead)
             const leadCustomer  = customers.find(c => c.id === leadGuest?.customerId)
             const hasLead       = !!leadCustomer
-            const dob           = quickDob ? new Date(quickDob) : null
-            const ageYears      = dob ? new Date(Date.now() - dob.getTime()).getUTCFullYear() - 1970 : null
-            const isChildPreview = ageYears !== null && ageYears < 12
+            const ageYears       = getAgeYears(quickDob)
+            const isInfantPreview = ageYears !== null && ageYears < 4
+            const isChildPreview  = ageYears !== null && ageYears >= 4 && ageYears < 12
             return (
             <div className="border rounded-lg bg-muted/30 p-3 space-y-2">
               <div className="flex items-center justify-between mb-1">
@@ -1081,12 +1096,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <Label className="text-xs">Date of Birth *</Label>
                   <div className="flex items-center gap-2 mt-1">
                     <Input type="date" className="h-8 text-sm flex-1" value={quickDob} onChange={e => setQuickDob(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+                    {isInfantPreview && (
+                      <span className="text-[10px] font-semibold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        Infant · {ageYears} yr
+                      </span>
+                    )}
                     {isChildPreview && (
                       <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
                         Child · {ageYears} yr
                       </span>
                     )}
-                    {ageYears !== null && !isChildPreview && (
+                    {ageYears !== null && !isChildPreview && !isInfantPreview && (
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">{ageYears} yr</span>
                     )}
                   </div>
@@ -1214,7 +1234,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   return 0
                 })()
                 return (
-              <div className={cn('grid gap-2', cabins.length <= 3 ? 'grid-cols-3' : cabins.length <= 6 ? 'grid-cols-3' : 'grid-cols-4')}>
+              <div className={cn('grid gap-2', cabins.length <= 3 ? 'grid-cols-2 sm:grid-cols-3' : cabins.length <= 6 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4')}>
                 {cabins.map(c => {
                   const myOcc      = cabinOccupancy[c.id] ?? 0
                   const extOcc     = existingCabinOccupancy[c.id] ?? 0
@@ -1226,13 +1246,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   const isFull = isBlockedByOther || totalOcc >= effectiveCap
                   const isOver      = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
+                  const infantsInCabin = cabinGuests.filter(g => g.isInfant).length
                   const available   = Math.max(0, effectiveCap - totalOcc)
+                  // dragging guest — determine if it's an infant so we can allow drop on full cabins
+                  const draggingIsInfant = !!dragGuest && !!guests.find(g => g.customerId === dragGuest)?.isInfant
 
                   return (
                     <div
                       key={c.id}
                       onDragOver={e => {
-                        if (!isFull || guests.find(g => g.customerId === dragGuest)?.cabinId === c.id) {
+                        const isAlready = guests.find(g => g.customerId === dragGuest)?.cabinId === c.id
+                        if (!isBlockedByOther && (!isFull || draggingIsInfant || isAlready)) {
                           e.preventDefault(); setDropTarget(c.id)
                         }
                       }}
@@ -1244,10 +1268,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                         'rounded-xl border-2 p-3 transition-all min-h-28',
                         isBlockedByOther
                           ? 'border-red-300 bg-red-50/60 opacity-75 cursor-not-allowed'
+                          : isOver && (draggingIsInfant || !isFull)
+                          ? 'border-[#bdac7e] bg-[#bdac7e]/8 shadow-md scale-[1.01]'
                           : isFull
                           ? 'border-orange-300 bg-orange-50/40'
-                          : isOver
-                          ? 'border-[#bdac7e] bg-[#bdac7e]/8 shadow-md scale-[1.01]'
                           : 'border-border hover:border-muted-foreground/40',
                       )}
                     >
@@ -1257,14 +1281,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                           {c.deck && <p className="text-[10px] text-muted-foreground">{c.deck}</p>}
                           {c.bedType && <p className="text-[10px] text-muted-foreground">{c.bedType}</p>}
                         </div>
-                        <span className={cn(
-                          'text-[10px] font-bold rounded-full px-1.5 py-0.5 shrink-0 ml-1',
-                          isBlockedByOther ? 'text-red-600 bg-red-100'
-                          : isFull         ? 'text-orange-600 bg-orange-100'
-                          :                  'text-muted-foreground bg-muted',
-                        )}>
-                          {isBlockedByOther ? 'Booked' : isFull ? 'Selected' : `${available} left`}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                          {isFull && !isBlockedByOther && infantsInCabin > 0 && (
+                            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 text-rose-600 bg-rose-50 border border-rose-200">
+                              +{infantsInCabin} 👶
+                            </span>
+                          )}
+                          <span className={cn(
+                            'text-[10px] font-bold rounded-full px-1.5 py-0.5',
+                            isBlockedByOther ? 'text-red-600 bg-red-100'
+                            : isFull         ? 'text-orange-600 bg-orange-100'
+                            :                  'text-muted-foreground bg-muted',
+                          )}>
+                            {isBlockedByOther ? 'Booked' : isFull ? 'Full' : `${available} left`}
+                          </span>
+                        </div>
                       </div>
                       {(() => {
                         if (tripType === 'OPEN_TRIP' && tripNights > 0) {
@@ -1300,6 +1331,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                         {!isBlockedByOther && cabinGuests.map(g => pill(g, true))}
                         {!isFull && !isBlockedByOther && cabinGuests.length === 0 && (
                           <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
+                        )}
+                        {isFull && !isBlockedByOther && cabinGuests.length === 0 && (
+                          <span className="text-[10px] text-muted-foreground/60 italic">infant only</span>
                         )}
                       </div>
                       {!isBlockedByOther && myOcc > effectiveCap && (
@@ -1426,33 +1460,35 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       <div className="space-y-4">
 
         {/* Currency selector — full width */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
-          <div className="shrink-0">
-            <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
-            <p className="text-[10px] text-muted-foreground">All prices entered in USD</p>
-          </div>
-          <div className="flex gap-2">
-            {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => {
-                  const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
-                  setManualRate(newRateFromUSD)
-                  setCurrency(c)
-                }}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
-                  currency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'
-                )}
-                style={currency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
-              >
-                {CURRENCIES[c].symbol} {c}
-              </button>
-            ))}
+        <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="shrink-0 mr-1">
+              <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
+              <p className="text-[10px] text-muted-foreground">All prices entered in USD</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => {
+                    const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
+                    setManualRate(newRateFromUSD)
+                    setCurrency(c)
+                  }}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
+                    currency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'
+                  )}
+                  style={currency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
+                >
+                  {CURRENCIES[c].symbol} {c}
+                </button>
+              ))}
+            </div>
           </div>
           {currency !== 'USD' && (
-            <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">1 USD =</span>
               <input
                 type="number"
@@ -1471,8 +1507,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           )}
         </div>
 
-        {/* 2-column body */}
-        <div className="grid grid-cols-2 gap-5 items-start">
+        {/* 2-column body — stacks on small screens */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
 
           {/* ── LEFT: Price inputs ── */}
           <div className="space-y-4">
@@ -1734,7 +1770,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
+      <DialogContent className="w-[96vw] sm:w-[90vw] md:max-w-4xl lg:max-w-5xl flex flex-col overflow-hidden gap-0 p-0" style={{ maxHeight: 'calc(100dvh - 4rem)' }}>
         <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
