@@ -26,7 +26,7 @@ type Source  = 'AGENT' | 'DIRECT'
 type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
-interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string }
+interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; extraBedTiers?: { nights: number; price: number }[] }
 interface AgentOpt   { id: string; name: string; company?: string; commission: number }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
@@ -103,7 +103,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* step-2 */
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
-  const [custSearch,setCSearch] = useState('')
+  const [custSearch,setCSearch]       = useState('')
+  const [custFocused,setCustFocused]  = useState(false)
   const [crewReq,   setCrewReq] = useState(false)
   const [hasDiving, setHasDiving] = useState(false)
 
@@ -233,10 +234,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         const tier = c.pricingTiers?.find(t => t.nights === nights)
         return sum + (tier ? tier.price : c.price * nights)
       }, 0)
-      // fall back to pricePerCabin if no cabin prices at all
       usdPrice = cabinTotal > 0
         ? cabinTotal
         : assignedCabinIds.length * (ot.pricePerCabin ?? 0)
+      // add extra bed cost
+      const yacht = yachts.find(x => x.id === ot.yachtId)
+      const extraTier = yacht?.extraBedTiers?.find(t => t.nights === nights)
+      if (extraTier) {
+        const totalExtraBeds = Object.values(cabinExtraBeds).reduce((s, n) => s + n, 0)
+        usdPrice += totalExtraBeds * extraTier.price
+      }
     } else if (tripType === 'PRIVATE_CHARTER') {
       const y = yachts.find(x => x.id === yachtId)
       if (y && startDate && endDate) {
@@ -244,12 +251,22 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
         ))
         usdPrice = y.dailyRate * days
+        // add extra bed cost for private charter
+        const nights = Math.max(1, days - 1)
+        const extraTier = y.extraBedTiers?.find(t => t.nights === nights)
+          ?? (y.extraBedTiers && y.extraBedTiers.length > 0
+            ? y.extraBedTiers.reduce((a, b) => Math.abs(b.nights - nights) < Math.abs(a.nights - nights) ? b : a)
+            : undefined)
+        if (extraTier) {
+          const totalExtraBeds = Object.values(cabinExtraBeds).reduce((s, n) => s + n, 0)
+          usdPrice += totalExtraBeds * extraTier.price
+        }
       }
     }
     if (usdPrice > 0) {
       setBase(usdPrice.toFixed(2))
     }
-  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips])
+  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips, cabinExtraBeds])
 
   /* sync start date whenever wizard opens */
   useEffect(() => {
@@ -264,7 +281,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setPhase('source'); setSource(null); setTrip(null); setStep(1)
     setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
-    setOTId(''); setGuests([]); setCSearch(''); setCrewReq(false); setHasDiving(false)
+    setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
@@ -793,8 +810,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setDropError(`${cabin?.name} is already reserved by another booking`)
         return
       }
-      if (!already && myOccDrop >= (cabin?.capacity ?? 0)) {
-        setDropError(`${cabin?.name} is full (capacity ${cabin?.capacity})`)
+      const effectiveCapDrop = (cabin?.capacity ?? 0) + (cabin ? (cabinExtraBeds[cabin.id] ?? 0) : 0)
+      if (!already && myOccDrop >= effectiveCapDrop) {
+        setDropError(`${cabin?.name} is full (capacity ${effectiveCapDrop})`)
         return
       }
       updateGuest(gId, { cabinId: targetId })
@@ -839,34 +857,36 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               placeholder="Search customer by name or phone…"
               value={custSearch}
               onChange={e => setCSearch(e.target.value)}
+              onFocus={() => setCustFocused(true)}
+              onBlur={() => setTimeout(() => setCustFocused(false), 150)}
             />
           </div>
-          {custSearch && (
+          {(custSearch || custFocused) && (
             <div className="border rounded-lg bg-popover shadow-md overflow-hidden z-10 relative">
               {filteredCusts.length === 0 ? (
                 <div>
                   <div className="px-3 py-2 text-sm text-muted-foreground">
-                    {customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
+                    {custSearch && customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
                       ? '⚠ Already booked on this trip'
-                      : 'No guest found'}
+                      : custSearch ? 'No guest found' : 'All guests already added'}
                   </div>
                   <button
-                    onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch('') }}
+                    onClick={() => { setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
                     className="w-full text-left px-3 py-2 text-sm text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t">
-                    <Plus className="h-3.5 w-3.5" /> Add &ldquo;{custSearch}&rdquo; as new guest
+                    <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Create new guest'}
                   </button>
                 </div>
               ) : (
-                <ScrollArea className="max-h-36">
-                  {filteredCusts.slice(0, 8).map(c => (
-                    <button key={c.id} onClick={() => addGuest(c)}
+                <ScrollArea className="max-h-48">
+                  {filteredCusts.slice(0, 10).map(c => (
+                    <button key={c.id} onClick={() => { addGuest(c); setCustFocused(false) }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex justify-between">
                       <span>{c.name}</span>
                       {c.phone && <span className="text-muted-foreground text-xs">{c.phone}</span>}
                     </button>
                   ))}
                   <button
-                    onClick={() => { setShowQuickAdd(true); setCSearch('') }}
+                    onClick={() => { setShowQuickAdd(true); setCSearch(''); setCustFocused(false) }}
                     className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors flex items-center gap-2 border-t">
                     <Plus className="h-3 w-3" /> Create new guest
                   </button>
@@ -994,6 +1014,26 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 No cabins for this yacht
               </div>
             ) : (
+              (() => {
+                const activeYachtId = tripType === 'OPEN_TRIP'
+                  ? openTrips.find(t => t.id === openTripId)?.yachtId
+                  : yachtId
+                const activeYacht = yachts.find(y => y.id === activeYachtId)
+                const extraBedTierPrice = (() => {
+                  if (!activeYacht?.extraBedTiers?.length) return 0
+                  if (tripType === 'OPEN_TRIP') {
+                    const t = activeYacht.extraBedTiers.find(t => t.nights === tripNights)
+                    return t?.price ?? 0
+                  }
+                  if (startDate && endDate) {
+                    const nights = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) - 1)
+                    const t = activeYacht.extraBedTiers.find(t => t.nights === nights)
+                      ?? activeYacht.extraBedTiers.reduce((a, b) => Math.abs(b.nights - nights) < Math.abs(a.nights - nights) ? b : a)
+                    return t?.price ?? 0
+                  }
+                  return 0
+                })()
+                return (
               <div className={cn('grid gap-2', cabins.length <= 3 ? 'grid-cols-3' : cabins.length <= 6 ? 'grid-cols-3' : 'grid-cols-4')}>
                 {cabins.map(c => {
                   const myOcc      = cabinOccupancy[c.id] ?? 0
@@ -1002,10 +1042,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
                   // For open trips: external booking blocks the whole cabin; local occupancy respects cabin capacity
                   const isBlockedByOther = tripType === 'OPEN_TRIP' && extOcc > 0
-                  const isFull = isBlockedByOther || totalOcc >= c.capacity
+                  const effectiveCap = c.capacity + (cabinExtraBeds[c.id] ?? 0)
+                  const isFull = isBlockedByOther || totalOcc >= effectiveCap
                   const isOver      = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
-                  const available   = Math.max(0, c.capacity - totalOcc)
+                  const available   = Math.max(0, effectiveCap - totalOcc)
 
                   return (
                     <div
@@ -1065,7 +1106,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                         <div
                           className="h-full rounded-full transition-all"
                           style={{
-                            width: isBlockedByOther ? '100%' : `${Math.min(100, (totalOcc / c.capacity) * 100)}%`,
+                            width: isBlockedByOther ? '100%' : `${Math.min(100, (totalOcc / effectiveCap) * 100)}%`,
                             backgroundColor: isBlockedByOther ? '#ef4444' : isFull ? '#f97316' : ACCENT,
                           }}
                         />
@@ -1081,14 +1122,40 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                           <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
                         )}
                       </div>
+                      {!isBlockedByOther && myOcc > effectiveCap && (
+                        <p className="text-[10px] text-red-600 font-medium mt-1">
+                          ⚠ Over capacity — {myOcc - effectiveCap} guest(s) need to be moved
+                        </p>
+                      )}
                       {/* Extra beds stepper — only when cabin has guests and extraBeds available */}
                       {!isBlockedByOther && cabinGuests.length > 0 && c.extraBeds > 0 && (
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-dashed border-border">
-                          <span className="text-[10px] text-muted-foreground font-medium">Extra bed</span>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground font-medium">Extra bed</span>
+                            {extraBedTierPrice > 0 && (
+                              <span className="text-[10px] ml-1" style={{ color: ACCENT }}>(+${extraBedTierPrice.toLocaleString()}/bed)</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={e => { e.stopPropagation(); setCabinExtraBeds(prev => ({ ...prev, [c.id]: Math.max(0, (prev[c.id] ?? 0) - 1) })) }}
+                              onClick={e => {
+                                e.stopPropagation()
+                                const newVal = Math.max(0, (cabinExtraBeds[c.id] ?? 0) - 1)
+                                setCabinExtraBeds(prev => ({ ...prev, [c.id]: newVal }))
+                                // evict last non-lead guest if cabin is now over capacity
+                                const newCap = c.capacity + newVal
+                                setGuests(prev => {
+                                  const inCabin = prev.filter(g => g.cabinId === c.id)
+                                  if (inCabin.length <= newCap) return prev
+                                  // remove last non-lead guest from cabin
+                                  let evicted = false
+                                  return [...prev].reverse().map(g => {
+                                    if (!evicted && g.cabinId === c.id && !g.isLead) { evicted = true; return { ...g, cabinId: '' } }
+                                    return g
+                                  }).reverse()
+                                })
+                              }}
                               className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
                             >−</button>
                             <span className="text-[11px] font-semibold w-4 text-center">{cabinExtraBeds[c.id] ?? 0}</span>
@@ -1105,6 +1172,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   )
                 })}
               </div>
+                )
+              })()
             )}
           </div>
         </div>
@@ -1140,6 +1209,25 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     const b       = parseFloat(basePrice) || 0
     const d       = voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : (parseFloat(discPct) || 0)
     const svc     = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
+
+    // Extra bed cost (for breakdown display)
+    const totalExtraBeds = Object.values(cabinExtraBeds).reduce((s, n) => s + n, 0)
+    const extraBedCost = (() => {
+      if (totalExtraBeds === 0) return 0
+      const activeYachtId = tripType === 'OPEN_TRIP' ? openTrips.find(t => t.id === openTripId)?.yachtId : yachtId
+      const ay = yachts.find(y => y.id === activeYachtId)
+      if (!ay?.extraBedTiers?.length) return 0
+      let nights = 0
+      if (tripType === 'OPEN_TRIP') {
+        const ot = openTrips.find(t => t.id === openTripId)
+        nights = ot ? Math.max(1, Math.ceil((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000)) : 0
+      } else if (startDate && endDate) {
+        nights = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) - 1)
+      }
+      const tier = ay.extraBedTiers.find(t => t.nights === nights)
+        ?? ay.extraBedTiers.reduce((a, b) => Math.abs(b.nights - nights) < Math.abs(a.nights - nights) ? b : a)
+      return totalExtraBeds * (tier?.price ?? 0)
+    })()
     const da      = voucherApplied
       ? (voucherApplied.type === 'PERCENTAGE'
           ? b * (voucherApplied.value / 100)
@@ -1364,8 +1452,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Price Breakdown</p>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Base Price</span>
-                <span className="font-medium">{fmtAmt(b, 'USD')}</span>
+                <span className="font-medium">{fmtAmt(b - extraBedCost, 'USD')}</span>
               </div>
+              {extraBedCost > 0 && (
+                <div className="flex justify-between text-xs pl-2 text-muted-foreground">
+                  <span>↳ Extra Bed ×{totalExtraBeds}</span>
+                  <span>{fmtAmt(extraBedCost, 'USD')}</span>
+                </div>
+              )}
               {da > 0 && (
                 <div className="flex justify-between text-emerald-600">
                   <span>

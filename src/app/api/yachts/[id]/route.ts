@@ -24,7 +24,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedPrice, description, status, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, description, status, rooms } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -49,7 +49,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           length: length ? parseFloat(length) : null,
           hourlyRate: parseFloat(hourlyRate),
           dailyRate: parseFloat(dailyRate),
-          extraBedPrice: extraBedPrice ? parseFloat(String(extraBedPrice)) : 0,
+          extraBedTiers: extraBedTiers ?? [],
           description: description || null,
           status: status || 'available',
         },

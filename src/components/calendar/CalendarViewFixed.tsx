@@ -1231,8 +1231,8 @@ export default function CalendarView() {
           {/* Row 3: trip type filter + yacht filter */}
           <div className="flex items-center gap-x-3 sm:gap-x-4 px-3 sm:px-5 py-2 border-t overflow-x-auto scrollbar-none">
             {/* Trip type */}
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium shrink-0">Type:</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] text-muted-foreground mr-1 font-medium shrink-0">Type:</span>
               {(['all', 'PRIVATE_CHARTER', 'OPEN_TRIP'] as const).map(f => (
                 <button
                   key={f}
@@ -1247,9 +1247,11 @@ export default function CalendarView() {
               ))}
             </div>
 
+            <div className="w-px h-4 bg-border shrink-0" />
+
             {/* Yacht filter */}
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[11px] text-muted-foreground mr-1.5 font-medium shrink-0">Yacht:</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] text-muted-foreground mr-1 font-medium shrink-0">Yacht:</span>
               {(() => {
                 const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
                 const sorted = [...yachts].sort((a, b) => {
