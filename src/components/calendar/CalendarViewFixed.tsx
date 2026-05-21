@@ -47,6 +47,7 @@ interface OpenTripEvent {
   maxCapacity: number
   spotsAvailable: number
   status: string
+  closedReason?: string | null
   yacht: { name: string }
   cabinStatuses: CabinStatus[]
 }
@@ -86,10 +87,11 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, openTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange, onPrev, onNext, fillHeight,
+  year, month, bookings, openTrips, allBookings, allOpenTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange, onPrev, onNext, fillHeight,
 }: {
   year: number; month: number
   bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  allBookings?: BookingEvent[]; allOpenTrips?: OpenTripEvent[]
   yachtColorMap: Record<string, string>
   yachtFilter: string
   onDateClick: (d: string) => void
@@ -165,14 +167,14 @@ function MonthGrid({
     openTrips.forEach(t => {
       const isClosed    = t.status === 'closed'
       const isPrivatePC = isClosed && t.closedReason?.includes('Private Charter')
+      if (isPrivatePC) return
       const isFull      = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
       const otColor     = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
-      const tooltip     = isPrivatePC ? `PRIVATE CHARTER` : isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
-      const barLabel    = isPrivatePC ? `Private Charter` : t.title
+      const tooltip     = isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
       addSegs(
-        t.id, barLabel, otColor, true, isFull,
+        t.id, t.title, otColor, true, isFull,
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
-        `[${isPrivatePC ? 'Private Charter' : 'Open Trip'}] ${t.title} · ${t.yacht.name} — ${tooltip}`,
+        `[Open Trip] ${t.title} · ${t.yacht.name} — ${tooltip}`,
         undefined, t,
       )
     })
@@ -253,9 +255,12 @@ function MonthGrid({
                   const isPast     = day > 0 && new Date(dateStr) <= todayMidnight
                   const inRange    = day > 0 && isInFilterRange(dateStr)
                   // Block clicking on dates already occupied by this yacht's trips
+                  // Use allBookings/allOpenTrips (unfiltered by type) so red bg shows regardless of type filter
+                  const occupancyBookings  = allBookings  ?? bookings
+                  const occupancyOpenTrips = allOpenTrips ?? openTrips
                   const isOccupied = day > 0 && !isPast && yachtFilter !== 'all' && (
-                    bookings.some(b => dateStr >= b.startDate && dateStr <= b.endDate) ||
-                    openTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate)
+                    occupancyBookings.some(b => dateStr >= b.startDate && dateStr <= b.endDate) ||
+                    occupancyOpenTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate)
                   )
                   return (
                     <div
@@ -330,17 +335,36 @@ function MonthGrid({
                   : 0
                 const days = nights + 1
 
+                const isPrivatePCBar = !!seg.openTripRef && seg.openTripRef.status === 'closed' && seg.openTripRef.closedReason?.includes('Private Charter')
+
                 return (
                   <div
                     key={seg.key}
-                    style={style}
+                    style={{ ...style, cursor: isPrivatePCBar ? 'not-allowed' : 'pointer' }}
                     title={seg.tooltip}
                     onClick={e => {
                       e.stopPropagation()
+                      if (isPrivatePCBar) return
                       if (seg.bookingRef) onBookingClick(seg.bookingRef)
                       else if (seg.openTripRef) onOpenTripClick(seg.openTripRef)
                     }}
                   >
+                    {!seg.isRealStart && (
+                      /* Continuation bar — show condensed label so user can identify the event */
+                      seg.bookingRef ? (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
+                            ↳ {seg.bookingRef.customerName || seg.bookingRef.yachtName}
+                          </span>
+                        </div>
+                      ) : seg.openTripRef ? (
+                        <div style={{ margin: '2px 4px', backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 'calc(100% - 8px)', overflow: 'hidden', alignSelf: 'flex-start' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            ↳ {seg.openTripRef.title}
+                          </span>
+                        </div>
+                      ) : null
+                    )}
                     {seg.isRealStart && (
                       seg.isStripe && ot ? (
                         /* Open trip pill — 2-row white overlay */
@@ -371,7 +395,7 @@ function MonthGrid({
                             <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
                               {days}D/{nights}N
                             </span>
-                            {ot.status === 'closed' && (
+                            {ot.status === 'closed' && !ot.closedReason?.includes('Private Charter') && (
                               <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', backgroundColor: '#64748b', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
                                 CLOSED
                               </span>
@@ -1344,6 +1368,8 @@ export default function CalendarView() {
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
                     .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
                 }
+                allBookings={bookings.filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)}
+                allOpenTrips={openTrips.filter(t => (yachtFilter === 'all' || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
                 onBookingClick={b => {
@@ -1382,6 +1408,8 @@ export default function CalendarView() {
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
                     .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
                 }
+                allBookings={bookings.filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)}
+                allOpenTrips={openTrips.filter(t => (yachtFilter === 'all' || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
                 onBookingClick={b => {

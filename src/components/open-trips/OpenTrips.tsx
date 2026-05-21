@@ -29,6 +29,7 @@ interface OpenTripRecord {
   pricePerCabin: number
   maxCapacity: number
   status: string
+  closedReason?: string | null
   spotsAvailable: number
   spotsBooked: number
   yacht: { name: string; model?: string }
@@ -37,11 +38,11 @@ interface OpenTripRecord {
 
 const ACCENT = '#bdac7e'
 
-const STATUS_STYLE: Record<string, string> = {
-  open:      'bg-emerald-100 text-emerald-700 border-emerald-200',
-  full:      'bg-red-100     text-red-700     border-red-200',
-  closed:    'bg-gray-100    text-gray-600    border-gray-200',
-  cancelled: 'bg-red-100     text-red-700     border-red-200',
+const STATUS_CONFIG: Record<string, { badge: string; border: string; label: string }> = {
+  open:      { badge: 'bg-emerald-100 text-emerald-700 border-emerald-300', border: 'border-l-emerald-500', label: 'Open'      },
+  full:      { badge: 'bg-red-100     text-red-700     border-red-300',     border: 'border-l-red-500',     label: 'Sold Out'  },
+  closed:    { badge: 'bg-slate-100   text-slate-500   border-slate-300',   border: 'border-l-slate-400',   label: 'Closed'    },
+  cancelled: { badge: 'bg-rose-100    text-rose-700    border-rose-300',    border: 'border-l-rose-500',    label: 'Cancelled' },
 }
 
 const fmtDate = (d: string) =>
@@ -304,15 +305,26 @@ export default function OpenTrips() {
                 const isFull = t.spotsAvailable === 0
 
                 return (
-                  <div key={t.id} className="border rounded-xl p-3 sm:p-4 hover:shadow-sm transition-shadow">
+                  (() => {
+                    const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
+                    const cfg = STATUS_CONFIG[t.status] ?? { badge: 'bg-muted text-muted-foreground border-border', border: 'border-l-slate-300', label: t.status }
+                    const borderColor = isPrivatePC ? 'border-l-violet-500' : cfg.border
+                    return (
+                  <div key={t.id} className={`border border-l-4 ${borderColor} rounded-xl p-3 sm:p-4 hover:shadow-sm transition-shadow`}>
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       {/* Left info */}
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold">{t.title}</span>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLE[t.status] ?? 'bg-muted text-muted-foreground'}`}>
-                            {t.status}
-                          </span>
+                          {isPrivatePC ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-violet-100 text-violet-700 border-violet-300">
+                              → Private Charter
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.badge}`}>
+                              {cfg.label}
+                            </span>
+                          )}
                           {t.pricePerCabin > 0 && (
                             <span className="text-xs text-muted-foreground">
                               USD {t.pricePerCabin.toLocaleString()} / cabin
@@ -355,22 +367,31 @@ export default function OpenTrips() {
                         </div>
 
                         {/* Cabin occupancy bar */}
-                        <div className="space-y-1 pt-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              <span className="font-medium text-foreground">{t.spotsBooked}</span> / {t.maxCapacity} cabins booked
-                            </span>
-                            <span style={{ color: isFull ? '#e8547a' : '#4a9f6e' }} className="font-medium">
-                              {isFull ? 'Sold Out' : `${t.spotsAvailable} available`}
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{ width: `${pct}%`, backgroundColor: isFull ? '#e8547a' : '#4a9f6e' }}
-                            />
-                          </div>
-                        </div>
+                        {(() => {
+                          const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
+                          return (
+                            <div className="space-y-1 pt-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  <span className="font-medium text-foreground">{t.spotsBooked}</span> / {t.maxCapacity} cabins booked
+                                </span>
+                                {isPrivatePC ? (
+                                  <span className="font-medium text-slate-500 italic">Switched to Private Charter</span>
+                                ) : (
+                                  <span style={{ color: isFull ? '#e8547a' : '#4a9f6e' }} className="font-medium">
+                                    {isFull ? 'Sold Out' : `${t.spotsAvailable} available`}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{ width: `${pct}%`, backgroundColor: isPrivatePC ? '#94a3b8' : isFull ? '#e8547a' : '#4a9f6e' }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {/* Action buttons */}
                         <div className="flex items-center gap-2 pt-2 border-t mt-2 flex-wrap">
@@ -406,6 +427,8 @@ export default function OpenTrips() {
                       </div>
                     </div>
                   </div>
+                    )
+                  })()
                 )
               })}
             </div>

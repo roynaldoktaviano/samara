@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       let closedReason    = (t as any).closedReason ?? null
       if (blockingPC && t.status !== 'cancelled') {
         effectiveStatus = 'closed'
-        closedReason    = closedReason ?? `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
+        closedReason    = `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
         // Sync DB silently if not yet closed
         if (t.status !== 'closed') {
           db.openTrip.update({
