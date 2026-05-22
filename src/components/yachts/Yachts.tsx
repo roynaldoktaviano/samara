@@ -106,6 +106,9 @@ export default function Yachts() {
   const [canDiving,     setCanDiving]     = useState(false)
   const [description,   setDesc]          = useState('')
   const [rooms,          setRooms]        = useState<RoomInput[]>([])
+  const [formTiers,      setFormTiers]    = useState<number[]>([2, 3, 4])
+  const [addingTier,     setAddingTier]   = useState(false)
+  const [newTierDays,    setNewTierDays]  = useState('')
 
   const fetchYachts = useCallback(async () => {
     setLoading(true)
@@ -121,8 +124,42 @@ export default function Yachts() {
   const resetForm = () => {
     setName(''); setModel(''); setYear(''); setCap(''); setLen('')
     setDaily(''); setCanDiving(false); setDesc('')
+    setFormTiers([2, 3, 4])
     setExtraBedTiers([{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }])
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
+    setAddingTier(false); setNewTierDays('')
+  }
+
+  const addTier = () => {
+    const days = parseInt(newTierDays)
+    if (!days || days < 2) return
+    const nights = days - 1
+    if (formTiers.includes(nights)) { setAddingTier(false); setNewTierDays(''); return }
+    const newTiers = [...formTiers, nights].sort((a, b) => a - b)
+    setFormTiers(newTiers)
+    setRooms(r => r.map(room => ({
+      ...room,
+      pricingTiers: newTiers.map(n => ({
+        nights: n,
+        price: room.pricingTiers.find(t => t.nights === n)?.price ?? '',
+      })),
+    })))
+    setExtraBedTiers(prev => {
+      if (prev.find(t => t.nights === nights)) return prev
+      return [...prev, { nights, price: '' }].sort((a, b) => a.nights - b.nights)
+    })
+    setNewTierDays(''); setAddingTier(false)
+  }
+
+  const removeTier = (nights: number) => {
+    if (formTiers.length <= 1) return
+    const newTiers = formTiers.filter(n => n !== nights)
+    setFormTiers(newTiers)
+    setRooms(r => r.map(room => ({
+      ...room,
+      pricingTiers: room.pricingTiers.filter(t => t.nights !== nights),
+    })))
+    setExtraBedTiers(prev => prev.filter(t => t.nights !== nights))
   }
 
   const openAdd = () => {
@@ -138,7 +175,13 @@ export default function Yachts() {
     setCap(y.capacity.toString())
     setLen(y.length?.toString() ?? '')
     setDaily(y.dailyRate.toString())
-    setExtraBedTiers([2, 3, 4].map(n => ({
+    const existingNights = y.extraBedTiers?.length
+      ? [...new Set(y.extraBedTiers.map((t: PricingTier) => t.nights))].sort((a, b) => a - b)
+      : y.cabins[0]?.pricingTiers?.length
+        ? [...new Set(y.cabins[0].pricingTiers.map(t => t.nights))].sort((a, b) => a - b)
+        : [2, 3, 4]
+    setFormTiers(existingNights)
+    setExtraBedTiers(existingNights.map(n => ({
       nights: n,
       price: ((y.extraBedTiers ?? []).find((t: PricingTier) => t.nights === n)?.price ?? 0).toString(),
     })))
@@ -153,7 +196,7 @@ export default function Yachts() {
       capacity: (c.capacity ?? 0).toString(),
       price: (c.price ?? 0).toString(),
       extraBeds: (c.extraBeds ?? 0).toString(),
-      pricingTiers: [2, 3, 4].map(n => ({
+      pricingTiers: existingNights.map(n => ({
         nights: n,
         price: (c.pricingTiers?.find(t => t.nights === n)?.price ?? 0).toString(),
       })),
@@ -165,7 +208,7 @@ export default function Yachts() {
 
   const addRoom = () => setRooms(r => [...r, {
     tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0',
-    pricingTiers: [{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }],
+    pricingTiers: formTiers.map(n => ({ nights: n, price: '' })),
   }])
 
   const removeRoom = (tempId: string) => setRooms(r => r.filter(x => x.tempId !== tempId))
@@ -340,18 +383,42 @@ export default function Yachts() {
               )}
 
               {/* ── Step 2: Rooms / Cabins ── */}
-              {formStep === 2 && (
+              {formStep === 2 && (() => {
+                const gridCols = `28px minmax(70px,0.6fr) 90px 84px 48px 48px ${formTiers.map(() => '68px').join(' ')} 32px`
+                return (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  {/* Section header */}
+                  <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium">Rooms &amp; Cabins</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Set per-cabin price, bed type, and capacity for <span className="font-semibold">{name}</span>.
                       </p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={addRoom}>
-                      <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Room
-                    </Button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {addingTier ? (
+                        <div className="flex items-center gap-1.5 border rounded-lg px-2 py-1 bg-muted/30">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Days:</span>
+                          <Input
+                            autoFocus
+                            className="h-6 w-12 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 text-center"
+                            type="number" min="2" placeholder="6"
+                            value={newTierDays}
+                            onChange={e => setNewTierDays(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') addTier(); if (e.key === 'Escape') { setAddingTier(false); setNewTierDays('') } }}
+                          />
+                          <button type="button" onClick={addTier} className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#bdac7e] text-white hover:opacity-90">Add</button>
+                          <button type="button" onClick={() => { setAddingTier(false); setNewTierDays('') }} className="text-[11px] text-muted-foreground hover:text-foreground px-1">✕</button>
+                        </div>
+                      ) : (
+                        <Button type="button" variant="outline" size="sm" onClick={() => setAddingTier(true)}>
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Duration
+                        </Button>
+                      )}
+                      <Button type="button" variant="outline" size="sm" onClick={addRoom}>
+                        <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Room
+                      </Button>
+                    </div>
                   </div>
 
                   {rooms.length === 0 ? (
@@ -365,118 +432,74 @@ export default function Yachts() {
                   ) : (
                     <div className="rounded-xl border overflow-hidden">
                       {/* Column headers */}
-                      <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
-                        {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra', '3D/2N', '4D/3N', '5D/4N', ''].map((h, i) => (
-                          <div key={i} className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-                            style={{ color: i >= 6 && i <= 8 ? ACCENT : undefined }}>
-                            {h}
+                      <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: gridCols }}>
+                        {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra'].map((h, i) => (
+                          <div key={h} className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</div>
+                        ))}
+                        {formTiers.map(n => (
+                          <div key={n} className="px-1 py-1.5 flex items-center gap-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: ACCENT }}>{n + 1}D/{n}N</span>
+                            {formTiers.length > 1 && (
+                              <button type="button" onClick={() => removeTier(n)} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0">
+                                <span className="text-[9px] leading-none">✕</span>
+                              </button>
+                            )}
                           </div>
                         ))}
+                        <div />
                       </div>
 
                       {/* Cabin rows */}
                       <div className="divide-y">
                         {rooms.map((r, idx) => (
-                          <div key={r.tempId} className="grid items-center gap-0 hover:bg-muted/10 transition-colors"
-                            style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
-
-                            {/* # */}
+                          <div key={r.tempId} className="grid items-center gap-0 hover:bg-muted/10 transition-colors" style={{ gridTemplateColumns: gridCols }}>
                             <div className="px-2 py-2 text-xs font-medium text-muted-foreground text-center">{idx + 1}</div>
-
-                            {/* Name */}
                             <div className="px-1 py-1 border-l">
-                              <Input
-                                className="h-7 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 placeholder:text-muted-foreground/40"
-                                placeholder="Name…"
-                                value={r.name}
-                                onChange={e => updateRoom(r.tempId, { name: e.target.value })}
-                              />
+                              <Input className="h-7 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 placeholder:text-muted-foreground/40" placeholder="Name…" value={r.name} onChange={e => updateRoom(r.tempId, { name: e.target.value })} />
                             </div>
-
-                            {/* Deck */}
                             <div className="px-1 py-1 border-l">
                               <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
-                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1">
-                                  <SelectValue placeholder="—" />
-                                </SelectTrigger>
+                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
                                 <SelectContent>{DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
                               </Select>
                             </div>
-
-                            {/* Bed */}
                             <div className="px-1 py-1 border-l">
                               <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
-                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1">
-                                  <SelectValue placeholder="—" />
-                                </SelectTrigger>
+                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
                                 <SelectContent>{BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                               </Select>
                             </div>
-
-                            {/* Capacity */}
                             <div className="px-1 py-1 border-l">
-                              <Input
-                                className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0"
-                                type="number" min="1" value={r.capacity}
-                                onChange={e => {
-                                  const v = Math.max(1, parseInt(e.target.value) || 1)
-                                  updateRoom(r.tempId, { capacity: v.toString() })
-                                }}
-                              />
+                              <Input className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="1" value={r.capacity}
+                                onChange={e => updateRoom(r.tempId, { capacity: (Math.max(1, parseInt(e.target.value) || 1)).toString() })} />
                             </div>
-
-                            {/* Extra beds */}
                             <div className="px-1 py-1 border-l">
-                              <Input
-                                className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0"
-                                type="number" min="0" value={r.extraBeds}
+                              <Input className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="0" value={r.extraBeds}
                                 onChange={e => {
                                   const thisExtra = parseInt(r.extraBeds) || 0
-                                  const otherExtras = totalExtraBeds - thisExtra
-                                  const maxExtra = maxCap > 0 ? Math.max(0, maxCap - totalCabinCap - otherExtras) : 9999
-                                  const v = Math.min(maxExtra, Math.max(0, parseInt(e.target.value) || 0))
-                                  updateRoom(r.tempId, { extraBeds: v.toString() })
-                                }}
-                              />
+                                  const maxExtra = maxCap > 0 ? Math.max(0, maxCap - totalCabinCap - (totalExtraBeds - thisExtra)) : 9999
+                                  updateRoom(r.tempId, { extraBeds: Math.min(maxExtra, Math.max(0, parseInt(e.target.value) || 0)).toString() })
+                                }} />
                             </div>
-
-                            {/* Pricing tiers */}
                             {r.pricingTiers.map(t => (
                               <div key={t.nights} className="px-1 py-1 border-l">
                                 <div className="flex items-center">
                                   <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
-                                  <Input
-                                    className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium"
-                                    type="number" min="0" step="50"
-                                    placeholder="—"
-                                    value={t.price}
-                                    onChange={e => updateRoom(r.tempId, {
-                                      pricingTiers: r.pricingTiers.map(x =>
-                                        x.nights === t.nights ? { ...x, price: e.target.value } : x
-                                      ),
-                                    })}
-                                  />
+                                  <Input className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
+                                    onChange={e => updateRoom(r.tempId, { pricingTiers: r.pricingTiers.map(x => x.nights === t.nights ? { ...x, price: e.target.value } : x) })} />
                                 </div>
                               </div>
                             ))}
-
-                            {/* Delete */}
                             <div className="flex items-center justify-center border-l">
-                              <button
-                                type="button"
-                                onClick={() => removeRoom(r.tempId)}
-                                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              >
+                              <button type="button" onClick={() => removeRoom(r.tempId)} className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors">
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
-
                           </div>
                         ))}
 
                         {/* Extra Bed row */}
-                        <div className="grid items-center gap-0 border-t bg-muted/30"
-                          style={{ gridTemplateColumns: '28px 1fr 96px 88px 52px 52px 76px 76px 76px 32px' }}>
+                        <div className="grid items-center gap-0 border-t bg-muted/30" style={{ gridTemplateColumns: gridCols }}>
                           <div className="px-2 py-2 text-xs text-muted-foreground text-center">—</div>
                           <div className="px-2 py-2 text-xs font-semibold border-l" style={{ color: ACCENT }}>Extra Bed</div>
                           <div className="border-l" /><div className="border-l" /><div className="border-l" /><div className="border-l" />
@@ -484,21 +507,17 @@ export default function Yachts() {
                             <div key={t.nights} className="px-1 py-1 border-l">
                               <div className="flex items-center">
                                 <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
-                                <Input
-                                  className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium"
-                                  type="number" min="0" step="50" placeholder="—"
-                                  value={t.price}
-                                  onChange={e => setExtraBedTiers(prev => prev.map(x => x.nights === t.nights ? { ...x, price: e.target.value } : x))}
-                                />
+                                <Input className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
+                                  onChange={e => setExtraBedTiers(prev => prev.map(x => x.nights === t.nights ? { ...x, price: e.target.value } : x))} />
                               </div>
                             </div>
                           ))}
                           <div />
                         </div>
-
                       </div>
                     </div>
                   )}
+
                   {rooms.length > 0 && (
                     <p className="text-xs text-muted-foreground">
                       {rooms.filter(r => r.name.trim()).length} of {rooms.length} rooms have a name and will be saved.
@@ -515,7 +534,8 @@ export default function Yachts() {
                     </p>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
             </div>
           </ScrollArea>

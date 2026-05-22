@@ -1223,11 +1223,6 @@ export default function CalendarView() {
             {/* Group: Yacht */}
             <div className="flex items-center gap-1.5 pr-4 py-2.5 shrink-0">
               <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Yacht</span>
-              <button onClick={() => setYachtFilter('all')}
-                className={['h-6 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0',
-                  yachtFilter === 'all' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}>
-                All
-              </button>
               {(() => {
                 const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
                 return [...yachts].sort((a, b) => {
@@ -1697,11 +1692,33 @@ export default function CalendarView() {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Deposit Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate} min={new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, depositDueDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate}
+                          min={new Date().toISOString().split('T')[0]}
+                          max={bookingEditForm.startDate || undefined}
+                          onChange={e => {
+                            const today = new Date().toISOString().split('T')[0]
+                            let val = e.target.value
+                            if (val < today) val = today
+                            if (bookingEditForm.startDate && val > bookingEditForm.startDate) val = bookingEditForm.startDate
+                            setBookingEditForm(p => ({
+                              ...p,
+                              depositDueDate: val,
+                              finalDueDate: p.finalDueDate && val > p.finalDueDate ? val : p.finalDueDate,
+                            }))
+                          }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Final Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate} min={bookingEditForm.depositDueDate || new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, finalDueDate: e.target.value }))} />
+                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate}
+                          min={bookingEditForm.depositDueDate || new Date().toISOString().split('T')[0]}
+                          max={bookingEditForm.startDate || undefined}
+                          onChange={e => {
+                            const minVal = bookingEditForm.depositDueDate || new Date().toISOString().split('T')[0]
+                            let val = e.target.value
+                            if (val < minVal) val = minVal
+                            if (bookingEditForm.startDate && val > bookingEditForm.startDate) val = bookingEditForm.startDate
+                            setBookingEditForm(p => ({ ...p, finalDueDate: val }))
+                          }} />
                       </div>
                     </div>
                   </div>

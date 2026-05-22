@@ -1745,17 +1745,47 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             </div>
 
             {/* Payment */}
+            {(() => {
+              const tripMaxDate = (tripType === 'PRIVATE_CHARTER'
+                ? startDate
+                : (openTrips.find(t => t.id === openTripId)?.startDate ?? '')
+              ).split('T')[0]
+              const today = new Date().toISOString().split('T')[0]
+              const clampDep = (val: string) => {
+                if (!val) return val
+                if (val < today) return today
+                if (tripMaxDate && val > tripMaxDate) return tripMaxDate
+                return val
+              }
+              const clampFinal = (val: string, depVal: string) => {
+                if (!val) return val
+                const minF = depVal || today
+                if (val < minF) return minF
+                if (tripMaxDate && val > tripMaxDate) return tripMaxDate
+                return val
+              }
+              return (
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Deposit Due Date <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={depositDueDate} min={new Date().toISOString().split('T')[0]} onChange={e => setDepDue(e.target.value)} />
+                  <Input type="date" value={depositDueDate}
+                    min={today}
+                    max={tripMaxDate || undefined}
+                    onChange={e => {
+                      const val = clampDep(e.target.value)
+                      setDepDue(val)
+                      if (finalDueDate) setFinalDue(clampFinal(finalDueDate, val))
+                    }} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Final Balance Due <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={finalDueDate} min={depositDueDate || new Date().toISOString().split('T')[0]} onChange={e => setFinalDue(e.target.value)} />
+                  <Input type="date" value={finalDueDate}
+                    min={depositDueDate || today}
+                    max={tripMaxDate || undefined}
+                    onChange={e => setFinalDue(clampFinal(e.target.value, depositDueDate))} />
                 </div>
               </div>
 
@@ -1763,6 +1793,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 ⚠ Booking is auto-cancelled if deposit is unpaid by the due date.
               </p>
             </div>
+              )
+            })()}
 
             {/* Booking Summary */}
             <div className="rounded-xl border p-3 text-xs space-y-1.5 bg-muted/30">
