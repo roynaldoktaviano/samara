@@ -148,6 +148,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [activeVouchers, setActiveVouchers] = useState<Array<{ id: string; code: string; name: string; type: string; value: number; minBooking: number | null; maxUses: number | null; usedCount: number }>>([])
   const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
+  const [cabinSalesperson,      setCabinSalesperson]      = useState<Record<string,string>>({})
   const [submitting,setSubmitting]= useState(false)
 
   /* extra beds per cabin (cabinId → requested count) */
@@ -221,16 +222,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     })
   }, [yachtId, openTripId, tripType, openTrips])
 
-  /* fetch already-booked customers for selected open trip */
+  /* fetch already-booked customers for selected open trip
+     Uses the open-trip detail endpoint (no SALES filter) so all bookings
+     across all salespersons are counted for occupancy. */
   useEffect(() => {
-    if (!openTripId) { setBookedCustomerIds([]); return }
-    fetch(`/api/bookings?openTripId=${openTripId}`)
+    if (!openTripId) { setBookedCustomerIds([]); setExistingCabinOccupancy({}); setCabinSalesperson({}); return }
+    fetch(`/api/open-trips/${openTripId}`)
       .then(r => r.json())
-      .then((data: any[]) => {
+      .then((data: any) => {
         const ids: string[] = []
         const occ: Record<string, number> = {}
-        if (Array.isArray(data)) {
-          data.forEach(b => {
+        const sales: Record<string, string> = {}
+        if (Array.isArray(data?.bookings)) {
+          data.bookings.forEach((b: any) => {
             if (b.customerId) ids.push(b.customerId)
             b.guests?.forEach((g: any) => {
               if (g.customerId) ids.push(g.customerId)
@@ -239,8 +243,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             })
           })
         }
+        // Use pre-computed cabin occupancy (source of truth — no SALES filter)
+        if (Array.isArray(data?.cabins)) {
+          data.cabins.forEach((c: any) => {
+            if (c.occupied > 0) occ[c.id] = c.occupied
+            if (c.salesperson) sales[c.id] = c.salesperson
+            c.guests?.forEach((g: any) => { if (g.id) ids.push(g.id) })
+          })
+        }
         setBookedCustomerIds([...new Set(ids)])
         setExistingCabinOccupancy(occ)
+        setCabinSalesperson(sales)
       })
       .catch(() => {})
   }, [openTripId])
@@ -1009,7 +1022,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       const extOccDrop = existingCabinOccupancy[targetId] ?? 0
       const myOccDrop  = cabinOccupancy[targetId] ?? 0
       if (!already && extOccDrop > 0) {
-        setDropError(`${cabin?.name} is already reserved by another booking`)
+        setDropError(`${cabin?.name} is already reserved by ${cabinSalesperson[targetId] || 'another booking'}`)
         return
       }
       const droppingGuest = guests.find(g => g.customerId === gId)
@@ -1365,7 +1378,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       <div className="flex flex-wrap gap-1 mt-1">
                         {isBlockedByOther && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
-                            Reserved by another booking
+                            Reserved by {cabinSalesperson[c.id] || 'another booking'}
                           </span>
                         )}
                         {!isBlockedByOther && cabinGuests.map(g => pill(g, true))}

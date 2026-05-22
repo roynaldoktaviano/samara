@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
     const source      = searchParams.get('source')
     const tripType    = searchParams.get('tripType')
     const openTripId  = searchParams.get('openTripId')
+    const view        = searchParams.get('view')  // 'calendar' = show all + isOwnBooking flag
 
     // Auto-cancel pending bookings whose deposit deadline was before today (H+1)
     const todayStart = new Date()
@@ -55,8 +56,10 @@ export async function GET(request: NextRequest) {
     if (tripType)   where.tripType   = tripType
     if (openTripId) where.openTripId = openTripId
 
-    // SALES: hanya lihat booking yang dia buat sendiri
-    if (userRole === 'SALES' && userName) {
+    // SALES: kalender tampilkan semua booking tapi dengan flag isOwnBooking.
+    // Untuk request lain (list, detail), tetap filter ke booking sendiri saja.
+    const isCalendarView = view === 'calendar'
+    if (userRole === 'SALES' && userName && !isCalendarView) {
       where.salesperson = { equals: userName, mode: 'insensitive' }
     }
 
@@ -87,6 +90,45 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       take: 500,
     })
+
+    // For calendar view, SALES can see all bookings but non-owned ones are masked
+    if (isCalendarView && userRole === 'SALES' && userName) {
+      const masked = bookings.map(b => {
+        const isOwn = b.salesperson?.toLowerCase() === userName.toLowerCase()
+        if (isOwn) return { ...b, isOwnBooking: true }
+        // Non-owned: hide customer details, keep only schedule info
+        return {
+          id: b.id,
+          bookingCode: null,
+          source: b.source,
+          tripType: b.tripType,
+          startDate: b.startDate,
+          endDate: b.endDate,
+          status: b.status,
+          totalPrice: null,
+          depositPaid: null,
+          discount: null,
+          depositDueDate: null,
+          finalDueDate: null,
+          guestCount: b.guestCount,
+          destination: null,
+          notes: null,
+          salesperson: b.salesperson,
+          currency: b.currency,
+          exchangeRate: null,
+          createdAt: b.createdAt,
+          hasDiving: null,
+          yacht: b.yacht,
+          customer: null,
+          agent: null,
+          openTrip: b.openTrip,
+          guests: [],
+          services: [],
+          isOwnBooking: false,
+        }
+      })
+      return NextResponse.json(masked)
+    }
 
     return NextResponse.json(bookings)
   } catch (error) {

@@ -29,6 +29,7 @@ interface BookingEvent {
   depositAmount?: number
   notes?: string
   salesperson?: string
+  isOwnBooking?: boolean  // undefined = admin/manager (all own), false = SALES viewing others
 }
 
 interface CabinStatus {
@@ -336,15 +337,23 @@ function MonthGrid({
                 const days = nights + 1
 
                 const isPrivatePCBar = !!seg.openTripRef && seg.openTripRef.status === 'closed' && seg.openTripRef.closedReason?.includes('Private Charter')
+                const isOthersSalesBooking = seg.bookingRef?.isOwnBooking === false
 
                 return (
                   <div
                     key={seg.key}
-                    style={{ ...style, cursor: isPrivatePCBar ? 'not-allowed' : 'pointer' }}
-                    title={seg.tooltip}
+                    style={{
+                      ...style,
+                      cursor: (isPrivatePCBar || isOthersSalesBooking) ? 'default' : 'pointer',
+                      opacity: isOthersSalesBooking ? 0.72 : 1,
+                    }}
+                    title={isOthersSalesBooking
+                      ? `Booked by ${seg.bookingRef?.salesperson ?? 'other sales'}`
+                      : seg.tooltip
+                    }
                     onClick={e => {
                       e.stopPropagation()
-                      if (isPrivatePCBar) return
+                      if (isPrivatePCBar || isOthersSalesBooking) return
                       if (seg.bookingRef) onBookingClick(seg.bookingRef)
                       else if (seg.openTripRef) onOpenTripClick(seg.openTripRef)
                     }}
@@ -354,7 +363,10 @@ function MonthGrid({
                       seg.bookingRef ? (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
-                            ↳ {seg.bookingRef.customerName || seg.bookingRef.yachtName}
+                            {isOthersSalesBooking
+                              ? `↳ Booked · ${seg.bookingRef.salesperson ?? 'sales'}`
+                              : `↳ ${seg.bookingRef.customerName || seg.bookingRef.yachtName}`
+                            }
                           </span>
                         </div>
                       ) : seg.openTripRef ? (
@@ -365,7 +377,30 @@ function MonthGrid({
                         </div>
                       ) : null
                     )}
-                    {seg.isRealStart && (
+                    {seg.isRealStart && isOthersSalesBooking && (
+                      /* Non-owned booking: show "Booked by [salesperson]" — no customer details */
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                        padding: '0 10px', overflow: 'hidden',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.95)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            flexShrink: 1, minWidth: 0, textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                          }}>
+                            🔒 Booked by {seg.bookingRef?.salesperson ?? 'Other Sales'}
+                          </span>
+                        </div>
+                        {seg.bookingRef?.yachtName && (
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: 500, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {seg.bookingRef.yachtName}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {seg.isRealStart && !isOthersSalesBooking && (
                       seg.isStripe && ot ? (
                         /* Open trip pill — 2-row white overlay */
                         <div style={{
@@ -699,7 +734,7 @@ export default function CalendarView() {
 
   const fetchBookings = useCallback(async () => {
     try {
-      const data = await fetch('/api/bookings').then(r => r.json())
+      const data = await fetch('/api/bookings?view=calendar').then(r => r.json())
       setBookings(
         (Array.isArray(data) ? data : [])
           .filter((b: any) => b.status !== 'cancelled')
@@ -709,6 +744,7 @@ export default function CalendarView() {
             status: b.status, tripType: b.tripType,
             customerName: b.customer?.name, bookingCode: b.bookingCode,
             totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined, salesperson: b.salesperson ?? undefined,
+            isOwnBooking: b.isOwnBooking,  // undefined for admin/manager, true/false for SALES
           }))
       )
     } catch (e) { console.error('Failed to fetch bookings', e) }
