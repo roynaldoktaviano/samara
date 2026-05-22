@@ -109,9 +109,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // 'pending' allowed only to release an on_hold booking
     const manualOverride = status === 'completed' || status === 'cancelled'
+      || (status === 'pending' && existing.status === 'on_hold')
     const computedStatus = manualOverride
-      ? (status as 'completed' | 'cancelled')
+      ? (status as 'completed' | 'cancelled' | 'pending')
       : paymentStatus(existing.depositPaid, existing.totalPrice)
 
     const booking = await db.booking.update({

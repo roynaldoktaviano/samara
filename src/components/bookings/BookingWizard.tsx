@@ -59,6 +59,7 @@ interface Props {
   onSuccess: () => void
   preselectedDate?: string
   preselectedOpenTripId?: string
+  preselectedYachtId?: string
 }
 
 function getAgeYears(dob: string | Date | null | undefined): number | null {
@@ -93,7 +94,7 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
 const fmtAmt   = (n: number, c: CurrencyCode) =>
   `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
-export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId }: Props) {
+export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId }: Props) {
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
   const [source,  setSource]  = useState<Source | null>(null)
@@ -112,6 +113,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* step-1 OT */
   const [openTripId, setOTId]   = useState('')
+
+  /* on-hold mode */
+  const [isOnHold,      setIsOnHold]      = useState(false)
+  const [holdGuestName, setHoldGuestName] = useState('')
+  const [holdGuestPhone,setHoldGuestPhone]= useState('')
 
   /* step-2 */
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
@@ -191,6 +197,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setTrip('OPEN_TRIP')
     setOTId(preselectedOpenTripId)
   }, [open, preselectedOpenTripId])
+
+  /* pre-select yacht when opened from calendar with a specific yacht */
+  useEffect(() => {
+    if (!open || !preselectedYachtId) return
+    setYachtId(preselectedYachtId)
+    setTrip('PRIVATE_CHARTER')
+  }, [open, preselectedYachtId])
 
   /* fetch on open */
   useEffect(() => {
@@ -511,9 +524,55 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && (!yachtConflict || !!yachtConflict.isOpenTrip)
       return !!openTripId
     }
-    if (step === 2) return guests.length > 0
+    if (step === 2) {
+      if (isOnHold) return holdGuestName.trim().length > 0
+      return guests.length > 0
+    }
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
+  }
+
+  /* on-hold submit — creates/finds customer by name+phone, saves booking with status=on_hold */
+  const handleOnHoldSubmit = async () => {
+    setSubmitting(true)
+    try {
+      const ot = openTrips.find(t => t.id === openTripId)
+      const payload = {
+        tripType,
+        source,
+        agentId: source === 'AGENT' ? agentId : undefined,
+        yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
+        openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
+        startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
+        endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
+        destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
+        totalPrice: 0,
+        depositPaid: 0,
+        isOnHold: true,
+        holdGuest: { name: holdGuestName.trim(), phone: holdGuestPhone.trim() },
+      }
+
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        alert(d.error || 'Failed to save on-hold booking')
+        return
+      }
+
+      window.dispatchEvent(new CustomEvent('booking-created'))
+      onSuccess?.()
+      onOpenChange(false)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to save on-hold booking')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   /* submit */
@@ -1071,7 +1130,48 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
     return (
       <div className="space-y-4">
-        {/* Search */}
+        {/* On Hold checkbox */}
+        <label className={cn(
+          'flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer select-none transition-colors',
+          isOnHold ? 'border-amber-300 bg-amber-50' : 'border-border hover:bg-muted/30',
+        )}>
+          <input
+            type="checkbox"
+            checked={isOnHold}
+            onChange={e => setIsOnHold(e.target.checked)}
+            className="h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
+          />
+          <div>
+            <span className="text-sm font-medium text-foreground">On Hold</span>
+            <span className="text-[11px] text-muted-foreground ml-2">Simpan tanpa pricing, lanjutkan nanti</span>
+          </div>
+        </label>
+
+        {/* On Hold simplified form */}
+        {isOnHold && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm">Nama Tamu <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="Masukkan nama tamu..."
+                value={holdGuestName}
+                onChange={e => setHoldGuestName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">No. WhatsApp / Email</Label>
+              <Input
+                placeholder="Contoh: 0812345678 atau email@..."
+                value={holdGuestPhone}
+                onChange={e => setHoldGuestPhone(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Normal guest search + cabin grid — hidden when on hold */}
+        {!isOnHold && (<>
         <div className="space-y-1.5">
           <Label>Add Guests <span className="text-destructive">*</span></Label>
           <div className="relative">
@@ -1444,6 +1544,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             )}
           </div>
         </div>
+
+        </>)}
 
         {tripType === 'PRIVATE_CHARTER' && yachts.find(y => y.id === yachtId)?.canDiving && (
           <>
@@ -1910,6 +2012,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 className="hover:opacity-90"
               >
                 Continue <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            ) : step === 2 && isOnHold ? (
+              <Button
+                disabled={submitting || !canNext()}
+                onClick={handleOnHoldSubmit}
+                style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                className="hover:opacity-90"
+              >
+                {submitting ? 'Saving...' : 'Save as On Hold'}
               </Button>
             ) : step < 3 ? (
               <Button

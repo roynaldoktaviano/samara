@@ -21,7 +21,7 @@ interface BookingEvent {
   yachtName: string
   startDate: string
   endDate: string
-  status: 'confirmed' | 'pending' | 'completed' | 'cancelled'
+  status: 'confirmed' | 'pending' | 'completed' | 'cancelled' | 'on_hold' | 'partially_paid' | 'fully_paid'
   tripType?: 'PRIVATE_CHARTER' | 'OPEN_TRIP'
   customerName?: string
   bookingCode?: string
@@ -56,6 +56,7 @@ interface OpenTripEvent {
 type DbYacht = { id: string; name: string; dailyRate: number }
 
 const STATUS_CONFIG = {
+  on_hold:    { label: 'On Hold',    color: '#f97316' },
   confirmed:  { label: 'Confirmed',  color: '#22c55e' },
   pending:    { label: 'Pending',    color: '#f59e0b' },
   completed:  { label: 'Completed', color: '#3b82f6' },
@@ -377,29 +378,49 @@ function MonthGrid({
                         </div>
                       ) : null
                     )}
-                    {seg.isRealStart && isOthersSalesBooking && (
-                      /* Non-owned booking: show "Booked by [salesperson]" — no customer details */
-                      <div style={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-                        padding: '0 10px', overflow: 'hidden',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.95)',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            flexShrink: 1, minWidth: 0, textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                          }}>
-                            🔒 Booked by {seg.bookingRef?.salesperson ?? 'Other Sales'}
-                          </span>
+                    {seg.isRealStart && isOthersSalesBooking && (() => {
+                      const bk = seg.bookingRef!
+                      const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
+                        on_hold:        { bg: 'rgba(249,115,22,0.85)', label: 'ON HOLD'   },
+                        pending:        { bg: 'rgba(234,179,8,0.85)',  label: 'PENDING'   },
+                        confirmed:      { bg: 'rgba(34,197,94,0.85)',  label: 'CONFIRMED' },
+                        partially_paid: { bg: 'rgba(59,130,246,0.85)', label: 'PARTIAL'   },
+                        fully_paid:     { bg: 'rgba(16,185,129,0.85)', label: 'PAID'      },
+                        completed:      { bg: 'rgba(139,92,246,0.85)', label: 'DONE'      },
+                        cancelled:      { bg: 'rgba(239,68,68,0.85)',  label: 'CANCELLED' },
+                      }
+                      const sbadge = STATUS_BADGE[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
+                      return (
+                        /* Non-owned booking: show "Booked by [salesperson]" + status — no customer details */
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                          padding: '0 10px', overflow: 'hidden',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.95)',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              flexShrink: 1, minWidth: 0, textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                            }}>
+                              🔒 Booked by {bk.salesperson ?? 'Other Sales'}
+                            </span>
+                            <span style={{
+                              fontSize: 9, fontWeight: 700, color: 'white',
+                              background: sbadge.bg, borderRadius: 3, padding: '1px 5px',
+                              whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.4,
+                            }}>
+                              {sbadge.label}
+                            </span>
+                          </div>
+                          {bk.yachtName && (
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: 500, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {bk.yachtName}
+                            </span>
+                          )}
                         </div>
-                        {seg.bookingRef?.yachtName && (
-                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: 500, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {seg.bookingRef.yachtName}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                      )
+                    })()}
                     {seg.isRealStart && !isOthersSalesBooking && (
                       seg.isStripe && ot ? (
                         /* Open trip pill — 2-row white overlay */
@@ -589,6 +610,7 @@ export default function CalendarView() {
   const [wizardOpen, setWizardOpen]             = useState(false)
   const [selectedDate, setSelectedDate]         = useState('')
   const [wizardOpenTripId, setWizardOpenTripId] = useState<string | undefined>(undefined)
+  const [wizardYachtId, setWizardYachtId]       = useState<string | undefined>(undefined)
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
@@ -879,6 +901,7 @@ export default function CalendarView() {
     }
 
     setSelectedDate(dateStr)
+    setWizardYachtId(yachtFilter !== 'all' ? (yachts.find(y => y.name === yachtFilter)?.id) : undefined)
     setWizardOpen(true)
   }
 
@@ -2214,10 +2237,11 @@ export default function CalendarView() {
       {/* ── New Booking Wizard ── */}
       <BookingWizard
         open={wizardOpen}
-        onOpenChange={v => { setWizardOpen(v); if (!v) setWizardOpenTripId(undefined) }}
+        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined) } }}
         onSuccess={() => { fetchBookings(); fetchOpenTrips() }}
         preselectedDate={selectedDate}
         preselectedOpenTripId={wizardOpenTripId}
+        preselectedYachtId={wizardYachtId}
       />
 
     </div>

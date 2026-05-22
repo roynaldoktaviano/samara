@@ -152,13 +152,23 @@ export async function POST(request: NextRequest) {
       guests,              // Array<{ customerId, cabinId?, isLead }>
       services,            // Array<{ name, price }>
       confirmCloseOpenTrips, // boolean: user confirmed closing conflicting open trips
+      isOnHold,            // boolean: save as on_hold status
+      holdGuest,           // { name, phone } for on-hold bookings (no prior customer needed)
     } = body
 
-    if (!startDate || !endDate || !guests?.length) {
+    if (isOnHold) {
+      // On-hold: only need trip info + guest name
+      if (!startDate || !endDate) {
+        return NextResponse.json({ error: 'Missing trip dates' }, { status: 400 })
+      }
+      if (!holdGuest?.name?.trim()) {
+        return NextResponse.json({ error: 'Guest name is required for on-hold booking' }, { status: 400 })
+      }
+    } else if (!startDate || !endDate || !guests?.length) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const lead = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
+    const lead = isOnHold ? null : (guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0])
     const paid  = parseFloat(depositPaid) || 0
     const total = parseFloat(totalPrice)  || 0
 
@@ -202,10 +212,33 @@ export async function POST(request: NextRequest) {
     const sameCount  = await db.booking.count({ where: { bookingCode: { startsWith: prefix } } })
     const bookingCode = `${prefix}${String(sameCount + 1).padStart(4, '0')}`
 
+    // For on-hold: find or create a customer record with just name + phone
+    let leadCustomerId: string
+    if (isOnHold) {
+      const existingCust = holdGuest.phone
+        ? await db.customer.findFirst({ where: { phone: holdGuest.phone } })
+        : null
+      if (existingCust) {
+        leadCustomerId = existingCust.id
+      } else {
+        const newCust = await db.customer.create({
+          data: {
+            name:  holdGuest.name.trim(),
+            phone: holdGuest.phone?.trim() || null,
+            email: holdGuest.email?.trim() || null,
+          },
+          select: { id: true },
+        })
+        leadCustomerId = newCust.id
+      }
+    } else {
+      leadCustomerId = lead.customerId
+    }
+
     const booking = await db.booking.create({
       data: {
         bookingCode,
-        customerId:    lead.customerId,
+        customerId:    leadCustomerId,
         agentId:       agentId || null,
         openTripId:    openTripId || null,
         source:        source || 'DIRECT',
@@ -214,13 +247,13 @@ export async function POST(request: NextRequest) {
         startDate:     new Date(startDate),
         endDate:       new Date(endDate),
         destination:   destination || null,
-        totalPrice:    total,
-        depositPaid:   paid,
+        totalPrice:    isOnHold ? 0 : total,
+        depositPaid:   isOnHold ? 0 : paid,
         discount:      parseFloat(discount) || 0,
         depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
         finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
-        status:         paymentStatus(paid, total),
-        guestCount:     guests.length,
+        status:         isOnHold ? 'on_hold' : paymentStatus(paid, total),
+        guestCount:     isOnHold ? 1 : guests.length,
         crewRequired:   crewRequired ?? false,
         hasDiving:      hasDiving ?? false,
         notes:          notes || null,
@@ -229,13 +262,15 @@ export async function POST(request: NextRequest) {
         exchangeRate:   (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
         salesperson:    session?.user?.name || null,
         guests: {
-          create: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
-            customerId: g.customerId,
-            cabinId:    g.cabinId || null,
-            isLead:     g.isLead ?? false,
-          })),
+          create: isOnHold
+            ? [{ customerId: leadCustomerId, isLead: true }]
+            : guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
+                customerId: g.customerId,
+                cabinId:    g.cabinId || null,
+                isLead:     g.isLead ?? false,
+              })),
         },
-        services: (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
+        services: !isOnHold && (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
           ? {
               create: (services as { name: string; price: number | string }[])
                 .filter(s => s.name?.trim())
