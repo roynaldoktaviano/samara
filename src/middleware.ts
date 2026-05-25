@@ -6,6 +6,7 @@ const PUBLIC_PATHS = [
   '/login',
   '/external',
   '/agent/calendar',
+  '/api/public',
 ]
 
 function isPublic(pathname: string) {
