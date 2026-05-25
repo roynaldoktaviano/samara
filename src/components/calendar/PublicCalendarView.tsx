@@ -273,6 +273,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
           </div>
           <input
             type="date"
+            onKeyDown={e => e.preventDefault()}
             value={filterStart}
             onChange={e => setFilterStart(e.target.value)}
             style={{
@@ -286,6 +287,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
           <span style={{ color: '#cbd5e1', fontSize: 11, flexShrink: 0 }}>—</span>
           <input
             type="date"
+            onKeyDown={e => e.preventDefault()}
             value={filterEnd}
             onChange={e => {
               const val = e.target.value
@@ -640,6 +642,7 @@ export function PublicCalendarView() {
               <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</span>
               <input
                 type="date"
+            onKeyDown={e => e.preventDefault()}
                 value={filterStart}
                 onChange={e => setFilterStart(e.target.value)}
                 style={{
@@ -656,6 +659,7 @@ export function PublicCalendarView() {
               <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</span>
               <input
                 type="date"
+            onKeyDown={e => e.preventDefault()}
                 value={filterEnd}
                 onChange={e => {
                   const val = e.target.value

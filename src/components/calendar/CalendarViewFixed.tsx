@@ -79,9 +79,9 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 34   /* px per event lane */
-const DAY_H     = 40   /* px for day-number row — extra space below date number */
-const MIN_ROW_H = 185  /* minimum row height — guaranteed space for 4 event lanes */
+const LANE_H    = 34   
+const DAY_H     = 40   
+const MIN_ROW_H = 185  
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
