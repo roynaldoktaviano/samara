@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -73,6 +73,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(salesperson !== undefined && { salesperson: salesperson || null }),
         ...(startDate   !== undefined && { startDate:   new Date(startDate) }),
         ...(endDate     !== undefined && { endDate:     new Date(endDate) }),
+        ...(openTripId  !== undefined && { openTripId:  openTripId || null }),
+        ...(yachtId     !== undefined && { yachtId:     yachtId || null }),
         ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
         ...(hasDiving   !== undefined && { hasDiving:   Boolean(hasDiving) }),
         status: computedStatus,
@@ -80,13 +82,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       select: { id: true, bookingCode: true, status: true },
     })
 
+    if (newCabinId) {
+      await db.bookingGuest.updateMany({
+        where: { bookingId: id },
+        data:  { cabinId: newCabinId },
+      })
+    }
+
     const userId   = session?.user?.id   ?? ''
     const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
     const userRole = (session?.user as { role?: string })?.role ?? ''
     logActivity({
       userId, userName, userRole,
       action: 'UPDATE', entity: 'Booking', entityId: id,
-      detail: `Update booking ${booking.bookingCode} → status: ${booking.status}`,
+      detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
     }).catch(() => {})
 
     return NextResponse.json(booking)

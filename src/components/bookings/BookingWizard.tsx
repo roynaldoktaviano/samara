@@ -95,6 +95,8 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
 const fmtAmt   = (n: number, c: CurrencyCode) =>
   `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
+const TODAY = new Date().toISOString().split('T')[0]
+
 export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId }: Props) {
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
@@ -568,7 +570,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       return !!openTripId
     }
     if (step === 2) {
-      if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
+      if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && !!depositDueDate && !!finalDueDate && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
       return guests.length > 0
     }
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
@@ -596,6 +598,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         holdCabinId:    holdCabinId ?? undefined,
         holdGuest: { name: holdGuestName.trim(), phone: holdGuestPhone.trim() },
         holdUntil: holdUntil || undefined,
+        depositDueDate: depositDueDate || undefined,
+        finalDueDate:   finalDueDate   || undefined,
       }
 
       const res = await fetch('/api/bookings', {
@@ -1379,20 +1383,51 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           </div>
         )}
 
-        {/* Hold deadline */}
+        {/* Hold deadline + due dates */}
         {isOnHold && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/30 px-4 py-3 space-y-1.5">
-            <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-              Hold Until <span className="text-red-500">*</span>
-            </Label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
-              min={new Date().toISOString().slice(0, 16)}
-              value={holdUntil}
-              onChange={e => setHoldUntil(e.target.value)}
-            />
-            <p className="text-[11px] text-muted-foreground">Booking akan otomatis dibatalkan jika melewati batas waktu ini.</p>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/30 px-4 py-3 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                Hold Until <span className="text-red-500">*</span>
+              </Label>
+              <input
+                type="datetime-local"
+                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                min={new Date().toISOString().slice(0, 16)}
+                value={holdUntil}
+                onChange={e => setHoldUntil(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">Booking otomatis dibatalkan jika melewati batas waktu ini.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                  Deposit Due <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  className="border-amber-200 focus:ring-amber-400"
+                  min={TODAY}
+                  value={depositDueDate}
+                  onChange={e => {
+                    setDepDue(e.target.value)
+                    if (finalDueDate && e.target.value > finalDueDate) setFinalDue(e.target.value)
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                  Final Due <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  className="border-amber-200 focus:ring-amber-400"
+                  min={depositDueDate || TODAY}
+                  value={finalDueDate}
+                  onChange={e => setFinalDue(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
         )}
 

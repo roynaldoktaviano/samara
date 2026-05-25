@@ -94,13 +94,13 @@ const netBook = (b: BookingRecord) =>
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
-  on_hold:        'bg-orange-100  text-orange-700  border-orange-200',
-  pending:        'bg-amber-100   text-amber-700   border-amber-200',
+  on_hold:        'bg-green-100   text-green-700   border-green-200',
+  pending:        'bg-yellow-100  text-yellow-700  border-yellow-200',
   partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
-  fully_paid:     'bg-emerald-100 text-emerald-700 border-emerald-200',
+  fully_paid:     'bg-red-100     text-red-700     border-red-200',
   completed:      'bg-purple-100  text-purple-700  border-purple-200',
-  cancelled:      'bg-red-100     text-red-700     border-red-200',
-  confirmed:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+  cancelled:      'bg-slate-100   text-slate-500   border-slate-200',
+  confirmed:      'bg-red-100     text-red-700     border-red-200',
 }
 const STATUS_LABELS: Record<string, string> = {
   on_hold:        'On Hold',
@@ -197,7 +197,24 @@ export default function Bookings() {
   const [cancelDialogBooking, setCancelDialogBooking] = useState<BookingRecord | null>(null)
   const [cancelReasonText,    setCancelReasonText]    = useState('')
   const [cancelSaving,        setCancelSaving]        = useState(false)
-  const [editGuestId,         setEditGuestId]         = useState<string | null>(null)
+  /* reschedule inside edit dialog */
+  const [rescheduleMode,      setRescheduleMode]      = useState(false)
+  const [rescheduleStart,     setRescheduleStart]     = useState('')
+  const [rescheduleEnd,       setRescheduleEnd]       = useState('')
+  const [rescheduleReason,    setRescheduleReason]    = useState('')
+  const [rescheduleSaving,    setRescheduleSaving]    = useState(false)
+  const [rescheduleOpenTrips, setRescheduleOpenTrips] = useState<Array<{ id: string; title: string; destination?: string | null; startDate: string; endDate: string; spotsAvailable: number; cabinStatuses: Array<{ id: string; name: string; bookingStatus: string | null }> }>>([])
+  const [rescheduleOTId,      setRescheduleOTId]      = useState('')
+  const [rescheduleOTLoading, setRescheduleOTLoading] = useState(false)
+  const [rescheduleNewCabinId,  setRescheduleNewCabinId]  = useState('')
+  const [rescheduleYachts,      setRescheduleYachts]      = useState<Array<{ id: string; name: string; model?: string }>>([])
+  const [rescheduleYachtId,     setRescheduleYachtId]     = useState('')
+  const [rescheduleYachtLoading,setRescheduleYachtLoading]= useState(false)
+  /* cancel inside edit dialog */
+  const [editCancelMode,   setEditCancelMode]   = useState(false)
+  const [editCancelReason, setEditCancelReason] = useState('')
+  const [editCancelSaving, setEditCancelSaving] = useState(false)
+  const [editGuestId,      setEditGuestId]      = useState<string | null>(null)
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
@@ -234,6 +251,10 @@ export default function Bookings() {
     setEditDepDue(fmtDateInput(b.depositDueDate))
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
+    setRescheduleMode(false); setRescheduleStart(''); setRescheduleEnd(''); setRescheduleReason('')
+    setRescheduleOTId(''); setRescheduleOpenTrips([]); setRescheduleNewCabinId('')
+    setRescheduleYachtId(''); setRescheduleYachts([])
+    setEditCancelMode(false); setEditCancelReason('')
   }
   const saveEdit = async () => {
     if (!editBooking) return
@@ -251,6 +272,49 @@ export default function Bookings() {
       if (bookingRes.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
     finally { setEditSaving(false) }
+  }
+
+  const applyReschedule = async () => {
+    if (!editBooking || !rescheduleReason.trim()) return
+    const isOT = editBooking.tripType === 'OPEN_TRIP'
+    if (isOT && (!rescheduleOTId || !rescheduleNewCabinId)) return
+    if (!isOT && (!rescheduleStart || !rescheduleEnd)) return
+    setRescheduleSaving(true)
+    try {
+      const selectedOT = isOT ? rescheduleOpenTrips.find(t => t.id === rescheduleOTId) : null
+      const body: Record<string, string> = { rescheduleReason: rescheduleReason.trim() }
+      if (isOT && selectedOT) {
+        body.openTripId   = selectedOT.id
+        body.startDate    = selectedOT.startDate
+        body.endDate      = selectedOT.endDate
+        body.newCabinId   = rescheduleNewCabinId
+      } else {
+        body.startDate = rescheduleStart
+        body.endDate   = rescheduleEnd
+        if (rescheduleYachtId) body.yachtId = rescheduleYachtId
+      }
+      const res = await fetch(`/api/bookings/${editBooking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) { await fetchBookings(); setEditBooking(null) }
+    } catch (e) { console.error(e) }
+    finally { setRescheduleSaving(false) }
+  }
+
+  const confirmEditCancel = async () => {
+    if (!editBooking || !editCancelReason.trim()) return
+    setEditCancelSaving(true)
+    try {
+      const res = await fetch(`/api/bookings/${editBooking.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled', cancelReason: editCancelReason.trim() }),
+      })
+      if (res.ok) { await fetchBookings(); setEditBooking(null) }
+    } catch (e) { console.error(e) }
+    finally { setEditCancelSaving(false) }
   }
 
   /* ── delete booking ── */
@@ -729,6 +793,7 @@ export default function Bookings() {
                       const isUrgent   = holdExpiry && !isExpired ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 : false
                       return (
                         <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
+                          {b.status === 'cancelled' ? null : (
                           <div className="flex flex-col gap-1 min-w-0">
 
                             {/* ── Primary action ── */}
@@ -796,21 +861,24 @@ export default function Bookings() {
                               </div>
                             )}
                           </div>
+                          )}
                         </TableCell>
                       )
                     })()}
                     {canManageBookings && (
                       <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-end gap-1">
-                          {b.guests.length > 0 && (
+                          {b.status !== 'cancelled' && b.guests.length > 0 && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-600 hover:bg-sky-50" title="Guest Travel Details" onClick={() => openTravel(b)}>
                               <PlaneTakeoff className="h-3.5 w-3.5" />
                             </Button>
                           )}
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          {userRole === 'ADMIN' && (
+                          {b.status !== 'cancelled' && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {userRole === 'ADMIN' && b.status !== 'cancelled' && (
                             <Button
                               variant="ghost" size="icon"
                               className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
@@ -1098,7 +1166,7 @@ export default function Bookings() {
       </Dialog>
 
       {/* ════ Edit Booking Dialog ════ */}
-      <Dialog open={!!editBooking} onOpenChange={v => !v && setEditBooking(null)}>
+      <Dialog open={!!editBooking} onOpenChange={v => { if (!v) setEditBooking(null) }}>
         <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           {editBooking && (
             <>
@@ -1110,7 +1178,51 @@ export default function Bookings() {
               </DialogHeader>
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-muted/40 p-3">
-                  <p className="text-muted-foreground mb-0.5">{editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}</p>
+                  <div className="flex items-start justify-between gap-2 mb-0.5">
+                    <p className="text-muted-foreground">{editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}</p>
+                    {!rescheduleMode && !editCancelMode && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setRescheduleStart(fmtDateInput(editBooking.startDate))
+                          setRescheduleEnd(fmtDateInput(editBooking.endDate))
+                          setRescheduleReason('')
+                          setRescheduleOTId('')
+                          setRescheduleYachtId(editBooking.yacht?.id ?? '')
+                          setRescheduleMode(true)
+                          if (editBooking.tripType === 'PRIVATE_CHARTER') {
+                            setRescheduleYachtLoading(true)
+                            try {
+                              const res = await fetch('/api/yachts')
+                              if (res.ok) {
+                                const data = await res.json()
+                                setRescheduleYachts((data as Array<{ id: string; name: string; model?: string }>))
+                              }
+                            } catch (e) { console.error(e) }
+                            finally { setRescheduleYachtLoading(false) }
+                          }
+                          if (editBooking.tripType === 'OPEN_TRIP') {
+                            setRescheduleOTLoading(true)
+                            try {
+                              const res = await fetch('/api/open-trips')
+                              if (res.ok) {
+                                const data = await res.json()
+                                setRescheduleOpenTrips(
+                                  (data as Array<{ id: string; title: string; destination?: string | null; startDate: string; endDate: string; status?: string; spotsAvailable?: number; availableSpots?: number; cabinStatuses?: Array<{ id: string; name: string; bookingStatus: string | null }> }>)
+                                    .filter(t => t.id !== editBooking.openTrip?.id && t.status !== 'cancelled' && t.status !== 'closed')
+                                    .map(t => ({ ...t, spotsAvailable: t.spotsAvailable ?? t.availableSpots ?? 0, cabinStatuses: t.cabinStatuses ?? [] }))
+                                )
+                              }
+                            } catch (e) { console.error(e) }
+                            finally { setRescheduleOTLoading(false) }
+                          }
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-800 shrink-0"
+                      >
+                        <Calendar className="h-3 w-3" /> Reschedule
+                      </button>
+                    )}
+                  </div>
                   <p className="font-semibold">{editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
                   <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
                 </div>
@@ -1135,6 +1247,196 @@ export default function Bookings() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Reschedule section ── */}
+              {rescheduleMode && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+                      <Calendar className="h-4 w-4" /> Reschedule Booking
+                    </h4>
+                    <button type="button" onClick={() => setRescheduleMode(false)} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {editBooking.tripType === 'OPEN_TRIP' ? (
+                    /* Open Trip: pick another trip schedule */
+                    <div className="space-y-2">
+                      <Label className="text-xs">Select New Trip Schedule <span className="text-red-500">*</span></Label>
+                      {rescheduleOTLoading ? (
+                        <div className="text-xs text-muted-foreground py-2">Loading trips…</div>
+                      ) : rescheduleOpenTrips.length === 0 ? (
+                        <div className="text-xs text-muted-foreground py-2">No other available open trips found.</div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                          {rescheduleOpenTrips.map(t => {
+                            const selected = rescheduleOTId === t.id
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => { setRescheduleOTId(t.id); setRescheduleNewCabinId('') }}
+                                className={`w-full text-left rounded-lg border px-3 py-2 text-xs transition-colors ${selected ? 'border-blue-400 bg-blue-100 text-blue-800' : 'border-border bg-white hover:bg-muted/40'}`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold truncate">{t.title}</span>
+                                  <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${t.spotsAvailable > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                    {t.spotsAvailable > 0 ? `${t.spotsAvailable} spots` : 'Full'}
+                                  </span>
+                                </div>
+                                <div className="text-muted-foreground mt-0.5">
+                                  {fmtDate(t.startDate)} → {fmtDate(t.endDate)}
+                                  {t.destination && <span className="ml-1.5">· {t.destination}</span>}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Cabin picker — shown after a trip is selected */}
+                      {rescheduleOTId && (() => {
+                        const selectedTrip = rescheduleOpenTrips.find(t => t.id === rescheduleOTId)
+                        const cabins = selectedTrip?.cabinStatuses ?? []
+                        return (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Select Cabin <span className="text-red-500">*</span></Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              {cabins.map(c => {
+                                const occupied = c.bookingStatus !== null
+                                const picked   = rescheduleNewCabinId === c.id
+                                return (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    disabled={occupied}
+                                    onClick={() => setRescheduleNewCabinId(c.id)}
+                                    className={`rounded-lg border px-2 py-1.5 text-xs text-center transition-colors
+                                      ${occupied ? 'bg-muted/40 text-muted-foreground border-border cursor-not-allowed opacity-50' :
+                                        picked   ? 'border-blue-400 bg-blue-100 text-blue-800 font-semibold' :
+                                                   'border-border bg-white hover:bg-muted/40'}`}
+                                  >
+                                    <BedDouble className="h-3 w-3 mx-auto mb-0.5" />
+                                    {c.name}
+                                    {occupied && <div className="text-[9px] text-red-400 mt-0.5">Occupied</div>}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  ) : (
+                    /* Private Charter: pick yacht + dates */
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Select Yacht <span className="text-red-500">*</span></Label>
+                        {rescheduleYachtLoading ? (
+                          <div className="text-xs text-muted-foreground py-2">Loading yachts…</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {rescheduleYachts.map(y => {
+                              const overlapping = bookings.some(b =>
+                                b.id !== editBooking.id &&
+                                b.tripType === 'PRIVATE_CHARTER' &&
+                                b.yacht?.id === y.id &&
+                                b.status !== 'cancelled' &&
+                                rescheduleStart && rescheduleEnd &&
+                                new Date(b.startDate) < new Date(rescheduleEnd) &&
+                                new Date(b.endDate) > new Date(rescheduleStart)
+                              )
+                              const picked = rescheduleYachtId === y.id
+                              return (
+                                <button
+                                  key={y.id}
+                                  type="button"
+                                  disabled={overlapping}
+                                  onClick={() => setRescheduleYachtId(y.id)}
+                                  className={`w-full text-left rounded-lg border px-3 py-2 text-xs transition-colors
+                                    ${overlapping ? 'opacity-50 cursor-not-allowed border-border bg-muted/30' :
+                                      picked      ? 'border-blue-400 bg-blue-100 text-blue-800' :
+                                                    'border-border bg-white hover:bg-muted/40'}`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">{y.name}</span>
+                                    {overlapping
+                                      ? <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Unavailable</span>
+                                      : <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Available</span>
+                                    }
+                                  </div>
+                                  {y.model && <div className="text-muted-foreground mt-0.5">{y.model}</div>}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">New Start Date <span className="text-red-500">*</span></Label>
+                          <Input type="date" value={rescheduleStart}
+                            onChange={e => { setRescheduleStart(e.target.value); if (rescheduleEnd && e.target.value > rescheduleEnd) setRescheduleEnd(e.target.value) }} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">New End Date <span className="text-red-500">*</span></Label>
+                          <Input type="date" value={rescheduleEnd} min={rescheduleStart}
+                            onChange={e => setRescheduleEnd(e.target.value)} />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Availability updates based on selected dates.</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Reason <span className="text-red-500">*</span></Label>
+                    <Textarea rows={2} placeholder="e.g. Guest request, weather conditions…"
+                      value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setRescheduleMode(false)}>Cancel</Button>
+                    <Button size="sm"
+                      disabled={
+                        !rescheduleReason.trim() || rescheduleSaving ||
+                        (editBooking.tripType === 'OPEN_TRIP'
+                          ? (!rescheduleOTId || !rescheduleNewCabinId)
+                          : (!rescheduleStart || !rescheduleEnd || !rescheduleYachtId))
+                      }
+                      onClick={applyReschedule}
+                      className="bg-blue-600 hover:bg-blue-700 text-white">
+                      {rescheduleSaving ? 'Saving…' : 'Apply Reschedule'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Cancel section ── */}
+              {editCancelMode && (
+                <div className="rounded-xl border border-red-200 bg-red-50/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-red-600 flex items-center gap-1.5">
+                      <X className="h-4 w-4" /> Cancel Booking
+                    </h4>
+                    <button type="button" onClick={() => setEditCancelMode(false)} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Cancellation Reason <span className="text-red-500">*</span></Label>
+                    <Textarea rows={2} placeholder="e.g. Guest cancelled, no payment received…"
+                      value={editCancelReason} onChange={e => setEditCancelReason(e.target.value)} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setEditCancelMode(false)}>Back</Button>
+                    <Button size="sm" variant="destructive"
+                      disabled={!editCancelReason.trim() || editCancelSaving}
+                      onClick={confirmEditCancel}>
+                      {editCancelSaving ? 'Cancelling…' : 'Confirm Cancel'}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <Separator />
               <div className="grid grid-cols-2 gap-4">
@@ -1178,12 +1480,21 @@ export default function Bookings() {
                   <Input placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditBooking(null)}>Cancel</Button>
-                <Button disabled={editSaving} onClick={saveEdit}
-                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-                  {editSaving ? 'Saving…' : 'Save Changes'}
-                </Button>
+              <DialogFooter className="flex-row items-center justify-between gap-2">
+                {!editCancelMode && !rescheduleMode && (
+                  <Button variant="outline"
+                    onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
+                    className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                    <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
+                  </Button>
+                )}
+                <div className="flex gap-2 ml-auto">
+                  <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
+                  <Button disabled={editSaving || rescheduleMode || editCancelMode} onClick={saveEdit}
+                    style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                    {editSaving ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                </div>
               </DialogFooter>
             </>
           )}
@@ -1420,6 +1731,19 @@ export default function Bookings() {
                     </div>
                   </div>
                 </div>
+
+                {/* Cancelled reason banner */}
+                {db_.status === 'cancelled' && (
+                  <div className="px-5 py-3 bg-slate-50 border-b flex items-start gap-2.5">
+                    <X className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-600 mb-0.5">Booking Cancelled</p>
+                      <p className="text-xs text-slate-500">
+                        {db_.cancelReason ? db_.cancelReason : 'No cancellation reason provided.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto">
