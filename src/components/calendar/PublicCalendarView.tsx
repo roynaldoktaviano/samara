@@ -710,26 +710,46 @@ export function PublicCalendarView() {
           </div>
         </div>
 
-        {/* RIGHT: yacht filters */}
-        {data && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {sortedYachts.map(y => (
-              <button key={y.id} onClick={() => setFilter(y.name)}
-                style={{
-                  padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: yachtFilter === y.name ? `2px solid ${colorMap[y.name]}` : '1px solid #e2e8f0',
-                  background: yachtFilter === y.name ? colorMap[y.name] : 'white',
-                  color: yachtFilter === y.name ? 'white' : '#475569',
-                }}>
-                {y.name}
-              </button>
+        {/* RIGHT: yacht filters + legend */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          {data && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {sortedYachts.map(y => (
+                <button key={y.id} onClick={() => setFilter(y.name)}
+                  style={{
+                    padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: yachtFilter === y.name ? `2px solid ${colorMap[y.name]}` : '1px solid #e2e8f0',
+                    background: yachtFilter === y.name ? colorMap[y.name] : 'white',
+                    color: yachtFilter === y.name ? 'white' : '#475569',
+                  }}>
+                  {y.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {[
+              { color: '#ef4444', label: 'Booked', border: 'none' },
+              { color: '#eab308', label: 'Pending', border: 'none' },
+              { color: '#22c55e', label: 'On Hold', border: 'none' },
+              { color: '#ffffff', label: 'Available', border: '1.5px solid #475569' },
+            ].map(l => (
+              <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: l.color, border: l.border, flexShrink: 0, boxSizing: 'border-box' as const }} />
+                <span style={{ fontSize: 10, color: '#94a3b8' }}>{l.label}</span>
+              </div>
             ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 20, height: 9, borderRadius: 2, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>Open Trip</span>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Calendar */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '8px 16px 0' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '8px 16px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '80px 0', color: '#94a3b8', fontSize: 14 }}>Loading schedule…</div>
         ) : (
@@ -883,29 +903,6 @@ export function PublicCalendarView() {
           </div>
         )}
 
-        {/* Legend */}
-        <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center' }}>
-          {[
-            { color: '#ef4444', label: 'Booked / Confirmed', border: 'none' },
-            { color: '#eab308', label: 'Pending Payment', border: 'none' },
-            { color: '#22c55e', label: 'On Hold', border: 'none' },
-            { color: '#ffffff', label: 'Cabin Available', border: '1.5px solid #475569' },
-          ].map(l => (
-            <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: l.color, border: l.border, flexShrink: 0, boxSizing: 'border-box' as const }} />
-              <span style={{ fontSize: 11, color: '#64748b' }}>{l.label}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 24, height: 10, borderRadius: 3, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: '#64748b' }}>Open Trip</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1a5f6e', flexShrink: 0, boxShadow: '0 0 0 1.5px rgba(26,95,110,0.4)' }} />
-            <span style={{ fontSize: 11, color: '#64748b' }}>Date Filter</span>
-          </div>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: '#cbd5e1' }}>© {new Date().getFullYear()} Samara Liveaboard</span>
-        </div>
       </div>
     </div>
   )
