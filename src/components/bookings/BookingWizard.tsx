@@ -2323,9 +2323,40 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <ScrollArea className="flex-1 min-h-0 overflow-x-hidden">
           <div className="px-6 py-3 min-w-0 overflow-x-hidden">
             {completeLoading ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Memuat data booking...</p>
+              <div className="space-y-4 py-2">
+                {/* step indicator */}
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <Skeleton className="h-5 w-5 rounded-full" />
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-px w-8" />
+                  <Skeleton className="h-5 w-5 rounded-full" />
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-px w-8" />
+                  <Skeleton className="h-5 w-5 rounded-full" />
+                  <Skeleton className="h-3 w-12" />
+                </div>
+                {/* guest search bar */}
+                <Skeleton className="h-9 w-full rounded-md" />
+                {/* lead guest row */}
+                <Skeleton className="h-10 w-full rounded-lg" />
+                {/* cabin grid */}
+                <div className="flex gap-3" style={{ minHeight: 200 }}>
+                  <div className="w-44 shrink-0 space-y-2">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-28" />
+                  </div>
+                  <div className="flex-1 grid grid-cols-3 gap-2">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="rounded-xl border-2 border-border p-3 space-y-2">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-2.5 w-14" />
+                        <Skeleton className="h-2.5 w-16" />
+                        <Skeleton className="h-1 w-full rounded-full mt-1" />
+                        <Skeleton className="h-6 w-full rounded-md mt-1" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (<>
             {phase === 'source'    && phaseSource()}

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   try {
     const session  = await getServerSession(authOptions)
     const userRole = (session?.user as { role?: string })?.role ?? ''
-    const userName = session?.user?.name ?? ''
+    const userId   = session?.user?.id ?? ''
 
     const { searchParams } = new URL(request.url)
     const status      = searchParams.get('status')
@@ -65,8 +65,8 @@ export async function GET(request: NextRequest) {
     // SALES: kalender tampilkan semua booking tapi dengan flag isOwnBooking.
     // Untuk request lain (list, detail), tetap filter ke booking sendiri saja.
     const isCalendarView = view === 'calendar'
-    if (userRole === 'SALES' && userName && !isCalendarView) {
-      where.salesperson = { equals: userName, mode: 'insensitive' }
+    if (userRole === 'SALES' && userId && !isCalendarView) {
+      where.salespersonId = userId
     }
 
     const bookings = await db.booking.findMany({
@@ -76,8 +76,9 @@ export async function GET(request: NextRequest) {
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true,
         depositDueDate: true, finalDueDate: true, holdUntil: true,
-        guestCount: true, destination: true, notes: true, salesperson: true, cancelReason: true,
+        guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
+        salespersonUser: { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:     { select: { id: true, name: true, company: true, commission: true } },
@@ -98,9 +99,9 @@ export async function GET(request: NextRequest) {
     })
 
     // For calendar view, SALES can see all bookings but non-owned ones are masked
-    if (isCalendarView && userRole === 'SALES' && userName) {
+    if (isCalendarView && userRole === 'SALES' && userId) {
       const masked = bookings.map(b => {
-        const isOwn = b.salesperson?.toLowerCase() === userName.toLowerCase()
+        const isOwn = b.salespersonId === userId
         if (isOwn) return { ...b, isOwnBooking: true }
         // Non-owned: hide customer details, keep only schedule info
         return {
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
           destination: null,
           notes: null,
           salesperson: b.salesperson,
+          salespersonUser: b.salespersonUser,
           currency: b.currency,
           exchangeRate: null,
           createdAt: b.createdAt,
@@ -276,6 +278,7 @@ export async function POST(request: NextRequest) {
         currency:       currency || 'USD',
         exchangeRate:   (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
         salesperson:    session?.user?.name || null,
+        salespersonId:  session?.user?.id   || null,
         guests: {
           create: isOnHold
             ? [{ customerId: leadCustomerId, isLead: true, cabinId: holdCabinId || null }]

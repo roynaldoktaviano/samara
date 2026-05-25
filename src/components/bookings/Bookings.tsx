@@ -42,6 +42,7 @@ interface BookingRecord {
   notes?: string
   cancelReason?: string | null
   salesperson?: string | null
+  salespersonUser?: { name: string | null } | null
   currency?: string
   exchangeRate?: number | null
   createdAt?: string
@@ -1769,12 +1770,12 @@ export default function Bookings() {
                         <span className="font-semibold text-amber-700">{fmtAmt(remaining)}</span>
                       </div>
                     )}
-                    {(db_.salesperson || db_.agent?.name || db_.notes) && (
+                    {((db_.salespersonUser?.name ?? db_.salesperson) || db_.agent?.name || db_.notes) && (
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        {(db_.salesperson || db_.agent?.name) && (
+                        {((db_.salespersonUser?.name ?? db_.salesperson) || db_.agent?.name) && (
                           <div className="rounded-lg border p-2.5">
                             <p className="text-muted-foreground mb-0.5">Sales</p>
-                            <p className="font-semibold">{db_.salesperson || db_.agent?.name}</p>
+                            <p className="font-semibold">{db_.salespersonUser?.name ?? db_.salesperson ?? db_.agent?.name}</p>
                           </div>
                         )}
                         {db_.notes && (

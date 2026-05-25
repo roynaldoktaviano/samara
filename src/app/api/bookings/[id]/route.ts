@@ -19,7 +19,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         yacht:    { select: { id: true, name: true, model: true, cabins: { select: { id: true, name: true, deck: true }, orderBy: { name: 'asc' } } } },
         customer: { select: { id: true, name: true, email: true, phone: true } },
         agent:    { select: { id: true, name: true, company: true } },
-        openTrip: { select: { id: true, title: true, destination: true } },
+        openTrip:        { select: { id: true, title: true, destination: true } },
+        salespersonUser: { select: { name: true } },
         guests: {
           include: {
             customer: { select: { id: true, name: true, phone: true, email: true, passport: true, nationality: true } },

@@ -73,13 +73,14 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+  id        String    @id @default(cuid())
+  email     String    @unique
   name      String?
   password  String
-  role      Role     @default(SALES)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  role      Role      @default(SALES)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  bookings  Booking[] @relation("SalespersonBookings")
 }
 
 model Customer {
@@ -231,23 +232,25 @@ model Booking {
   guestCount     Int             @default(1)
   crewRequired   Boolean         @default(false)
   hasDiving      Boolean         @default(false)
-  salesperson    String?
-  notes          String?
-  cancelReason   String?
-  voucherCode    String?
-  currency       String          @default("USD")
-  exchangeRate   Float?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  customer       Customer        @relation(fields: [customerId], references: [id])
-  agent          Agent?          @relation(fields: [agentId], references: [id])
-  yacht          Yacht?          @relation(fields: [yachtId], references: [id])
-  openTrip       OpenTrip?       @relation(fields: [openTripId], references: [id])
-  guests         BookingGuest[]
-  services       BookingService[]
-  payments       Payment[]
-  expenses       Expense[]
-  notifications  Notification[]
+  salesperson     String?
+  salespersonId   String?
+  notes           String?
+  cancelReason    String?
+  voucherCode     String?
+  currency        String          @default("USD")
+  exchangeRate    Float?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  customer        Customer        @relation(fields: [customerId], references: [id])
+  agent           Agent?          @relation(fields: [agentId], references: [id])
+  yacht           Yacht?          @relation(fields: [yachtId], references: [id])
+  openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id])
+  salespersonUser User?           @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
+  guests          BookingGuest[]
+  services        BookingService[]
+  payments        Payment[]
+  expenses        Expense[]
+  notifications   Notification[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -257,6 +260,7 @@ model Booking {
   @@index([yachtId])
   @@index([agentId])
   @@index([salesperson])
+  @@index([salespersonId])
   @@index([createdAt])
 }
 

@@ -310,8 +310,9 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
       setGuestName('')
       return
     }
+    const controller = new AbortController()
     setLoading(true)
-    fetch(`/api/customers/${guestId}`)
+    fetch(`/api/customers/${guestId}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         setGuestName(data.name ?? '')
@@ -321,8 +322,10 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         setDrinkData(data.drinksData ?? {})
         setDivData(data.divingData   ?? {})
       })
+      .catch(e => { if (e.name !== 'AbortError') console.error(e) })
       .finally(() => setLoading(false))
-  }, [open, guestId, bookingGuestId])
+    return () => controller.abort()
+  }, [open, guestId])
 
   const jsonSetter = (setter: (d: any) => void) => (k: string, v: string) =>
     setter((prev: any) => ({ ...prev, [k]: v }))

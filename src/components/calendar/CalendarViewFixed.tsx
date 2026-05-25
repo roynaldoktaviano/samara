@@ -29,6 +29,7 @@ interface BookingEvent {
   depositAmount?: number
   notes?: string
   salesperson?: string
+  salespersonUser?: { name: string | null } | null
   isOwnBooking?: boolean  // undefined = admin/manager (all own), false = SALES viewing others
 }
 
@@ -166,10 +167,10 @@ function MonthGrid({
 
     bookings.forEach(b => addSegs(
       b.id,
-      [b.yachtName, b.customerName, b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
+      [b.yachtName, b.customerName, b.salespersonUser?.name || b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
       bookingBarColor(b.status), false, false,
       new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
-      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${b.salesperson ? ` · Sales: ${b.salesperson}` : ''}`,
+      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${(b.salespersonUser?.name || b.salesperson) ? ` · Sales: ${b.salespersonUser?.name || b.salesperson}` : ''}`,
       b, undefined,
     ))
 
@@ -356,7 +357,7 @@ function MonthGrid({
                       opacity: isOthersSalesBooking ? 0.72 : 1,
                     }}
                     title={isOthersSalesBooking
-                      ? `Booked by ${seg.bookingRef?.salesperson ?? 'other sales'}`
+                      ? `Booked by ${seg.bookingRef ? (seg.bookingRef.salespersonUser?.name || seg.bookingRef.salesperson) ?? 'other sales' : 'other sales'}`
                       : seg.tooltip
                     }
                     onClick={e => {
@@ -372,7 +373,7 @@ function MonthGrid({
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
                             {isOthersSalesBooking
-                              ? `↳ Booked · ${seg.bookingRef.salesperson ?? 'sales'}`
+                              ? `↳ Booked · ${(seg.bookingRef.salespersonUser?.name || seg.bookingRef.salesperson) ?? 'sales'}`
                               : `↳ ${seg.bookingRef.customerName || seg.bookingRef.yachtName}`
                             }
                           </span>
@@ -410,7 +411,7 @@ function MonthGrid({
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               flexShrink: 1, minWidth: 0, textShadow: '0 1px 2px rgba(0,0,0,0.3)',
                             }}>
-                              🔒 Booked by {bk.salesperson ?? 'Other Sales'}
+                              🔒 Booked by {(bk.salespersonUser?.name || bk.salesperson) ?? 'Other Sales'}
                             </span>
                             <span style={{
                               fontSize: 9, fontWeight: 700, color: 'white',
@@ -540,19 +541,19 @@ function MonthGrid({
                                 </span>
                               </div>
                               {/* Row 2: Yacht name + salesperson */}
-                              {(bk.yachtName || bk.salesperson) && (
+                              {(bk.yachtName || bk.salespersonUser?.name || bk.salesperson) && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, marginTop: 2 }}>
                                   {bk.yachtName && (
                                     <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
                                       {bk.yachtName}
                                     </span>
                                   )}
-                                  {bk.yachtName && bk.salesperson && (
+                                  {bk.yachtName && (bk.salespersonUser?.name || bk.salesperson) && (
                                     <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, flexShrink: 0 }}>·</span>
                                   )}
-                                  {bk.salesperson && (
+                                  {(bk.salespersonUser?.name || bk.salesperson) && (
                                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
-                                      {bk.salesperson}
+                                      {bk.salespersonUser?.name || bk.salesperson}
                                     </span>
                                   )}
                                 </div>
@@ -782,7 +783,8 @@ export default function CalendarView() {
             startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
             status: b.status, tripType: b.tripType,
             customerName: b.customer?.name, bookingCode: b.bookingCode,
-            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined, salesperson: b.salesperson ?? undefined,
+            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
+            salesperson: b.salesperson ?? undefined, salespersonUser: b.salespersonUser ?? null,
             isOwnBooking: b.isOwnBooking,  // undefined for admin/manager, true/false for SALES
           }))
       )
@@ -1632,12 +1634,12 @@ export default function CalendarView() {
                       </div>
                     )
                   })()}
-                  {(selectedBooking.salesperson || selectedBooking.notes) && (
-                    <div className="grid gap-3" style={{ gridTemplateColumns: selectedBooking.salesperson && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
-                      {selectedBooking.salesperson && (
+                  {((selectedBooking.salespersonUser?.name || selectedBooking.salesperson) || selectedBooking.notes) && (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: (selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
+                      {(selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && (
                         <div className="rounded-lg border p-3">
                           <div className="text-[11px] text-muted-foreground mb-1">Salesperson</div>
-                          <p className="text-sm font-semibold">{selectedBooking.salesperson}</p>
+                          <p className="text-sm font-semibold">{selectedBooking.salespersonUser?.name || selectedBooking.salesperson}</p>
                         </div>
                       )}
                       {selectedBooking.notes && (
