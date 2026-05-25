@@ -242,71 +242,68 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
     <div style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Header ── */}
-      <div style={{ backgroundColor: 'white', padding: '14px 20px 0', flexShrink: 0 }}>
-        {/* Top row: month + nav + logo */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 2 }}>
-              <button onClick={prev} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ChevronLeft size={15} color="#64748b" />
-              </button>
-              <button onClick={next} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ChevronRight size={15} color="#64748b" />
-              </button>
-            </div>
-            <div>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', lineHeight: 1 }}>{MONTH_NAMES[month]}</span>
-              <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500, marginLeft: 6 }}>{year}</span>
-            </div>
-            {yachtFilter && (
-              <span style={{ fontSize: 11, fontWeight: 700, color: colorMap[yachtFilter] ?? '#1a5f6e', backgroundColor: (colorMap[yachtFilter] ?? '#1a5f6e') + '1a', borderRadius: 8, padding: '2px 8px' }}>
-                {yachtFilter}
-              </span>
-            )}
+      <div style={{ backgroundColor: 'white', padding: '12px 16px 0', flexShrink: 0 }}>
+
+        {/* Top row: nav + month + logo icon */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={prev} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <ChevronLeft size={16} color="#64748b" />
+            </button>
+            <button onClick={next} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <ChevronRight size={16} color="#64748b" />
+            </button>
+            <span style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{MONTH_NAMES[month]}</span>
+            <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>{year}</span>
           </div>
-          <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+          {/* Clipped logo — only the swirl icon, wordmark hidden */}
+          <div style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', flexShrink: 0, backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img
+              src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp"
+              alt="S"
+              style={{ height: 26, width: 'auto', objectFit: 'cover', objectPosition: 'left center' }}
+            />
+          </div>
         </div>
 
-        {/* Date filter row — always visible */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <CalendarSearch size={13} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="date"
-              value={filterStart}
-              onChange={e => setFilterStart(e.target.value)}
-              style={{
-                flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 8,
-                border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                backgroundColor: filterStart ? '#e0f2f7' : '#fafafa',
-                color: filterStart ? '#1a5f6e' : '#94a3b8',
-                outline: 'none', minWidth: 0,
-              }}
-            />
-            <span style={{ color: '#cbd5e1', fontSize: 12, flexShrink: 0 }}>—</span>
-            <input
-              type="date"
-              value={filterEnd}
-              min={filterStart}
-              onChange={e => setFilterEnd(e.target.value)}
-              style={{
-                flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 8,
-                border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                backgroundColor: filterEnd ? '#e0f2f7' : '#fafafa',
-                color: filterEnd ? '#1a5f6e' : '#94a3b8',
-                outline: 'none', minWidth: 0,
-              }}
-            />
+        {/* Date filter row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: filterActive ? '#e0f2f7' : '#f8fafc', border: filterActive ? '1px solid #bae6fd' : '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <CalendarSearch size={13} color={filterActive ? '#1a5f6e' : '#94a3b8'} />
           </div>
-          {filterActive ? (
+          <input
+            type="date"
+            value={filterStart}
+            onChange={e => setFilterStart(e.target.value)}
+            style={{
+              flex: 1, fontSize: 12, padding: '6px 8px', borderRadius: 8,
+              border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+              backgroundColor: filterStart ? '#e0f2f7' : '#f8fafc',
+              color: filterStart ? '#0f766e' : '#94a3b8',
+              outline: 'none', minWidth: 0,
+            }}
+          />
+          <span style={{ color: '#cbd5e1', fontSize: 11, flexShrink: 0 }}>—</span>
+          <input
+            type="date"
+            value={filterEnd}
+            min={filterStart}
+            onChange={e => setFilterEnd(e.target.value)}
+            style={{
+              flex: 1, fontSize: 12, padding: '6px 8px', borderRadius: 8,
+              border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+              backgroundColor: filterEnd ? '#e0f2f7' : '#f8fafc',
+              color: filterEnd ? '#0f766e' : '#94a3b8',
+              outline: 'none', minWidth: 0,
+            }}
+          />
+          {filterActive && (
             <button
               onClick={() => { setFilterStart(''); setFilterEnd('') }}
-              style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
-              <X size={12} color="#64748b" />
+              <X size={12} color="#94a3b8" />
             </button>
-          ) : (
-            <div style={{ width: 26 }} />
           )}
         </div>
 
