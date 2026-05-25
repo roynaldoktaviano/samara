@@ -67,5 +67,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
+    maxAge:    8 * 60 * 60,  // 8 jam — expired setelah 8 jam tidak aktif
+    updateAge: 60 * 60,      // perpanjang token tiap 1 jam jika masih aktif
   },
 }

@@ -59,6 +59,8 @@ interface Props {
   onSuccess: () => void
   preselectedDate?: string
   preselectedOpenTripId?: string
+  preselectedYachtId?: string
+  completeBookingId?: string  // if set, wizard is in "complete on-hold booking" mode
 }
 
 function getAgeYears(dob: string | Date | null | undefined): number | null {
@@ -93,7 +95,7 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
 const fmtAmt   = (n: number, c: CurrencyCode) =>
   `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
-export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId }: Props) {
+export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId }: Props) {
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
   const [source,  setSource]  = useState<Source | null>(null)
@@ -112,6 +114,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* step-1 OT */
   const [openTripId, setOTId]   = useState('')
+
+  /* on-hold mode */
+  const [isOnHold,           setIsOnHold]           = useState(false)
+  const [holdGuestName,      setHoldGuestName]      = useState('')
+  const [holdGuestPhone,     setHoldGuestPhone]     = useState('')
+  const [holdSearch,         setHoldSearch]         = useState('')
+  const [holdCustomerId,     setHoldCustomerId]     = useState<string | null>(null)
+  const [holdIsNew,          setHoldIsNew]          = useState(false)
+  const [holdCabinId,        setHoldCabinId]        = useState<string | null>(null)
 
   /* step-2 */
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
@@ -149,7 +160,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
   const [cabinSalesperson,      setCabinSalesperson]      = useState<Record<string,string>>({})
-  const [submitting,setSubmitting]= useState(false)
+  const [submitting,       setSubmitting]        = useState(false)
+  const [completeLoading,  setCompleteLoading]   = useState(false)
 
   /* extra beds per cabin (cabinId → requested count) */
   const [cabinExtraBeds, setCabinExtraBeds] = useState<Record<string, number>>({})
@@ -191,6 +203,49 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setTrip('OPEN_TRIP')
     setOTId(preselectedOpenTripId)
   }, [open, preselectedOpenTripId])
+
+  /* pre-select yacht when opened from calendar with a specific yacht */
+  useEffect(() => {
+    if (!open || !preselectedYachtId) return
+    setYachtId(preselectedYachtId)
+    setTrip('PRIVATE_CHARTER')
+  }, [open, preselectedYachtId])
+
+  /* complete on-hold booking: pre-fill trip info and jump to step 2 */
+  useEffect(() => {
+    if (!open || !completeBookingId) return
+    setCompleteLoading(true)
+    fetch(`/api/bookings/${completeBookingId}`)
+      .then(r => r.json())
+      .then((b: any) => {
+        const bTripType: TripType = b.tripType ?? 'PRIVATE_CHARTER'
+        setSource(b.source ?? 'DIRECT')
+        setTrip(bTripType)
+        setYachtId(b.yacht?.id ?? b.yachtId ?? '')
+        setOTId(b.openTripId ?? '')
+        setStart(b.startDate?.split('T')[0] ?? '')
+        setEnd(b.endDate?.split('T')[0] ?? '')
+        setDest(b.destination ?? '')
+        setNotes(b.notes ?? '')
+        setAgentId(b.agentId ?? '')
+        setPhase('steps')
+
+        if (bTripType === 'OPEN_TRIP' && b.guests?.length) {
+          setGuests(b.guests.map((g: any) => ({
+            customerId: g.customer?.id ?? g.customerId,
+            name:       g.customer?.name ?? '',
+            phone:      g.customer?.phone ?? '',
+            cabinId:    g.cabin?.id ?? g.cabinId ?? '',
+            isLead:     g.isLead ?? true,
+          })))
+          setStep(3)
+        } else {
+          setStep(2)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCompleteLoading(false))
+  }, [open, completeBookingId])
 
   /* fetch on open */
   useEffect(() => {
@@ -511,9 +566,57 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && (!yachtConflict || !!yachtConflict.isOpenTrip)
       return !!openTripId
     }
-    if (step === 2) return guests.length > 0
+    if (step === 2) {
+      if (isOnHold) return holdGuestName.trim().length > 0 && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
+      return guests.length > 0
+    }
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
+  }
+
+  /* on-hold submit — creates/finds customer by name+phone, saves booking with status=on_hold */
+  const handleOnHoldSubmit = async () => {
+    setSubmitting(true)
+    try {
+      const ot = openTrips.find(t => t.id === openTripId)
+      const payload = {
+        tripType,
+        source,
+        agentId: source === 'AGENT' ? agentId : undefined,
+        yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
+        openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
+        startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
+        endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
+        destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
+        totalPrice: 0,
+        depositPaid: 0,
+        isOnHold: true,
+        holdCustomerId: holdCustomerId ?? undefined,
+        holdCabinId:    holdCabinId ?? undefined,
+        holdGuest: { name: holdGuestName.trim(), phone: holdGuestPhone.trim() },
+      }
+
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        alert(d.error || 'Failed to save on-hold booking')
+        return
+      }
+
+      window.dispatchEvent(new CustomEvent('booking-created'))
+      onSuccess?.()
+      onOpenChange(false)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to save on-hold booking')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   /* submit */
@@ -522,6 +625,47 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     try {
       const resolvedAgentId = source === 'AGENT' ? agentId : undefined
       const ot = openTrips.find(t => t.id === openTripId)
+
+      const extraNote = (() => {
+        const lines = Object.entries(cabinExtraBeds)
+          .filter(([, n]) => n > 0)
+          .map(([cid, n]) => `Extra bed ×${n} (${cabins.find(c => c.id === cid)?.name ?? cid})`)
+        return lines.length ? `[Extra Beds] ${lines.join(', ')}` : ''
+      })()
+      const resolvedNotes = [notes, extraNote].filter(Boolean).join('\n') || undefined
+
+      // ── Complete on-hold booking via PATCH ──
+      if (completeBookingId) {
+        const payload = {
+          completeBooking: true,
+          totalPrice:    total,
+          depositPaid:   parseFloat(deposit) || 0,
+          discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
+          currency,
+          exchangeRate:  currency !== 'USD' ? manualRate : undefined,
+          depositDueDate: depositDueDate || undefined,
+          finalDueDate:   finalDueDate   || undefined,
+          crewRequired:  crewReq,
+          hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
+          notes:         resolvedNotes,
+          guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
+          services: services.filter(s => s.name.trim()),
+        }
+        const res = await fetch(`/api/bookings/${completeBookingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          alert(err.error || 'Failed to complete booking')
+          return
+        }
+        window.dispatchEvent(new CustomEvent('booking-created'))
+        onSuccess?.()
+        onOpenChange(false)
+        return
+      }
 
       const payload = {
         tripType,
@@ -542,13 +686,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         finalDueDate:   finalDueDate   || undefined,
         crewRequired:  crewReq,
         hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
-        notes: (() => {
-          const extraLines = Object.entries(cabinExtraBeds)
-            .filter(([, n]) => n > 0)
-            .map(([cid, n]) => `Extra bed ×${n} (${cabins.find(c => c.id === cid)?.name ?? cid})`)
-          const extraNote = extraLines.length ? `[Extra Beds] ${extraLines.join(', ')}` : ''
-          return [notes, extraNote].filter(Boolean).join('\n') || undefined
-        })(),
+        notes:         resolvedNotes,
         guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
         services: services.filter(s => s.name.trim()),
         confirmCloseOpenTrips,
@@ -1071,7 +1209,222 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
     return (
       <div className="space-y-4">
-        {/* Search */}
+        {/* On Hold checkbox — hidden in complete-booking mode */}
+        {completeBookingId ? null : <label className={cn(
+          'flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer select-none transition-colors',
+          isOnHold ? 'border-amber-300 bg-amber-50' : 'border-border hover:bg-muted/30',
+        )}>
+          <input
+            type="checkbox"
+            checked={isOnHold}
+            onChange={e => {
+              setIsOnHold(e.target.checked)
+              if (!e.target.checked) {
+                setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch(''); setHoldIsNew(false); setHoldCabinId(null)
+              }
+            }}
+            className="h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
+          />
+          <div>
+            <span className="text-sm font-medium text-foreground">On Hold</span>
+            <span className="text-[11px] text-muted-foreground ml-2">Simpan tanpa pricing, lanjutkan nanti</span>
+          </div>
+        </label>}
+
+        {/* On Hold simplified form */}
+        {isOnHold && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/50 overflow-hidden">
+            {/* selected customer pill */}
+            {holdCustomerId && !holdIsNew && (
+              <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-amber-100">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-semibold text-amber-700">{holdGuestName.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{holdGuestName}</p>
+                    {holdGuestPhone && <p className="text-xs text-muted-foreground">{holdGuestPhone}</p>}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch('') }}
+                  className="ml-3 h-6 w-6 rounded-full flex items-center justify-center text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors shrink-0 text-xs"
+                >✕</button>
+              </div>
+            )}
+
+            {/* search input */}
+            {!holdCustomerId && !holdIsNew && (
+              <div className="px-4 pt-3 pb-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-8 bg-white border-amber-200 focus-visible:ring-amber-300"
+                    placeholder="Cari nama atau nomor HP..."
+                    value={holdSearch}
+                    onChange={e => setHoldSearch(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* inline results list */}
+            {!holdCustomerId && !holdIsNew && (() => {
+              const q = holdSearch.toLowerCase()
+              const matches = customers.filter(c =>
+                c.name.toLowerCase().includes(q) ||
+                (c.phone ?? '').includes(holdSearch)
+              )
+              return (
+                <div className="border-t border-amber-100 flex flex-col">
+                  <div className="overflow-y-auto max-h-52 divide-y divide-amber-50">
+                    {matches.map(c => (
+                      <button key={c.id}
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          setHoldCustomerId(c.id)
+                          setHoldGuestName(c.name)
+                          setHoldGuestPhone(c.phone ?? '')
+                          setHoldSearch('')
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 transition-colors flex items-center justify-between gap-2 group">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-semibold text-muted-foreground group-hover:bg-amber-100 group-hover:text-amber-700 transition-colors">
+                            {c.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="truncate font-medium">{c.name}</span>
+                        </div>
+                        {c.phone && <span className="text-muted-foreground text-xs shrink-0">{c.phone}</span>}
+                      </button>
+                    ))}
+                    {matches.length === 0 && holdSearch && (
+                      <div className="px-4 py-2.5 text-sm text-muted-foreground">Tamu tidak ditemukan</div>
+                    )}
+                  </div>
+                  <button
+                    onMouseDown={e => { e.preventDefault(); setHoldIsNew(true); setHoldGuestName(holdSearch); setHoldSearch('') }}
+                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-amber-50 transition-colors flex items-center gap-2 border-t border-amber-100 shrink-0">
+                    <span className="h-5 w-5 rounded-full border-2 border-[#bdac7e] flex items-center justify-center text-[11px] leading-none shrink-0">+</span>
+                    Tambah tamu baru
+                  </button>
+                </div>
+              )
+            })()}
+
+            {/* new guest mini-form */}
+            {holdIsNew && (() => {
+              const q = holdGuestPhone.trim().toLowerCase()
+              const dupMatch = q
+                ? customers.find(c =>
+                    (c.phone && c.phone.replace(/\s/g, '') === holdGuestPhone.replace(/\s/g, '')) ||
+                    (c.email && c.email.toLowerCase() === q)
+                  )
+                : null
+              return (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Tamu Baru</p>
+                    <button type="button"
+                      onClick={() => { setHoldIsNew(false); setHoldGuestName(''); setHoldGuestPhone('') }}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                      ← Cari tamu
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Nama <span className="text-destructive">*</span></Label>
+                    <Input
+                      className="bg-white border-amber-200 focus-visible:ring-amber-300"
+                      placeholder="Nama lengkap..."
+                      value={holdGuestName}
+                      onChange={e => setHoldGuestName(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">No. HP / Email</Label>
+                    <Input
+                      className={cn('bg-white border-amber-200 focus-visible:ring-amber-300', dupMatch && 'border-orange-400')}
+                      placeholder="0812345678 atau email@..."
+                      value={holdGuestPhone}
+                      onChange={e => setHoldGuestPhone(e.target.value)}
+                    />
+                    {dupMatch && (
+                      <div className="flex items-center justify-between rounded-md bg-orange-50 border border-orange-200 px-3 py-2 gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-orange-800">Sudah terdaftar sebagai <span className="font-bold">{dupMatch.name}</span></p>
+                          <p className="text-[11px] text-orange-600 mt-0.5">Pilih tamu ini atau gunakan nama berbeda</p>
+                        </div>
+                        <button
+                          type="button"
+                          onMouseDown={e => {
+                            e.preventDefault()
+                            setHoldCustomerId(dupMatch.id)
+                            setHoldGuestName(dupMatch.name)
+                            setHoldGuestPhone(dupMatch.phone ?? '')
+                            setHoldIsNew(false)
+                          }}
+                          className="text-xs font-semibold text-orange-700 hover:text-orange-900 shrink-0 underline underline-offset-2">
+                          Pilih
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* Cabin picker for Open Trip on-hold */}
+        {isOnHold && tripType === 'OPEN_TRIP' && cabins.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/30 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-amber-100 flex items-center justify-between">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Pilih Kabin</p>
+              {holdCabinId && (
+                <span className="text-[11px] text-green-700 font-medium">
+                  ✓ {cabins.find(c => c.id === holdCabinId)?.name}
+                </span>
+              )}
+            </div>
+            <div className={cn('p-3 grid gap-2', cabins.length <= 3 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3')}>
+              {cabins.map(c => {
+                const extOcc  = existingCabinOccupancy[c.id] ?? 0
+                const isOccupied = extOcc > 0
+                const isSelected = holdCabinId === c.id
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={isOccupied}
+                    onClick={() => setHoldCabinId(isSelected ? null : c.id)}
+                    className={cn(
+                      'rounded-xl border-2 p-3 text-left transition-all',
+                      isOccupied
+                        ? 'border-red-200 bg-red-50/60 opacity-60 cursor-not-allowed'
+                        : isSelected
+                          ? 'border-green-500 bg-green-50 shadow-sm'
+                          : 'border-border hover:border-green-400 hover:bg-green-50/40 cursor-pointer',
+                    )}
+                  >
+                    <p className="text-xs font-semibold truncate">{c.name}</p>
+                    {c.deck && <p className="text-[10px] text-muted-foreground">{c.deck}</p>}
+                    <p className={cn(
+                      'text-[10px] font-semibold mt-1',
+                      isOccupied ? 'text-red-600' : isSelected ? 'text-green-700' : 'text-muted-foreground',
+                    )}>
+                      {isOccupied ? 'Sudah diisi' : isSelected ? '● On Hold' : 'Tersedia'}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Normal guest search + cabin grid — hidden when on hold */}
+        {!isOnHold && (<>
         <div className="space-y-1.5">
           <Label>Add Guests <span className="text-destructive">*</span></Label>
           <div className="relative">
@@ -1444,6 +1797,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             )}
           </div>
         </div>
+
+        </>)}
 
         {tripType === 'PRIVATE_CHARTER' && yachts.find(y => y.id === yachtId)?.canDiving && (
           <>
@@ -1848,6 +2203,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
   /* ─── Dialog title ── */
   const dialogTitle =
+    completeBookingId     ? STEPS[step - 1].label :
     phase === 'source'    ? 'New Booking' :
     phase === 'agentInfo' ? 'Agent Information' :
     phase === 'tripType'  ? 'Select Trip Type' :
@@ -1860,6 +2216,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <DialogHeader className="shrink-0 px-6 pt-3 pb-3 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
+              {completeBookingId && (
+                <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-300 border">Complete Booking</Badge>
+              )}
               <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
               <Badge variant="outline" className="text-xs">
                 {tripType === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
@@ -1871,6 +2230,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
         <ScrollArea className="flex-1 min-h-0 overflow-x-hidden">
           <div className="px-6 py-3 min-w-0 overflow-x-hidden">
+            {completeLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Memuat data booking...</p>
+              </div>
+            ) : (<>
             {phase === 'source'    && phaseSource()}
             {phase === 'agentInfo' && phaseAgentInfo()}
             {phase === 'tripType'  && phaseTripType()}
@@ -1883,24 +2248,29 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 {step === 3 && step3()}
               </div>
             )}
+            </>)}
           </div>
         </ScrollArea>
 
         {/* footer nav — only in agentInfo + steps phases */}
-        {(phase === 'agentInfo' || phase === 'steps') && (
+        {!completeLoading && (phase === 'agentInfo' || phase === 'steps') && (
           <div className="flex items-center justify-between px-6 py-2.5 border-t shrink-0 bg-muted/20">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (phase === 'agentInfo') { setPhase('source'); setSource(null) }
-                else if (step > 1) setStep(step - 1)
-                else if (preselectedOpenTripId) setPhase(source === 'AGENT' ? 'agentInfo' : 'source')
-                else { setPhase('tripType'); setTrip(null) }
-              }}
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              {phase === 'agentInfo' || step === 1 ? 'Back' : 'Previous'}
-            </Button>
+            {/* In complete-booking mode, hide back on step 2; on step 3 allow going back */}
+            {(!completeBookingId || step > 2) ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (completeBookingId) { setStep(step - 1); return }
+                  if (phase === 'agentInfo') { setPhase('source'); setSource(null) }
+                  else if (step > 1) setStep(step - 1)
+                  else if (preselectedOpenTripId) setPhase(source === 'AGENT' ? 'agentInfo' : 'source')
+                  else { setPhase('tripType'); setTrip(null) }
+                }}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                {phase === 'agentInfo' || step === 1 ? 'Back' : 'Previous'}
+              </Button>
+            ) : <div />}
 
             {phase === 'agentInfo' ? (
               <Button
@@ -1910,6 +2280,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 className="hover:opacity-90"
               >
                 Continue <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            ) : step === 2 && isOnHold ? (
+              <Button
+                disabled={submitting || !canNext()}
+                onClick={handleOnHoldSubmit}
+                style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                className="hover:opacity-90"
+              >
+                {submitting ? 'Saving...' : 'Save as On Hold'}
               </Button>
             ) : step < 3 ? (
               <Button
@@ -1927,7 +2306,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 style={{ backgroundColor: ACCENT, color: 'white' }}
                 className="hover:opacity-90"
               >
-                {submitting ? 'Creating...' : 'Confirm Booking'}
+                {submitting ? 'Saving...' : completeBookingId ? 'Confirm & Complete' : 'Confirm Booking'}
               </Button>
             )}
           </div>

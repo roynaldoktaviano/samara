@@ -29,6 +29,7 @@ enum TripType {
 }
 
 enum BookingStatus {
+  on_hold
   pending
   partially_paid
   fully_paid

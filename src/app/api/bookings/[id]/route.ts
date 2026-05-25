@@ -101,17 +101,94 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const session = await getServerSession(authOptions)
     const { id }  = await params
     const body    = await request.json()
-    const { status, cancelReason } = body
+    const { status, cancelReason, completeBooking, guests, totalPrice, depositPaid,
+            discount, depositDueDate, finalDueDate, currency, exchangeRate, services,
+            hasDiving, notes, crewRequired } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
-      select: { totalPrice: true, depositPaid: true, status: true },
+      select: { totalPrice: true, depositPaid: true, status: true, bookingCode: true },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // ── Complete booking: replace placeholder guest, fill in pricing ──
+    if (completeBooking) {
+      if (existing.status !== 'on_hold') {
+        return NextResponse.json({ error: 'Only on_hold bookings can be completed this way' }, { status: 400 })
+      }
+      if (!guests?.length) {
+        return NextResponse.json({ error: 'At least one guest is required' }, { status: 400 })
+      }
+
+      const paid  = parseFloat(depositPaid) || 0
+      const total = parseFloat(totalPrice)  || 0
+      const lead  = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
+
+      await db.$transaction([
+        // Remove the placeholder hold guest
+        db.bookingGuest.deleteMany({ where: { bookingId: id } }),
+        // Create real guests
+        db.bookingGuest.createMany({
+          data: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
+            bookingId:  id,
+            customerId: g.customerId,
+            cabinId:    g.cabinId || null,
+            isLead:     g.isLead ?? false,
+          })),
+        }),
+        // Update booking
+        db.booking.update({
+          where: { id },
+          data: {
+            customerId:    lead.customerId,
+            totalPrice:    total,
+            depositPaid:   paid,
+            discount:      parseFloat(discount) || 0,
+            depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
+            finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
+            currency:      currency || 'USD',
+            exchangeRate:  (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
+            hasDiving:     Boolean(hasDiving),
+            crewRequired:  Boolean(crewRequired),
+            notes:         notes || null,
+            guestCount:    guests.length,
+            status:        paymentStatus(paid, total),
+          },
+        }),
+      ])
+
+      // Add services if provided
+      if (services?.length) {
+        const validSvc = (services as { name?: string; price?: string | number }[]).filter(s => s.name?.trim())
+        if (validSvc.length) {
+          await db.bookingService.createMany({
+            data: validSvc.map(s => ({
+              bookingId: id,
+              name:  s.name!.trim(),
+              price: parseFloat(String(s.price)) || 0,
+            })),
+          })
+        }
+      }
+
+      const userId   = session?.user?.id   ?? ''
+      const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+      const userRole = (session?.user as { role?: string })?.role ?? ''
+      logActivity({
+        userId, userName, userRole,
+        action: 'UPDATE', entity: 'Booking', entityId: id,
+        detail: `Complete booking ${existing.bookingCode} — ${guests.length} guest(s), total: ${total}`,
+      }).catch(() => {})
+
+      return NextResponse.json({ id, bookingCode: existing.bookingCode, status: paymentStatus(paid, total) })
+    }
+
+    // ── Standard status-only patch ──
+    // 'pending' allowed only to release an on_hold booking
     const manualOverride = status === 'completed' || status === 'cancelled'
+      || (status === 'pending' && existing.status === 'on_hold')
     const computedStatus = manualOverride
-      ? (status as 'completed' | 'cancelled')
+      ? (status as 'completed' | 'cancelled' | 'pending')
       : paymentStatus(existing.depositPaid, existing.totalPrice)
 
     const booking = await db.booking.update({

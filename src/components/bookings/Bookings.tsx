@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User,
-  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves,
+  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -92,6 +92,7 @@ const netBook = (b: BookingRecord) =>
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
+  on_hold:        'bg-orange-100  text-orange-700  border-orange-200',
   pending:        'bg-amber-100   text-amber-700   border-amber-200',
   partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
   fully_paid:     'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -100,6 +101,7 @@ const STATUS_STYLES: Record<string, string> = {
   confirmed:      'bg-emerald-100 text-emerald-700 border-emerald-200',
 }
 const STATUS_LABELS: Record<string, string> = {
+  on_hold:        'On Hold',
   pending:        'Pending',
   partially_paid: 'Partially Paid',
   fully_paid:     'Fully Paid',
@@ -139,8 +141,9 @@ export default function Bookings() {
   const [typeFilter,   setTypeFilter]  = useState('all')
   const [dateFrom,     setDateFrom]    = useState('')
   const [dateTo,       setDateTo]      = useState('')
-  const [wizardOpen,   setWizardOpen]  = useState(false)
-  const [editBooking,  setEditBooking] = useState<BookingRecord | null>(null)
+  const [wizardOpen,        setWizardOpen]        = useState(false)
+  const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
+  const [editBooking,       setEditBooking]       = useState<BookingRecord | null>(null)
   const [editSaving,   setEditSaving]  = useState(false)
   const [editStatus,   setEditStatus]  = useState('')
   const [editTotal,    setEditTotal]   = useState('')
@@ -714,12 +717,21 @@ export default function Bookings() {
                       const hasAnyPmt       = bookingPmts.length > 0
                       const hasConfirmedPmt = bookingPmts.some(p => p.status === 'confirmed')
                       const hasSettlement   = bookingPmts.some(p => p.paymentType === 'PELUNASAN')
-                      const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed'
+                      const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed' && b.status !== 'on_hold'
                       const nextType        = hasAnyPmt ? 'Settlement' : 'Deposit'
                       const pelunasanBlocked = nextType === 'Settlement' && !hasConfirmedPmt
                       return (
                         <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex flex-col gap-1 items-start">
+                            {b.status === 'on_hold' && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
+                              >
+                                <ChevronRight className="h-3 w-3 mr-1" /> Complete Booking
+                              </Button>
+                            )}
                             {canRecord && !hasSettlement && (
                               <Button
                                 variant="ghost" size="sm"
@@ -1526,6 +1538,33 @@ export default function Bookings() {
                   </div>
                 </div>
 
+                {/* On Hold banner */}
+                {db_.status === 'on_hold' && (
+                  <div className="shrink-0 mx-5 mb-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-orange-700">Booking On Hold</p>
+                      <p className="text-xs text-orange-600 mt-0.5">Booking ini belum dikonfirmasi. Lanjutkan untuk isi harga & payment.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                      className="hover:opacity-90 shrink-0"
+                      onClick={async () => {
+                        setDetailBooking(null)
+                        // Re-open booking wizard in "complete" mode via a PATCH to change status to pending first
+                        const res = await fetch(`/api/bookings/${db_.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ status: 'pending' }),
+                        })
+                        if (res.ok) fetchBookings()
+                      }}
+                    >
+                      Complete Booking
+                    </Button>
+                  </div>
+                )}
+
                 {/* Footer */}
                 <div className="shrink-0 border-t px-5 py-3 flex justify-between items-center">
                   {db_.status !== 'cancelled' ? (
@@ -1599,7 +1638,12 @@ export default function Bookings() {
         onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
       />
 
-      <BookingWizard open={wizardOpen} onOpenChange={setWizardOpen} onSuccess={fetchBookings} />
+      <BookingWizard
+        open={wizardOpen}
+        onOpenChange={v => { setWizardOpen(v); if (!v) setCompleteBookingId(undefined) }}
+        onSuccess={fetchBookings}
+        completeBookingId={completeBookingId}
+      />
     </div>
   )
 }
