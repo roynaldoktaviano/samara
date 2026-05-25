@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
       data: { status: 'cancelled' },
     }).catch(e => console.error('auto-cancel failed:', e))
 
+    // Auto-cancel on_hold bookings whose hold deadline has passed
+    db.booking.updateMany({
+      where: { status: 'on_hold', holdUntil: { lt: new Date() } },
+      data: { status: 'cancelled', cancelReason: 'Hold expired' },
+    }).catch(e => console.error('auto-cancel on_hold failed:', e))
+
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
     if (yachtId)    where.yachtId    = yachtId
@@ -69,7 +75,7 @@ export async function GET(request: NextRequest) {
         id: true, bookingCode: true, source: true, tripType: true,
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true,
-        depositDueDate: true, finalDueDate: true,
+        depositDueDate: true, finalDueDate: true, holdUntil: true,
         guestCount: true, destination: true, notes: true, salesperson: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
         yacht:     { select: { id: true, name: true, model: true, canDiving: true } },
@@ -110,6 +116,7 @@ export async function GET(request: NextRequest) {
           discount: null,
           depositDueDate: null,
           finalDueDate: null,
+          holdUntil: null,
           guestCount: b.guestCount,
           destination: null,
           notes: null,
@@ -156,6 +163,7 @@ export async function POST(request: NextRequest) {
       holdCustomerId,      // existing customer id (skips find/create)
       holdCabinId,         // cabin id for open trip on-hold
       holdGuest,           // { name, phone } for on-hold bookings (no prior customer needed)
+      holdUntil,           // ISO datetime string: hold expiry deadline
     } = body
 
     if (isOnHold) {
@@ -258,6 +266,7 @@ export async function POST(request: NextRequest) {
         discount:      parseFloat(discount) || 0,
         depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
         finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
+        holdUntil:      isOnHold && holdUntil ? new Date(holdUntil) : null,
         status:         isOnHold ? 'on_hold' : paymentStatus(paid, total),
         guestCount:     isOnHold ? 1 : guests.length,
         crewRequired:   crewRequired ?? false,

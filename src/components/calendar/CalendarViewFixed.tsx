@@ -1615,6 +1615,22 @@ export default function CalendarView() {
                       <div className="text-sm font-semibold">USD {selectedBooking.totalPrice?.toLocaleString() ?? '–'}</div>
                     </div>
                   </div>
+                  {selectedBooking.status === 'on_hold' && bookingFullDetail?.holdUntil && (() => {
+                    const exp     = new Date(bookingFullDetail.holdUntil)
+                    const expired = exp < new Date()
+                    return (
+                      <div className={`rounded-lg border p-3 ${expired ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                        <div className={`text-[11px] mb-1 font-medium ${expired ? 'text-red-600' : 'text-amber-700'}`}>
+                          {expired ? '⚠ Hold Expired' : 'Hold Until'}
+                        </div>
+                        <p className={`text-sm font-semibold ${expired ? 'text-red-700' : 'text-amber-800'}`}>
+                          {exp.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {' '}
+                          {exp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    )
+                  })()}
                   {(selectedBooking.salesperson || selectedBooking.notes) && (
                     <div className="grid gap-3" style={{ gridTemplateColumns: selectedBooking.salesperson && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
                       {selectedBooking.salesperson && (

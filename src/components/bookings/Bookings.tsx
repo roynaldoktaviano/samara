@@ -37,6 +37,7 @@ interface BookingRecord {
   status: string
   depositDueDate?: string | null
   finalDueDate?: string | null
+  holdUntil?: string | null
   destination?: string
   notes?: string
   cancelReason?: string | null
@@ -68,6 +69,7 @@ interface PaymentRecord {
   status: string
   notes?: string
   hasProof?: boolean
+  paymentMethod?: string | null
   confirmedBy?: string
   confirmedAt?: string
   createdAt: string
@@ -180,6 +182,8 @@ export default function Bookings() {
   /* edit invoice amount */
   const [editAmtPayment, setEditAmtPayment] = useState<PaymentRecord | null>(null)
   const [editAmtValue,   setEditAmtValue]   = useState('')
+  const [editAmtMethod,  setEditAmtMethod]  = useState('Transfer Bank')
+  const [editAmtNotes,   setEditAmtNotes]   = useState('')
   const [editAmtSaving,  setEditAmtSaving]  = useState(false)
 
   /* guest travel dialog */
@@ -327,7 +331,7 @@ export default function Bookings() {
       const res = await fetch(`/api/payments/${editAmtPayment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_amount', amount }),
+        body: JSON.stringify({ action: 'update_amount', amount, paymentMethod: editAmtMethod, notes: editAmtNotes }),
       })
       if (res.ok) {
         setEditAmtPayment(null)
@@ -723,15 +727,29 @@ export default function Bookings() {
                       return (
                         <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
                           <div className="flex flex-col gap-1 items-start">
-                            {b.status === 'on_hold' && (
-                              <Button
-                                variant="ghost" size="sm"
-                                className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
-                              >
-                                <ChevronRight className="h-3 w-3 mr-1" /> Complete Booking
-                              </Button>
-                            )}
+                            {b.status === 'on_hold' && (() => {
+                              const holdExpiry = b.holdUntil ? new Date(b.holdUntil) : null
+                              const isExpired  = holdExpiry ? holdExpiry < new Date() : false
+                              const isUrgent   = holdExpiry && !isExpired
+                                ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 // < 2h
+                                : false
+                              return (
+                                <>
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                    onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
+                                  >
+                                    <ChevronRight className="h-3 w-3 mr-1" /> Complete Booking
+                                  </Button>
+                                  {holdExpiry && (
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isExpired ? 'text-red-600 bg-red-50' : isUrgent ? 'text-orange-600 bg-orange-50' : 'text-muted-foreground'}`}>
+                                      {isExpired ? '⚠ Hold expired' : `Hold until ${holdExpiry.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${holdExpiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                                    </span>
+                                  )}
+                                </>
+                              )
+                            })()}
                             {canRecord && !hasSettlement && (
                               <Button
                                 variant="ghost" size="sm"
@@ -770,7 +788,7 @@ export default function Bookings() {
                                     variant="ghost" size="sm"
                                     className="h-7 w-6 p-0 text-muted-foreground hover:text-blue-600"
                                     title="Update nominal invoice"
-                                    onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)) }}
+                                    onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)); setEditAmtMethod(p.paymentMethod || 'Transfer Bank'); setEditAmtNotes(p.notes || '') }}
                                   >
                                     <Pencil className="h-3 w-3" />
                                   </Button>
@@ -1180,7 +1198,7 @@ export default function Bookings() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Pencil className="h-4 w-4" style={{ color: ACCENT }} />
-                  Update Nominal Invoice
+                  Update Invoice Detail
                 </DialogTitle>
               </DialogHeader>
               <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1 mb-1">
@@ -1189,24 +1207,53 @@ export default function Bookings() {
                   <span className="font-mono font-semibold">{editAmtPayment.invoiceNumber}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Nominal saat ini</span>
+                  <span className="text-muted-foreground">Current Amount</span>
                   <span className="font-semibold">${editAmtPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Nominal Baru (USD) <span className="text-red-500">*</span></Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    className="pl-7"
-                    placeholder="0.00"
-                    value={editAmtValue}
-                    onChange={e => setEditAmtValue(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>New Amount (USD) <span className="text-red-500">*</span></Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="pl-7"
+                      placeholder="0.00"
+                      value={editAmtValue}
+                      onChange={e => setEditAmtValue(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Payment Method</Label>
+                  <Select value={editAmtMethod} onValueChange={setEditAmtMethod}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
+                      <SelectItem value="Cash">Cash</SelectItem>
+                      <SelectItem value="Credit Card">Credit Card</SelectItem>
+                      <SelectItem value="Debit Card">Debit Card</SelectItem>
+                      <SelectItem value="Virtual Account">Virtual Account</SelectItem>
+                      <SelectItem value="QRIS">QRIS</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Notes</Label>
+                  <textarea
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                    rows={2}
+                    placeholder="e.g. BCA a/n John Doe, ref: 123456"
+                    value={editAmtNotes}
+                    onChange={e => setEditAmtNotes(e.target.value)}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">Invoice ID dan nomor tidak akan berubah.</p>
+                <p className="text-xs text-muted-foreground">Invoice ID and number will not change.</p>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setEditAmtPayment(null)}>Cancel</Button>
@@ -1215,7 +1262,7 @@ export default function Bookings() {
                   onClick={saveEditAmount}
                   style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90"
                 >
-                  {editAmtSaving ? 'Menyimpan…' : 'Simpan'}
+                  {editAmtSaving ? 'Saving…' : 'Save'}
                 </Button>
               </DialogFooter>
             </>

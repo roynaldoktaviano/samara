@@ -61,7 +61,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // Update invoice amount (only when still pending_confirmation)
     if (action === 'update_amount') {
-      const { amount } = body
+      const { amount, paymentMethod, notes } = body
       if (!amount || typeof amount !== 'number' || amount <= 0) {
         return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
       }
@@ -70,7 +70,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (existing.status !== 'pending_confirmation') {
         return NextResponse.json({ error: 'Hanya bisa update invoice yang belum dikonfirmasi' }, { status: 400 })
       }
-      await db.payment.update({ where: { id }, data: { amount } })
+      await db.payment.update({
+        where: { id },
+        data: {
+          amount,
+          ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
+          ...(notes !== undefined && { notes: notes || null }),
+        },
+      })
       return NextResponse.json({ ok: true })
     }
 

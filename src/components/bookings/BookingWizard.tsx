@@ -123,6 +123,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [holdCustomerId,     setHoldCustomerId]     = useState<string | null>(null)
   const [holdIsNew,          setHoldIsNew]          = useState(false)
   const [holdCabinId,        setHoldCabinId]        = useState<string | null>(null)
+  const [holdUntil,          setHoldUntil]          = useState('')
 
   /* step-2 */
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
@@ -567,7 +568,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       return !!openTripId
     }
     if (step === 2) {
-      if (isOnHold) return holdGuestName.trim().length > 0 && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
+      if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
       return guests.length > 0
     }
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
@@ -594,6 +595,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         holdCustomerId: holdCustomerId ?? undefined,
         holdCabinId:    holdCabinId ?? undefined,
         holdGuest: { name: holdGuestName.trim(), phone: holdGuestPhone.trim() },
+        holdUntil: holdUntil || undefined,
       }
 
       const res = await fetch('/api/bookings', {
@@ -1220,7 +1222,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             onChange={e => {
               setIsOnHold(e.target.checked)
               if (!e.target.checked) {
-                setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch(''); setHoldIsNew(false); setHoldCabinId(null)
+                setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch(''); setHoldIsNew(false); setHoldCabinId(null); setHoldUntil('')
               }
             }}
             className="h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
@@ -1374,6 +1376,23 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 </div>
               )
             })()}
+          </div>
+        )}
+
+        {/* Hold deadline */}
+        {isOnHold && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/30 px-4 py-3 space-y-1.5">
+            <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+              Hold Until <span className="text-red-500">*</span>
+            </Label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+              min={new Date().toISOString().slice(0, 16)}
+              value={holdUntil}
+              onChange={e => setHoldUntil(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground">Booking akan otomatis dibatalkan jika melewati batas waktu ini.</p>
           </div>
         )}
 

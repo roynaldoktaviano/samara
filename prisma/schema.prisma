@@ -227,6 +227,7 @@ model Booking {
   discount       Float           @default(0)
   depositDueDate DateTime?
   finalDueDate   DateTime?
+  holdUntil      DateTime?
   guestCount     Int             @default(1)
   crewRequired   Boolean         @default(false)
   hasDiving      Boolean         @default(false)

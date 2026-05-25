@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarSearch, X } from 'lucide-react'
 
 /* ── Types ── */
 interface PublicBooking {
@@ -72,6 +72,11 @@ function weeksOf(year: number, month: number): number[][] {
 }
 function dateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+function fmtFilterDate(iso: string) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d} ${MONTH_NAMES[parseInt(m) - 1]?.slice(0, 3)} ${y}`
 }
 
 function getEventsForDate(day: number, year: number, month: number, bookings: PublicBooking[], trips: PublicOpenTrip[]) {
@@ -144,22 +149,35 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
 /* ════════════════════════════════════════
    Mobile View
 ════════════════════════════════════════ */
-function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, next, filteredBookings, filteredOpenTrips, colorMap }: {
+function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, next, filteredBookings, filteredOpenTrips, colorMap, filterStart, filterEnd, setFilterStart, setFilterEnd }: {
   data: { bookings: PublicBooking[]; openTrips: PublicOpenTrip[]; yachts: Yacht[] } | null
   loading: boolean; year: number; month: number
   yachtFilter: string; setFilter: (v: string) => void
   prev: () => void; next: () => void
   filteredBookings: PublicBooking[]; filteredOpenTrips: PublicOpenTrip[]
   colorMap: Record<string, string>
+  filterStart: string; filterEnd: string
+  setFilterStart: (v: string) => void; setFilterEnd: (v: string) => void
 }) {
   const now = new Date()
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
-  const [selectedDay, setSelectedDay] = useState(() => isCurrentMonth ? now.getDate() : 1)
-  const [filterOpen, setFilterOpen]   = useState(false)
+  const [selectedDay,   setSelectedDay]   = useState(() => isCurrentMonth ? now.getDate() : 1)
+  const [filterOpen,    setFilterOpen]    = useState(false)
+  const [dateFilterOpen, setDateFilterOpen] = useState(false)
 
   useEffect(() => {
     setSelectedDay(year === now.getFullYear() && month === now.getMonth() ? now.getDate() : 1)
   }, [year, month])
+
+  // Auto-select filterStart day when in this month
+  useEffect(() => {
+    if (filterStart) {
+      const d = new Date(filterStart)
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        setSelectedDay(d.getDate())
+      }
+    }
+  }, [filterStart, year, month])
 
   const weeks     = useMemo(() => weeksOf(year, month), [year, month])
   const todayDay  = isCurrentMonth ? now.getDate() : -1
@@ -170,7 +188,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
     [selectedDay, year, month, filteredBookings, filteredOpenTrips],
   )
 
-  // Date range highlights: { color, id } per day number — use ISO string comparison to avoid timezone issues
+  // Booking color highlights per day
   const dateHighlights = useMemo(() => {
     const map: Record<number, { color: string; id: string }> = {}
     const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -193,19 +211,33 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
       const e = t.endDate.split('T')[0]
       for (let d = 1; d <= daysInMonth; d++) {
         const ds = dateStr(year, month, d)
-        if (ds >= s && ds <= e) mark(d, color, t.id, false) // private charter takes priority
+        if (ds >= s && ds <= e) mark(d, color, t.id, false)
       }
     })
     return map
   }, [filteredBookings, filteredOpenTrips, year, month])
+
+  // Filter range highlights per day
+  const filterHighlights = useMemo(() => {
+    if (!filterStart) return {} as Record<number, boolean>
+    const fEnd = filterEnd || filterStart
+    const map: Record<number, boolean> = {}
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = dateStr(year, month, d)
+      if (ds >= filterStart && ds <= fEnd) map[d] = true
+    }
+    return map
+  }, [filterStart, filterEnd, year, month])
 
   const selectedDateLabel = useMemo(() => {
     const dow = new Date(year, month, selectedDay).getDay()
     return `${DAY_FULL[dow]}, ${selectedDay} ${MONTH_NAMES[month]} ${year}`
   }, [selectedDay, year, month])
 
-  // Short yacht label for FAB (e.g. "Samara I" → "S.I")
   const fabLabel = yachtFilter.split(' ').map((w, i) => i === 0 ? w[0] + '.' : w).join('')
+  const filterActive = !!(filterStart || filterEnd)
+  const fEnd = filterEnd || filterStart
 
   return (
     <div style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -232,8 +264,68 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
             </div>
             <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500 }}>{year}</span>
           </div>
-          <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 30, width: 'auto', objectFit: 'contain', marginTop: 4 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            {/* Date filter toggle */}
+            <button
+              onClick={() => setDateFilterOpen(v => !v)}
+              style={{
+                width: 36, height: 36, borderRadius: 10,
+                border: filterActive ? '2px solid #1a5f6e' : '1px solid #e2e8f0',
+                background: filterActive ? '#e0f2f7' : 'white',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <CalendarSearch size={17} color={filterActive ? '#1a5f6e' : '#64748b'} />
+            </button>
+            <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 30, width: 'auto', objectFit: 'contain' }} />
+          </div>
         </div>
+
+        {/* Date filter panel */}
+        {dateFilterOpen && (
+          <div style={{ marginBottom: 12, padding: '10px 12px', backgroundColor: '#f0f9fb', borderRadius: 12, border: '1px solid #bae6fd' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#1a5f6e', letterSpacing: '0.05em' }}>DATE FILTER</span>
+              {filterActive && (
+                <button
+                  onClick={() => { setFilterStart(''); setFilterEnd('') }}
+                  style={{ fontSize: 11, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+                >
+                  <X size={12} /> Clear
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 3, fontWeight: 600 }}>FROM</div>
+                <input
+                  type="date"
+                  value={filterStart}
+                  onChange={e => setFilterStart(e.target.value)}
+                  style={{ width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0', backgroundColor: 'white', boxSizing: 'border-box' as const }}
+                />
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: 14, paddingTop: 16, flexShrink: 0 }}>→</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 3, fontWeight: 600 }}>TO</div>
+                <input
+                  type="date"
+                  value={filterEnd}
+                  min={filterStart}
+                  onChange={e => setFilterEnd(e.target.value)}
+                  style={{ width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0', backgroundColor: 'white', boxSizing: 'border-box' as const }}
+                />
+              </div>
+            </div>
+            {filterActive && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#1a5f6e', fontWeight: 600 }}>
+                {filterStart === fEnd
+                  ? `Showing: ${fmtFilterDate(filterStart)}`
+                  : `Showing: ${fmtFilterDate(filterStart)}${fEnd ? ` → ${fmtFilterDate(fEnd)}` : ''}`}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* DOW labels */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
@@ -242,13 +334,17 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
           ))}
         </div>
 
-        {/* Mini calendar with range highlights */}
+        {/* Mini calendar */}
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 2 }}>
             {week.map((day, di) => {
               const isToday    = day === todayDay
               const isSelected = day === selectedDay && day > 0
               const hl         = day > 0 ? (dateHighlights[day] ?? null) : null
+              const inFilt     = day > 0 && !!filterHighlights[day]
+              const ds         = day > 0 ? dateStr(year, month, day) : ''
+              const isFiltSt   = !!filterStart && ds === filterStart
+              const isFiltEnd  = !!fEnd && ds === fEnd
               const prevDay    = di > 0 ? week[di - 1] : 0
               const nextDay    = di < 6 ? week[di + 1] : 0
               const prevHl     = prevDay > 0 ? (dateHighlights[prevDay] ?? null) : null
@@ -257,11 +353,17 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
               const hasNext    = !!(hl && nextHl && nextHl.id === hl.id)
               const isRange    = hasPrev || hasNext
 
+              // Filter range bar edges
+              const prevFilt   = prevDay > 0 && !!filterHighlights[prevDay]
+              const nextFilt   = nextDay > 0 && !!filterHighlights[nextDay]
+              const fHasPrev   = inFilt && prevFilt
+              const fHasNext   = inFilt && nextFilt
+
               return (
                 <div key={di} onClick={() => day > 0 && setSelectedDay(day)}
                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '3px 0', position: 'relative', cursor: day > 0 ? 'pointer' : 'default' }}>
 
-                  {/* Range bar (only for multi-day spans) */}
+                  {/* Booking range bar */}
                   {hl && isRange && (
                     <div style={{
                       position: 'absolute', top: 3, height: 36, zIndex: 0,
@@ -273,15 +375,33 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                     }} />
                   )}
 
+                  {/* Filter range bar (below booking bar layer) */}
+                  {inFilt && (
+                    <div style={{
+                      position: 'absolute', top: 3, height: 36, zIndex: 1,
+                      left:  fHasPrev ? '0%' : '50%',
+                      right: fHasNext ? '0%' : '50%',
+                      backgroundColor: 'rgba(26,95,110,0.12)',
+                      borderRadius: fHasPrev && fHasNext ? 0 : !fHasPrev ? '18px 0 0 18px' : '0 18px 18px 0',
+                      pointerEvents: 'none',
+                    }} />
+                  )}
+
                   {/* Date circle */}
                   <span style={{
-                    position: 'relative', zIndex: 1,
+                    position: 'relative', zIndex: 2,
                     width: 36, height: 36, borderRadius: '50%',
                     backgroundColor: isSelected ? '#1a5f6e' : hl ? hl.color : isToday ? '#e0f2f7' : 'transparent',
-                    color: isSelected ? 'white' : hl ? 'white' : isToday ? '#1a5f6e' : day > 0 ? (di === 0 ? '#94a3b8' : '#1e293b') : 'transparent',
+                    color: isSelected ? 'white' : hl ? 'white' : isToday ? '#1a5f6e' : day > 0 ? (di === 0 ? '#94a8b8' : '#1e293b') : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 14, fontWeight: (isToday || isSelected || !!hl) ? 700 : 400,
                     transition: 'background-color 0.15s',
+                    // Filter ring: outer glow ring for start/end, lighter for middle
+                    boxShadow: inFilt && !isSelected
+                      ? (isFiltSt || isFiltEnd)
+                        ? '0 0 0 2px white, 0 0 0 4px #1a5f6e'
+                        : '0 0 0 1.5px rgba(26,95,110,0.45)'
+                      : 'none',
                   }}>
                     {day > 0 ? day : ''}
                   </span>
@@ -299,6 +419,19 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
         <div style={{ padding: '14px 20px 8px', flexShrink: 0 }}>
           <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1e293b' }}>Schedule</p>
           <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{selectedDateLabel}</p>
+          {filterActive && (() => {
+            const ds = dateStr(year, month, selectedDay)
+            const inRange = ds >= filterStart && ds <= fEnd
+            return inRange ? (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, fontWeight: 600, color: '#1a5f6e', backgroundColor: '#e0f2f7', borderRadius: 6, padding: '2px 8px' }}>
+                <CalendarSearch size={11} /> In filtered range
+              </div>
+            ) : (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, color: '#94a3b8', backgroundColor: '#f1f5f9', borderRadius: 6, padding: '2px 8px' }}>
+                Outside filter range
+              </div>
+            )
+          })()}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 80px' }}>
@@ -371,7 +504,6 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
         <div onClick={() => setFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 98 }} />
       )}
       <div style={{ position: 'fixed', bottom: 24, right: 20, zIndex: 99, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-        {/* Yacht options — visible when open */}
         {filterOpen && (
           <div style={{ backgroundColor: 'white', borderRadius: 16, padding: '8px 6px', boxShadow: '0 4px 24px rgba(0,0,0,0.13)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 150 }}>
             {yachts.map(y => (
@@ -387,8 +519,6 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
             ))}
           </div>
         )}
-
-        {/* FAB pill button */}
         <button onClick={() => setFilterOpen(v => !v)}
           style={{
             height: 44, paddingLeft: 18, paddingRight: 18, borderRadius: 22,
@@ -418,6 +548,8 @@ export function PublicCalendarView() {
   const [vH, setVH]              = useState(0)
   const [isMobile, setIsMobile]  = useState(false)
   const [mounted, setMounted]    = useState(false)
+  const [filterStart, setFilterStart] = useState('')
+  const [filterEnd,   setFilterEnd]   = useState('')
 
   const now = new Date()
   const [year,  setYear]  = useState(now.getFullYear())
@@ -442,15 +574,21 @@ export function PublicCalendarView() {
       .catch(() => setLoading(false))
   }, [])
 
+  // Auto-navigate to the filter start month
+  useEffect(() => {
+    if (filterStart) {
+      const d = new Date(filterStart)
+      setYear(d.getFullYear())
+      setMonth(d.getMonth())
+    }
+  }, [filterStart])
+
   const colorMap = useMemo(() => buildColorMap(data?.yachts ?? []), [data?.yachts])
 
-  // Private charters: filtered by selected yacht
   const filteredBookings = useMemo(
     () => !data || !yachtFilter ? [] : data.bookings.filter(b => b.yachtName === yachtFilter),
     [data, yachtFilter],
   )
-
-  // Open trips: filtered by selected yacht, exclude ones converted to private charter
   const allOpenTrips = useMemo(
     () => !data || !yachtFilter ? [] : data.openTrips.filter(t =>
       t.yacht.name === yachtFilter &&
@@ -472,6 +610,8 @@ export function PublicCalendarView() {
         prev={prev} next={next}
         filteredBookings={filteredBookings} filteredOpenTrips={allOpenTrips}
         colorMap={colorMap}
+        filterStart={filterStart} filterEnd={filterEnd}
+        setFilterStart={setFilterStart} setFilterEnd={setFilterEnd}
       />
     )
   }
@@ -485,7 +625,9 @@ export function PublicCalendarView() {
   segments.forEach(s => { segsByWeek[s.weekIdx] = [...(segsByWeek[s.weekIdx] ?? []), s] })
   const maxLanes: Record<number, number> = {}
   segments.forEach(s => { maxLanes[s.weekIdx] = Math.max(maxLanes[s.weekIdx] ?? 0, s.lane + 1) })
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`
+  const todayStr  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`
+  const fEnd      = filterEnd || filterStart
+  const filterActive = !!(filterStart || filterEnd)
 
   return (
     <div style={{ height: '100dvh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -502,19 +644,75 @@ export function PublicCalendarView() {
         </div>
       </div>
 
-      {/* Toolbar with month nav + filter */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button onClick={prev} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronLeft size={16} color="#475569" />
-          </button>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', minWidth: 160, textAlign: 'center' }}>{MONTH_NAMES[month]} {year}</span>
-          <button onClick={next} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronRight size={16} color="#475569" />
-          </button>
+      {/* Toolbar */}
+      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+
+        {/* LEFT: month nav + date filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Month nav */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button onClick={prev} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={16} color="#475569" />
+            </button>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', minWidth: 148, textAlign: 'center' }}>{MONTH_NAMES[month]} {year}</span>
+            <button onClick={next} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronRight size={16} color="#475569" />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 24, backgroundColor: '#e2e8f0', flexShrink: 0 }} />
+
+          {/* Date range filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CalendarSearch size={14} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</span>
+              <input
+                type="date"
+                value={filterStart}
+                onChange={e => setFilterStart(e.target.value)}
+                style={{
+                  fontSize: 12, padding: '4px 8px', borderRadius: 6,
+                  border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                  backgroundColor: filterStart ? '#e0f2f7' : 'white',
+                  color: filterStart ? '#1a5f6e' : '#475569',
+                  outline: 'none', cursor: 'pointer',
+                }}
+              />
+            </div>
+            <span style={{ color: '#94a3b8', fontSize: 13, paddingTop: 13, flexShrink: 0 }}>→</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</span>
+              <input
+                type="date"
+                value={filterEnd}
+                min={filterStart}
+                onChange={e => setFilterEnd(e.target.value)}
+                style={{
+                  fontSize: 12, padding: '4px 8px', borderRadius: 6,
+                  border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                  backgroundColor: filterEnd ? '#e0f2f7' : 'white',
+                  color: filterEnd ? '#1a5f6e' : '#475569',
+                  outline: 'none', cursor: 'pointer',
+                }}
+              />
+            </div>
+            {filterActive && (
+              <button
+                onClick={() => { setFilterStart(''); setFilterEnd('') }}
+                style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 13, flexShrink: 0 }}
+                title="Clear date filter"
+              >
+                <X size={11} color="#64748b" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* RIGHT: yacht filters */}
         {data && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {sortedYachts.map(y => (
               <button key={y.id} onClick={() => setFilter(y.name)}
                 style={{
@@ -548,12 +746,59 @@ export function PublicCalendarView() {
                   <div key={wi} style={{ position: 'relative', height: rowH, flexShrink: 0, borderBottom: wi < weeks.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', height: '100%' }}>
                       {week.map((day, di) => {
-                        const dateStr = day > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
-                        const isToday = dateStr === todayStr
+                        const ds        = day > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
+                        const isToday   = ds === todayStr
+                        const inFilt    = day > 0 && !!filterStart && ds >= filterStart && ds <= fEnd
+                        const isFiltSt  = day > 0 && !!filterStart && ds === filterStart
+                        const isFiltEnd = day > 0 && !!fEnd && ds === fEnd
+                        const isSingle  = filterStart === fEnd || !fEnd
+
+                        // Determine range bar edges within this row
+                        const prevDay   = di > 0 ? week[di - 1] : 0
+                        const nextDay   = di < 6 ? week[di + 1] : 0
+                        const prevDs    = prevDay > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(prevDay).padStart(2,'0')}` : ''
+                        const nextDs    = nextDay > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(nextDay).padStart(2,'0')}` : ''
+                        const prevInFilt = prevDay > 0 && !!filterStart && prevDs >= filterStart && prevDs <= fEnd
+                        const nextInFilt = nextDay > 0 && !!filterStart && nextDs >= filterStart && nextDs <= fEnd
+
                         return (
-                          <div key={di} style={{ borderRight: di < 6 ? '1px solid #f1f5f9' : 'none', padding: '5px 6px', backgroundColor: di === 0 ? '#fafafa' : 'white' }}>
+                          <div key={di} style={{
+                            borderRight: di < 6 ? '1px solid #f1f5f9' : 'none',
+                            padding: '5px 6px',
+                            backgroundColor: di === 0 ? '#fafafa' : 'white',
+                            position: 'relative',
+                          }}>
+                            {/* Filter range bar behind date */}
+                            {inFilt && !isSingle && (
+                              <div style={{
+                                position: 'absolute',
+                                top: 4, height: 24,
+                                left:  prevInFilt || isFiltSt  ? (isFiltSt  ? '50%' : '0')   : '0',
+                                right: nextInFilt || isFiltEnd ? (isFiltEnd ? '50%' : '0') : '0',
+                                backgroundColor: 'rgba(26,95,110,0.1)',
+                                zIndex: 0,
+                                // no border-radius so it joins adjacent cells seamlessly
+                              }} />
+                            )}
                             {day > 0 && (
-                              <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? '#1a5f6e' : di === 0 ? '#94a3b8' : '#475569', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isToday ? 22 : undefined, height: isToday ? 22 : undefined, borderRadius: isToday ? '50%' : undefined, backgroundColor: isToday ? '#e0f2f7' : undefined }}>
+                              <span style={{
+                                fontSize: 12,
+                                fontWeight: isToday || isFiltSt || isFiltEnd ? 700 : 500,
+                                color: (isFiltSt || isFiltEnd) ? 'white'
+                                  : isToday ? '#1a5f6e'
+                                  : inFilt ? '#1a5f6e'
+                                  : di === 0 ? '#94a3b8' : '#475569',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 24, height: 24, borderRadius: '50%',
+                                backgroundColor: (isFiltSt || isFiltEnd) ? '#1a5f6e'
+                                  : isToday ? '#e0f2f7'
+                                  : 'transparent',
+                                position: 'relative', zIndex: 1,
+                                // Ring for in-range days (not start/end)
+                                boxShadow: inFilt && !isFiltSt && !isFiltEnd
+                                  ? '0 0 0 1.5px rgba(26,95,110,0.35)'
+                                  : 'none',
+                              }}>
                                 {day}
                               </span>
                             )}
@@ -654,6 +899,10 @@ export function PublicCalendarView() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 24, height: 10, borderRadius: 3, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
             <span style={{ fontSize: 11, color: '#64748b' }}>Open Trip</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#1a5f6e', flexShrink: 0, boxShadow: '0 0 0 1.5px rgba(26,95,110,0.4)' }} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>Date Filter</span>
           </div>
           <span style={{ marginLeft: 'auto', fontSize: 10, color: '#cbd5e1' }}>© {new Date().getFullYear()} Samara Liveaboard</span>
         </div>
