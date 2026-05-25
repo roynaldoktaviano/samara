@@ -583,7 +583,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       return !!openTripId
     }
     if (step === 2) {
-      if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && !!depositDueDate && !!finalDueDate && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
+      if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
       if (guests.length === 0) return false
       if (tripType === 'OPEN_TRIP') return guests.every(g => !!g.cabinId)
       return true // PC: cabin optional
@@ -1416,35 +1416,6 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 onChange={e => setHoldUntil(e.target.value)}
               />
               <p className="text-[11px] text-muted-foreground">Booking otomatis dibatalkan jika melewati batas waktu ini.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                  Deposit Due <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  type="date"
-                  className="border-amber-200 focus:ring-amber-400"
-                  min={TODAY}
-                  value={depositDueDate}
-                  onChange={e => {
-                    setDepDue(e.target.value)
-                    if (finalDueDate && e.target.value > finalDueDate) setFinalDue(e.target.value)
-                  }}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                  Final Due <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  type="date"
-                  className="border-amber-200 focus:ring-amber-400"
-                  min={depositDueDate || TODAY}
-                  value={finalDueDate}
-                  onChange={e => setFinalDue(e.target.value)}
-                />
-              </div>
             </div>
           </div>
         )}
