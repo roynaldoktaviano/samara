@@ -163,6 +163,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
   const [cabinSalesperson,      setCabinSalesperson]      = useState<Record<string,string>>({})
+  // original cabin occupancy from the on-hold booking being completed — excluded from "blocked by other" check
+  const [originalHoldCabins,    setOriginalHoldCabins]    = useState<Record<string,number>>({})
   const [submitting,       setSubmitting]        = useState(false)
   const [completeLoading,  setCompleteLoading]   = useState(false)
 
@@ -231,9 +233,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setDest(b.destination ?? '')
         setNotes(b.notes ?? '')
         setAgentId(b.agentId ?? '')
+        setIsOnHold(false)
         setPhase('steps')
 
-        if (bTripType === 'OPEN_TRIP' && b.guests?.length) {
+        // Pre-fill hold guest so user just needs to confirm / edit
+        if (b.guests?.length) {
           setGuests(b.guests.map((g: any) => ({
             customerId: g.customer?.id ?? g.customerId,
             name:       g.customer?.name ?? '',
@@ -241,10 +245,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             cabinId:    g.cabin?.id ?? g.cabinId ?? '',
             isLead:     g.isLead ?? true,
           })))
-          setStep(3)
+          // Track original cabin assignments so they're not treated as "blocked by other"
+          const holdCabOcc: Record<string, number> = {}
+          b.guests.forEach((g: any) => {
+            const cid = g.cabin?.id ?? g.cabinId
+            if (cid) holdCabOcc[cid] = (holdCabOcc[cid] ?? 0) + 1
+          })
+          setOriginalHoldCabins(holdCabOcc)
         } else {
-          setStep(2)
+          setGuests([])
+          setOriginalHoldCabins({})
         }
+        setStep(2)
       })
       .catch(() => {})
       .finally(() => setCompleteLoading(false))
@@ -447,6 +459,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
+    setOriginalHoldCabins({})
     setCabinExtraBeds({})
     setDragGuest(null); setDropTarget(null); setDropError(null)
     setShowQuickAdd(false); setQuickFirstName(''); setQuickLastName(''); setQuickPhone(''); setQuickEmail('')
@@ -571,7 +584,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     }
     if (step === 2) {
       if (isOnHold) return holdGuestName.trim().length > 0 && !!holdUntil && !!depositDueDate && !!finalDueDate && (tripType !== 'OPEN_TRIP' || !!holdCabinId)
-      return guests.length > 0
+      if (guests.length === 0) return false
+      if (tripType === 'OPEN_TRIP') return guests.every(g => !!g.cabinId)
+      return true // PC: cabin optional
     }
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
@@ -1165,7 +1180,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       const already = guests.find(g => g.customerId === gId)?.cabinId === targetId
       const extOccDrop = existingCabinOccupancy[targetId] ?? 0
       const myOccDrop  = cabinOccupancy[targetId] ?? 0
-      if (!already && extOccDrop > 0) {
+      const adjustedExtOccDrop = completeBookingId
+        ? Math.max(0, extOccDrop - (originalHoldCabins[targetId] ?? 0))
+        : extOccDrop
+      if (!already && adjustedExtOccDrop > 0) {
         setDropError(`${cabin?.name} is already reserved by ${cabinSalesperson[targetId] || 'another booking'}`)
         return
       }
@@ -1658,7 +1676,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
               Guests ({guests.length})
             </p>
-            <p className="text-[10px] text-muted-foreground">Drag to a cabin →</p>
+            <p className="text-[10px] text-muted-foreground">
+              {tripType === 'OPEN_TRIP' ? 'Cabin required ↓' : 'Drag to cabin (optional) →'}
+            </p>
             <div className="flex flex-col gap-1 mt-1">
               {unassigned.map(g => pill(g))}
             </div>
@@ -1698,10 +1718,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 {cabins.map(c => {
                   const myOcc      = cabinOccupancy[c.id] ?? 0
                   const extOcc     = existingCabinOccupancy[c.id] ?? 0
-                  const totalOcc   = myOcc + extOcc
+                  // In complete-booking mode, subtract the on-hold booking's own cabin slots
+                  // so they don't appear as "blocked by another booking"
+                  const adjustedExtOcc = completeBookingId
+                    ? Math.max(0, extOcc - (originalHoldCabins[c.id] ?? 0))
+                    : extOcc
+                  const totalOcc   = myOcc + adjustedExtOcc
 
                   // For open trips: external booking blocks the whole cabin; local occupancy respects cabin capacity
-                  const isBlockedByOther = tripType === 'OPEN_TRIP' && extOcc > 0
+                  const isBlockedByOther = tripType === 'OPEN_TRIP' && adjustedExtOcc > 0
                   const effectiveCap = c.capacity + (cabinExtraBeds[c.id] ?? 0)
                   const isFull = isBlockedByOther || totalOcc >= effectiveCap
                   const isOver      = dropTarget === c.id
