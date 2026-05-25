@@ -216,13 +216,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setTrip('PRIVATE_CHARTER')
   }, [open, preselectedYachtId])
 
-  /* complete on-hold booking: pre-fill trip info and jump to step 2 */
+  /* complete on-hold booking: pre-fill trip info and jump to step 2.
+     Fetches booking, cabins, and occupancy all inline so the loading screen
+     stays up until every piece of data is ready. */
   useEffect(() => {
     if (!open || !completeBookingId) return
     setCompleteLoading(true)
-    fetch(`/api/bookings/${completeBookingId}`)
-      .then(r => r.json())
-      .then((b: any) => {
+    ;(async () => {
+      try {
+        const b = await fetch(`/api/bookings/${completeBookingId}`).then(r => r.json())
         const bTripType: TripType = b.tripType ?? 'PRIVATE_CHARTER'
         setSource(b.source ?? 'DIRECT')
         setTrip(bTripType)
@@ -236,7 +238,6 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setIsOnHold(false)
         setPhase('steps')
 
-        // Pre-fill hold guest so user just needs to confirm / edit
         if (b.guests?.length) {
           setGuests(b.guests.map((g: any) => ({
             customerId: g.customer?.id ?? g.customerId,
@@ -245,7 +246,6 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             cabinId:    g.cabin?.id ?? g.cabinId ?? '',
             isLead:     g.isLead ?? true,
           })))
-          // Track original cabin assignments so they're not treated as "blocked by other"
           const holdCabOcc: Record<string, number> = {}
           b.guests.forEach((g: any) => {
             const cid = g.cabin?.id ?? g.cabinId
@@ -257,9 +257,51 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           setOriginalHoldCabins({})
         }
         setStep(2)
-      })
-      .catch(() => {})
-      .finally(() => setCompleteLoading(false))
+
+        // Fetch cabins + occupancy inline so the loading screen doesn't drop early
+        if (bTripType === 'OPEN_TRIP' && b.openTripId) {
+          const otData = await fetch(`/api/open-trips/${b.openTripId}`).then(r => r.json()).catch(() => null)
+          if (otData) {
+            const ids: string[] = []
+            const occ: Record<string, number> = {}
+            const sales: Record<string, string> = {}
+            if (Array.isArray(otData.bookings)) {
+              otData.bookings.forEach((bk: any) => {
+                if (bk.customerId) ids.push(bk.customerId)
+                bk.guests?.forEach((g: any) => {
+                  if (g.customerId) ids.push(g.customerId)
+                  const cabId = g.cabin?.id ?? g.cabinId
+                  if (cabId) occ[cabId] = (occ[cabId] ?? 0) + 1
+                })
+              })
+            }
+            if (Array.isArray(otData.cabins)) {
+              otData.cabins.forEach((c: any) => {
+                if (c.occupied > 0) occ[c.id] = c.occupied
+                if (c.salesperson) sales[c.id] = c.salesperson
+                c.guests?.forEach((g: any) => { if (g.id) ids.push(g.id) })
+              })
+            }
+            setBookedCustomerIds([...new Set(ids)])
+            setExistingCabinOccupancy(occ)
+            setCabinSalesperson(sales)
+
+            const cabinYachtId = otData.yachtId ?? b.yacht?.id ?? b.yachtId ?? ''
+            if (cabinYachtId) {
+              const cabinsData = await fetch(`/api/cabins?yachtId=${cabinYachtId}`).then(r => r.json()).catch(() => [])
+              setCabins(Array.isArray(cabinsData) ? cabinsData : [])
+            }
+          }
+        } else if (bTripType === 'PRIVATE_CHARTER') {
+          const cabinYachtId = b.yacht?.id ?? b.yachtId ?? ''
+          if (cabinYachtId) {
+            const cabinsData = await fetch(`/api/cabins?yachtId=${cabinYachtId}`).then(r => r.json()).catch(() => [])
+            setCabins(Array.isArray(cabinsData) ? cabinsData : [])
+          }
+        }
+      } catch {}
+      setCompleteLoading(false)
+    })()
   }, [open, completeBookingId])
 
   /* fetch on open */
@@ -282,20 +324,20 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     })
   }, [open])
 
-  /* fetch cabins when yacht changes */
+  /* fetch cabins when yacht changes — skipped when completing an on-hold booking (handled inline) */
   useEffect(() => {
+    if (completeBookingId) return
     const id = tripType === 'PRIVATE_CHARTER' ? yachtId
              : openTrips.find(t => t.id === openTripId)?.yachtId ?? ''
     if (!id) { setCabins([]); return }
     fetch(`/api/cabins?yachtId=${id}`).then(r => r.json()).then(d => {
       setCabins(Array.isArray(d) ? d : [])
     })
-  }, [yachtId, openTripId, tripType, openTrips])
+  }, [yachtId, openTripId, tripType, openTrips, completeBookingId])
 
-  /* fetch already-booked customers for selected open trip
-     Uses the open-trip detail endpoint (no SALES filter) so all bookings
-     across all salespersons are counted for occupancy. */
+  /* fetch already-booked customers for selected open trip — skipped when completing an on-hold booking (handled inline) */
   useEffect(() => {
+    if (completeBookingId) return
     if (!openTripId) { setBookedCustomerIds([]); setExistingCabinOccupancy({}); setCabinSalesperson({}); return }
     fetch(`/api/open-trips/${openTripId}`)
       .then(r => r.json())
@@ -326,7 +368,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setCabinSalesperson(sales)
       })
       .catch(() => {})
-  }, [openTripId])
+  }, [openTripId, completeBookingId])
 
   /* yacht date conflict check — Private Charter only */
   useEffect(() => {
