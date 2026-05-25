@@ -724,77 +724,77 @@ export default function Bookings() {
                       const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed' && b.status !== 'on_hold'
                       const nextType        = hasAnyPmt ? 'Settlement' : 'Deposit'
                       const pelunasanBlocked = nextType === 'Settlement' && !hasConfirmedPmt
+                      const holdExpiry = b.holdUntil ? new Date(b.holdUntil) : null
+                      const isExpired  = holdExpiry ? holdExpiry < new Date() : false
+                      const isUrgent   = holdExpiry && !isExpired ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 : false
                       return (
                         <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
-                          <div className="flex flex-col gap-1 items-start">
-                            {b.status === 'on_hold' && (() => {
-                              const holdExpiry = b.holdUntil ? new Date(b.holdUntil) : null
-                              const isExpired  = holdExpiry ? holdExpiry < new Date() : false
-                              const isUrgent   = holdExpiry && !isExpired
-                                ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 // < 2h
-                                : false
-                              return (
-                                <>
-                                  <Button
-                                    variant="ghost" size="sm"
-                                    className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                    onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
-                                  >
-                                    <ChevronRight className="h-3 w-3 mr-1" /> Complete Booking
-                                  </Button>
-                                  {holdExpiry && (
-                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isExpired ? 'text-red-600 bg-red-50' : isUrgent ? 'text-orange-600 bg-orange-50' : 'text-muted-foreground'}`}>
-                                      {isExpired ? '⚠ Hold expired' : `Hold until ${holdExpiry.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${holdExpiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                                    </span>
-                                  )}
-                                </>
-                              )
-                            })()}
-                            {canRecord && !hasSettlement && (
+                          <div className="flex flex-col gap-1 min-w-0">
+
+                            {/* ── Primary action ── */}
+                            {b.status === 'on_hold' ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-6 px-2 text-[11px] font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-full border border-orange-200"
+                                  onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
+                                >
+                                  <ChevronRight className="h-3 w-3 mr-0.5" /> Complete
+                                </Button>
+                                {holdExpiry && (
+                                  <span className={`text-[10px] font-medium ${isExpired ? 'text-red-500' : isUrgent ? 'text-orange-500' : 'text-muted-foreground'}`}>
+                                    {isExpired ? '⚠ Expired' : `until ${holdExpiry.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${holdExpiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                                  </span>
+                                )}
+                              </div>
+                            ) : canRecord && !hasSettlement ? (
                               <Button
                                 variant="ghost" size="sm"
                                 disabled={pelunasanBlocked}
-                                title={pelunasanBlocked ? 'DP harus dikonfirmasi dulu sebelum buat invoice pelunasan' : undefined}
-                                className={`h-7 px-2 text-xs ${pelunasanBlocked ? 'opacity-40 cursor-not-allowed' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}`}
+                                title={pelunasanBlocked ? 'Confirm DP invoice first' : undefined}
+                                className={`h-6 px-2 text-[11px] font-semibold rounded-full border w-fit ${pelunasanBlocked ? 'opacity-35 cursor-not-allowed border-border text-muted-foreground' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
                                 onClick={() => !pelunasanBlocked && openPayment(b)}
                               >
                                 <CreditCard className="h-3 w-3 mr-1" /> Invoice {nextType}
                               </Button>
-                            )}
-                            {pendingPmt && (
-                              <Button
-                                variant="ghost" size="sm"
-                                className={`h-7 px-2 text-xs ${pendingPmt.hasProof ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'}`}
-                                onClick={() => openProofUpload(pendingPmt)}
-                              >
-                                <Upload className="h-3 w-3 mr-1" />
-                                {pendingPmt.hasProof ? 'Update Bukti' : 'Upload Bukti'}
-                              </Button>
-                            )}
-                            {bookingPmts.map((p, idx) => (
-                              <div key={p.id} className="flex items-center gap-0.5">
-                                <Button
-                                  variant="ghost" size="sm"
-                                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                  onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
-                                >
-                                  <Receipt className="h-3 w-3 mr-1" />
-                                  {p.paymentType === 'PELUNASAN'
-                                    ? 'Invoice Pelunasan'
-                                    : idx === 0 ? 'Invoice DP' : `Invoice ${idx + 1}`}
-                                </Button>
-                                {p.status === 'pending_confirmation' && (
-                                  <Button
-                                    variant="ghost" size="sm"
-                                    className="h-7 w-6 p-0 text-muted-foreground hover:text-blue-600"
-                                    title="Update nominal invoice"
-                                    onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)); setEditAmtMethod(p.paymentMethod || 'Transfer Bank'); setEditAmtNotes(p.notes || '') }}
+                            ) : null}
+
+                            {/* ── Invoices + upload row ── */}
+                            {(bookingPmts.length > 0 || pendingPmt) && (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {pendingPmt && (
+                                  <button
+                                    title={pendingPmt.hasProof ? 'Update proof' : 'Upload proof'}
+                                    onClick={() => openProofUpload(pendingPmt)}
+                                    className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium border transition-colors ${pendingPmt.hasProof ? 'text-emerald-600 border-emerald-200 hover:bg-emerald-50' : 'text-amber-600 border-amber-200 hover:bg-amber-50'}`}
                                   >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
+                                    <Upload className="h-2.5 w-2.5" />
+                                    {pendingPmt.hasProof ? 'Proof ✓' : 'Proof'}
+                                  </button>
                                 )}
+                                {bookingPmts.map((p, idx) => (
+                                  <div key={p.id} className="inline-flex items-center gap-0.5">
+                                    <button
+                                      onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
+                                      className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                                      title={p.invoiceNumber}
+                                    >
+                                      <Receipt className="h-2.5 w-2.5" />
+                                      {p.paymentType === 'PELUNASAN' ? 'SL' : idx === 0 ? 'DP' : `#${idx + 1}`}
+                                    </button>
+                                    {p.status === 'pending_confirmation' && (
+                                      <button
+                                        title="Edit invoice detail"
+                                        onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)); setEditAmtMethod(p.paymentMethod || 'Transfer Bank'); setEditAmtNotes(p.notes || '') }}
+                                        className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                      >
+                                        <Pencil className="h-2.5 w-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
                         </TableCell>
                       )
