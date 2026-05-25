@@ -162,8 +162,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
   const now = new Date()
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
   const [selectedDay,   setSelectedDay]   = useState(() => isCurrentMonth ? now.getDate() : 1)
-  const [filterOpen,    setFilterOpen]    = useState(false)
-  const [dateFilterOpen, setDateFilterOpen] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
 
   useEffect(() => {
     setSelectedDay(year === now.getFullYear() && month === now.getMonth() ? now.getDate() : 1)
@@ -243,89 +242,73 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
     <div style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Header ── */}
-      <div style={{ backgroundColor: 'white', padding: '16px 20px 0', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 30, fontWeight: 800, color: '#1e293b', lineHeight: 1 }}>{MONTH_NAMES[month]}</span>
-              {yachtFilter && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: colorMap[yachtFilter] ?? '#1a5f6e', backgroundColor: (colorMap[yachtFilter] ?? '#1a5f6e') + '1a', borderRadius: 8, padding: '2px 8px', alignSelf: 'center' }}>
-                  {yachtFilter}
-                </span>
-              )}
-              <div style={{ display: 'flex', gap: 2 }}>
-                <button onClick={prev} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ChevronLeft size={15} color="#64748b" />
-                </button>
-                <button onClick={next} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ChevronRight size={15} color="#64748b" />
-                </button>
-              </div>
+      <div style={{ backgroundColor: 'white', padding: '14px 20px 0', flexShrink: 0 }}>
+        {/* Top row: month + nav + logo */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 2 }}>
+              <button onClick={prev} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronLeft size={15} color="#64748b" />
+              </button>
+              <button onClick={next} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRight size={15} color="#64748b" />
+              </button>
             </div>
-            <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500 }}>{year}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-            {/* Date filter toggle */}
-            <button
-              onClick={() => setDateFilterOpen(v => !v)}
-              style={{
-                width: 36, height: 36, borderRadius: 10,
-                border: filterActive ? '2px solid #1a5f6e' : '1px solid #e2e8f0',
-                background: filterActive ? '#e0f2f7' : 'white',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <CalendarSearch size={17} color={filterActive ? '#1a5f6e' : '#64748b'} />
-            </button>
-            <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 30, width: 'auto', objectFit: 'contain' }} />
-          </div>
-        </div>
-
-        {/* Date filter panel */}
-        {dateFilterOpen && (
-          <div style={{ marginBottom: 12, padding: '10px 12px', backgroundColor: '#f0f9fb', borderRadius: 12, border: '1px solid #bae6fd' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#1a5f6e', letterSpacing: '0.05em' }}>DATE FILTER</span>
-              {filterActive && (
-                <button
-                  onClick={() => { setFilterStart(''); setFilterEnd('') }}
-                  style={{ fontSize: 11, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
-                >
-                  <X size={12} /> Clear
-                </button>
-              )}
+            <div>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', lineHeight: 1 }}>{MONTH_NAMES[month]}</span>
+              <span style={{ fontSize: 14, color: '#94a3b8', fontWeight: 500, marginLeft: 6 }}>{year}</span>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 3, fontWeight: 600 }}>FROM</div>
-                <input
-                  type="date"
-                  value={filterStart}
-                  onChange={e => setFilterStart(e.target.value)}
-                  style={{ width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0', backgroundColor: 'white', boxSizing: 'border-box' as const }}
-                />
-              </div>
-              <div style={{ color: '#94a3b8', fontSize: 14, paddingTop: 16, flexShrink: 0 }}>→</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 3, fontWeight: 600 }}>TO</div>
-                <input
-                  type="date"
-                  value={filterEnd}
-                  min={filterStart}
-                  onChange={e => setFilterEnd(e.target.value)}
-                  style={{ width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0', backgroundColor: 'white', boxSizing: 'border-box' as const }}
-                />
-              </div>
-            </div>
-            {filterActive && (
-              <div style={{ marginTop: 8, fontSize: 11, color: '#1a5f6e', fontWeight: 600 }}>
-                {filterStart === fEnd
-                  ? `Showing: ${fmtFilterDate(filterStart)}`
-                  : `Showing: ${fmtFilterDate(filterStart)}${fEnd ? ` → ${fmtFilterDate(fEnd)}` : ''}`}
-              </div>
+            {yachtFilter && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: colorMap[yachtFilter] ?? '#1a5f6e', backgroundColor: (colorMap[yachtFilter] ?? '#1a5f6e') + '1a', borderRadius: 8, padding: '2px 8px' }}>
+                {yachtFilter}
+              </span>
             )}
           </div>
-        )}
+          <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+        </div>
+
+        {/* Date filter row — always visible */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <CalendarSearch size={13} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="date"
+              value={filterStart}
+              onChange={e => setFilterStart(e.target.value)}
+              style={{
+                flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 8,
+                border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                backgroundColor: filterStart ? '#e0f2f7' : '#fafafa',
+                color: filterStart ? '#1a5f6e' : '#94a3b8',
+                outline: 'none', minWidth: 0,
+              }}
+            />
+            <span style={{ color: '#cbd5e1', fontSize: 12, flexShrink: 0 }}>—</span>
+            <input
+              type="date"
+              value={filterEnd}
+              min={filterStart}
+              onChange={e => setFilterEnd(e.target.value)}
+              style={{
+                flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 8,
+                border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                backgroundColor: filterEnd ? '#e0f2f7' : '#fafafa',
+                color: filterEnd ? '#1a5f6e' : '#94a3b8',
+                outline: 'none', minWidth: 0,
+              }}
+            />
+          </div>
+          {filterActive ? (
+            <button
+              onClick={() => { setFilterStart(''); setFilterEnd('') }}
+              style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <X size={12} color="#64748b" />
+            </button>
+          ) : (
+            <div style={{ width: 26 }} />
+          )}
+        </div>
 
         {/* DOW labels */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
@@ -419,19 +402,6 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
         <div style={{ padding: '14px 20px 8px', flexShrink: 0 }}>
           <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1e293b' }}>Schedule</p>
           <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{selectedDateLabel}</p>
-          {filterActive && (() => {
-            const ds = dateStr(year, month, selectedDay)
-            const inRange = ds >= filterStart && ds <= fEnd
-            return inRange ? (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, fontWeight: 600, color: '#1a5f6e', backgroundColor: '#e0f2f7', borderRadius: 6, padding: '2px 8px' }}>
-                <CalendarSearch size={11} /> In filtered range
-              </div>
-            ) : (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, color: '#94a3b8', backgroundColor: '#f1f5f9', borderRadius: 6, padding: '2px 8px' }}>
-                Outside filter range
-              </div>
-            )
-          })()}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 80px' }}>
