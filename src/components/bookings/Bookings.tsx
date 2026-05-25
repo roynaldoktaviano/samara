@@ -141,8 +141,9 @@ export default function Bookings() {
   const [typeFilter,   setTypeFilter]  = useState('all')
   const [dateFrom,     setDateFrom]    = useState('')
   const [dateTo,       setDateTo]      = useState('')
-  const [wizardOpen,   setWizardOpen]  = useState(false)
-  const [editBooking,  setEditBooking] = useState<BookingRecord | null>(null)
+  const [wizardOpen,        setWizardOpen]        = useState(false)
+  const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
+  const [editBooking,       setEditBooking]       = useState<BookingRecord | null>(null)
   const [editSaving,   setEditSaving]  = useState(false)
   const [editStatus,   setEditStatus]  = useState('')
   const [editTotal,    setEditTotal]   = useState('')
@@ -726,7 +727,7 @@ export default function Bookings() {
                               <Button
                                 variant="ghost" size="sm"
                                 className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                onClick={() => openDetail(b)}
+                                onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
                               >
                                 <ChevronRight className="h-3 w-3 mr-1" /> Complete Booking
                               </Button>
@@ -1637,7 +1638,12 @@ export default function Bookings() {
         onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
       />
 
-      <BookingWizard open={wizardOpen} onOpenChange={setWizardOpen} onSuccess={fetchBookings} />
+      <BookingWizard
+        open={wizardOpen}
+        onOpenChange={v => { setWizardOpen(v); if (!v) setCompleteBookingId(undefined) }}
+        onSuccess={fetchBookings}
+        completeBookingId={completeBookingId}
+      />
     </div>
   )
 }

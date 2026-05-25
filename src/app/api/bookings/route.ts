@@ -153,15 +153,17 @@ export async function POST(request: NextRequest) {
       services,            // Array<{ name, price }>
       confirmCloseOpenTrips, // boolean: user confirmed closing conflicting open trips
       isOnHold,            // boolean: save as on_hold status
+      holdCustomerId,      // existing customer id (skips find/create)
+      holdCabinId,         // cabin id for open trip on-hold
       holdGuest,           // { name, phone } for on-hold bookings (no prior customer needed)
     } = body
 
     if (isOnHold) {
-      // On-hold: only need trip info + guest name
+      // On-hold: only need trip info + guest name (or existing customer id)
       if (!startDate || !endDate) {
         return NextResponse.json({ error: 'Missing trip dates' }, { status: 400 })
       }
-      if (!holdGuest?.name?.trim()) {
+      if (!holdCustomerId && !holdGuest?.name?.trim()) {
         return NextResponse.json({ error: 'Guest name is required for on-hold booking' }, { status: 400 })
       }
     } else if (!startDate || !endDate || !guests?.length) {
@@ -212,24 +214,28 @@ export async function POST(request: NextRequest) {
     const sameCount  = await db.booking.count({ where: { bookingCode: { startsWith: prefix } } })
     const bookingCode = `${prefix}${String(sameCount + 1).padStart(4, '0')}`
 
-    // For on-hold: find or create a customer record with just name + phone
+    // For on-hold: use provided customer id, or find/create by phone+name
     let leadCustomerId: string
     if (isOnHold) {
-      const existingCust = holdGuest.phone
-        ? await db.customer.findFirst({ where: { phone: holdGuest.phone } })
-        : null
-      if (existingCust) {
-        leadCustomerId = existingCust.id
+      if (holdCustomerId) {
+        leadCustomerId = holdCustomerId
       } else {
-        const newCust = await db.customer.create({
-          data: {
-            name:  holdGuest.name.trim(),
-            phone: holdGuest.phone?.trim() || null,
-            email: holdGuest.email?.trim() || null,
-          },
-          select: { id: true },
-        })
-        leadCustomerId = newCust.id
+        const existingCust = holdGuest.phone
+          ? await db.customer.findFirst({ where: { phone: holdGuest.phone } })
+          : null
+        if (existingCust) {
+          leadCustomerId = existingCust.id
+        } else {
+          const newCust = await db.customer.create({
+            data: {
+              name:  holdGuest.name.trim(),
+              phone: holdGuest.phone?.trim() || null,
+              email: holdGuest.email?.trim() || null,
+            },
+            select: { id: true },
+          })
+          leadCustomerId = newCust.id
+        }
       }
     } else {
       leadCustomerId = lead.customerId
@@ -263,7 +269,7 @@ export async function POST(request: NextRequest) {
         salesperson:    session?.user?.name || null,
         guests: {
           create: isOnHold
-            ? [{ customerId: leadCustomerId, isLead: true }]
+            ? [{ customerId: leadCustomerId, isLead: true, cabinId: holdCabinId || null }]
             : guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
                 customerId: g.customerId,
                 cabinId:    g.cabinId || null,
