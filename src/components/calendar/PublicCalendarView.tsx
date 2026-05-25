@@ -287,8 +287,11 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
           <input
             type="date"
             value={filterEnd}
-            min={filterStart}
-            onChange={e => setFilterEnd(e.target.value)}
+            onChange={e => {
+              const val = e.target.value
+              if (val && filterStart && val < filterStart) { setFilterEnd(filterStart); setFilterStart(val) }
+              else setFilterEnd(val)
+            }}
             style={{
               flex: 1, fontSize: 12, padding: '6px 8px', borderRadius: 8,
               border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
@@ -654,8 +657,11 @@ export function PublicCalendarView() {
               <input
                 type="date"
                 value={filterEnd}
-                min={filterStart}
-                onChange={e => setFilterEnd(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value
+                  if (val && filterStart && val < filterStart) { setFilterEnd(filterStart); setFilterStart(val) }
+                  else setFilterEnd(val)
+                }}
                 style={{
                   fontSize: 12, padding: '4px 8px', borderRadius: 6,
                   border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
