@@ -1088,9 +1088,10 @@ export default function CalendarView() {
       {(() => {
         const todayDate = new Date(); todayDate.setHours(0,0,0,0)
         const filterOtByYacht = (t: OpenTripEvent) => yachtFilter === 'all' || t.yacht?.name === yachtFilter
-        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
-        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
-        const filteredOt   = openTrips.filter(filterOtByYacht)
+        const isNotPrivatePC = (t: OpenTripEvent) => !(t.status === 'closed' && t.closedReason?.toLowerCase().includes('private'))
+        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
+        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
+        const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t))
         const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const closedCabins = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const totalCabins  = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)

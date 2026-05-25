@@ -750,6 +750,12 @@ export function PublicCalendarView() {
                         const isFiltEnd = day > 0 && !!fEnd && ds === fEnd
                         const isSingle  = filterStart === fEnd || !fEnd
 
+                        // Red tint: day has any booking or open trip on this yacht
+                        const isOccupied = day > 0 && (
+                          filteredBookings.some(b => ds >= b.startDate.split('T')[0] && ds <= b.endDate.split('T')[0]) ||
+                          allOpenTrips.some(t => ds >= t.startDate.split('T')[0] && ds <= t.endDate.split('T')[0])
+                        )
+
                         // Determine range bar edges within this row
                         const prevDay   = di > 0 ? week[di - 1] : 0
                         const nextDay   = di < 6 ? week[di + 1] : 0
@@ -762,7 +768,7 @@ export function PublicCalendarView() {
                           <div key={di} style={{
                             borderRight: di < 6 ? '1px solid #f1f5f9' : 'none',
                             padding: '5px 6px',
-                            backgroundColor: di === 0 ? '#fafafa' : 'white',
+                            backgroundColor: isOccupied ? '#fff5f5' : di === 0 ? '#fafafa' : 'white',
                             position: 'relative',
                           }}>
                             {/* Filter range bar behind date */}
@@ -784,6 +790,7 @@ export function PublicCalendarView() {
                                 color: (isFiltSt || isFiltEnd) ? 'white'
                                   : isToday ? '#1a5f6e'
                                   : inFilt ? '#1a5f6e'
+                                  : isOccupied ? '#f87171'
                                   : di === 0 ? '#94a3b8' : '#475569',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 width: 24, height: 24, borderRadius: '50%',
