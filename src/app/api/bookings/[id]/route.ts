@@ -229,8 +229,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session  = await getServerSession(authOptions)
+    if ((session?.user as { role?: string })?.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     const { id }   = await params
-    const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true } })
+    const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true, status: true } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (existing.status !== 'cancelled') {
+      return NextResponse.json({ error: 'Only cancelled bookings can be deleted' }, { status: 400 })
+    }
     await db.booking.delete({ where: { id } })
 
     const userId   = session?.user?.id   ?? ''

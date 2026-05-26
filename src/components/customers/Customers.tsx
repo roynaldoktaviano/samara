@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Loader2, X, CreditCard, Calendar, RotateCw } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Trash2, X, CreditCard, Calendar, RotateCw } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -63,6 +66,9 @@ const statusColor: Record<string, string> = {
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
 export default function Guests() {
+  const { data: session } = useSession()
+  const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
+
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -71,6 +77,17 @@ export default function Guests() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<GuestDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+
+  // single delete
+  const [deleteTarget, setDeleteTarget] = useState<Guest | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  // bulk delete
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkErrors, setBulkErrors] = useState<string[]>([])
 
   const fetchGuests = useCallback(async () => {
     setLoading(true)
@@ -83,6 +100,9 @@ export default function Guests() {
   }, [search])
 
   useEffect(() => { fetchGuests() }, [fetchGuests])
+
+  // clear selection when list changes
+  useEffect(() => { setSelectedIds(new Set()) }, [guests])
 
   const openDetail = async (g: Guest) => {
     setDetailOpen(true)
@@ -99,6 +119,62 @@ export default function Guests() {
     e.stopPropagation()
     setSheetGuestId(g.id)
     setSheetOpen(true)
+  }
+
+  /* ── checkbox helpers ── */
+  const allSelected  = guests.length > 0 && selectedIds.size === guests.length
+  const someSelected = selectedIds.size > 0 && selectedIds.size < guests.length
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(guests.map(g => g.id)))
+  }
+
+  const toggleOne = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  /* ── single delete ── */
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const res = await fetch(`/api/customers/${deleteTarget.id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json(); setDeleteError(d.error ?? 'Failed to delete'); return }
+      setDeleteTarget(null)
+      fetchGuests()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  /* ── bulk delete ── */
+  const confirmBulkDelete = async () => {
+    setBulkDeleting(true)
+    setBulkErrors([])
+    const errors: string[] = []
+    for (const id of selectedIds) {
+      const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const d = await res.json()
+        const g = guests.find(x => x.id === id)
+        errors.push(`${g?.name ?? id}: ${d.error ?? 'Failed'}`)
+      }
+    }
+    setBulkDeleting(false)
+    if (errors.length > 0) {
+      setBulkErrors(errors)
+    } else {
+      setBulkDeleteOpen(false)
+      setSelectedIds(new Set())
+      fetchGuests()
+    }
   }
 
   return (
@@ -135,11 +211,39 @@ export default function Guests() {
               className="max-w-sm"
             />
             {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+
+            {/* Bulk action bar */}
+            {isAdmin && selectedIds.size > 0 && (
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
+                <Button
+                  variant="destructive" size="sm"
+                  onClick={() => { setBulkErrors([]); setBulkDeleteOpen(true) }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Delete {selectedIds.size}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                  <X className="h-3.5 w-3.5 mr-1" /> Clear
+                </Button>
+              </div>
+            )}
           </div>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isAdmin && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        ref={el => { if (el) (el as HTMLButtonElement).dataset.indeterminate = someSelected ? 'true' : 'false' }}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all"
+                        className={someSelected ? 'opacity-70' : ''}
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Name</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Passport</TableHead>
@@ -152,6 +256,7 @@ export default function Guests() {
                 {loading ? (
                   [...Array(6)].map((_, i) => (
                     <TableRow key={i}>
+                      {isAdmin && <TableCell><Skeleton className="h-4 w-4 rounded" /></TableCell>}
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Skeleton className="h-9 w-9 rounded-full shrink-0" />
@@ -169,9 +274,24 @@ export default function Guests() {
                     </TableRow>
                   ))
                 ) : guests.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">No guests found</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-muted-foreground">No guests found</TableCell>
+                  </TableRow>
                 ) : guests.map(g => (
-                  <TableRow key={g.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(g)}>
+                  <TableRow
+                    key={g.id}
+                    className={`cursor-pointer hover:bg-muted/50 ${selectedIds.has(g.id) ? 'bg-muted/40' : ''}`}
+                    onClick={() => openDetail(g)}
+                  >
+                    {isAdmin && (
+                      <TableCell onClick={e => toggleOne(g.id, e)}>
+                        <Checkbox
+                          checked={selectedIds.has(g.id)}
+                          onCheckedChange={() => {}}
+                          aria-label={`Select ${g.name}`}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 shrink-0">
@@ -205,6 +325,15 @@ export default function Guests() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={e => openEdit(g, e)}><Edit className="h-4 w-4" /></Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost" size="icon"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={e => { e.stopPropagation(); setDeleteError(''); setDeleteTarget(g) }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={e => { e.stopPropagation(); openDetail(g) }}><ChevronRight className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
@@ -269,7 +398,6 @@ export default function Guests() {
             </div>
           ) : (
             <>
-
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 {[
@@ -334,6 +462,64 @@ export default function Guests() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Single Delete Confirmation ────────────────────────────────────── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Guest</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p className="text-xs text-destructive bg-destructive/8 border border-destructive/20 rounded-lg px-3 py-2">{deleteError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deleting}
+              onClick={e => { e.preventDefault(); confirmDelete() }}
+            >
+              {deleting ? 'Deleting...' : 'Delete Guest'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Bulk Delete Confirmation ──────────────────────────────────────── */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={open => { if (!open) { setBulkDeleteOpen(false); setBulkErrors([]) } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} Guest{selectedIds.size > 1 ? 's' : ''}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedIds.size} selected guest{selectedIds.size > 1 ? 's' : ''}? This action cannot be undone.
+              Guests that have existing bookings will be skipped.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {bulkErrors.length > 0 && (
+            <div className="text-xs text-destructive bg-destructive/8 border border-destructive/20 rounded-lg px-3 py-2 space-y-0.5">
+              <p className="font-semibold mb-1">Some guests could not be deleted:</p>
+              {bulkErrors.map((e, i) => <p key={i}>• {e}</p>)}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting} onClick={() => { if (bulkErrors.length > 0) { setBulkDeleteOpen(false); setBulkErrors([]); setSelectedIds(new Set()); fetchGuests() } }}>
+              {bulkErrors.length > 0 ? 'Close' : 'Cancel'}
+            </AlertDialogCancel>
+            {bulkErrors.length === 0 && (
+              <AlertDialogAction
+                className="bg-destructive hover:bg-destructive/90 text-white"
+                disabled={bulkDeleting}
+                onClick={e => { e.preventDefault(); confirmBulkDelete() }}
+              >
+                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

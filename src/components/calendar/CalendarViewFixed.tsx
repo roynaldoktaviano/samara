@@ -476,15 +476,13 @@ function MonthGrid({
                               const isTripClosed = ot.status === 'closed'
                               // Dot color follows booking status legend
                               const bs = c.bookingStatus
-                              const dotColor = isTripClosed
-                                ? '#ef4444'                                                                       // closed trip → red
-                                : bs === null
-                                  ? '#ffffff'                                                                     // available → white (border below)
-                                  : bs === 'on_hold'
-                                    ? '#22c55e'                                                                   // hold → green
-                                    : bs === 'pending'
-                                      ? '#eab308'                                                                 // waiting payment → yellow
-                                      : '#ef4444'                                                                 // confirmed/paid → red
+                              const dotColor = bs === null
+                                ? (isTripClosed ? '#94a3b8' : '#ffffff')                                         // empty: grey if closed, white if open
+                                : bs === 'on_hold'
+                                  ? '#22c55e'                                                                     // hold → green
+                                  : bs === 'pending'
+                                    ? '#eab308'                                                                   // waiting payment → yellow
+                                    : '#ef4444'                                                                   // confirmed/paid → red
                               const dotBorder = dotColor === '#ffffff' ? '1.5px solid #475569' : 'none'
                               return (
                                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
@@ -2064,35 +2062,34 @@ export default function CalendarView() {
                         </button>
                       )}
                     </div>
-                    {otDetail.status === 'closed' ? (
-                      <div className="px-4 py-6 flex flex-col items-center justify-center gap-2 text-center">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-                          <AlertCircle className="w-4 h-4 text-amber-600" />
-                        </div>
-                        <p className="text-sm font-semibold text-amber-700">
-                          {otDetail.closedReason ?? 'Trip ini sudah ditutup'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Kabin tidak tersedia untuk open trip ini.</p>
-                      </div>
-                    ) : (
                     <div className="divide-y">
+                      {otDetail.status === 'closed' && (
+                        <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b">
+                          <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <p className="text-xs text-slate-500">{otDetail.closedReason ?? 'Trip ini sudah ditutup'}</p>
+                        </div>
+                      )}
                       {otDetail.cabins?.map((c: any) => {
+                        const isTripClosed = otDetail.status === 'closed'
                         const hasGuests = c.guests?.length > 0
                         const isHold    = hasGuests && c.bookingStatus === 'on_hold'
                         const isPaid    = hasGuests && !isHold && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
                         const isPending = hasGuests && !isHold && !isPaid
-                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit
+                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit && !isTripClosed
                         const dotCls    = isHold    ? 'bg-green-400'
                                         : isPaid    ? 'bg-red-400'
                                         : isPending ? 'bg-amber-400'
+                                        : isTripClosed ? 'bg-slate-300'
                                         : 'bg-white border border-slate-400'
                         const badgeCls  = isHold    ? 'bg-green-100 text-green-700 border border-green-200'
                                         : isPaid    ? 'bg-red-100 text-red-700 border border-red-200'
                                         : isPending ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                        : isTripClosed ? 'bg-slate-100 text-slate-400 border border-slate-200'
                                         : 'bg-slate-100 text-slate-600 border border-slate-200'
                         const badgeLabel = isHold    ? 'On Hold'
                                          : isPaid    ? 'Booked'
                                          : isPending ? 'Waiting for Payment'
+                                         : isTripClosed ? 'Closed'
                                          : 'Available'
                         const isAddingHere = otAddCabinId === c.id
                         return (
@@ -2192,7 +2189,6 @@ export default function CalendarView() {
                         <p className="text-sm text-muted-foreground text-center py-8">No cabins found for this yacht.</p>
                       )}
                     </div>
-                    )}
                   </div>
 
                   <DialogFooter className="gap-2">
