@@ -236,12 +236,23 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     const { id }   = await params
-    const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true, status: true } })
+    const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true, status: true, tripType: true } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (existing.status !== 'cancelled') {
       return NextResponse.json({ error: 'Only cancelled bookings can be deleted' }, { status: 400 })
     }
     await db.booking.delete({ where: { id } })
+
+    // If it was a Private Charter, reopen any future open trips that were closed because of it
+    if (existing.tripType === 'PRIVATE_CHARTER') {
+      db.openTrip.updateMany({
+        where: {
+          closedReason: { contains: existing.bookingCode },
+          startDate: { gt: new Date() },
+        },
+        data: { status: 'open', closedReason: null },
+      }).catch(() => {})
+    }
 
     const userId   = session?.user?.id   ?? ''
     const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'

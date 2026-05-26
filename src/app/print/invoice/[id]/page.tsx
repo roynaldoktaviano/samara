@@ -110,6 +110,12 @@ export default function InvoicePage() {
   const netTotal       = afterDiscount - commissionAmt
   const remaining      = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)
 
+  // For agent bookings: show net base price (commission + discount already absorbed)
+  const baseRaw        = b.totalPrice - servicesTotal
+  const displayBase    = isAgentBooking
+    ? baseRaw - discountAmt - commissionAmt
+    : baseRaw
+
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = !isAgentBooking && guestsWithCabin.length > 0
 
@@ -251,7 +257,7 @@ export default function InvoicePage() {
               <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{tripName} · {destination}</div>
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16, fontSize: 11 }}>
-              {fmtAmt(b.totalPrice - servicesTotal)}
+              {fmtAmt(displayBase)}
             </div>
           </div>
 
@@ -276,19 +282,11 @@ export default function InvoicePage() {
             </div>
           )}
 
-          {/* Discount */}
-          {b.discount > 0 && (
+          {/* Discount — only shown for non-agent bookings (agent bookings absorb it into base) */}
+          {!isAgentBooking && b.discount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
               <span style={{ color: '#059669', fontSize: 10 }}>Discount</span>
               <span style={{ color: '#059669', fontSize: 10 }}>−{fmtAmt(discountAmt)}</span>
-            </div>
-          )}
-
-          {/* Agent commission */}
-          {isAgentBooking && commissionPct > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
-              <span style={{ color: '#6b7280', fontSize: 10, fontStyle: 'italic' }}>Agent Rate ({commissionPct}% Commission)</span>
-              <span style={{ color: '#6b7280', fontSize: 10, fontStyle: 'italic' }}>({fmtAmt(commissionAmt)})</span>
             </div>
           )}
 

@@ -63,14 +63,22 @@ export async function GET(request: NextRequest) {
       let closedReason    = (t as any).closedReason ?? null
       if (blockingPC && t.status !== 'cancelled') {
         effectiveStatus = 'closed'
-        closedReason    = `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
+        closedReason    = `Closed — Private Charter ${blockingPC.bookingCode}`
         // Sync DB silently if not yet closed
         if (t.status !== 'closed') {
           db.openTrip.update({
             where: { id: t.id },
-            data:  { status: 'closed' },
+            data:  { status: 'closed', closedReason },
           }).catch(() => {})
         }
+      } else if (t.status === 'closed' && !blockingPC && now < new Date(t.startDate)) {
+        // Orphaned close: trip is closed in DB but no PC blocks it and date hasn't passed → recover
+        effectiveStatus = 'open'
+        closedReason    = null
+        db.openTrip.update({
+          where: { id: t.id },
+          data:  { status: 'open', closedReason: null },
+        }).catch(() => {})
       } else if (t.status !== 'cancelled' && t.status !== 'closed') {
         if (now >= new Date(t.startDate)) effectiveStatus = 'closed'
         else if (spotsAvailable === 0)   effectiveStatus = 'full'
