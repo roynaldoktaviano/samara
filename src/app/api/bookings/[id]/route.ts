@@ -18,7 +18,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       include: {
         yacht:    { select: { id: true, name: true, model: true, cabins: { select: { id: true, name: true, deck: true }, orderBy: { name: 'asc' } } } },
         customer: { select: { id: true, name: true, email: true, phone: true } },
-        agent:    { select: { id: true, name: true, company: true } },
+        agent:        { select: { id: true, name: true } },
+        agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
         openTrip:        { select: { id: true, title: true, destination: true } },
         salespersonUser: { select: { name: true } },
         guests: {
@@ -44,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -77,7 +78,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(openTripId  !== undefined && { openTripId:  openTripId || null }),
         ...(yachtId     !== undefined && { yachtId:     yachtId || null }),
         ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
-        ...(hasDiving   !== undefined && { hasDiving:   Boolean(hasDiving) }),
+        ...(hasDiving       !== undefined && { hasDiving:       Boolean(hasDiving) }),
+        ...(agentContactId  !== undefined && { agentContactId:  agentContactId || null }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },
@@ -169,13 +171,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       // Add services if provided
       if (services?.length) {
-        const validSvc = (services as { name?: string; price?: string | number }[]).filter(s => s.name?.trim())
+        const validSvc = (services as { name?: string; price?: string | number; qty?: number }[]).filter(s => s.name?.trim())
         if (validSvc.length) {
           await db.bookingService.createMany({
             data: validSvc.map(s => ({
               bookingId: id,
-              name:  s.name!.trim(),
-              price: parseFloat(String(s.price)) || 0,
+              name:      s.name!.trim(),
+              price:     parseFloat(String(s.price)) || 0,
+              quantity:  s.qty ?? 1,
             })),
           })
         }

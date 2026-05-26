@@ -65,6 +65,8 @@ enum VoucherType {
 }
 
 enum PaymentStatus {
+  requested
+  invoice_ready
   pending_confirmation
   confirmed
   rejected
@@ -73,14 +75,15 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String?
-  password  String
-  role      Role      @default(SALES)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  bookings  Booking[] @relation("SalespersonBookings")
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String
+  role          Role      @default(SALES)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  bookings      Booking[] @relation("SalespersonBookings")
+  managedAgents Agent[]   @relation("AgentSalesperson")
 }
 
 model Customer {
@@ -122,16 +125,32 @@ model Customer {
 }
 
 model Agent {
-  id         String    @id @default(cuid())
-  name       String
-  email      String?
-  phone      String?
-  company    String?
-  commission Float     @default(0)
-  isActive   Boolean   @default(true)
-  bookings   Booking[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id            String         @id @default(cuid())
+  name          String
+  commission    Float          @default(0)
+  isActive      Boolean        @default(true)
+  salespersonId String?
+  salesperson   User?          @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+  bookings      Booking[]
+  contacts      AgentContact[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([salespersonId])
+}
+
+model AgentContact {
+  id        String    @id @default(cuid())
+  agentId   String
+  name      String
+  email     String?
+  whatsapp  String?
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  bookings  Booking[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+
+  @@index([agentId])
 }
 
 model Yacht {
@@ -172,6 +191,8 @@ model Cabin {
   yacht         Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   guests        BookingGuest[]
   pricingTiers  CabinPricingTier[]
+
+  @@index([yachtId])
 }
 
 model CabinPricingTier {
@@ -215,6 +236,7 @@ model Booking {
   bookingCode    String          @unique
   customerId     String
   agentId        String?
+  agentContactId String?
   openTripId     String?
   source         BookingSource   @default(DIRECT)
   tripType       TripType        @default(PRIVATE_CHARTER)
@@ -243,6 +265,7 @@ model Booking {
   updatedAt       DateTime        @updatedAt
   customer        Customer        @relation(fields: [customerId], references: [id])
   agent           Agent?          @relation(fields: [agentId], references: [id])
+  agentContact    AgentContact?   @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
   yacht           Yacht?          @relation(fields: [yachtId], references: [id])
   openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id])
   salespersonUser User?           @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
@@ -259,7 +282,7 @@ model Booking {
   @@index([startDate, endDate])
   @@index([yachtId])
   @@index([agentId])
-  @@index([salesperson])
+  @@index([agentContactId])
   @@index([salespersonId])
   @@index([createdAt])
 }
@@ -290,6 +313,7 @@ model BookingService {
   bookingId String
   name      String
   price     Float
+  quantity  Int     @default(1)
   booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
@@ -356,13 +380,16 @@ model Payment {
   amount            Float
   previouslyPaid    Float     @default(0)
   currency          String    @default("USD")
-  status            String    @default("pending_confirmation")
+  status            PaymentStatus @default(pending_confirmation)
   notes             String?
-  proofOfTransfer   String?
-  submittedByUserId String?
-  submittedByName   String?
-  confirmedBy       String?
-  confirmedAt       DateTime?
+  proofOfTransfer     String?
+  billToType          String?
+  submittedByUserId   String?
+  submittedByName     String?
+  invoiceGeneratedBy  String?
+  invoiceGeneratedAt  DateTime?
+  confirmedBy         String?
+  confirmedAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   booking           Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)

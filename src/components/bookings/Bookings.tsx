@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
-  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User,
+  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -50,7 +50,10 @@ interface BookingRecord {
   yacht?: { id: string; name: string; model?: string; canDiving?: boolean }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
-  agent?: { id: string; name: string; company?: string; commission?: number }
+  agent?:        { id: string; name: string; commission?: number }
+  agentContact?: { id: string; name: string; email?: string | null; whatsapp?: string | null } | null
+  services?:     Array<{ id: string; name: string; price: number; quantity: number }>
+  salespersonId?: string | null
   guests: Array<{
     id: string; isLead: boolean; customerId: string
     customer?: { name: string }; cabin?: { id: string; name: string }
@@ -113,6 +116,8 @@ const STATUS_LABELS: Record<string, string> = {
   confirmed:      'Confirmed',
 }
 const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
+  requested:            { label: 'Awaiting Finance',      color: 'bg-blue-50 text-blue-600 border-blue-200' },
+  invoice_ready:        { label: 'Invoice Ready',         color: 'bg-violet-100 text-violet-700 border-violet-200' },
   pending_confirmation: { label: 'Awaiting Confirmation', color: 'bg-amber-100 text-amber-700 border-amber-200' },
   confirmed:            { label: 'Confirmed',             color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   rejected:             { label: 'Rejected',              color: 'bg-red-100 text-red-700 border-red-200' },
@@ -162,16 +167,18 @@ export default function Bookings() {
 
   /* payment invoice state */
   const [paymentBooking,  setPaymentBooking]  = useState<BookingRecord | null>(null)
-  const [paymentAmount,   setPaymentAmount]   = useState('')
   const [paymentNotes,    setPaymentNotes]    = useState('')
-  const [paymentMethod,   setPaymentMethod]   = useState('Transfer Bank')
   const [paymentSaving,   setPaymentSaving]   = useState(false)
-  const [payCurrency,     setPayCurrency]     = useState('USD')
-  const [payAmtFocused,   setPayAmtFocused]   = useState(false)
+  const [payAmtMode,      setPayAmtMode]      = useState<'amount' | 'percent'>('amount')
+  const [payAmtValue,     setPayAmtValue]     = useState('')
+  const [payPctValue,     setPayPctValue]     = useState('')
+  const [payBillTo,       setPayBillTo]       = useState<'AGENT' | 'CUSTOMER'>('AGENT')
+  const [payMethod,       setPayMethod]       = useState('Transfer Bank')
 
-  /* proof upload */
+  /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
   const [proofPreview,   setProofPreview]   = useState<string | null>(null)
+  const [proofMethod,    setProofMethod]    = useState('Transfer Bank')
   const [proofUploading, setProofUploading] = useState(false)
   const [proofFetching,  setProofFetching]  = useState(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
@@ -179,13 +186,6 @@ export default function Bookings() {
   /* payments list (for payment column context) */
   const [payments,        setPayments]        = useState<PaymentRecord[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
-
-  /* edit invoice amount */
-  const [editAmtPayment, setEditAmtPayment] = useState<PaymentRecord | null>(null)
-  const [editAmtValue,   setEditAmtValue]   = useState('')
-  const [editAmtMethod,  setEditAmtMethod]  = useState('Transfer Bank')
-  const [editAmtNotes,   setEditAmtNotes]   = useState('')
-  const [editAmtSaving,  setEditAmtSaving]  = useState(false)
 
   /* guest travel dialog */
   const [travelBooking, setTravelBooking] = useState<BookingRecord | null>(null)
@@ -349,34 +349,38 @@ export default function Bookings() {
     finally { setCancelSaving(false) }
   }
 
-  /* ── record payment ── */
+  /* ── request invoice ── */
   const openPayment = (b: BookingRecord) => {
     setPaymentBooking(b)
-    const initCurr = (b.currency && b.currency !== 'USD') ? b.currency : 'USD'
-    setPayCurrency(initCurr)
-    setPayAmtFocused(false)
-    const remainingUSD = netBook(b) - b.depositPaid
-    if (remainingUSD > 0) {
-      const rate = b.exchangeRate ?? 1
-      const displayAmt = (initCurr !== 'USD' && rate > 0) ? remainingUSD * rate : remainingUSD
-      setPaymentAmount(displayAmt.toFixed(initCurr === 'IDR' ? 0 : 2))
-    } else {
-      setPaymentAmount('')
-    }
     setPaymentNotes('')
-    setPaymentMethod('Transfer Bank')
+    setPayAmtMode('amount')
+    setPayAmtValue('')
+    setPayPctValue('')
+    setPayBillTo(b.source === 'AGENT' ? 'AGENT' : 'CUSTOMER')
+    setPayMethod('Transfer Bank')
   }
   const submitPayment = async () => {
-    if (!paymentBooking || !paymentAmount) return
+    if (!paymentBooking) return
     setPaymentSaving(true)
-    const rawAmt  = parseFloat(String(paymentAmount).replace(/,/g, '')) || 0
-    const rate    = paymentBooking.exchangeRate ?? 1
-    const amtUSD  = (payCurrency !== 'USD' && rate > 0) ? rawAmt / rate : rawAmt
+    const remaining = Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid)
+    let amount = 0
+    if (payAmtMode === 'amount') {
+      amount = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+    } else {
+      const pct = parseFloat(payPctValue) || 0
+      amount = Math.round(netBook(paymentBooking) * pct / 100 * 100) / 100
+    }
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: paymentBooking.id, amount: amtUSD, currency: 'USD', notes: paymentNotes, paymentMethod }),
+        body: JSON.stringify({
+          bookingId: paymentBooking.id,
+          notes: paymentNotes,
+          amount: amount > 0 ? amount : undefined,
+          billToType: payBillTo,
+          paymentMethod: payMethod || undefined,
+        }),
       })
       if (res.ok) {
         setPaymentBooking(null)
@@ -385,25 +389,6 @@ export default function Bookings() {
       }
     } catch (e) { console.error(e) }
     finally { setPaymentSaving(false) }
-  }
-
-  const saveEditAmount = async () => {
-    if (!editAmtPayment) return
-    const amount = parseFloat(editAmtValue.replace(/,/g, '')) || 0
-    if (amount <= 0) return
-    setEditAmtSaving(true)
-    try {
-      const res = await fetch(`/api/payments/${editAmtPayment.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_amount', amount, paymentMethod: editAmtMethod, notes: editAmtNotes }),
-      })
-      if (res.ok) {
-        setEditAmtPayment(null)
-        await fetchPayments()
-      }
-    } catch (e) { console.error(e) }
-    finally { setEditAmtSaving(false) }
   }
 
   const SHARED_KEY = '__shared__'
@@ -476,21 +461,11 @@ export default function Bookings() {
     finally { setCabinSaving(null) }
   }
 
-  /* ── proof upload ── */
-  const openProofUpload = async (p: PaymentRecord) => {
+  /* ── submit payment proof ── */
+  const openProofUpload = (p: PaymentRecord) => {
     setProofPayment(p)
     setProofPreview(null)
-    if (p.hasProof) {
-      setProofFetching(true)
-      try {
-        const res = await fetch(`/api/payments/${p.id}`)
-        if (res.ok) {
-          const detail = await res.json()
-          setProofPreview(detail.proofOfTransfer ?? null)
-        }
-      } catch (e) { console.error(e) }
-      finally { setProofFetching(false) }
-    }
+    setProofMethod('Transfer Bank')
   }
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -506,9 +481,14 @@ export default function Bookings() {
       const res = await fetch(`/api/payments/${proofPayment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proofOfTransfer: proofPreview }),
+        body: JSON.stringify({ action: 'submit_proof', proofOfTransfer: proofPreview, paymentMethod: proofMethod }),
       })
-      if (res.ok) { await fetchPayments(); setProofPayment(null); setProofPreview(null) }
+      if (res.ok) {
+        await Promise.all([fetchPayments(), fetchBookings()])
+        setProofPayment(null)
+        setProofPreview(null)
+        window.dispatchEvent(new CustomEvent('payment-updated'))
+      }
     } catch (e) { console.error(e) }
     finally { setProofUploading(false) }
   }
@@ -782,13 +762,12 @@ export default function Bookings() {
                     </TableCell>
                     {canManageBookings && (() => {
                       const bookingPmts     = payments.filter(p => p.bookingId === b.id)
-                      const pendingPmt      = bookingPmts.find(p => p.status === 'pending_confirmation')
-                      const hasAnyPmt       = bookingPmts.length > 0
-                      const hasConfirmedPmt = bookingPmts.some(p => p.status === 'confirmed')
+                      const activePmt       = bookingPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation'].includes(p.status))
+                      const confirmedPmts   = bookingPmts.filter(p => p.status === 'confirmed')
+                      const hasConfirmedPmt = confirmedPmts.length > 0
                       const hasSettlement   = bookingPmts.some(p => p.paymentType === 'PELUNASAN')
-                      const canRecord       = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed' && b.status !== 'on_hold'
-                      const nextType        = hasAnyPmt ? 'Settlement' : 'Deposit'
-                      const pelunasanBlocked = nextType === 'Settlement' && !hasConfirmedPmt
+                      const pelunasanBlocked = bookingPmts.length > 0 && !hasConfirmedPmt
+                      const canRequest      = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed' && b.status !== 'on_hold' && !activePmt && !hasSettlement
                       const holdExpiry = b.holdUntil ? new Date(b.holdUntil) : null
                       const isExpired  = holdExpiry ? holdExpiry < new Date() : false
                       const isUrgent   = holdExpiry && !isExpired ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 : false
@@ -797,7 +776,7 @@ export default function Bookings() {
                           {b.status === 'cancelled' ? null : (
                           <div className="flex flex-col gap-1 min-w-0">
 
-                            {/* ── Primary action ── */}
+                            {/* On Hold */}
                             {b.status === 'on_hold' ? (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <Button
@@ -813,51 +792,62 @@ export default function Bookings() {
                                   </span>
                                 )}
                               </div>
-                            ) : canRecord && !hasSettlement ? (
+                            ) : activePmt ? (
+                              /* Active payment in progress */
+                              <div className="flex flex-col gap-1">
+                                {activePmt.status === 'requested' && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 w-fit">
+                                    ⏳ Awaiting Finance
+                                  </span>
+                                )}
+                                {activePmt.status === 'invoice_ready' && (
+                                  <>
+                                    <button
+                                      onClick={() => window.open(`/print/invoice/${activePmt.id}`, '_blank')}
+                                      className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-violet-600 border border-violet-200 hover:bg-violet-50 transition-colors w-fit"
+                                    >
+                                      <Receipt className="h-2.5 w-2.5" /> Download Invoice
+                                    </button>
+                                    <Button
+                                      variant="ghost" size="sm"
+                                      className="h-6 px-2 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded-full border border-emerald-200 w-fit"
+                                      onClick={() => openProofUpload(activePmt)}
+                                    >
+                                      <Upload className="h-3 w-3 mr-1" /> Submit Proof
+                                    </Button>
+                                  </>
+                                )}
+                                {activePmt.status === 'pending_confirmation' && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 w-fit">
+                                    ⏳ Awaiting Confirmation
+                                  </span>
+                                )}
+                              </div>
+                            ) : canRequest ? (
                               <Button
                                 variant="ghost" size="sm"
                                 disabled={pelunasanBlocked}
-                                title={pelunasanBlocked ? 'Confirm DP invoice first' : undefined}
+                                title={pelunasanBlocked ? 'Confirm the deposit first' : undefined}
                                 className={`h-6 px-2 text-[11px] font-semibold rounded-full border w-fit ${pelunasanBlocked ? 'opacity-35 cursor-not-allowed border-border text-muted-foreground' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
                                 onClick={() => !pelunasanBlocked && openPayment(b)}
                               >
-                                <CreditCard className="h-3 w-3 mr-1" /> Invoice {nextType}
+                                <CreditCard className="h-3 w-3 mr-1" /> Request Invoice
                               </Button>
                             ) : null}
 
-                            {/* ── Invoices + upload row ── */}
-                            {(bookingPmts.length > 0 || pendingPmt) && (
+                            {/* Confirmed invoices */}
+                            {confirmedPmts.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap">
-                                {pendingPmt && (
+                                {confirmedPmts.map((p, idx) => (
                                   <button
-                                    title={pendingPmt.hasProof ? 'Update proof' : 'Upload proof'}
-                                    onClick={() => openProofUpload(pendingPmt)}
-                                    className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium border transition-colors ${pendingPmt.hasProof ? 'text-emerald-600 border-emerald-200 hover:bg-emerald-50' : 'text-amber-600 border-amber-200 hover:bg-amber-50'}`}
+                                    key={p.id}
+                                    onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
+                                    className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors"
+                                    title={p.invoiceNumber}
                                   >
-                                    <Upload className="h-2.5 w-2.5" />
-                                    {pendingPmt.hasProof ? 'Proof ✓' : 'Proof'}
+                                    <Receipt className="h-2.5 w-2.5" />
+                                    {p.paymentType === 'PELUNASAN' ? 'SL ✓' : idx === 0 ? 'DP ✓' : `#${idx + 1} ✓`}
                                   </button>
-                                )}
-                                {bookingPmts.map((p, idx) => (
-                                  <div key={p.id} className="inline-flex items-center gap-0.5">
-                                    <button
-                                      onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
-                                      className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-                                      title={p.invoiceNumber}
-                                    >
-                                      <Receipt className="h-2.5 w-2.5" />
-                                      {p.paymentType === 'PELUNASAN' ? 'SL' : idx === 0 ? 'DP' : `#${idx + 1}`}
-                                    </button>
-                                    {p.status === 'pending_confirmation' && (
-                                      <button
-                                        title="Edit invoice detail"
-                                        onClick={() => { setEditAmtPayment(p); setEditAmtValue(p.amount.toFixed(2)); setEditAmtMethod(p.paymentMethod || 'Transfer Bank'); setEditAmtNotes(p.notes || '') }}
-                                        className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
-                                      >
-                                        <Pencil className="h-2.5 w-2.5" />
-                                      </button>
-                                    )}
-                                  </div>
                                 ))}
                               </div>
                             )}
@@ -900,191 +890,193 @@ export default function Bookings() {
         </CardContent>
       </Card>
 
-      {/* ════ Record Payment Dialog ════ */}
+      {/* ════ Request Invoice Dialog ════ */}
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
-        <DialogContent className={`w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto ${paymentBooking && payments.filter(p => p.bookingId === paymentBooking.id).length > 0 ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}>
+        <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
           {paymentBooking && (() => {
-            const prev        = payments.filter(p => p.bookingId === paymentBooking.id)
-            const hasHistory  = prev.length > 0
-            const bookingCurr = paymentBooking.currency ?? 'USD'
-            const hasAltCurr  = bookingCurr !== 'USD'
-            const rate        = paymentBooking.exchangeRate ?? 1
-            const CURR_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
-            const currSymbol  = CURR_SYMBOLS[payCurrency] ?? payCurrency
-            const isIDR       = payCurrency === 'IDR'
-
-            const toDisplay = (usd: number) =>
-              payCurrency !== 'USD' && rate > 0 ? usd * rate : usd
-
-            const fmtPayAmt = (usd: number) => {
-              const v = toDisplay(usd)
-              if (isIDR) return `Rp ${v.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
-              return `${currSymbol}${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            }
-
+            const net       = netBook(paymentBooking)
+            const remaining = Math.max(0, net - paymentBooking.depositPaid)
+            const pct       = parseFloat(payPctValue) || 0
+            const amtFromPct = Math.round(net * pct / 100 * 100) / 100
+            const amtDirect  = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+            const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
+            const fmtD = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             return (
               <>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <CreditCard className="h-4 w-4" style={{ color: ACCENT }} />
-                    Record Payment
+                    Request Invoice
                   </DialogTitle>
                 </DialogHeader>
 
-                {/* Currency toggle — only shown if booking has non-USD currency */}
-                {hasAltCurr && (
-                  <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
-                    <span className="text-xs text-muted-foreground shrink-0">Pay in</span>
-                    <div className="flex gap-1.5">
-                      {(['USD', bookingCurr] as string[]).map(c => (
+                {/* Booking summary */}
+                <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Booking</span>
+                    <span className="font-mono font-semibold">{paymentBooking.bookingCode}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-medium">{paymentBooking.customer.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-medium">{fmtD(net)}</span>
+                  </div>
+                  {paymentBooking.depositPaid > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Already Paid</span>
+                      <span className="text-emerald-600 font-medium">{fmtD(paymentBooking.depositPaid)}</span>
+                    </div>
+                  )}
+                  <Separator className="my-1" />
+                  <div className="flex justify-between font-semibold">
+                    <span>Remaining</span>
+                    <span className="text-amber-600">{fmtD(remaining)}</span>
+                  </div>
+                </div>
+
+                {/* Amount input with mode toggle */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Invoice Amount <span className="text-red-500">*</span></Label>
+                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                      {(['amount', 'percent'] as const).map(m => (
                         <button
-                          key={c}
+                          key={m}
                           type="button"
-                          onClick={() => {
-                            if (c === payCurrency) return
-                            // Convert current amount to new currency
-                            const raw = parseFloat(String(paymentAmount).replace(/,/g, '')) || 0
-                            if (raw > 0) {
-                              const inUSD = payCurrency !== 'USD' && rate > 0 ? raw / rate : raw
-                              const inNew = c !== 'USD' && rate > 0 ? inUSD * rate : inUSD
-                              setPaymentAmount(inNew.toFixed(c === 'IDR' ? 0 : 2))
-                            }
-                            setPayCurrency(c)
-                          }}
-                          className="px-3 py-1 rounded-full text-xs font-semibold border transition-colors"
-                          style={payCurrency === c
-                            ? { backgroundColor: ACCENT, color: 'white', borderColor: ACCENT }
-                            : { borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}
+                          onClick={() => { setPayAmtMode(m); setPayAmtValue(''); setPayPctValue('') }}
+                          className={`px-3 py-1 font-medium transition-colors ${payAmtMode === m ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          style={payAmtMode === m ? { backgroundColor: ACCENT } : {}}
                         >
-                          {c}
+                          {m === 'amount' ? 'Amount' : 'Percent (%)'}
                         </button>
                       ))}
                     </div>
-                    {payCurrency !== 'USD' && (
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        1 USD = {rate.toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 4 })} {bookingCurr}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <div className={hasHistory ? 'grid grid-cols-2 gap-3' : ''}>
-                  {/* Left: booking summary */}
-                  <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Booking</span>
-                      <span className="font-mono font-semibold">{paymentBooking.bookingCode}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Customer</span>
-                      <span className="font-medium">{paymentBooking.customer.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total</span>
-                      <span className="font-medium">{fmtPayAmt(netBook(paymentBooking))}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Already Paid</span>
-                      <span className="font-medium text-emerald-600">{fmtPayAmt(paymentBooking.depositPaid)}</span>
-                    </div>
-                    <Separator className="my-1" />
-                    <div className="flex justify-between font-semibold">
-                      <span>Remaining</span>
-                      <span className={netBook(paymentBooking) - paymentBooking.depositPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}>
-                        {fmtPayAmt(Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid))}
-                      </span>
-                    </div>
                   </div>
 
-                  {/* Right: payment history (only when exists) */}
-                  {hasHistory && (
-                    <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-2">
-                      <p className="text-muted-foreground text-[11px] uppercase tracking-wide font-semibold">Riwayat Pembayaran</p>
-                      <div className="space-y-1.5">
-                        {prev.map(p => {
-                          const ps = PAYMENT_STATUS[p.status]
-                          return (
-                            <div key={p.id} className="space-y-0.5">
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-[11px] text-muted-foreground">{p.invoiceNumber}</span>
-                                <span className="text-xs font-semibold">{fmtAmt(p.amount)}</span>
-                              </div>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${ps?.color ?? 'bg-muted text-muted-foreground'}`}>
-                                {ps?.label ?? p.status}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label>Payment Amount ({payCurrency}) <span className="text-red-500">*</span></Label>
+                  {payAmtMode === 'amount' ? (
                     <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">{currSymbol}</span>
+                      <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
                       <Input
                         type="text"
                         inputMode="decimal"
-                        placeholder="0"
-                        value={
-                          payAmtFocused || !paymentAmount
-                            ? paymentAmount
-                            : (parseFloat(String(paymentAmount).replace(/,/g, '')) || 0).toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 2 })
-                        }
-                        onFocus={() => setPayAmtFocused(true)}
-                        onBlur={() => setPayAmtFocused(false)}
-                        onChange={e => setPaymentAmount(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+                        placeholder="0.00"
+                        value={payAmtValue}
+                        onChange={e => setPayAmtValue(e.target.value.replace(/[^0-9.]/g, ''))}
                         className="pl-7"
                       />
                     </div>
-                    {payCurrency !== 'USD' && paymentAmount && (
-                      <p className="text-xs text-muted-foreground">
-                        ≈ ${((parseFloat(String(paymentAmount).replace(/,/g, '')) || 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD — stored as USD
-                      </p>
-                    )}
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="100"
+                          placeholder="30"
+                          value={payPctValue}
+                          onChange={e => setPayPctValue(e.target.value)}
+                          className="pr-8"
+                        />
+                        <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
+                      </div>
+                      {/* Quick-select common percentages */}
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[30, 50, 70, 100].map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setPayPctValue(String(p))}
+                            className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${payPctValue === String(p) ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted'}`}
+                            style={payPctValue === String(p) ? { backgroundColor: ACCENT } : {}}
+                          >
+                            {p}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {previewAmt > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Kurang dari total → Partially Paid · Sama dengan total → Fully Paid
+                      {payAmtMode === 'percent' && pct > 0 && (
+                        <span>= {fmtD(previewAmt)} · </span>
+                      )}
+                      Remaining after this: <span className={remaining - previewAmt <= 0 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>{fmtD(Math.max(0, remaining - previewAmt))}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Bill To — AGENT bookings only */}
+                {paymentBooking.source === 'AGENT' && paymentBooking.agent && (
+                  <div className="space-y-2">
+                    <Label>Bill To</Label>
+                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                      {(['AGENT', 'CUSTOMER'] as const).map(opt => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setPayBillTo(opt)}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${payBillTo === opt ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          style={payBillTo === opt ? { backgroundColor: ACCENT } : {}}
+                        >
+                          {opt === 'AGENT' ? (
+                            <><Building2 className="h-3.5 w-3.5" />{paymentBooking.agent!.name}</>
+                          ) : (
+                            <><User className="h-3.5 w-3.5" />{paymentBooking.customer.name}</>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {payBillTo === 'AGENT' ? 'Invoice will be addressed to the agent company.' : 'Invoice will be addressed directly to the guest.'}
                     </p>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Metode Pembayaran <span className="text-red-500">*</span></Label>
-                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                      <SelectTrigger className="text-sm">
-                        <SelectValue placeholder="Pilih metode..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                        <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
-                        <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
-                        <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
-                        <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
-                        <SelectItem value="Wire Transfer">Wire Transfer (Internasional)</SelectItem>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Credit Card">Credit Card</SelectItem>
-                        <SelectItem value="PayPal">PayPal</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
-                    <Textarea placeholder="e.g. Ref #123456, atas nama PT. ABC..."
-                      value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
-                      rows={2} className="text-sm resize-none" />
-                  </div>
-                  <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                    ℹ Setelah submit, tombol <strong>Lihat Invoice</strong> dan <strong>Upload Bukti</strong> akan muncul di baris booking.
-                  </p>
+                )}
+
+                {/* Payment Method */}
+                <div className="space-y-1.5">
+                  <Label>Payment Method</Label>
+                  <Select value={payMethod} onValueChange={setPayMethod}>
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Select method..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
+                      <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
+                      <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
+                      <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
+                      <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                      <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
+                      <SelectItem value="Cash">Cash</SelectItem>
+                      <SelectItem value="Credit Card">Credit Card</SelectItem>
+                      <SelectItem value="PayPal">PayPal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                  <Textarea
+                    placeholder="e.g. 30% deposit, please issue invoice promptly..."
+                    value={paymentNotes}
+                    onChange={e => setPaymentNotes(e.target.value)}
+                    rows={2}
+                    className="text-sm resize-none"
+                  />
                 </div>
 
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
-                  <Button disabled={paymentSaving || !paymentAmount || (parseFloat(String(paymentAmount).replace(/,/g, '')) || 0) <= 0}
+                  <Button
+                    disabled={paymentSaving || previewAmt <= 0}
                     onClick={submitPayment}
-                    style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-                    {paymentSaving ? 'Submitting…' : 'Submit & Generate Invoice'}
+                    style={{ backgroundColor: ACCENT, color: 'white' }}
+                    className="hover:opacity-90"
+                  >
+                    {paymentSaving ? 'Submitting…' : 'Request Invoice'}
                   </Button>
                 </DialogFooter>
               </>
@@ -1093,19 +1085,19 @@ export default function Bookings() {
         </DialogContent>
       </Dialog>
 
-      {/* ════ Upload Proof of Transfer Dialog ════ */}
+      {/* ════ Submit Pembayaran Dialog ════ */}
       <Dialog open={!!proofPayment} onOpenChange={v => { if (!v) { setProofPayment(null); setProofPreview(null) } }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
           {proofPayment && (
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Upload className="h-4 w-4" style={{ color: ACCENT }} />
-                  Upload Transfer Proof
+                  Submit Payment Proof
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1 mb-2">
+              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Invoice</span>
                   <span className="font-mono font-semibold">{proofPayment.invoiceNumber}</span>
@@ -1120,46 +1112,60 @@ export default function Bookings() {
                 </div>
               </div>
 
-              <div
-                className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden relative ${proofFetching ? 'cursor-default' : 'cursor-pointer hover:border-primary/50'}`}
-                onClick={() => { if (!proofFetching) proofInputRef.current?.click() }}
-              >
-                {proofFetching ? (
-                  <div className="flex flex-col items-center gap-2.5 py-8 text-muted-foreground">
-                    <Loader2 className="h-8 w-8 animate-spin opacity-40" />
-                    <p className="text-sm">Memeriksa bukti transfer...</p>
-                  </div>
-                ) : proofPreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                    <ImageIcon className="h-10 w-10 opacity-30" />
-                    <p className="text-sm">Click to select image</p>
-                    <p className="text-xs opacity-60">JPG, PNG, or PDF screenshot</p>
-                  </div>
+              <div className="space-y-1.5">
+                <Label>Payment Method <span className="text-red-500">*</span></Label>
+                <Select value={proofMethod} onValueChange={setProofMethod}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="Select method..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
+                    <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
+                    <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
+                    <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
+                    <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                    <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Credit Card">Credit Card</SelectItem>
+                    <SelectItem value="PayPal">PayPal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Transfer Proof <span className="text-red-500">*</span></Label>
+                <div
+                  className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer hover:border-primary/50"
+                  onClick={() => proofInputRef.current?.click()}
+                >
+                  {proofPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                      <ImageIcon className="h-10 w-10 opacity-30" />
+                      <p className="text-sm">Click to select image</p>
+                      <p className="text-xs opacity-60">JPG or PNG</p>
+                    </div>
+                  )}
+                </div>
+                <input ref={proofInputRef} type="file" accept="image/*" className="hidden" onChange={handleProofFile} />
+                {proofPreview && (
+                  <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => proofInputRef.current?.click()}>
+                    Change image
+                  </Button>
                 )}
               </div>
-              <input
-                ref={proofInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleProofFile}
-              />
-              {proofPreview && (
-                <Button variant="ghost" size="sm" className="text-xs w-full"
-                  onClick={() => proofInputRef.current?.click()}>
-                  Change image
-                </Button>
-              )}
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview(null) }}>Cancel</Button>
-                <Button disabled={!proofPreview || proofUploading || proofFetching}
+                <Button
+                  disabled={!proofPreview || proofUploading}
                   onClick={saveProof}
-                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-                  {proofUploading ? 'Uploading…' : 'Save Proof'}
+                  style={{ backgroundColor: ACCENT, color: 'white' }}
+                  className="hover:opacity-90"
+                >
+                  {proofUploading ? 'Submitting…' : 'Submit Payment'}
                 </Button>
               </DialogFooter>
             </>
@@ -1458,12 +1464,15 @@ export default function Bookings() {
                   <p className="text-xs text-muted-foreground">Auto-computed from payments. Only Completed & Cancelled are editable.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Discount (%)</Label>
-                  <Input type="number" min="0" max="100" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} />
+                  <Label>Discount ($)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                    <Input type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Total Price (USD)</Label>
-                  <Input type="number" min="0" value={editTotal} onChange={e => setEditTotal(e.target.value)} />
+                  <Input type="number" min="0" value={editTotal} disabled className="bg-muted text-muted-foreground cursor-not-allowed" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Amount Paid (USD)</Label>
@@ -1497,86 +1506,6 @@ export default function Bookings() {
                     {editSaving ? 'Saving…' : 'Save Changes'}
                   </Button>
                 </div>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ════ Edit Invoice Amount Dialog ════ */}
-      <Dialog open={!!editAmtPayment} onOpenChange={v => !v && setEditAmtPayment(null)}>
-        <DialogContent className="sm:max-w-xs">
-          {editAmtPayment && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Pencil className="h-4 w-4" style={{ color: ACCENT }} />
-                  Update Invoice Detail
-                </DialogTitle>
-              </DialogHeader>
-              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1 mb-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Invoice</span>
-                  <span className="font-mono font-semibold">{editAmtPayment.invoiceNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Current Amount</span>
-                  <span className="font-semibold">${editAmtPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>New Amount (USD) <span className="text-red-500">*</span></Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      className="pl-7"
-                      placeholder="0.00"
-                      value={editAmtValue}
-                      onChange={e => setEditAmtValue(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Payment Method</Label>
-                  <Select value={editAmtMethod} onValueChange={setEditAmtMethod}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Credit Card">Credit Card</SelectItem>
-                      <SelectItem value="Debit Card">Debit Card</SelectItem>
-                      <SelectItem value="Virtual Account">Virtual Account</SelectItem>
-                      <SelectItem value="QRIS">QRIS</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Notes</Label>
-                  <textarea
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                    rows={2}
-                    placeholder="e.g. BCA a/n John Doe, ref: 123456"
-                    value={editAmtNotes}
-                    onChange={e => setEditAmtNotes(e.target.value)}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">Invoice ID and number will not change.</p>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditAmtPayment(null)}>Cancel</Button>
-                <Button
-                  disabled={editAmtSaving || !editAmtValue || (parseFloat(editAmtValue) || 0) <= 0}
-                  onClick={saveEditAmount}
-                  style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90"
-                >
-                  {editAmtSaving ? 'Saving…' : 'Save'}
-                </Button>
               </DialogFooter>
             </>
           )}
@@ -1705,8 +1634,12 @@ export default function Bookings() {
           <DialogTitle className="sr-only">Booking Detail</DialogTitle>
           {detailBooking && (() => {
             const db_ = detailBooking
-            const net = db_.totalPrice - db_.discount
-            const remaining = Math.max(0, net - db_.depositPaid)
+            const svcTotal   = (db_.services ?? []).reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+            const basePrice  = db_.totalPrice - svcTotal
+            const commPct    = db_.source === 'AGENT' ? (db_.agent?.commission ?? 0) : 0
+            const commAmt    = commPct > 0 ? Math.max(0, basePrice - db_.discount) * commPct / 100 : 0
+            const net        = Math.max(0, basePrice - db_.discount) + svcTotal - commAmt
+            const remaining  = Math.max(0, net - db_.depositPaid)
             const fmtAmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             return (
               <>
@@ -1751,40 +1684,136 @@ export default function Bookings() {
                 <div className="flex-1 overflow-y-auto">
 
                   {/* Summary */}
-                  <div className="px-5 py-4 space-y-3">
+                  <div className="px-5 py-4 space-y-4">
+
+                    {/* Trip dates */}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
                         { label: 'Check-in',  val: fmtDate(db_.startDate) },
                         { label: 'Check-out', val: fmtDate(db_.endDate) },
-                        { label: 'Total',     val: fmtAmt(net) },
-                        { label: 'Paid',      val: fmtAmt(db_.depositPaid) },
                       ].map(r => (
                         <div key={r.label} className="rounded-lg border p-2.5">
                           <p className="text-muted-foreground mb-0.5">{r.label}</p>
                           <p className="font-semibold text-sm">{r.val}</p>
                         </div>
                       ))}
+                      {(db_.destination || db_.openTrip?.destination) && (
+                        <div className="col-span-2 rounded-lg border p-2.5">
+                          <p className="text-muted-foreground mb-0.5 text-xs">Destination</p>
+                          <p className="font-semibold text-sm">{db_.destination ?? db_.openTrip?.destination}</p>
+                        </div>
+                      )}
                     </div>
-                    {remaining > 0 && (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs flex justify-between">
-                        <span className="text-amber-700">Sisa pembayaran</span>
-                        <span className="font-semibold text-amber-700">{fmtAmt(remaining)}</span>
+
+                    {/* Price breakdown */}
+                    <div className="rounded-lg border overflow-hidden text-xs">
+                      <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/40 border-b">
+                        Price Breakdown
+                      </p>
+                      <div className="px-3 py-2 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Base Price</span>
+                          <span className="font-medium">{fmtAmt(basePrice)}</span>
+                        </div>
+                        {(db_.services ?? []).map(s => (
+                          <div key={s.id} className="flex justify-between">
+                            <span className="text-muted-foreground truncate max-w-[60%]">
+                              {s.name}{(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ''}
+                            </span>
+                            <span className="font-medium">{fmtAmt(s.price * (s.quantity ?? 1))}</span>
+                          </div>
+                        ))}
+                        {db_.discount > 0 && (
+                          <div className="flex justify-between text-emerald-600">
+                            <span>Discount</span>
+                            <span>−{fmtAmt(db_.discount)}</span>
+                          </div>
+                        )}
+                        {commAmt > 0 && (
+                          <div className="flex justify-between text-muted-foreground italic">
+                            <span>Agent Commission ({commPct}%)</span>
+                            <span>(−{fmtAmt(commAmt)})</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-between px-3 py-2 border-t bg-muted/20 font-bold text-sm">
+                        <span>Total</span>
+                        <span style={{ color: '#bdac7e' }}>{fmtAmt(net)}</span>
+                      </div>
+                    </div>
+
+                    {/* Payment status */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg border p-2.5">
+                        <p className="text-muted-foreground mb-0.5">Paid</p>
+                        <p className="font-semibold text-sm text-emerald-600">{fmtAmt(db_.depositPaid)}</p>
+                      </div>
+                      <div className={`rounded-lg border p-2.5 ${remaining > 0 ? 'border-amber-200 bg-amber-50' : ''}`}>
+                        <p className="text-muted-foreground mb-0.5">Remaining</p>
+                        <p className={`font-semibold text-sm ${remaining > 0 ? 'text-amber-700' : 'text-emerald-600'}`}>
+                          {fmtAmt(remaining)}
+                        </p>
+                      </div>
+                    </div>
+                    {(db_.depositDueDate || db_.finalDueDate) && (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {db_.depositDueDate && (
+                          <div className="rounded-lg border p-2.5">
+                            <p className="text-muted-foreground mb-0.5">Deposit Due</p>
+                            <p className="font-semibold">{fmtDate(db_.depositDueDate)}</p>
+                          </div>
+                        )}
+                        {db_.finalDueDate && (
+                          <div className="rounded-lg border p-2.5">
+                            <p className="text-muted-foreground mb-0.5">Final Due</p>
+                            <p className="font-semibold">{fmtDate(db_.finalDueDate)}</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                    {((db_.salespersonUser?.name ?? db_.salesperson) || db_.agent?.name || db_.notes) && (
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {((db_.salespersonUser?.name ?? db_.salesperson) || db_.agent?.name) && (
-                          <div className="rounded-lg border p-2.5">
-                            <p className="text-muted-foreground mb-0.5">Sales</p>
-                            <p className="font-semibold">{db_.salespersonUser?.name ?? db_.salesperson ?? db_.agent?.name}</p>
-                          </div>
-                        )}
-                        {db_.notes && (
-                          <div className="rounded-lg border p-2.5 col-span-2">
-                            <p className="text-muted-foreground mb-0.5">Notes</p>
-                            <p>{db_.notes}</p>
-                          </div>
-                        )}
+
+                    {/* Agent / Sales info */}
+                    {(db_.source === 'AGENT' && db_.agent || (db_.salespersonUser?.name ?? db_.salesperson) || db_.notes) && (
+                      <div className="rounded-lg border overflow-hidden text-xs">
+                        <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/40 border-b">
+                          Booking Info
+                        </p>
+                        <div className="divide-y">
+                          {(db_.salespersonUser?.name ?? db_.salesperson) && (
+                            <div className="flex justify-between px-3 py-2">
+                              <span className="text-muted-foreground">Sales</span>
+                              <span className="font-medium">{db_.salespersonUser?.name ?? db_.salesperson}</span>
+                            </div>
+                          )}
+                          {db_.source === 'AGENT' && db_.agent && (
+                            <div className="flex justify-between px-3 py-2">
+                              <span className="text-muted-foreground">Agent</span>
+                              <span className="font-medium">{db_.agent.name}
+                                {commPct > 0 && <span className="text-muted-foreground font-normal ml-1">({commPct}%)</span>}
+                              </span>
+                            </div>
+                          )}
+                          {db_.agentContact && (
+                            <div className="px-3 py-2">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Contact Person</span>
+                                <span className="font-medium">{db_.agentContact.name}</span>
+                              </div>
+                              {(db_.agentContact.whatsapp || db_.agentContact.email) && (
+                                <div className="flex gap-3 mt-0.5 justify-end text-muted-foreground">
+                                  {db_.agentContact.whatsapp && <span>{db_.agentContact.whatsapp}</span>}
+                                  {db_.agentContact.email && <span>{db_.agentContact.email}</span>}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {db_.notes && (
+                            <div className="px-3 py-2">
+                              <p className="text-muted-foreground mb-0.5">Notes</p>
+                              <p className="leading-relaxed">{db_.notes}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -1795,7 +1824,7 @@ export default function Bookings() {
                           <Waves className="w-4 h-4 text-sky-500" />
                           <div>
                             <p className="text-sm font-medium leading-tight">Diving Trip</p>
-                            <p className="text-[11px] text-muted-foreground">Tamu akan melakukan diving</p>
+                            <p className="text-[11px] text-muted-foreground">Guests will be diving</p>
                           </div>
                         </div>
                         <Switch
@@ -1824,7 +1853,7 @@ export default function Bookings() {
                     </p>
 
                     {db_.guests.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Tidak ada guest terdaftar.</p>
+                      <p className="text-sm text-muted-foreground">No registered guests.</p>
                     )}
 
                     {db_.guests.map(g => {
@@ -1860,7 +1889,7 @@ export default function Bookings() {
                               >
                                 <SelectTrigger className="h-7 text-xs w-36">
                                   <BedDouble className="w-3 h-3 mr-1 shrink-0" />
-                                  <SelectValue placeholder="Pilih kabin…" />
+                                  <SelectValue placeholder="Select cabin…" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {detailCabins.map((c: any) => {
@@ -1916,7 +1945,7 @@ export default function Bookings() {
                   <div className="shrink-0 mx-5 mb-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-orange-700">Booking On Hold</p>
-                      <p className="text-xs text-orange-600 mt-0.5">Booking ini belum dikonfirmasi. Lanjutkan untuk isi harga & payment.</p>
+                      <p className="text-xs text-orange-600 mt-0.5">This booking has not been confirmed yet. Continue to fill in pricing & payment.</p>
                     </div>
                     <Button
                       size="sm"
@@ -1970,13 +1999,13 @@ export default function Bookings() {
           {cancelDialogBooking && (
             <div className="space-y-4 py-1">
               <p className="text-sm text-muted-foreground">
-                Yakin mau cancel booking <span className="font-semibold text-foreground">{cancelDialogBooking.bookingCode}</span> atas nama <span className="font-semibold text-foreground">{cancelDialogBooking.customer.name}</span>?
+                Are you sure you want to cancel booking <span className="font-semibold text-foreground">{cancelDialogBooking.bookingCode}</span> for <span className="font-semibold text-foreground">{cancelDialogBooking.customer.name}</span>?
               </p>
               <div className="space-y-1.5">
-                <Label htmlFor="cancel-reason">Alasan cancel <span className="text-red-500">*</span></Label>
+                <Label htmlFor="cancel-reason">Cancellation reason <span className="text-red-500">*</span></Label>
                 <Textarea
                   id="cancel-reason"
-                  placeholder="Tulis alasan pembatalan..."
+                  placeholder="Enter cancellation reason..."
                   value={cancelReasonText}
                   onChange={e => setCancelReasonText(e.target.value)}
                   rows={3}
@@ -1987,7 +2016,7 @@ export default function Bookings() {
           )}
           <DialogFooter>
             <Button variant="outline" disabled={cancelSaving} onClick={() => setCancelDialogBooking(null)}>
-              Batal
+              Cancel
             </Button>
             <Button
               disabled={cancelSaving || !cancelReasonText.trim()}
@@ -1995,7 +2024,7 @@ export default function Bookings() {
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               {cancelSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
-              Ya, Cancel Booking
+              Yes, Cancel Booking
             </Button>
           </DialogFooter>
         </DialogContent>

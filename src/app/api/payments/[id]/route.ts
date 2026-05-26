@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 import { BookingStatus } from '@prisma/client'
 
-function paymentStatus(depositPaid: number, totalPrice: number): BookingStatus {
+function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
   if (depositPaid <= 0)          return BookingStatus.pending
   if (depositPaid >= totalPrice) return BookingStatus.fully_paid
   return BookingStatus.partially_paid
@@ -22,7 +22,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             customer: { select: { name: true, email: true, phone: true, address: true } },
             yacht:    { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent:    { select: { name: true, company: true, email: true, phone: true, commission: true } },
+            agent:    { select: { name: true, commission: true } },
             services: true,
             guests: {
               select: {
@@ -48,129 +48,219 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
-    const { action, proofOfTransfer } = body
+    const { action } = body
 
-    // Upload proof of transfer
-    if (proofOfTransfer !== undefined) {
-      await db.payment.update({
-        where: { id },
-        data: { proofOfTransfer: proofOfTransfer || null },
-      })
-      return NextResponse.json({ ok: true })
-    }
+    const actorId   = session?.user?.id   ?? ''
+    const actorName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const actorRole = (session?.user as { role?: string })?.role ?? ''
 
-    // Update invoice amount (only when still pending_confirmation)
-    if (action === 'update_amount') {
-      const { amount, paymentMethod, notes } = body
+    if (!action) return NextResponse.json({ error: 'Missing action' }, { status: 400 })
+
+    // ── Finance: generate invoice ──────────────────────────────────────────────
+    if (action === 'generate_invoice') {
+      if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const { amount, paymentType, paymentMethod, notes, billToType } = body
       if (!amount || typeof amount !== 'number' || amount <= 0) {
-        return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
+        return NextResponse.json({ error: 'Amount harus diisi' }, { status: 400 })
       }
-      const existing = await db.payment.findUnique({ where: { id } })
+
+      const existing = await db.payment.findUnique({
+        where: { id },
+        include: { booking: { select: { id: true, bookingCode: true, depositPaid: true, totalPrice: true, salesperson: true } } },
+      })
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-      if (existing.status !== 'pending_confirmation') {
-        return NextResponse.json({ error: 'Hanya bisa update invoice yang belum dikonfirmasi' }, { status: 400 })
+      if (existing.status !== 'requested') {
+        return NextResponse.json({ error: 'Hanya bisa generate invoice dari status "requested"' }, { status: 400 })
       }
+
+      // Generate sequential invoice number INV-{bookingCode}-{nn}
+      const confirmedCount = await db.payment.count({
+        where: { bookingId: existing.bookingId, status: { in: ['invoice_ready', 'pending_confirmation', 'confirmed'] } },
+      })
+      const invoiceNumber = `INV-${existing.booking.bookingCode}-${String(confirmedCount + 1).padStart(2, '0')}`
+
       await db.payment.update({
         where: { id },
         data: {
+          invoiceNumber,
           amount,
+          ...(paymentType   !== undefined && { paymentType:   paymentType   || existing.paymentType }),
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
-          ...(notes !== undefined && { notes: notes || null }),
+          ...(notes         !== undefined && { notes:         notes         || null }),
+          ...(billToType    !== undefined && { billToType:    billToType    || existing.billToType }),
+          invoiceGeneratedBy: actorName,
+          invoiceGeneratedAt: new Date(),
+          status: 'invoice_ready',
         },
       })
+
+      logActivity({
+        userId: actorId, userName: actorName, userRole: actorRole,
+        action: 'GENERATE', entity: 'Payment', entityId: id,
+        detail: `Generate invoice ${invoiceNumber} (${existing.booking.bookingCode}) — ${amount}`,
+      }).catch(() => {})
+
+      // Notify Sales submitter
+      if (existing.submittedByUserId) {
+        await db.notification.upsert({
+          where: { userId_type_bookingId: { userId: existing.submittedByUserId, type: 'INVOICE_READY', bookingId: existing.bookingId } },
+          create: {
+            userId: existing.submittedByUserId,
+            type: 'INVOICE_READY',
+            title: 'Invoice siap didownload',
+            body: `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`,
+            paymentId: id,
+            bookingId: existing.bookingId,
+          },
+          update: { isRead: false, title: 'Invoice siap didownload', body: `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`, createdAt: new Date() },
+        })
+      }
+
+      return NextResponse.json({ ok: true, invoiceNumber })
+    }
+
+    // ── Sales: submit proof of transfer ───────────────────────────────────────
+    if (action === 'submit_proof') {
+      const { proofOfTransfer, paymentMethod } = body
+      if (!proofOfTransfer) {
+        return NextResponse.json({ error: 'Bukti transfer harus dilampirkan' }, { status: 400 })
+      }
+
+      const existing = await db.payment.findUnique({
+        where: { id },
+        include: { booking: { select: { id: true, bookingCode: true } } },
+      })
+      if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (existing.status !== 'invoice_ready') {
+        return NextResponse.json({ error: 'Hanya bisa submit bukti pada status "invoice_ready"' }, { status: 400 })
+      }
+
+      await db.payment.update({
+        where: { id },
+        data: {
+          proofOfTransfer,
+          ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
+          status: 'pending_confirmation',
+        },
+      })
+
+      logActivity({
+        userId: actorId, userName: actorName, userRole: actorRole,
+        action: 'SUBMIT_PROOF', entity: 'Payment', entityId: id,
+        detail: `Submit bukti transfer ${existing.invoiceNumber} (${existing.booking.bookingCode})`,
+      }).catch(() => {})
+
+      // Notify Finance + Admin
+      const financeUsers = await db.user.findMany({
+        where: { role: { in: ['FINANCE', 'ADMIN'] } },
+        select: { id: true },
+      })
+      if (financeUsers.length > 0) {
+        await db.notification.createMany({
+          data: financeUsers.map(u => ({
+            userId: u.id,
+            type: 'PROOF_SUBMITTED',
+            title: 'Bukti transfer diterima',
+            body: `${existing.invoiceNumber} (${existing.booking.bookingCode}) menunggu konfirmasi pembayaran`,
+            paymentId: id,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
       return NextResponse.json({ ok: true })
     }
 
-    // Finance confirm / reject
-    if (!action) return NextResponse.json({ error: 'Missing action' }, { status: 400 })
-
-    const payment = await db.payment.findUnique({
-      where: { id },
-      include: {
-        booking: { select: { id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true } },
-      },
-    })
-    if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
-    if (payment.status !== 'pending_confirmation') {
-      return NextResponse.json({ error: 'Payment already processed' }, { status: 400 })
-    }
-
-    const confirmedByName = session?.user?.name || 'Finance'
-    const actorId   = session?.user?.id   ?? ''
-    const actorRole = (session?.user as { role?: string })?.role ?? ''
-
-    // Resolve recipient: prefer explicit submittedByUserId, fallback to salesperson name lookup
-    let recipientUserId = payment.submittedByUserId
-    if (!recipientUserId && payment.booking.salesperson) {
-      const salespersonUser = await db.user.findFirst({
-        where: { name: { equals: payment.booking.salesperson, mode: 'insensitive' } },
-        select: { id: true },
-      })
-      if (salespersonUser) recipientUserId = salespersonUser.id
-    }
-
-    if (action === 'confirm') {
-      const newDepositPaid = payment.booking.depositPaid + payment.amount
-      const newStatus = paymentStatus(newDepositPaid, payment.booking.totalPrice)
-
-      await db.$transaction([
-        db.payment.update({
-          where: { id },
-          data: { status: 'confirmed', confirmedBy: confirmedByName, confirmedAt: new Date() },
-        }),
-        db.booking.update({
-          where: { id: payment.bookingId },
-          data: { depositPaid: newDepositPaid, status: newStatus },
-        }),
-      ])
-
-      logActivity({
-        userId: actorId, userName: confirmedByName, userRole: actorRole,
-        action: 'CONFIRM', entity: 'Payment', entityId: payment.id,
-        detail: `Konfirmasi invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
-      }).catch(() => {})
-
-      // Notify the submitter (bookingId omitted to avoid @@unique([userId,type,bookingId]) conflict on repeat payments)
-      if (recipientUserId) {
-        await db.notification.create({
-          data: {
-            userId: recipientUserId,
-            type: 'PAYMENT_CONFIRMED',
-            title: 'Invoice dikonfirmasi ✓',
-            body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${confirmedByName}`,
-            paymentId: payment.id,
-          },
-        })
+    // ── Finance: confirm / reject payment ─────────────────────────────────────
+    if (action === 'confirm' || action === 'reject') {
+      if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-    } else if (action === 'reject') {
-      await db.payment.update({
+
+      const payment = await db.payment.findUnique({
         where: { id },
-        data: { status: 'rejected', confirmedBy: confirmedByName, confirmedAt: new Date() },
+        include: {
+          booking: { select: { id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true } },
+        },
       })
-
-      logActivity({
-        userId: actorId, userName: confirmedByName, userRole: actorRole,
-        action: 'REJECT', entity: 'Payment', entityId: payment.id,
-        detail: `Tolak invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
-      }).catch(() => {})
-
-      // Notify the submitter (bookingId omitted for same reason as PAYMENT_CONFIRMED)
-      if (recipientUserId) {
-        await db.notification.create({
-          data: {
-            userId: recipientUserId,
-            type: 'PAYMENT_REJECTED',
-            title: 'Invoice ditolak',
-            body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${confirmedByName}`,
-            paymentId: payment.id,
-          },
-        })
+      if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+      if (payment.status !== 'pending_confirmation') {
+        return NextResponse.json({ error: 'Hanya bisa konfirmasi/tolak dari status "pending_confirmation"' }, { status: 400 })
       }
-    } else {
-      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+
+      // Resolve recipient
+      let recipientUserId = payment.submittedByUserId
+      if (!recipientUserId && payment.booking.salesperson) {
+        const sp = await db.user.findFirst({
+          where: { name: { equals: payment.booking.salesperson, mode: 'insensitive' } },
+          select: { id: true },
+        })
+        if (sp) recipientUserId = sp.id
+      }
+
+      if (action === 'confirm') {
+        const newDepositPaid = payment.booking.depositPaid + payment.amount
+        const newStatus = bookingStatus(newDepositPaid, payment.booking.totalPrice)
+
+        await db.$transaction([
+          db.payment.update({
+            where: { id },
+            data: { status: 'confirmed', confirmedBy: actorName, confirmedAt: new Date() },
+          }),
+          db.booking.update({
+            where: { id: payment.bookingId },
+            data: { depositPaid: newDepositPaid, status: newStatus },
+          }),
+        ])
+
+        logActivity({
+          userId: actorId, userName: actorName, userRole: actorRole,
+          action: 'CONFIRM', entity: 'Payment', entityId: id,
+          detail: `Konfirmasi invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
+        }).catch(() => {})
+
+        if (recipientUserId) {
+          await db.notification.create({
+            data: {
+              userId: recipientUserId,
+              type: 'PAYMENT_CONFIRMED',
+              title: 'Pembayaran dikonfirmasi ✓',
+              body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${actorName}`,
+              paymentId: id,
+            },
+          })
+        }
+      } else {
+        await db.payment.update({
+          where: { id },
+          data: { status: 'rejected', confirmedBy: actorName, confirmedAt: new Date() },
+        })
+
+        logActivity({
+          userId: actorId, userName: actorName, userRole: actorRole,
+          action: 'REJECT', entity: 'Payment', entityId: id,
+          detail: `Tolak invoice ${payment.invoiceNumber} (${payment.booking.bookingCode})`,
+        }).catch(() => {})
+
+        if (recipientUserId) {
+          await db.notification.create({
+            data: {
+              userId: recipientUserId,
+              type: 'PAYMENT_REJECTED',
+              title: 'Pembayaran ditolak',
+              body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${actorName}`,
+              paymentId: id,
+            },
+          })
+        }
+      }
+
+      return NextResponse.json({ ok: true })
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (error) {
     console.error('Error processing payment:', error)
     return NextResponse.json({ error: 'Failed to process payment' }, { status: 500 })

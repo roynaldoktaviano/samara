@@ -45,7 +45,7 @@ const ROLE_COLOR: Record<string, string> = {
 }
 
 function fmtDateTime(d: string) {
-  return new Date(d).toLocaleString('id-ID', {
+  return new Date(d).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false,
@@ -108,7 +108,7 @@ export default function ActivityLog() {
         </div>
         <div>
           <h2 className="text-lg font-semibold">Activity Log</h2>
-          <p className="text-xs text-muted-foreground">{total.toLocaleString()} entri tercatat · hanya admin yang dapat melihat</p>
+          <p className="text-xs text-muted-foreground">{total.toLocaleString()} entries recorded · visible to admins only</p>
         </div>
       </div>
 
@@ -117,7 +117,7 @@ export default function ActivityLog() {
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Cari nama, detail…"
+            placeholder="Search name, detail…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 h-9 text-sm"
@@ -127,10 +127,10 @@ export default function ActivityLog() {
         <Select value={filterAction} onValueChange={v => setFilterAction(v === 'ALL' ? '' : v)}>
           <SelectTrigger className="h-9 w-36 text-sm">
             <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-            <SelectValue placeholder="Semua aksi" />
+            <SelectValue placeholder="All actions" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">Semua aksi</SelectItem>
+            <SelectItem value="ALL">All actions</SelectItem>
             <SelectItem value="LOGIN">Login</SelectItem>
             <SelectItem value="CREATE">Create</SelectItem>
             <SelectItem value="UPDATE">Update</SelectItem>
@@ -142,10 +142,10 @@ export default function ActivityLog() {
 
         <Select value={filterEntity} onValueChange={v => setFilterEntity(v === 'ALL' ? '' : v)}>
           <SelectTrigger className="h-9 w-40 text-sm">
-            <SelectValue placeholder="Semua entitas" />
+            <SelectValue placeholder="All entities" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">Semua entitas</SelectItem>
+            <SelectItem value="ALL">All entities</SelectItem>
             <SelectItem value="Booking">Booking</SelectItem>
             <SelectItem value="Customer">Customer</SelectItem>
             <SelectItem value="Payment">Payment</SelectItem>
@@ -196,11 +196,11 @@ export default function ActivityLog() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-44">Waktu</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-44">Time</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-36">User</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-20">Role</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-24">Aksi</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-28">Entitas</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-24">Action</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide w-28">Entity</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wide">Detail</th>
               </tr>
             </thead>
@@ -221,7 +221,7 @@ export default function ActivityLog() {
                 ) : displayed.length === 0 ? (
                   <tr key="empty">
                     <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">
-                      Tidak ada log ditemukan
+                      No logs found
                     </td>
                   </tr>
                 ) : (
@@ -272,7 +272,7 @@ export default function ActivityLog() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
           <p className="text-muted-foreground text-xs">
-            Halaman {page} dari {totalPages} · {total} entri
+            Page {page} of {totalPages} · {total} entries
           </p>
           <div className="flex items-center gap-1">
             <Button

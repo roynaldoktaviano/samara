@@ -10,28 +10,43 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
-  Loader2, Phone, Mail, Building2, Percent, RotateCw,
+  Loader2, Mail, Building2, Percent, RotateCw,
+  Users, Trash2, Check, X, MessageCircle,
 } from 'lucide-react'
 
 interface AgentRecord {
   id: string
   name: string
-  email: string | null
-  phone: string | null
-  company: string | null
   commission: number
   isActive: boolean
+  salespersonId: string | null
+  salesperson: { id: string; name: string | null } | null
   createdAt: string
   _count: { bookings: number }
 }
 
-const EMPTY_FORM = { name: '', email: '', phone: '', company: '', commission: '0' }
+interface SalesUser {
+  id: string
+  name: string | null
+  email: string
+}
+
+interface AgentContact {
+  id: string
+  name: string
+  email: string | null
+  whatsapp: string | null
+}
+
+const EMPTY_FORM = { name: '', commission: '0', salespersonId: '' }
+const EMPTY_CONTACT = { name: '', email: '', whatsapp: '' }
 const ACCENT = '#bdac7e'
 
 export default function Agents() {
@@ -39,9 +54,10 @@ export default function Agents() {
   const userRole = (session?.user as { role?: string })?.role ?? ''
   const isAdmin = userRole === 'ADMIN'
 
-  const [agents,  setAgents]  = useState<AgentRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search,  setSearch]  = useState('')
+  const [agents,     setAgents]     = useState<AgentRecord[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [search,     setSearch]     = useState('')
+  const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editing,   setEditing]   = useState<AgentRecord | null>(null)
@@ -50,6 +66,15 @@ export default function Agents() {
 
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
+
+  // contacts
+  const [contacts,       setContacts]       = useState<AgentContact[]>([])
+  const [contactsLoading, setContactsLoading] = useState(false)
+  const [addingContact,  setAddingContact]  = useState(false)
+  const [contactForm,    setContactForm]    = useState(EMPTY_CONTACT)
+  const [savingContact,  setSavingContact]  = useState(false)
+  const [editingContact, setEditingContact] = useState<AgentContact | null>(null)
+  const [editContactForm, setEditContactForm] = useState(EMPTY_CONTACT)
 
   const fetchAgents = useCallback(async () => {
     setLoading(true)
@@ -62,21 +87,45 @@ export default function Agents() {
 
   useEffect(() => { fetchAgents() }, [fetchAgents])
 
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.ok ? r.json() : [])
+      .then((users: (SalesUser & { role: string })[]) =>
+        setSalesUsers(users.filter(u => u.role === 'SALES'))
+      )
+      .catch(() => {})
+  }, [])
+
+  const fetchContacts = async (agentId: string) => {
+    setContactsLoading(true)
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts`)
+      if (res.ok) setContacts(await res.json())
+    } finally {
+      setContactsLoading(false)
+    }
+  }
+
   const openCreate = () => {
     setEditing(null)
     setForm(EMPTY_FORM)
+    setContacts([])
+    setAddingContact(false)
+    setEditingContact(null)
     setSheetOpen(true)
   }
 
   const openEdit = (a: AgentRecord) => {
     setEditing(a)
     setForm({
-      name:       a.name,
-      email:      a.email      ?? '',
-      phone:      a.phone      ?? '',
-      company:    a.company    ?? '',
-      commission: String(a.commission),
+      name:          a.name,
+      commission:    String(a.commission),
+      salespersonId: a.salespersonId ?? '',
     })
+    setAddingContact(false)
+    setEditingContact(null)
+    setContactForm(EMPTY_CONTACT)
+    fetchContacts(a.id)
     setSheetOpen(true)
   }
 
@@ -90,16 +139,57 @@ export default function Agents() {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:       form.name.trim(),
-          email:      form.email.trim()   || null,
-          phone:      form.phone.trim()   || null,
-          company:    form.company.trim() || null,
-          commission: parseFloat(form.commission) || 0,
+          name:          form.name.trim(),
+          commission:    parseFloat(form.commission) || 0,
+          salespersonId: form.salespersonId || null,
         }),
       })
       if (res.ok) { await fetchAgents(); setSheetOpen(false) }
     } catch (e) { console.error(e) }
     finally { setSaving(false) }
+  }
+
+  const handleAddContact = async () => {
+    if (!contactForm.name.trim() || !editing) return
+    setSavingContact(true)
+    try {
+      const res = await fetch(`/api/agents/${editing.id}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contactForm),
+      })
+      if (res.ok) {
+        const c = await res.json()
+        setContacts(prev => [...prev, c])
+        setContactForm(EMPTY_CONTACT)
+        setAddingContact(false)
+      }
+    } finally { setSavingContact(false) }
+  }
+
+  const handleUpdateContact = async () => {
+    if (!editingContact || !editContactForm.name.trim() || !editing) return
+    setSavingContact(true)
+    try {
+      const res = await fetch(`/api/agents/${editing.id}/contacts/${editingContact.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editContactForm),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setContacts(prev => prev.map(c => c.id === updated.id ? updated : c))
+        setEditingContact(null)
+      }
+    } finally { setSavingContact(false) }
+  }
+
+  const handleDeleteContact = async (contactId: string) => {
+    if (!editing) return
+    try {
+      const res = await fetch(`/api/agents/${editing.id}/contacts/${contactId}`, { method: 'DELETE' })
+      if (res.ok) setContacts(prev => prev.filter(c => c.id !== contactId))
+    } catch (e) { console.error(e) }
   }
 
   const handleToggleActive = async () => {
@@ -118,8 +208,7 @@ export default function Agents() {
 
   const filtered = agents.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
-    (a.company ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (a.email   ?? '').toLowerCase().includes(search.toLowerCase())
+    (a.salesperson?.name ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   const activeCount = agents.filter(a => a.isActive).length
@@ -137,7 +226,7 @@ export default function Agents() {
             </button>
           </div>
           <p className="text-muted-foreground text-sm">
-            {loading ? '…' : `${activeCount} agen aktif`}
+            {loading ? '…' : `${activeCount} active agent${activeCount !== 1 ? 's' : ''}`}
           </p>
         </div>
         {isAdmin && (
@@ -146,7 +235,7 @@ export default function Agents() {
             style={{ backgroundColor: ACCENT, color: 'white' }}
             className="hover:opacity-90"
           >
-            <Plus className="h-4 w-4 mr-2" /> Tambah Agent
+            <Plus className="h-4 w-4 mr-2" /> Add Agent
           </Button>
         )}
       </div>
@@ -156,7 +245,7 @@ export default function Agents() {
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Cari nama, perusahaan, email…"
+          placeholder="Search name, company, email…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -166,7 +255,7 @@ export default function Agents() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            Daftar Agent
+            Agent List
             {!loading && (
               <span className="ml-2 font-normal text-muted-foreground text-sm">
                 ({filtered.length})
@@ -182,10 +271,10 @@ export default function Agents() {
           ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Briefcase className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{search ? 'Tidak ada agent ditemukan' : 'Belum ada agent'}</p>
+              <p className="text-sm">{search ? 'No agents found' : 'No agents yet'}</p>
               {isAdmin && !search && (
                 <Button onClick={openCreate} variant="outline" size="sm" className="mt-3">
-                  <Plus className="h-4 w-4 mr-1" /> Tambah Agent Pertama
+                  <Plus className="h-4 w-4 mr-1" /> Add First Agent
                 </Button>
               )}
             </div>
@@ -195,11 +284,11 @@ export default function Agents() {
                 <thead>
                   <tr className="border-b text-left">
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Agent</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Kontak</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Komisi</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Status</th>
-                    {isAdmin && <th className="pb-3 font-medium text-muted-foreground text-right">Aksi</th>}
+                    {isAdmin && <th className="pb-3 font-medium text-muted-foreground text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -217,26 +306,16 @@ export default function Agents() {
                           </div>
                           <div>
                             <div className="font-semibold">{a.name}</div>
-                            {a.company && <div className="text-xs text-muted-foreground">{a.company}</div>}
                           </div>
                         </div>
                       </td>
 
-                      {/* Contact */}
+                      {/* Salesperson */}
                       <td className="py-3 pr-4">
-                        <div className="space-y-0.5">
-                          {a.email && (
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Mail className="h-3 w-3 shrink-0" /> {a.email}
-                            </div>
-                          )}
-                          {a.phone && (
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Phone className="h-3 w-3 shrink-0" /> {a.phone}
-                            </div>
-                          )}
-                          {!a.email && !a.phone && <span className="text-xs text-muted-foreground/40">—</span>}
-                        </div>
+                        {a.salesperson
+                          ? <span className="text-sm">{a.salesperson.name ?? '—'}</span>
+                          : <span className="text-xs text-muted-foreground/40">—</span>
+                        }
                       </td>
 
                       {/* Commission */}
@@ -256,7 +335,7 @@ export default function Agents() {
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : 'bg-gray-50 text-gray-500 border-gray-200'
                         }>
-                          {a.isActive ? 'Aktif' : 'Nonaktif'}
+                          {a.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
 
@@ -280,8 +359,8 @@ export default function Agents() {
                               onClick={() => setConfirmAgent(a)}
                             >
                               {a.isActive
-                                ? <><UserX    className="h-3 w-3 mr-1" /> Nonaktifkan</>
-                                : <><UserCheck className="h-3 w-3 mr-1" /> Aktifkan</>
+                                ? <><UserX    className="h-3 w-3 mr-1" /> Deactivate</>
+                                : <><UserCheck className="h-3 w-3 mr-1" /> Activate</>
                               }
                             </Button>
                           </div>
@@ -308,9 +387,9 @@ export default function Agents() {
                   <Briefcase className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <SheetTitle>{editing ? 'Edit Agent' : 'Tambah Agent Baru'}</SheetTitle>
+                  <SheetTitle>{editing ? 'Edit Agent' : 'Add New Agent'}</SheetTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {editing ? editing.name : 'Lengkapi data agent'}
+                    {editing ? editing.name : 'Company / agency details'}
                   </p>
                 </div>
               </div>
@@ -319,73 +398,233 @@ export default function Agents() {
             {/* Form */}
             <div className="flex-1 p-6 space-y-4 overflow-y-auto">
               <div className="space-y-1.5">
-                <Label>Nama <span className="text-destructive">*</span></Label>
-                <Input
-                  placeholder="Nama lengkap agent"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Perusahaan / Travel Agent</Label>
+                <Label>Agency / Company Name <span className="text-destructive">*</span></Label>
                 <div className="relative">
                   <Building2 className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     className="pl-9"
-                    placeholder="Nama perusahaan"
-                    value={form.company}
-                    onChange={e => setForm(f => ({ ...f, company: e.target.value }))}
+                    placeholder="e.g. ABC Tours, Raja Ampat Travel"
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   />
                 </div>
               </div>
+
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Email</Label>
+                  <Label>Commission (%)</Label>
                   <div className="relative">
-                    <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      type="email"
+                      type="number" min="0" max="100" step="0.5"
                       className="pl-9"
-                      placeholder="email@..."
-                      value={form.email}
-                      onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                      value={form.commission}
+                      onChange={e => setForm(f => ({ ...f, commission: e.target.value }))}
                     />
                   </div>
                 </div>
+
                 <div className="space-y-1.5">
-                  <Label>Telepon</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      className="pl-9"
-                      placeholder="+62…"
-                      value={form.phone}
-                      onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                    />
-                  </div>
+                  <Label>Salesperson</Label>
+                  <Select
+                    value={form.salespersonId || 'none'}
+                    onValueChange={v => setForm(f => ({ ...f, salespersonId: v === 'none' ? '' : v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="— Select sales —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      {salesUsers.map(u => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name ?? u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Komisi (%)</Label>
-                <div className="relative">
-                  <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="number" min="0" max="100" step="0.5"
-                    className="pl-9"
-                    value={form.commission}
-                    onChange={e => setForm(f => ({ ...f, commission: e.target.value }))}
-                  />
+              {/* ── Contact Persons (edit mode only) ── */}
+              {editing && (
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">Contact Persons</span>
+                      {!contactsLoading && (
+                        <span className="text-xs text-muted-foreground">({contacts.length})</span>
+                      )}
+                    </div>
+                    {!addingContact && (
+                      <button
+                        type="button"
+                        onClick={() => { setAddingContact(true); setEditingContact(null) }}
+                        className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add
+                      </button>
+                    )}
+                  </div>
+
+                  {contactsLoading ? (
+                    <div className="space-y-2">
+                      {[...Array(2)].map((_, i) => (
+                        <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {contacts.map(c => (
+                        <div key={c.id} className="rounded-lg border bg-muted/30 p-3">
+                          {editingContact?.id === c.id ? (
+                            /* inline edit form */
+                            <div className="space-y-2">
+                              <Input
+                                placeholder="Name *"
+                                value={editContactForm.name}
+                                onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  placeholder="Email"
+                                  value={editContactForm.email}
+                                  onChange={e => setEditContactForm(f => ({ ...f, email: e.target.value }))}
+                                  className="h-7 text-sm"
+                                />
+                                <Input
+                                  placeholder="No. Telepon / WA"
+                                  value={editContactForm.whatsapp}
+                                  onChange={e => setEditContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                                  className="h-7 text-sm"
+                                />
+                              </div>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingContact(null)}
+                                  className="text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={savingContact || !editContactForm.name.trim()}
+                                  onClick={handleUpdateContact}
+                                  className="text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50"
+                                >
+                                  {savingContact ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* display row */
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{c.name}</p>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                  {c.email && (
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Mail className="h-3 w-3" />{c.email}
+                                    </span>
+                                  )}
+                                  {c.whatsapp && (
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <MessageCircle className="h-3 w-3" />{c.whatsapp}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingContact(c)
+                                    setEditContactForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '' })
+                                    setAddingContact(false)
+                                  }}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteContact(c.id)}
+                                  className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add form */}
+                      {addingContact && (
+                        <div className="rounded-lg border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
+                          <Input
+                            autoFocus
+                            placeholder="Name *"
+                            value={contactForm.name}
+                            onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                            className="h-7 text-sm"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              placeholder="Email"
+                              value={contactForm.email}
+                              onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                            <Input
+                              placeholder="WhatsApp"
+                              value={contactForm.whatsapp}
+                              onChange={e => setContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => { setAddingContact(false); setContactForm(EMPTY_CONTACT) }}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <X className="h-3 w-3" /> Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingContact || !contactForm.name.trim()}
+                              onClick={handleAddContact}
+                              className="flex items-center gap-1 text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50"
+                            >
+                              {savingContact
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <Check className="h-3 w-3" />
+                              }
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {contacts.length === 0 && !addingContact && (
+                        <p className="text-xs text-muted-foreground text-center py-3">
+                          No contact persons yet
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer */}
             <div className="p-6 border-t flex gap-2">
               <Button variant="outline" onClick={() => setSheetOpen(false)} className="flex-1">
-                Batal
+                Cancel
               </Button>
               <Button
                 disabled={!form.name.trim() || saving}
@@ -394,7 +633,7 @@ export default function Agents() {
                 style={{ backgroundColor: ACCENT, color: 'white' }}
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                {editing ? 'Simpan Perubahan' : 'Tambah Agent'}
+                {editing ? 'Save Changes' : 'Add Agent'}
               </Button>
             </div>
           </SheetContent>
@@ -406,16 +645,16 @@ export default function Agents() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmAgent?.isActive ? 'Nonaktifkan Agent?' : 'Aktifkan Agent?'}
+              {confirmAgent?.isActive ? 'Deactivate Agent?' : 'Activate Agent?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAgent?.isActive
-                ? `${confirmAgent.name} tidak akan muncul sebagai pilihan di booking baru. Booking yang sudah ada tidak terpengaruh.`
-                : `${confirmAgent?.name} akan aktif kembali dan bisa dipilih pada booking baru.`}
+                ? `${confirmAgent.name} will no longer appear as an option in new bookings. Existing bookings are not affected.`
+                : `${confirmAgent?.name} will become active again and can be selected for new bookings.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={toggling}
               onClick={handleToggleActive}
@@ -424,7 +663,7 @@ export default function Agents() {
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
             >
               {toggling && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {confirmAgent?.isActive ? 'Ya, Nonaktifkan' : 'Ya, Aktifkan'}
+              {confirmAgent?.isActive ? 'Yes, Deactivate' : 'Yes, Activate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

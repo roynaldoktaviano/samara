@@ -20,9 +20,10 @@ import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
 import {
   User, Users, Ship, Map, Plus, Trash2,
-  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown,
+  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown, ChevronsUpDown,
 } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
+import { NATIONALITIES } from '@/lib/nationalities'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type Source  = 'AGENT' | 'DIRECT'
@@ -30,7 +31,8 @@ type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; extraBedTiers?: { nights: number; price: number }[] }
-interface AgentOpt   { id: string; name: string; company?: string; commission: number }
+interface AgentOpt        { id: string; name: string; commission: number }
+interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
 interface OpenTripOpt{
@@ -51,7 +53,7 @@ interface SelectedGuest {
   isChild?: boolean
   isInfant?: boolean
 }
-interface ServiceEntry { tempId: string; name: string; price: string }
+interface ServiceEntry { tempId: string; name: string; price: string; qty: string }
 
 interface Props {
   open: boolean
@@ -105,7 +107,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [step,    setStep]    = useState(1)
 
   /* agent state */
-  const [agentId, setAgentId] = useState('')
+  const [agentId,        setAgentId]        = useState('')
+  const [agentContactId, setAgentContactId] = useState('')
+  const [agentContacts,  setAgentContacts]  = useState<AgentContactOpt[]>([])
 
   /* step-1 PC */
   const [yachtId,    setYachtId]    = useState('')
@@ -138,6 +142,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [currency,       setCurrency]   = useState<CurrencyCode>('USD')
   const [basePrice,      setBase]       = useState('')
   const [discPct,        setDisc]       = useState('0')
+  const [discMode,       setDiscMode]   = useState<'percent' | 'amount'>('percent')
+  const [discFixed,      setDiscFixed]  = useState('')
   const [services,       setSvc]        = useState<ServiceEntry[]>([])
   const [deposit,        setDeposit]    = useState('')
   const [depositDueDate, setDepDue]     = useState('')
@@ -200,6 +206,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [quickPhoneSameAsLead, setQuickPhoneSameAsLead] = useState(false)
   const [quickEmailSameAsLead, setQuickEmailSameAsLead] = useState(false)
   const [quickSetAsLead,       setQuickSetAsLead]       = useState(false)
+  const [quickIsChild,         setQuickIsChild]         = useState(false)
+  const [quickNationality,     setQuickNationality]     = useState('')
+  const [quickNatOpen,         setQuickNatOpen]         = useState(false)
+  const [quickNatQuery,        setQuickNatQuery]        = useState('')
   const [quickSaving,         setQuickSaving]         = useState(false)
 
   /* pre-select open trip from calendar — still ask source first */
@@ -235,6 +245,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setDest(b.destination ?? '')
         setNotes(b.notes ?? '')
         setAgentId(b.agentId ?? '')
+        setAgentContactId(b.agentContactId ?? '')
         setIsOnHold(false)
         setPhase('steps')
 
@@ -323,6 +334,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       setOpenTripsLoading(false)
     })
   }, [open])
+
+  /* fetch agent contacts when agentId changes */
+  useEffect(() => {
+    if (!agentId) { setAgentContacts([]); setAgentContactId(''); return }
+    fetch(`/api/agents/${agentId}/contacts`)
+      .then(r => r.json())
+      .then(d => setAgentContacts(Array.isArray(d) ? d : []))
+      .catch(() => setAgentContacts([]))
+  }, [agentId])
 
   /* fetch cabins when yacht changes — skipped when completing an on-hold booking (handled inline) */
   useEffect(() => {
@@ -497,7 +517,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false)
-    setCurrency('USD'); setBase(''); setDisc('0'); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
+    setCurrency('USD'); setBase(''); setDisc('0'); setDiscMode('percent'); setDiscFixed(''); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
@@ -516,18 +536,20 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }
 
   /* computed */
+  const discountAmt = useMemo(() => {
+    const b = parseFloat(basePrice) || 0
+    if (voucherApplied) {
+      return voucherApplied.type === 'PERCENTAGE' ? b * voucherApplied.value / 100 : voucherApplied.value
+    }
+    if (discMode === 'amount') return parseFloat(discFixed) || 0
+    return b * (parseFloat(discPct) || 0) / 100
+  }, [basePrice, discPct, discFixed, discMode, voucherApplied])
+
   const total = useMemo(() => {
     const b = parseFloat(basePrice) || 0
-    const s = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
-    if (voucherApplied) {
-      const discount = voucherApplied.type === 'PERCENTAGE'
-        ? b * (voucherApplied.value / 100)
-        : voucherApplied.value
-      return Math.max(0, b - discount) + s
-    }
-    const d = parseFloat(discPct) || 0
-    return b * (1 - d / 100) + s
-  }, [basePrice, discPct, services, voucherApplied])
+    const s = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0) * (parseInt(x.qty) || 1), 0)
+    return Math.max(0, b - discountAmt) + s
+  }, [basePrice, discountAmt, services])
 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
@@ -584,19 +606,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const createAndAddGuest = async () => {
     const firstName = quickFirstName.trim()
     const lastName  = quickLastName.trim()
-    if (!firstName || !quickDob) return
+    if (!firstName) return
     const leadCustomer = customers.find(c => c.id === guests.find(g => g.isLead)?.customerId)
     const resolvedPhone = quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone.trim()
     const resolvedEmail = quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail.trim()
-    const ageYears = getAgeYears(quickDob) ?? 0
-    const isChild  = ageYears < 12
-    const isInfant = ageYears < 4
+    const ageYears = getAgeYears(quickDob)
+    const isChild  = quickDob ? (ageYears !== null && ageYears < 12) : quickIsChild
+    const isInfant = quickDob ? (ageYears !== null && ageYears < 4)  : false
     setQuickSaving(true)
     try {
       const res = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, phone: resolvedPhone, email: resolvedEmail, dateOfBirth: quickDob, isChild }),
+        body: JSON.stringify({ firstName, lastName, phone: resolvedPhone || null, email: resolvedEmail || null, dateOfBirth: quickDob || null, isChild, nationality: quickNationality || null }),
       })
       if (res.ok) {
         const created: CustomerOpt = await res.json()
@@ -605,14 +627,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         if (quickSetAsLead) setLead(created.id)
         setShowQuickAdd(false)
         setQuickFirstName(''); setQuickLastName(''); setQuickDob('')
-        setQuickPhone(''); setQuickEmail('')
+        setQuickPhone(''); setQuickEmail(''); setQuickIsChild(false)
+        setQuickNationality(''); setQuickNatQuery('')
         setQuickPhoneSameAsLead(false); setQuickEmailSameAsLead(false); setQuickSetAsLead(false)
       }
     } finally { setQuickSaving(false) }
   }
 
   /* service helpers */
-  const addSvc    = () => setSvc(s => [...s, { tempId: Date.now().toString(), name: '', price: '' }])
+  const addSvc    = () => setSvc(s => [...s, { tempId: Date.now().toString(), name: '', price: '', qty: '1' }])
   const removeSvc = (id: string) => setSvc(s => s.filter(x => x.tempId !== id))
   const updateSvc = (id: string, p: Partial<ServiceEntry>) =>
     setSvc(s => s.map(x => x.tempId === id ? { ...x, ...p } : x))
@@ -686,7 +709,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const handleSubmit = async (confirmCloseOpenTrips = false) => {
     setSubmitting(true)
     try {
-      const resolvedAgentId = source === 'AGENT' ? agentId : undefined
+      const resolvedAgentId      = source === 'AGENT' ? agentId        : undefined
+      const resolvedContactId    = source === 'AGENT' && agentContactId && agentContactId !== 'none' ? agentContactId : undefined
       const ot = openTrips.find(t => t.id === openTripId)
 
       const extraNote = (() => {
@@ -703,7 +727,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           completeBooking: true,
           totalPrice:    total,
           depositPaid:   parseFloat(deposit) || 0,
-          discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
+          discount:      discountAmt,
           currency,
           exchangeRate:  currency !== 'USD' ? manualRate : undefined,
           depositDueDate: depositDueDate || undefined,
@@ -712,7 +736,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
           notes:         resolvedNotes,
           guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
-          services: services.filter(s => s.name.trim()),
+          services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         }
         const res = await fetch(`/api/bookings/${completeBookingId}`, {
           method: 'PATCH',
@@ -733,7 +757,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       const payload = {
         tripType,
         source,
-        agentId: resolvedAgentId,
+        agentId:        resolvedAgentId,
+        agentContactId: resolvedContactId,
         yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
         openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
         startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
@@ -741,7 +766,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
         totalPrice:    total,
         depositPaid:   parseFloat(deposit) || 0,
-        discount:      voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : parseFloat(discPct) || 0,
+        discount:      discountAmt,
         voucherCode:   voucherApplied?.code ?? undefined,
         currency,
         exchangeRate:  currency !== 'USD' ? manualRate : undefined,
@@ -751,7 +776,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
         notes:         resolvedNotes,
         guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
-        services: services.filter(s => s.name.trim()),
+        services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
       }
 
@@ -878,20 +903,20 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <div className="flex justify-center mb-3">
           <Badge style={{ backgroundColor: ACCENT, color: 'white' }} className="px-3 py-1">Via Agent</Badge>
         </div>
-        <h3 className="text-xl font-semibold">Pilih Agent</h3>
-        <p className="text-sm text-muted-foreground mt-1">Pilih travel agent untuk booking ini</p>
+        <h3 className="text-xl font-semibold">Select Agent</h3>
+        <p className="text-sm text-muted-foreground mt-1">Select a travel agent for this booking</p>
       </div>
 
       <div className="space-y-1.5">
-        <Label>Agent <span className="text-destructive">*</span></Label>
-        <Select value={agentId} onValueChange={setAgentId}>
-          <SelectTrigger><SelectValue placeholder="Pilih agent…" /></SelectTrigger>
+        <Label>Agent Company <span className="text-destructive">*</span></Label>
+        <Select value={agentId} onValueChange={v => { setAgentId(v); setAgentContactId('') }}>
+          <SelectTrigger><SelectValue placeholder="Select agent company…" /></SelectTrigger>
           <SelectContent>
             {agents.length === 0
-              ? <SelectItem value="_" disabled>Belum ada agent</SelectItem>
+              ? <SelectItem value="_" disabled>No agents yet</SelectItem>
               : agents.map(a => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.name}{a.company ? ` — ${a.company}` : ''} ({a.commission}%)
+                    {a.name} ({a.commission}%)
                   </SelectItem>
                 ))
             }
@@ -899,9 +924,36 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         </Select>
       </div>
 
+      {/* Contact person — shown after company selected */}
+      {agentId && (
+        <div className="space-y-1.5">
+          <Label>
+            Contact Person
+            <span className="ml-1 text-muted-foreground font-normal text-xs">(optional)</span>
+          </Label>
+          {agentContacts.length === 0 ? (
+            <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+              No contact persons at this agent yet. Add them via the <strong>Agents</strong> menu.
+            </p>
+          ) : (
+            <Select value={agentContactId} onValueChange={setAgentContactId}>
+              <SelectTrigger><SelectValue placeholder="Select contact person…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— None —</SelectItem>
+                {agentContacts.map(c => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}{c.whatsapp ? ` · ${c.whatsapp}` : c.email ? ` · ${c.email}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      )}
+
       {agents.length === 0 && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Belum ada agent terdaftar. Tambahkan agent terlebih dahulu melalui menu <strong>Agents</strong>.
+          No agents registered yet. Please add an agent first via the <strong>Agents</strong> menu.
         </p>
       )}
     </div>
@@ -1015,13 +1067,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   {blockedRanges.length > 0 && (
                     <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                       <span className="inline-block w-2 h-2 rounded-sm bg-red-200 border border-red-300" />
-                      Sudah ada booking / open trip terisi
+                      Slot occupied by booking / open trip
                     </p>
                   )}
                   {openTripFreeRanges.length > 0 && (
                     <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                       <span className="inline-block w-2 h-2 rounded-sm bg-blue-200 border border-blue-300" />
-                      Ada jadwal open trip (masih kosong)
+                      Open trip scheduled (available)
                     </p>
                   )}
                 </div>
@@ -1072,14 +1124,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold">
-              {yachtConflict.isOpenTrip ? 'Ada open trip pada tanggal ini' : 'Yacht tidak tersedia pada tanggal ini'}
+              {yachtConflict.isOpenTrip ? 'Open trip scheduled on these dates' : 'Yacht unavailable on these dates'}
             </p>
             <p className={`text-xs mt-0.5 ${yachtConflict.isOpenTrip ? 'text-amber-600' : 'text-red-600'}`}>
-              Sudah ada jadwal <span className="font-medium">{yachtConflict.name}</span> pada{' '}
-              {new Date(yachtConflict.start).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+              There is already a schedule for <span className="font-medium">{yachtConflict.name}</span> on{' '}
+              {new Date(yachtConflict.start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
               {' – '}
-              {new Date(yachtConflict.end).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-              {yachtConflict.isOpenTrip && ' — open trip akan ditutup otomatis saat booking dikonfirmasi.'}
+              {new Date(yachtConflict.end).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {yachtConflict.isOpenTrip && ' — the open trip will be closed automatically when the booking is confirmed.'}
             </p>
           </div>
         </div>
@@ -1174,7 +1226,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     <span className="text-[10px] font-semibold bg-red-100 text-red-600 rounded-full px-2.5 py-0.5 shrink-0">Sold Out</span>
                   ) : (
                     <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded-full px-2.5 py-0.5 shrink-0 whitespace-nowrap">
-                      {t.spotsAvailable}/{t.maxCapacity} cabin tersedia
+                      {t.spotsAvailable}/{t.maxCapacity} cabin(s) available
                     </span>
                   )}
                 </div>
@@ -1241,8 +1293,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         const hasAdultInCabin = guests.some(g => g.cabinId === targetId && !g.isChild)
         if (!hasAdultInCabin) {
           setDropError(droppingGuest.isInfant
-            ? `Bayi harus bersama orang dewasa di kabin yang sama`
-            : `Anak-anak harus bersama orang dewasa di kabin yang sama`)
+            ? `Infants must be accompanied by an adult in the same cabin`
+            : `Children must be accompanied by an adult in the same cabin`)
           return
         }
       }
@@ -1293,7 +1345,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           />
           <div>
             <span className="text-sm font-medium text-foreground">On Hold</span>
-            <span className="text-[11px] text-muted-foreground ml-2">Simpan tanpa pricing, lanjutkan nanti</span>
+            <span className="text-[11px] text-muted-foreground ml-2">Save without pricing, continue later</span>
           </div>
         </label>}
 
@@ -1327,7 +1379,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     className="pl-8 bg-white border-amber-200 focus-visible:ring-amber-300"
-                    placeholder="Cari nama atau nomor HP..."
+                    placeholder="Search by name or phone number..."
                     value={holdSearch}
                     onChange={e => setHoldSearch(e.target.value)}
                     autoFocus
@@ -1366,14 +1418,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       </button>
                     ))}
                     {matches.length === 0 && holdSearch && (
-                      <div className="px-4 py-2.5 text-sm text-muted-foreground">Tamu tidak ditemukan</div>
+                      <div className="px-4 py-2.5 text-sm text-muted-foreground">Guest not found</div>
                     )}
                   </div>
                   <button
                     onMouseDown={e => { e.preventDefault(); setHoldIsNew(true); setHoldGuestName(holdSearch); setHoldSearch('') }}
                     className="w-full text-left px-4 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-amber-50 transition-colors flex items-center gap-2 border-t border-amber-100 shrink-0">
                     <span className="h-5 w-5 rounded-full border-2 border-[#bdac7e] flex items-center justify-center text-[11px] leading-none shrink-0">+</span>
-                    Tambah tamu baru
+                    Add new guest
                   </button>
                 </div>
               )
@@ -1391,18 +1443,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               return (
                 <div className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Tamu Baru</p>
+                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">New Guest</p>
                     <button type="button"
                       onClick={() => { setHoldIsNew(false); setHoldGuestName(''); setHoldGuestPhone('') }}
                       className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                      ← Cari tamu
+                      ← Search guest
                     </button>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Nama <span className="text-destructive">*</span></Label>
+                    <Label className="text-xs text-muted-foreground">Name <span className="text-destructive">*</span></Label>
                     <Input
                       className="bg-white border-amber-200 focus-visible:ring-amber-300"
-                      placeholder="Nama lengkap..."
+                      placeholder="Full name..."
                       value={holdGuestName}
                       onChange={e => setHoldGuestName(e.target.value)}
                       autoFocus
@@ -1419,8 +1471,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     {dupMatch && (
                       <div className="flex items-center justify-between rounded-md bg-orange-50 border border-orange-200 px-3 py-2 gap-2">
                         <div className="min-w-0">
-                          <p className="text-xs font-medium text-orange-800">Sudah terdaftar sebagai <span className="font-bold">{dupMatch.name}</span></p>
-                          <p className="text-[11px] text-orange-600 mt-0.5">Pilih tamu ini atau gunakan nama berbeda</p>
+                          <p className="text-xs font-medium text-orange-800">Already registered as <span className="font-bold">{dupMatch.name}</span></p>
+                          <p className="text-[11px] text-orange-600 mt-0.5">Select this guest or use a different name</p>
                         </div>
                         <button
                           type="button"
@@ -1432,7 +1484,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                             setHoldIsNew(false)
                           }}
                           className="text-xs font-semibold text-orange-700 hover:text-orange-900 shrink-0 underline underline-offset-2">
-                          Pilih
+                          Select
                         </button>
                       </div>
                     )}
@@ -1457,7 +1509,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 value={holdUntil}
                 onChange={e => setHoldUntil(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">Booking otomatis dibatalkan jika melewati batas waktu ini.</p>
+              <p className="text-[11px] text-muted-foreground">Booking will be automatically cancelled if this deadline is passed.</p>
             </div>
           </div>
         )}
@@ -1466,7 +1518,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         {isOnHold && tripType === 'OPEN_TRIP' && cabins.length > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/30 overflow-hidden">
             <div className="px-4 py-2.5 border-b border-amber-100 flex items-center justify-between">
-              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Pilih Kabin</p>
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Select Cabin</p>
               {holdCabinId && (
                 <span className="text-[11px] text-green-700 font-medium">
                   ✓ {cabins.find(c => c.id === holdCabinId)?.name}
@@ -1499,7 +1551,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       'text-[10px] font-semibold mt-1',
                       isOccupied ? 'text-red-600' : isSelected ? 'text-green-700' : 'text-muted-foreground',
                     )}>
-                      {isOccupied ? 'Sudah diisi' : isSelected ? '● On Hold' : 'Tersedia'}
+                      {isOccupied ? 'Occupied' : isSelected ? '● On Hold' : 'Available'}
                     </p>
                   </button>
                 )
@@ -1572,7 +1624,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             <div className="border rounded-lg bg-muted/30 p-3 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Guest</p>
-                <button onClick={() => setShowQuickAdd(false)}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                <button onClick={() => { setShowQuickAdd(false); setQuickIsChild(false); setQuickNationality(''); setQuickNatQuery('') }}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1584,9 +1636,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <Input className="h-8 text-sm mt-1" value={quickLastName} onChange={e => setQuickLastName(e.target.value)} placeholder="Last name" />
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-xs">Date of Birth *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Date of Birth <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    {!quickDob && (
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]"
+                          checked={quickIsChild}
+                          onChange={e => setQuickIsChild(e.target.checked)} />
+                        <span className="text-[10px] text-muted-foreground">Is Child</span>
+                      </label>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <Input type="date" className="h-8 text-sm flex-1" value={quickDob} onChange={e => setQuickDob(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+                    <Input type="date" className="h-8 text-sm flex-1" value={quickDob}
+                      onChange={e => { setQuickDob(e.target.value); if (e.target.value) setQuickIsChild(false) }}
+                      max={new Date().toISOString().split('T')[0]} />
                     {isInfantPreview && (
                       <span className="text-[10px] font-semibold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full whitespace-nowrap">
                         Infant · {ageYears} yr
@@ -1599,6 +1663,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     )}
                     {ageYears !== null && !isChildPreview && !isInfantPreview && (
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">{ageYears} yr</span>
+                    )}
+                    {!quickDob && quickIsChild && (
+                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        Child
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1628,6 +1697,51 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     onChange={e => { if (!quickEmailSameAsLead) setQuickEmail(e.target.value) }}
                     disabled={quickEmailSameAsLead} placeholder="email@..." />
                 </div>
+                <div className="col-span-2">
+                  <Label className="text-xs">Nationality</Label>
+                  <Popover open={quickNatOpen} onOpenChange={v => { setQuickNatOpen(v); if (!v) setQuickNatQuery('') }}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="h-8 w-full justify-between text-sm font-normal px-3 mt-1">
+                        <span className={quickNationality ? '' : 'text-muted-foreground'}>
+                          {quickNationality || 'Select nationality'}
+                        </span>
+                        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="start">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2 border-b px-3 py-2">
+                          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <input
+                            autoFocus
+                            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                            placeholder="Search nationality…"
+                            value={quickNatQuery}
+                            onChange={e => setQuickNatQuery(e.target.value)}
+                          />
+                        </div>
+                        <div
+                          className="overflow-y-scroll p-1 overscroll-contain"
+                          style={{ maxHeight: 200 }}
+                          onWheel={e => e.stopPropagation()}
+                        >
+                          {(quickNatQuery.trim()
+                            ? NATIONALITIES.filter(n => n.toLowerCase().includes(quickNatQuery.toLowerCase()))
+                            : NATIONALITIES
+                          ).map(n => (
+                            <button key={n} type="button"
+                              onClick={() => { setQuickNationality(n === quickNationality ? '' : n); setQuickNatOpen(false); setQuickNatQuery('') }}
+                              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent text-left"
+                            >
+                              <Check className={`h-3.5 w-3.5 shrink-0 ${quickNationality === n ? 'opacity-100' : 'opacity-0'}`} />
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
               <div className="flex items-center justify-between pt-1">
                 {hasLead && ageYears !== null && !isChildPreview ? (
@@ -1639,7 +1753,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 ) : <span />}
                 <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowQuickAdd(false)}>Cancel</Button>
-                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || !quickDob || quickSaving} onClick={createAndAddGuest}>
+                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || quickSaving} onClick={createAndAddGuest}>
                   {quickSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
                   Add Guest
                 </Button>
@@ -1660,7 +1774,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               onValueChange={id => setLead(id)}
             >
               <SelectTrigger className="h-8 text-sm flex-1 border-[#bdac7e]/30 bg-background">
-                <SelectValue placeholder="Pilih lead guest…" />
+                <SelectValue placeholder="Select lead guest…" />
               </SelectTrigger>
               <SelectContent>
                 {guests.filter(g => !g.isChild).map(g => (
@@ -1898,7 +2012,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             <div className="flex items-center justify-between">
               <div>
                 <Label>Diving</Label>
-                <p className="text-xs text-muted-foreground">Tamu akan melakukan kegiatan diving</p>
+                <p className="text-xs text-muted-foreground">Guests will be participating in diving activities</p>
               </div>
               <Switch checked={hasDiving} onCheckedChange={setHasDiving} />
             </div>
@@ -1913,8 +2027,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   ════════════════════════════════════════════ */
   const step3 = () => {
     const b       = parseFloat(basePrice) || 0
-    const d       = voucherApplied?.type === 'PERCENTAGE' ? voucherApplied.value : (parseFloat(discPct) || 0)
-    const svc     = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0), 0)
+    const da      = discountAmt
+    const svc     = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0) * (parseInt(x.qty) || 1), 0)
 
     // Extra bed cost (for breakdown display)
     const totalExtraBeds = Object.values(cabinExtraBeds).reduce((s, n) => s + n, 0)
@@ -1934,17 +2048,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         ?? ay.extraBedTiers.reduce((a, b) => Math.abs(b.nights - nights) < Math.abs(a.nights - nights) ? b : a)
       return totalExtraBeds * (tier?.price ?? 0)
     })()
-    const da      = voucherApplied
-      ? (voucherApplied.type === 'PERCENTAGE'
-          ? b * (voucherApplied.value / 100)
-          : voucherApplied.value)
-      : b * (d / 100)
     const tot     = Math.max(0, b - da) + svc
 
-    // Agent commission deduction (display only — totalPrice stored gross)
+    // Agent commission deduction — applied on base price only, not additional services
     const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
     const commPct  = selectedAgent?.commission ?? 0
-    const commAmt  = commPct > 0 ? tot * commPct / 100 : 0
+    const commAmt  = commPct > 0 ? Math.max(0, b - da) * commPct / 100 : 0
     const netTot   = tot - commAmt
 
     const toLocal = (usd: number) => usd * manualRate
@@ -2103,11 +2212,51 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
             {/* Discount */}
             {!voucherApplied && (
-            <div className="space-y-1.5">
-              <Label>Discount <span className="text-muted-foreground font-normal">(%)</span></Label>
-              <Input type="number" min="0" max="100" step="1" value={discPct} onChange={e => setDisc(e.target.value)} />
-              {d > 0 && (
-                <p className="text-xs text-emerald-600">Saves {fmtAmt(da, 'USD')}</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Discount</Label>
+                <div className="flex rounded-lg border overflow-hidden text-xs">
+                  {(['percent', 'amount'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { setDiscMode(m); setDisc('0'); setDiscFixed('') }}
+                      className="px-3 py-1 font-medium transition-colors"
+                      style={discMode === m ? { backgroundColor: '#1a5f6e', color: 'white' } : { color: 'var(--muted-foreground)' }}
+                    >
+                      {m === 'percent' ? '%' : '$'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {discMode === 'percent' ? (
+                <div className="relative">
+                  <Input
+                    type="number" min="0" max="100" step="1"
+                    placeholder="0"
+                    value={discPct}
+                    onChange={e => setDisc(e.target.value)}
+                    className="pr-7"
+                  />
+                  <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
+                </div>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                  <Input
+                    type="text" inputMode="decimal"
+                    placeholder="0.00"
+                    value={discFixed}
+                    onChange={e => setDiscFixed(e.target.value.replace(/[^0-9.]/g, ''))}
+                    className="pl-7"
+                  />
+                </div>
+              )}
+              {discountAmt > 0 && (
+                <p className="text-xs text-emerald-600">
+                  Saves ${discountAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {discMode === 'percent' && (parseFloat(discPct) || 0) > 0 && ` (${discPct}% of base)`}
+                </p>
               )}
             </div>
             )}
@@ -2127,7 +2276,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                 <div key={sv.tempId} className="flex gap-2 items-center">
                   <Input placeholder="Service name" value={sv.name}
                     onChange={e => updateSvc(sv.tempId, { name: e.target.value })} />
-                  <div className="relative w-32 shrink-0">
+                  {/* Qty */}
+                  <div className="relative w-16 shrink-0">
+                    <span className="absolute left-2 top-2.5 text-xs text-muted-foreground select-none">×</span>
+                    <Input
+                      type="number" min="1" step="1"
+                      placeholder="1"
+                      className="pl-5 text-center"
+                      value={sv.qty}
+                      onChange={e => updateSvc(sv.tempId, { qty: e.target.value.replace(/[^0-9]/g, '') || '1' })}
+                    />
+                  </div>
+                  {/* Unit price */}
+                  <div className="relative w-28 shrink-0">
                     <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground select-none">$</span>
                     <Input
                       type="text"
@@ -2144,7 +2305,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       onChange={e => updateSvc(sv.tempId, { price: e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, '') })}
                     />
                   </div>
-                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeSvc(sv.tempId)}>
+                  {/* Subtotal hint */}
+                  {sv.price && parseInt(sv.qty) > 1 && (
+                    <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
+                      = ${((parseFloat(sv.price) || 0) * (parseInt(sv.qty) || 1)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  <Button type="button" variant="ghost" size="icon" className="shrink-0 ml-auto" onClick={() => removeSvc(sv.tempId)}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -2173,17 +2340,25 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <span>
                     {voucherApplied
                       ? `Voucher ${voucherApplied.code} (${voucherApplied.type === 'PERCENTAGE' ? `${voucherApplied.value}%` : `$${voucherApplied.value}`})`
-                      : `Discount (${d}%)`}
+                      : discMode === 'percent'
+                        ? `Discount (${discPct}%)`
+                        : 'Discount'}
                   </span>
                   <span>−{fmtAmt(da, 'USD')}</span>
                 </div>
               )}
-              {services.filter(x => x.name.trim()).map(sv => (
-                <div key={sv.tempId} className="flex justify-between">
-                  <span className="text-muted-foreground truncate max-w-[140px]">{sv.name}</span>
-                  <span>{fmtAmt(parseFloat(sv.price) || 0, 'USD')}</span>
-                </div>
-              ))}
+              {services.filter(x => x.name.trim()).map(sv => {
+                const unitPrice = parseFloat(sv.price) || 0
+                const qty = parseInt(sv.qty) || 1
+                return (
+                  <div key={sv.tempId} className="flex justify-between">
+                    <span className="text-muted-foreground truncate max-w-[140px]">
+                      {sv.name}{qty > 1 ? ` ×${qty}` : ''}
+                    </span>
+                    <span>{fmtAmt(unitPrice * qty, 'USD')}</span>
+                  </div>
+                )
+              })}
               {commPct > 0 && (
                 <div className="flex justify-between" style={{ color: '#6b7280', fontStyle: 'italic' }}>
                   <span className="text-xs">Agent Commission ({commPct}%)</span>
@@ -2261,6 +2436,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               <p className="font-semibold text-sm mb-2">Booking Summary</p>
               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
                 <span>Source</span>     <span className="text-foreground font-medium">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</span>
+                {source === 'AGENT' && agentId && (() => {
+                  const ag = agents.find(a => a.id === agentId)
+                  const cp = agentContacts.find(c => c.id === agentContactId)
+                  return ag ? (
+                    <>
+                      <span>Agent</span>
+                      <span className="text-foreground font-medium">{ag.name}</span>
+                      {cp && (<><span>Contact</span><span className="text-foreground font-medium">{cp.name}</span></>)}
+                    </>
+                  ) : null
+                })()}
                 <span>Type</span>       <span className="text-foreground font-medium">{tripType === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}</span>
                 {tripType === 'OPEN_TRIP' && selectedOT && (
                   <><span>Trip</span><span className="text-foreground font-medium truncate">{selectedOT.title}</span></>
@@ -2443,32 +2629,32 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-amber-600">
             <AlertCircle className="w-5 h-5" />
-            Open Trip Konflik
+            Open Trip Conflict
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            Kapal yang dipilih memiliki <span className="font-semibold text-foreground">{openTripConflicts.length} open trip</span> yang tanggalnya bertabrakan dengan Private Charter ini:
+            The selected vessel has <span className="font-semibold text-foreground">{openTripConflicts.length} open trip(s)</span> whose dates overlap with this Private Charter:
           </p>
           <div className="rounded-lg border divide-y">
             {openTripConflicts.map(ot => (
               <div key={ot.id} className="px-3 py-2">
                 <p className="font-medium">{ot.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(ot.startDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {new Date(ot.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                   {' – '}
-                  {new Date(ot.endDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {new Date(ot.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </p>
               </div>
             ))}
           </div>
           <p className="text-muted-foreground">
-            Open trip di atas akan ditutup otomatis dengan keterangan <span className="font-medium text-foreground">"Dialihkan ke Private Charter"</span>. Lanjutkan?
+            The open trips above will be automatically closed with the note <span className="font-medium text-foreground">"Redirected to Private Charter"</span>. Proceed?
           </p>
         </div>
         <div className="flex justify-end gap-2 mt-2">
           <Button variant="outline" onClick={() => setShowOpenTripConflictDialog(false)}>
-            Batal
+            Cancel
           </Button>
           <Button
             style={{ backgroundColor: ACCENT, color: 'white' }}
@@ -2478,7 +2664,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
               handleSubmit(true)
             }}
           >
-            Ya, Tutup & Buat Booking
+            Yes, Close & Create Booking
           </Button>
         </div>
       </DialogContent>

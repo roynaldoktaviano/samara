@@ -267,11 +267,11 @@ export default function Dashboard() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">
-              Trip di Periode Ini
+              Trips in This Period
             </CardTitle>
             {!loading && (
               <span className="text-xs text-muted-foreground">
-                {activeCount} trip ditemukan
+                {activeCount} trip(s) found
               </span>
             )}
           </div>

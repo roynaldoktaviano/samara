@@ -48,7 +48,7 @@ export async function GET(_: NextRequest) {
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent: { select: { name: true, company: true, commission: true } },
+            agent: { select: { name: true, commission: true } },
           },
         },
       },
@@ -71,10 +71,10 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     const body = await request.json()
-    const { bookingId, amount, currency, notes, paymentMethod } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod } = body
 
-    if (!bookingId || !amount) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!bookingId) {
+      return NextResponse.json({ error: 'Missing bookingId' }, { status: 400 })
     }
 
     const booking = await db.booking.findUnique({
@@ -83,31 +83,42 @@ export async function POST(request: NextRequest) {
     })
     if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
 
-    const previouslyPaid = booking.depositPaid
-    const paymentType = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
-    const allCount = await db.payment.count({ where: { bookingId } })
-    const invoiceNumber = `INV-${booking.bookingCode}-${String(allCount + 1).padStart(2, '0')}`
+    // Prevent duplicate open requests
+    const existing = await db.payment.findFirst({
+      where: { bookingId, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
+    })
+    if (existing) {
+      return NextResponse.json({ error: 'There is already an active payment request for this booking' }, { status: 409 })
+    }
 
     const submittedByUserId = session?.user?.id ?? null
     const submittedByName   = session?.user?.name ?? session?.user?.email ?? null
+    const previouslyPaid    = booking.depositPaid
+    const paymentType       = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
+    // Placeholder invoice number — Finance will set the real one when generating
+    const allCount    = await db.payment.count({ where: { bookingId } })
+    const invoiceNumber = `REQ-${booking.bookingCode}-${String(allCount + 1).padStart(2, '0')}`
+
+    const amount = (typeof requestedAmount === 'number' && requestedAmount > 0) ? requestedAmount : 0
 
     const payment = await db.payment.create({
       data: {
         bookingId,
         invoiceNumber,
         paymentType,
-        paymentMethod: paymentMethod || null,
         previouslyPaid,
-        amount: parseFloat(amount),
-        currency: currency || 'USD',
+        amount,
+        currency: 'USD',
         notes: notes || null,
-        status: 'pending_confirmation',
+        status: 'requested',
         submittedByUserId,
         submittedByName,
+        ...(billToType && { billToType }),
+        ...(paymentMethod && { paymentMethod }),
       },
     })
 
-    // Notify all Finance + Admin users
+    // Notify Finance + Admin
     const financeUsers = await db.user.findMany({
       where: { role: { in: ['FINANCE', 'ADMIN'] } },
       select: { id: true },
@@ -116,28 +127,24 @@ export async function POST(request: NextRequest) {
       await db.notification.createMany({
         data: financeUsers.map(u => ({
           userId: u.id,
-          type: 'PAYMENT_SUBMITTED',
-          title: 'Invoice menunggu konfirmasi',
-          body: `${invoiceNumber} — $${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} dikirim oleh ${submittedByName ?? 'Sales'}`,
+          type: 'INVOICE_REQUESTED',
+          title: 'Invoice diminta oleh Sales',
+          body: `${booking.bookingCode} — ${paymentType} diminta oleh ${submittedByName ?? 'Sales'}`,
           paymentId: payment.id,
-          // bookingId intentionally omitted: @@unique([userId, type, bookingId]) uses null≠null,
-          // so multiple payment notifications per booking are allowed without constraint conflict
         })),
       })
     }
 
-    const userId   = submittedByUserId ?? ''
-    const userName = submittedByName   ?? 'Unknown'
     const userRole = (session?.user as { role?: string })?.role ?? ''
     logActivity({
-      userId, userName, userRole,
+      userId: submittedByUserId ?? '', userName: submittedByName ?? 'Unknown', userRole,
       action: 'CREATE', entity: 'Payment', entityId: payment.id,
-      detail: `Submit invoice ${invoiceNumber} — ${paymentType} $${parseFloat(amount).toFixed(2)}`,
+      detail: `Request invoice ${invoiceNumber} (${paymentType}) — ${booking.bookingCode}`,
     }).catch(() => {})
 
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {
-    console.error('Error creating payment:', error)
-    return NextResponse.json({ error: 'Failed to create payment' }, { status: 500 })
+    console.error('Error creating payment request:', error)
+    return NextResponse.json({ error: 'Failed to create payment request' }, { status: 500 })
   }
 }

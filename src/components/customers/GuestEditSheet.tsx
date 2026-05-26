@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, User, Link2, Copy, Check, ExternalLink } from 'lucide-react'
+import { Loader2, User, Link2, Copy, Check, ExternalLink, ChevronsUpDown, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { NATIONALITIES } from '@/lib/nationalities'
 
 /* ── Types ── */
 export interface GuestFormState {
@@ -59,6 +61,63 @@ const BASE_TABS: { id: SheetTab; label: string }[] = [
   { id: 'food',     label: 'Food'     },
   { id: 'drinks',   label: 'Drinks'   },
 ]
+
+
+function NationalitySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const filtered = query.trim()
+    ? NATIONALITIES.filter(n => n.toLowerCase().includes(query.toLowerCase()))
+    : NATIONALITIES
+
+  return (
+    <Popover open={open} onOpenChange={v => { setOpen(v); if (!v) setQuery('') }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-8 w-full justify-between text-sm font-normal px-3"
+        >
+          <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select nationality'}</span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              placeholder="Search nationality…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div
+            className="overflow-y-scroll p-1 overscroll-contain"
+            style={{ maxHeight: 208 }}
+            onWheel={e => e.stopPropagation()}
+          >
+            {filtered.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Not found.</p>
+            ) : filtered.map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => { onChange(n === value ? '' : n); setOpen(false); setQuery('') }}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground text-left"
+              >
+                <Check className={`h-3.5 w-3.5 shrink-0 ${value === n ? 'opacity-100' : 'opacity-0'}`} />
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 /* ── Small helpers ── */
 function getInitials(name: string) {
@@ -126,7 +185,7 @@ function ProfileTab({ form, setForm, isEdit }: { form: GuestFormState; setForm: 
             <Input type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} className="h-8 text-sm" />
           </Field>
           <Field label="Nationality">
-            <Input value={form.nationality} onChange={set('nationality')} placeholder="Indonesian, Australian…" className="h-8 text-sm" />
+            <NationalitySelect value={form.nationality} onChange={v => setForm({ ...form, nationality: v })} />
           </Field>
           <Field label="Email">
             <Input type="email" value={form.email} onChange={set('email')} placeholder="email@example.com" className="h-8 text-sm" />

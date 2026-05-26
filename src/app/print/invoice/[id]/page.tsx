@@ -8,6 +8,7 @@ interface PaymentDetail {
   invoiceNumber: string
   paymentType: string
   paymentMethod?: string | null
+  billToType?: string | null
   previouslyPaid: number
   amount: number
   currency: string
@@ -33,8 +34,8 @@ interface PaymentDetail {
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
     source?: string
-    agent?: { name: string; company?: string; email?: string; phone?: string; commission?: number }
-    services: Array<{ name: string; price: number }>
+    agent?: { name: string; commission?: number }
+    services: Array<{ name: string; price: number; quantity: number }>
     guests: Array<{
       isLead: boolean
       customer: { name: string } | null
@@ -87,6 +88,7 @@ export default function InvoicePage() {
   const tripName       = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
   const destination    = b.destination ?? b.openTrip?.destination ?? '—'
   const isAgentBooking = b.source === 'AGENT' && !!b.agent
+  const billToAgent    = isAgentBooking && (payment.billToType !== 'CUSTOMER')
 
   const invoiceCurrency = b.currency || 'USD'
   const rate            = (invoiceCurrency !== 'USD' && b.exchangeRate) ? b.exchangeRate : 1
@@ -100,8 +102,8 @@ export default function InvoicePage() {
     return `${currSymbol} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
-  const servicesTotal  = b.services.reduce((s, x) => s + x.price, 0)
-  const discountAmt    = b.totalPrice * b.discount / 100
+  const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+  const discountAmt    = b.discount  // stored as dollar amount
   const afterDiscount  = b.totalPrice - discountAmt
   const commissionPct  = isAgentBooking ? (b.agent!.commission ?? 0) : 0
   const commissionAmt  = afterDiscount * commissionPct / 100
@@ -194,12 +196,9 @@ export default function InvoicePage() {
           <div style={{ paddingRight: 20, borderRight: '1px solid #f3f4f6' }}>
             <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 7 }}>Bill To</div>
 
-            {b.source === 'AGENT' && b.agent ? (
+            {billToAgent ? (
               <>
-                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent.name}</div>
-                {b.agent.company && <div style={{ color: '#374151', fontSize: 11, marginTop: 1 }}>{b.agent.company}</div>}
-                {b.agent.email   && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{b.agent.email}</div>}
-                {b.agent.phone   && <div style={{ color: '#6b7280', fontSize: 11 }}>{b.agent.phone}</div>}
+                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent!.name}</div>
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Guest</div>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>{b.customer.name}</div>
@@ -280,7 +279,7 @@ export default function InvoicePage() {
           {/* Discount */}
           {b.discount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
-              <span style={{ color: '#059669', fontSize: 10 }}>Discount ({b.discount}%)</span>
+              <span style={{ color: '#059669', fontSize: 10 }}>Discount</span>
               <span style={{ color: '#059669', fontSize: 10 }}>−{fmtAmt(discountAmt)}</span>
             </div>
           )}
@@ -301,8 +300,10 @@ export default function InvoicePage() {
               </div>
               {b.services.map((s, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 10px 3px 18px' }}>
-                  <span style={{ color: '#374151', fontSize: 10 }}>{s.name}</span>
-                  <span style={{ color: '#374151', fontSize: 10, fontWeight: 500 }}>{fmtAmt(s.price)}</span>
+                  <span style={{ color: '#374151', fontSize: 10 }}>
+                    {s.name}{(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ''}
+                  </span>
+                  <span style={{ color: '#374151', fontSize: 10, fontWeight: 500 }}>{fmtAmt(s.price * (s.quantity ?? 1))}</span>
                 </div>
               ))}
               <div style={{ height: 5 }} />
@@ -344,7 +345,7 @@ export default function InvoicePage() {
         {/* Payment Method */}
         {payment.paymentMethod && (
           <div style={{ margin: '0 22px 12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 5, flexShrink: 0 }}>
-            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#166534', textTransform: 'uppercase', marginBottom: 3 }}>Metode Pembayaran</div>
+            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#166534', textTransform: 'uppercase', marginBottom: 3 }}>Payment Method</div>
             <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600 }}>{payment.paymentMethod}</div>
           </div>
         )}

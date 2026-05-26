@@ -81,7 +81,8 @@ export async function GET(request: NextRequest) {
         salespersonUser: { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
-        agent:     { select: { id: true, name: true, company: true, commission: true } },
+        agent:        { select: { id: true, name: true, commission: true } },
+        agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
         openTrip:  { select: { id: true, title: true, destination: true } },
         guests: {
           select: {
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
             cabin:    { select: { id: true, name: true } },
           },
         },
-        services: { select: { id: true, name: true, price: true } },
+        services: { select: { id: true, name: true, price: true, quantity: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
-      tripType, source, agentId, yachtId, openTripId,
+      tripType, source, agentId, agentContactId, yachtId, openTripId,
       startDate, endDate, destination,
       totalPrice, depositPaid, discount, voucherCode,
       currency, exchangeRate,
@@ -255,7 +256,8 @@ export async function POST(request: NextRequest) {
       data: {
         bookingCode,
         customerId:    leadCustomerId,
-        agentId:       agentId || null,
+        agentId:        agentId        || null,
+        agentContactId: agentContactId || null,
         openTripId:    openTripId || null,
         source:        source || 'DIRECT',
         tripType:      tripType || 'PRIVATE_CHARTER',
@@ -290,9 +292,9 @@ export async function POST(request: NextRequest) {
         },
         services: !isOnHold && (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
           ? {
-              create: (services as { name: string; price: number | string }[])
+              create: (services as { name: string; price: number | string; qty?: number }[])
                 .filter(s => s.name?.trim())
-                .map(s => ({ name: s.name, price: parseFloat(String(s.price)) || 0 })),
+                .map(s => ({ name: s.name, price: parseFloat(String(s.price)) || 0, quantity: s.qty ?? 1 })),
             }
           : undefined,
       },
