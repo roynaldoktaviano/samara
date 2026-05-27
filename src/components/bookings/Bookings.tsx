@@ -367,9 +367,10 @@ export default function Bookings() {
     if (payAmtMode === 'amount') {
       amount = parseFloat(payAmtValue.replace(/,/g, '')) || 0
     } else {
-      const pct = parseFloat(payPctValue) || 0
-      amount = Math.round(netBook(paymentBooking) * pct / 100 * 100) / 100
+      const pct = Math.min(100, Math.max(0, parseFloat(payPctValue) || 0))
+      amount = Math.round(remaining * pct / 100 * 100) / 100
     }
+    if (amount <= 0 || amount > remaining) { setPaymentSaving(false); return }
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
@@ -465,14 +466,34 @@ export default function Bookings() {
   const openProofUpload = (p: PaymentRecord) => {
     setProofPayment(p)
     setProofPreview(null)
-    setProofMethod('Transfer Bank')
   }
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => setProofPreview(ev.target?.result as string)
-    reader.readAsDataURL(file)
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png']
+    if (!allowed.includes(file.type)) {
+      toast.error('Only JPG and PNG files are allowed')
+      e.target.value = ''
+      return
+    }
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      const MAX = 1200
+      let { width, height } = img
+      if (width > MAX || height > MAX) {
+        const ratio = Math.min(MAX / width, MAX / height)
+        width  = Math.round(width  * ratio)
+        height = Math.round(height * ratio)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width  = width
+      canvas.height = height
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+      setProofPreview(canvas.toDataURL('image/jpeg', 0.75))
+      URL.revokeObjectURL(objectUrl)
+    }
+    img.src = objectUrl
   }
   const saveProof = async () => {
     if (!proofPayment || !proofPreview) return
@@ -481,7 +502,7 @@ export default function Bookings() {
       const res = await fetch(`/api/payments/${proofPayment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'submit_proof', proofOfTransfer: proofPreview, paymentMethod: proofMethod }),
+        body: JSON.stringify({ action: 'submit_proof', proofOfTransfer: proofPreview }),
       })
       if (res.ok) {
         await Promise.all([fetchPayments(), fetchBookings()])
@@ -897,7 +918,7 @@ export default function Bookings() {
             const net       = netBook(paymentBooking)
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
             const pct       = parseFloat(payPctValue) || 0
-            const amtFromPct = Math.round(net * pct / 100 * 100) / 100
+            const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
             const amtDirect  = parseFloat(payAmtValue.replace(/,/g, '')) || 0
             const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
             const fmtD = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -964,7 +985,11 @@ export default function Bookings() {
                         inputMode="decimal"
                         placeholder="0.00"
                         value={payAmtValue}
-                        onChange={e => setPayAmtValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                        onChange={e => {
+                          const raw = e.target.value.replace(/[^0-9.]/g, '')
+                          const val = parseFloat(raw) || 0
+                          setPayAmtValue(val > remaining ? String(remaining) : raw)
+                        }}
                         className="pl-7"
                       />
                     </div>
@@ -977,7 +1002,10 @@ export default function Bookings() {
                           max="100"
                           placeholder="30"
                           value={payPctValue}
-                          onChange={e => setPayPctValue(e.target.value)}
+                          onChange={e => {
+                            const val = parseFloat(e.target.value) || 0
+                            setPayPctValue(val > 100 ? '100' : e.target.value)
+                          }}
                           className="pr-8"
                         />
                         <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
@@ -1113,26 +1141,6 @@ export default function Bookings() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Payment Method <span className="text-red-500">*</span></Label>
-                <Select value={proofMethod} onValueChange={setProofMethod}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Select method..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                    <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
-                    <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
-                    <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
-                    <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
-                    <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="Credit Card">Credit Card</SelectItem>
-                    <SelectItem value="PayPal">PayPal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
                 <Label>Transfer Proof <span className="text-red-500">*</span></Label>
                 <div
                   className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer hover:border-primary/50"
@@ -1145,11 +1153,11 @@ export default function Bookings() {
                     <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                       <ImageIcon className="h-10 w-10 opacity-30" />
                       <p className="text-sm">Click to select image</p>
-                      <p className="text-xs opacity-60">JPG or PNG</p>
+                      <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
                     </div>
                   )}
                 </div>
-                <input ref={proofInputRef} type="file" accept="image/*" className="hidden" onChange={handleProofFile} />
+                <input ref={proofInputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" className="hidden" onChange={handleProofFile} />
                 {proofPreview && (
                   <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => proofInputRef.current?.click()}>
                     Change image

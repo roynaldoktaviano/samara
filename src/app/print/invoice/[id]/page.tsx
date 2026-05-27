@@ -3,6 +3,16 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 
+interface BankDetail {
+  name: string
+  bankAddress: string | null
+  swiftCode: string | null
+  beneficiaryName: string | null
+  idrAccount: string | null
+  usdAccount: string | null
+  address: string | null
+}
+
 interface PaymentDetail {
   id: string
   invoiceNumber: string
@@ -15,6 +25,8 @@ interface PaymentDetail {
   status: string
   notes?: string
   createdAt: string
+  bank?: BankDetail | null
+  paymentLink?: string | null
   booking: {
     bookingCode: string
     tripType: string
@@ -356,28 +368,39 @@ export default function InvoicePage() {
           </div>
         )}
 
+        {/* ── Payment Link ── */}
+        {payment.paymentLink && (
+          <div style={{ margin: '0 22px 12px', padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 5, flexShrink: 0 }}>
+            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1.5, color: '#1d4ed8', textTransform: 'uppercase', marginBottom: 5 }}>Pay Online</div>
+            <div style={{ fontSize: 10, color: '#1e40af', marginBottom: 4 }}>Click the link below to complete your payment securely:</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#1d4ed8', fontWeight: 600, wordBreak: 'break-all' as const }}>{payment.paymentLink}</div>
+          </div>
+        )}
+
         {/* ── Bank Details ── */}
-        <div style={{ margin: '0 22px 12px', border: '1px solid #e5e7eb', borderRadius: 5, overflow: 'hidden', flexShrink: 0 }}>
-          <div style={{ backgroundColor: '#f9fafb', padding: '5px 12px', borderBottom: '1px solid #e5e7eb' }}>
-            <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: '#6b7280', textTransform: 'uppercase' }}>Bank Details</span>
+        {!payment.paymentLink && payment.bank && (
+          <div style={{ margin: '0 22px 12px', border: '1px solid #e5e7eb', borderRadius: 5, overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ backgroundColor: '#f9fafb', padding: '5px 12px', borderBottom: '1px solid #e5e7eb' }}>
+              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: '#6b7280', textTransform: 'uppercase' }}>Bank Details</span>
+            </div>
+            <div style={{ padding: '8px 12px', display: 'grid', gridTemplateColumns: '130px 1fr', rowGap: 3, columnGap: 8, fontSize: 10 }}>
+              {([
+                ['Bank Name',        payment.bank.name],
+                ['Bank Address',     payment.bank.bankAddress],
+                ['Swift Code',       payment.bank.swiftCode],
+                ['Beneficiary Name', payment.bank.beneficiaryName],
+                ['IDR Account',      payment.bank.idrAccount],
+                ['USD Account',      payment.bank.usdAccount],
+                ['Address',          payment.bank.address],
+              ] as [string, string | null][]).filter(([, v]) => v).map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <span style={{ color: '#6b7280' }}>{k}</span>
+                  <span style={{ color: '#111827', fontWeight: 500 }}>: {v}</span>
+                </React.Fragment>
+              ))}
+            </div>
           </div>
-          <div style={{ padding: '8px 12px', display: 'grid', gridTemplateColumns: '130px 1fr', rowGap: 3, columnGap: 8, fontSize: 10 }}>
-            {([
-              ['Bank Name',        'Mandiri Bank'],
-              ['Bank Address',     'Jalan Imam Bonjol No. 443 Denpasar - Bali - Indonesia'],
-              ['Swift Code',       'BMRIIDJAXXX'],
-              ['Beneficiary Name', 'PT. Samara Yacht Agency'],
-              ['IDR Account',      '1450017509627'],
-              ['USD Account',      '1450017509569'],
-              ['Address',          'Jalan Tukad Badung IXB no. 11 Renon - Denpasar - Bali Indonesia'],
-            ] as [string, string][]).map(([k, v]) => (
-              <React.Fragment key={k}>
-                <span style={{ color: '#6b7280' }}>{k}</span>
-                <span style={{ color: '#111827', fontWeight: 500 }}>: {v}</span>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* ── Spacer ── */}
         <div style={{ flex: 1 }} />

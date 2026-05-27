@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DialogFooter } from '@/components/ui/dialog'
 import {
@@ -21,6 +22,18 @@ import {
   FilePlus, Eye, CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+interface Bank {
+  id: string
+  name: string
+  bankAddress: string | null
+  swiftCode: string | null
+  beneficiaryName: string | null
+  idrAccount: string | null
+  usdAccount: string | null
+  address: string | null
+  isActive: boolean
+}
 
 interface Payment {
   id: string
@@ -36,6 +49,7 @@ interface Payment {
   proofOfTransfer: string | null
   hasProof?: boolean
   billToType: string | null
+  bankId: string | null
   submittedByName: string | null
   confirmedBy: string | null
   confirmedAt: string | null
@@ -87,12 +101,18 @@ export default function Payments() {
   const [proofLoading, setProofLoading] = useState(false)
 
   /* generate invoice */
-  const [genInvSaving,   setGenInvSaving]  = useState(false)
-  const [genInvAmount,   setGenInvAmount]  = useState('')
-  const [genInvType,     setGenInvType]    = useState('DP')
-  const [genInvMethod,   setGenInvMethod]  = useState('Transfer Bank')
-  const [genInvNotes,    setGenInvNotes]   = useState('')
-  const [genInvBillTo,   setGenInvBillTo]  = useState<'AGENT' | 'CUSTOMER'>('CUSTOMER')
+  const [genInvSaving,       setGenInvSaving]      = useState(false)
+  const [genInvAmount,       setGenInvAmount]      = useState('')
+  const [genInvType,         setGenInvType]        = useState('DP')
+  const [genInvMethod,       setGenInvMethod]      = useState('Transfer Bank')
+  const [genInvNotes,        setGenInvNotes]       = useState('')
+  const [genInvBillTo,       setGenInvBillTo]      = useState<'AGENT' | 'CUSTOMER'>('CUSTOMER')
+  const [genInvEditing,      setGenInvEditing]     = useState(false)
+  const [genInvConfirmEdit,  setGenInvConfirmEdit] = useState(false)
+  const [genInvBankId,       setGenInvBankId]      = useState<string | null>(null)
+  const [genInvUsePayLink,   setGenInvUsePayLink]  = useState(false)
+  const [genInvPayLink,      setGenInvPayLink]     = useState('')
+  const [banks,              setBanks]             = useState<Bank[]>([])
 
   const fetchPayments = useCallback(async () => {
     setLoading(true)
@@ -105,6 +125,10 @@ export default function Payments() {
   }, [])
 
   useEffect(() => { fetchPayments() }, [fetchPayments])
+
+  useEffect(() => {
+    fetch('/api/banks').then(r => r.json()).then(d => setBanks(Array.isArray(d) ? d.filter((b: Bank) => b.isActive) : [])).catch(() => {})
+  }, [])
 
   const filtered = payments.filter(p => {
     if (filter !== 'all' && p.status !== filter) return false
@@ -149,12 +173,14 @@ export default function Payments() {
           paymentMethod: genInvMethod || null,
           notes: genInvNotes || null,
           billToType: genInvBillTo,
+          bankId: genInvUsePayLink ? null : (genInvBankId || null),
+          paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
       toast.success('Invoice generated successfully')
       setSelected(null)
-      setGenInvAmount(''); setGenInvType('DP'); setGenInvMethod('Transfer Bank'); setGenInvNotes(''); setGenInvBillTo('CUSTOMER')
+      setGenInvAmount(''); setGenInvType('DP'); setGenInvMethod('Transfer Bank'); setGenInvNotes(''); setGenInvBillTo('CUSTOMER'); setGenInvBankId(null); setGenInvUsePayLink(false); setGenInvPayLink(''); setGenInvEditing(false); setGenInvConfirmEdit(false)
       fetchPayments()
       window.dispatchEvent(new CustomEvent('payment-updated'))
     } catch (err) {
@@ -193,11 +219,21 @@ export default function Payments() {
     setShowRejectInput(false)
     setRejectNotes('')
     setProofPreview(null)
+    const net = p.booking.source === 'AGENT' && p.booking.agent?.commission
+      ? p.booking.totalPrice * (1 - p.booking.agent.commission / 100)
+      : p.booking.totalPrice
+    const remaining = Math.max(0, net - p.previouslyPaid)
+    const isFullPayment = p.amount > 0 && Math.abs(p.amount - remaining) < 0.01
     setGenInvAmount(p.amount > 0 ? p.amount.toFixed(2) : '')
-    setGenInvType(p.paymentType ?? (p.previouslyPaid > 0 ? 'PELUNASAN' : 'DP'))
+    setGenInvType(isFullPayment ? 'PELUNASAN' : 'DP')
     setGenInvMethod(p.paymentMethod ?? 'Transfer Bank')
     setGenInvNotes(p.notes ?? '')
     setGenInvBillTo((p.billToType as 'AGENT' | 'CUSTOMER') ?? (p.booking.source === 'AGENT' ? 'AGENT' : 'CUSTOMER'))
+    setGenInvBankId(p.bankId ?? null)
+    setGenInvUsePayLink(false)
+    setGenInvPayLink('')
+    setGenInvEditing(false)
+    setGenInvConfirmEdit(false)
     if (p.status === 'pending_confirmation' || p.status === 'invoice_ready') {
       setProofLoading(true)
       try {
@@ -469,17 +505,14 @@ export default function Payments() {
                 </CardContent>
               </Card>
 
-              {/* Payment type + method chips */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#1a5f6e]/10 text-[#1a5f6e] border border-[#1a5f6e]/20">
-                  {selected.paymentType}
-                </span>
-                {selected.paymentMethod && (
+              {/* Payment method chip */}
+              {selected.paymentMethod && (
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-muted text-foreground border">
                     {selected.paymentMethod}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Booking info */}
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -562,14 +595,60 @@ export default function Payments() {
                 <>
                   <Separator />
                   <div className="space-y-3">
-                    <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
-                      <FilePlus className="h-4 w-4" /> Generate Invoice
-                    </p>
-                    {selected.amount > 0 && (
-                      <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
-                        Sales submitted amount: <span className="font-bold">${fmt(selected.amount)}</span>. You can adjust it below if needed.
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+                        <FilePlus className="h-4 w-4" /> Generate Invoice
+                      </p>
+                      {!genInvEditing && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2.5 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                          onClick={() => setGenInvConfirmEdit(true)}
+                        >
+                          <Receipt className="h-3.5 w-3.5" /> Edit
+                        </Button>
+                      )}
+                      {genInvEditing && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2.5 text-xs text-muted-foreground"
+                          onClick={() => setGenInvEditing(false)}
+                        >
+                          Cancel Edit
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Edit confirmation prompt */}
+                    {genInvConfirmEdit && !genInvEditing && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                        <p className="text-xs font-medium text-amber-800">Are you sure you want to edit these details?</p>
+                        <p className="text-xs text-amber-700">Changes will differ from the original sales request. Make sure any adjustments have been agreed upon.</p>
+                        <div className="flex gap-2 pt-0.5">
+                          <Button
+                            size="sm"
+                            className="h-7 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => { setGenInvEditing(true); setGenInvConfirmEdit(false) }}
+                          >
+                            Yes, Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-3 text-xs"
+                            onClick={() => setGenInvConfirmEdit(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
                       </div>
                     )}
+
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Amount (USD) <span className="text-red-500">*</span></Label>
@@ -581,13 +660,14 @@ export default function Payments() {
                             className="pl-6 h-9 text-sm"
                             placeholder="0.00"
                             value={genInvAmount}
+                            disabled={!genInvEditing}
                             onChange={e => setGenInvAmount(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
                           />
                         </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Type</Label>
-                        <Select value={genInvType} onValueChange={setGenInvType}>
+                        <Select value={genInvType} onValueChange={setGenInvType} disabled={!genInvEditing}>
                           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="DP">DP</SelectItem>
@@ -602,17 +682,13 @@ export default function Payments() {
                       <div className="space-y-1.5">
                         <Label className="text-xs flex items-center gap-1.5">
                           <CreditCard className="h-3.5 w-3.5" /> Bill To
-                          {selected.billToType && (
-                            <span className="text-[10px] text-muted-foreground font-normal">
-                              (Sales selected: {selected.billToType === 'AGENT' ? selected.booking.agent.name : selected.booking.customer.name})
-                            </span>
-                          )}
                         </Label>
-                        <div className="flex rounded-lg border overflow-hidden text-xs">
+                        <div className={`flex rounded-lg border overflow-hidden text-xs ${!genInvEditing ? 'opacity-60 pointer-events-none' : ''}`}>
                           {(['AGENT', 'CUSTOMER'] as const).map(opt => (
                             <button
                               key={opt}
                               type="button"
+                              disabled={!genInvEditing}
                               onClick={() => setGenInvBillTo(opt)}
                               className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${genInvBillTo === opt ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
                               style={genInvBillTo === opt ? { backgroundColor: '#1a5f6e' } : {}}
@@ -629,7 +705,7 @@ export default function Payments() {
 
                     <div className="space-y-1.5">
                       <Label className="text-xs">Payment Method</Label>
-                      <Select value={genInvMethod} onValueChange={setGenInvMethod}>
+                      <Select value={genInvMethod} onValueChange={v => { setGenInvMethod(v); if (!v.toLowerCase().includes('transfer bank') && !v.toLowerCase().includes('wire')) setGenInvBankId(null) }} disabled={!genInvEditing}>
                         <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
@@ -644,15 +720,75 @@ export default function Payments() {
                         </SelectContent>
                       </Select>
                     </div>
+
                     <div className="space-y-1.5">
                       <Label className="text-xs">Notes</Label>
                       <Textarea
                         rows={2} className="text-sm resize-none"
                         placeholder="Additional notes..."
+                        disabled={!genInvEditing}
                         value={genInvNotes}
                         onChange={e => setGenInvNotes(e.target.value)}
                       />
                     </div>
+
+                    {/* Payment link / bank selector — always editable by finance */}
+                    {genInvMethod.toLowerCase().includes('transfer') && (
+                      <>
+                        <Separator />
+                        {/* Pay link toggle */}
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="usePayLink"
+                            checked={genInvUsePayLink}
+                            onCheckedChange={v => { setGenInvUsePayLink(!!v); setGenInvBankId(null); setGenInvPayLink('') }}
+                          />
+                          <Label htmlFor="usePayLink" className="text-xs cursor-pointer">Use Payment Link instead of bank transfer</Label>
+                        </div>
+
+                        {genInvUsePayLink ? (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Payment Link URL</Label>
+                            <Input
+                              type="url"
+                              placeholder="https://pay.example.com/..."
+                              value={genInvPayLink}
+                              onChange={e => setGenInvPayLink(e.target.value)}
+                              className="text-sm"
+                            />
+                            {genInvPayLink && (
+                              <p className="text-[11px] text-muted-foreground">This link will appear on the invoice for the client to pay directly.</p>
+                            )}
+                          </div>
+                        ) : banks.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs flex items-center gap-1.5">
+                              <Building2 className="h-3.5 w-3.5" /> Bank Account for Invoice
+                            </Label>
+                            <Select value={genInvBankId ?? ''} onValueChange={v => setGenInvBankId(v || null)}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select bank account…" /></SelectTrigger>
+                              <SelectContent>
+                                {banks.map(b => (
+                                  <SelectItem key={b.id} value={b.id}>{b.name}{b.beneficiaryName ? ` — ${b.beneficiaryName}` : ''}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {genInvBankId && (() => {
+                              const bk = banks.find(b => b.id === genInvBankId)
+                              if (!bk) return null
+                              return (
+                                <div className="rounded-md bg-muted/40 border px-3 py-2 text-[11px] space-y-0.5 text-muted-foreground">
+                                  {bk.swiftCode  && <div><span className="font-medium text-foreground">Swift:</span> {bk.swiftCode}</div>}
+                                  {bk.idrAccount && <div><span className="font-medium text-foreground">IDR:</span> {bk.idrAccount}</div>}
+                                  {bk.usdAccount && <div><span className="font-medium text-foreground">USD:</span> {bk.usdAccount}</div>}
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+
                     <DialogFooter>
                       <Button
                         className="bg-blue-600 hover:bg-blue-700 text-white w-full"

@@ -17,6 +17,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     const payment = await db.payment.findUnique({
       where: { id },
       include: {
+        bank: true,
         booking: {
           include: {
             customer: { select: { name: true, email: true, phone: true, address: true } },
@@ -61,7 +62,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-      const { amount, paymentType, paymentMethod, notes, billToType } = body
+      const { amount, paymentType, paymentMethod, notes, billToType, bankId, paymentLink } = body
       if (!amount || typeof amount !== 'number' || amount <= 0) {
         return NextResponse.json({ error: 'Amount harus diisi' }, { status: 400 })
       }
@@ -90,6 +91,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
           ...(notes         !== undefined && { notes:         notes         || null }),
           ...(billToType    !== undefined && { billToType:    billToType    || existing.billToType }),
+          ...(bankId        !== undefined && { bankId:        bankId        || null }),
+          ...(paymentLink   !== undefined && { paymentLink:   paymentLink   || null }),
           invoiceGeneratedBy: actorName,
           invoiceGeneratedAt: new Date(),
           status: 'invoice_ready',
@@ -182,7 +185,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const payment = await db.payment.findUnique({
         where: { id },
         include: {
-          booking: { select: { id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true } },
+          booking: {
+            select: {
+              id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true,
+              source: true,
+              agent: { select: { commission: true } },
+            },
+          },
         },
       })
       if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
@@ -202,7 +211,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       if (action === 'confirm') {
         const newDepositPaid = payment.booking.depositPaid + payment.amount
-        const newStatus = bookingStatus(newDepositPaid, payment.booking.totalPrice)
+        const effectiveTotal = payment.booking.source === 'AGENT' && payment.booking.agent?.commission
+          ? payment.booking.totalPrice * (1 - payment.booking.agent.commission / 100)
+          : payment.booking.totalPrice
+        const newStatus = bookingStatus(newDepositPaid, effectiveTotal)
 
         await db.$transaction([
           db.payment.update({
