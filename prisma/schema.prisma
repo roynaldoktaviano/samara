@@ -371,6 +371,21 @@ model Expense {
   @@index([date])
 }
 
+model Bank {
+  id              String    @id @default(cuid())
+  name            String
+  bankAddress     String?
+  swiftCode       String?
+  beneficiaryName String?
+  idrAccount      String?
+  usdAccount      String?
+  address         String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  payments        Payment[]
+}
+
 model Payment {
   id                String    @id @default(cuid())
   bookingId         String
@@ -384,6 +399,8 @@ model Payment {
   notes             String?
   proofOfTransfer     String?
   billToType          String?
+  bankId              String?
+  paymentLink         String?
   submittedByUserId   String?
   submittedByName     String?
   invoiceGeneratedBy  String?
@@ -393,10 +410,12 @@ model Payment {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   booking           Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bank              Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
   notifications     Notification[]
 
   @@index([bookingId])
   @@index([status])
+  @@index([bankId])
 }
 
 model Voucher {

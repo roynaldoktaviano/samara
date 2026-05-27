@@ -7,7 +7,7 @@ import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2 } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -22,8 +22,9 @@ import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
 import Statistics from '@/components/statistics/Statistics'
+import Banks from '@/components/banks/Banks'
 
-type View = 'dashboard' | 'statistics' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log'
+type View = 'dashboard' | 'statistics' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks'
 
 type NavItem = {
   id: View
@@ -41,6 +42,7 @@ const navigationItems: NavItem[] = [
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'statistics',  label: 'Statistics',  icon: TrendingUp,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
+  { id: 'banks',         label: 'Bank Accounts', icon: Building2, roles: ['ADMIN', 'FINANCE'] },
   { id: 'vouchers',      label: 'Vouchers',    icon: Tag,    roles: ['ADMIN'] },
   { id: 'users',         label: 'Team',        icon: UserCog, roles: ['ADMIN'] },
   { id: 'activity-log',  label: 'Activity Log', icon: Shield, roles: ['ADMIN'] },
@@ -301,6 +303,7 @@ export default function Home() {
       case 'users':        return <UsersPage />
       case 'payments':     return <Payments />
       case 'agents':       return <Agents />
+      case 'banks':         return <Banks />
       case 'vouchers':      return <Vouchers />
       case 'activity-log':  return <ActivityLog />
       case 'statistics':    return <Statistics />

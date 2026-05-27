@@ -29,6 +29,7 @@ export async function GET(_: NextRequest) {
         status: true,
         notes: true,
         proofOfTransfer: true,
+        billToType: true,
         submittedByUserId: true,
         submittedByName: true,
         confirmedBy: true,
