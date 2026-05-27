@@ -81,6 +81,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions)
+    if ((session?.user as { role?: string })?.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     const { id } = await params
     const bookingCount = await db.booking.count({ where: { customerId: id } })
     if (bookingCount > 0) {

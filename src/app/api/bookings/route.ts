@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   try {
     const session  = await getServerSession(authOptions)
     const userRole = (session?.user as { role?: string })?.role ?? ''
-    const userName = session?.user?.name ?? ''
+    const userId   = session?.user?.id ?? ''
 
     const { searchParams } = new URL(request.url)
     const status      = searchParams.get('status')
@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
       data: { status: 'cancelled' },
     }).catch(e => console.error('auto-cancel failed:', e))
 
+    // Auto-cancel on_hold bookings whose hold deadline has passed
+    db.booking.updateMany({
+      where: { status: 'on_hold', holdUntil: { lt: new Date() } },
+      data: { status: 'cancelled', cancelReason: 'Hold expired' },
+    }).catch(e => console.error('auto-cancel on_hold failed:', e))
+
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
     if (yachtId)    where.yachtId    = yachtId
@@ -59,8 +65,8 @@ export async function GET(request: NextRequest) {
     // SALES: kalender tampilkan semua booking tapi dengan flag isOwnBooking.
     // Untuk request lain (list, detail), tetap filter ke booking sendiri saja.
     const isCalendarView = view === 'calendar'
-    if (userRole === 'SALES' && userName && !isCalendarView) {
-      where.salesperson = { equals: userName, mode: 'insensitive' }
+    if (userRole === 'SALES' && userId && !isCalendarView) {
+      where.salespersonId = userId
     }
 
     const bookings = await db.booking.findMany({
@@ -69,12 +75,14 @@ export async function GET(request: NextRequest) {
         id: true, bookingCode: true, source: true, tripType: true,
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true,
-        depositDueDate: true, finalDueDate: true,
-        guestCount: true, destination: true, notes: true, salesperson: true,
+        depositDueDate: true, finalDueDate: true, holdUntil: true,
+        guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
+        salespersonUser: { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
-        agent:     { select: { id: true, name: true, company: true, commission: true } },
+        agent:        { select: { id: true, name: true, commission: true } },
+        agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
         openTrip:  { select: { id: true, title: true, destination: true } },
         guests: {
           select: {
@@ -85,16 +93,16 @@ export async function GET(request: NextRequest) {
             cabin:    { select: { id: true, name: true } },
           },
         },
-        services: { select: { id: true, name: true, price: true } },
+        services: { select: { id: true, name: true, price: true, quantity: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
     })
 
     // For calendar view, SALES can see all bookings but non-owned ones are masked
-    if (isCalendarView && userRole === 'SALES' && userName) {
+    if (isCalendarView && userRole === 'SALES' && userId) {
       const masked = bookings.map(b => {
-        const isOwn = b.salesperson?.toLowerCase() === userName.toLowerCase()
+        const isOwn = b.salespersonId === userId
         if (isOwn) return { ...b, isOwnBooking: true }
         // Non-owned: hide customer details, keep only schedule info
         return {
@@ -110,10 +118,12 @@ export async function GET(request: NextRequest) {
           discount: null,
           depositDueDate: null,
           finalDueDate: null,
+          holdUntil: null,
           guestCount: b.guestCount,
           destination: null,
           notes: null,
           salesperson: b.salesperson,
+          salespersonUser: b.salespersonUser,
           currency: b.currency,
           exchangeRate: null,
           createdAt: b.createdAt,
@@ -143,7 +153,7 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
-      tripType, source, agentId, yachtId, openTripId,
+      tripType, source, agentId, agentContactId, yachtId, openTripId,
       startDate, endDate, destination,
       totalPrice, depositPaid, discount, voucherCode,
       currency, exchangeRate,
@@ -153,15 +163,18 @@ export async function POST(request: NextRequest) {
       services,            // Array<{ name, price }>
       confirmCloseOpenTrips, // boolean: user confirmed closing conflicting open trips
       isOnHold,            // boolean: save as on_hold status
+      holdCustomerId,      // existing customer id (skips find/create)
+      holdCabinId,         // cabin id for open trip on-hold
       holdGuest,           // { name, phone } for on-hold bookings (no prior customer needed)
+      holdUntil,           // ISO datetime string: hold expiry deadline
     } = body
 
     if (isOnHold) {
-      // On-hold: only need trip info + guest name
+      // On-hold: only need trip info + guest name (or existing customer id)
       if (!startDate || !endDate) {
         return NextResponse.json({ error: 'Missing trip dates' }, { status: 400 })
       }
-      if (!holdGuest?.name?.trim()) {
+      if (!holdCustomerId && !holdGuest?.name?.trim()) {
         return NextResponse.json({ error: 'Guest name is required for on-hold booking' }, { status: 400 })
       }
     } else if (!startDate || !endDate || !guests?.length) {
@@ -212,24 +225,28 @@ export async function POST(request: NextRequest) {
     const sameCount  = await db.booking.count({ where: { bookingCode: { startsWith: prefix } } })
     const bookingCode = `${prefix}${String(sameCount + 1).padStart(4, '0')}`
 
-    // For on-hold: find or create a customer record with just name + phone
+    // For on-hold: use provided customer id, or find/create by phone+name
     let leadCustomerId: string
     if (isOnHold) {
-      const existingCust = holdGuest.phone
-        ? await db.customer.findFirst({ where: { phone: holdGuest.phone } })
-        : null
-      if (existingCust) {
-        leadCustomerId = existingCust.id
+      if (holdCustomerId) {
+        leadCustomerId = holdCustomerId
       } else {
-        const newCust = await db.customer.create({
-          data: {
-            name:  holdGuest.name.trim(),
-            phone: holdGuest.phone?.trim() || null,
-            email: holdGuest.email?.trim() || null,
-          },
-          select: { id: true },
-        })
-        leadCustomerId = newCust.id
+        const existingCust = holdGuest.phone
+          ? await db.customer.findFirst({ where: { phone: holdGuest.phone } })
+          : null
+        if (existingCust) {
+          leadCustomerId = existingCust.id
+        } else {
+          const newCust = await db.customer.create({
+            data: {
+              name:  holdGuest.name.trim(),
+              phone: holdGuest.phone?.trim() || null,
+              email: holdGuest.email?.trim() || null,
+            },
+            select: { id: true },
+          })
+          leadCustomerId = newCust.id
+        }
       }
     } else {
       leadCustomerId = lead.customerId
@@ -239,7 +256,8 @@ export async function POST(request: NextRequest) {
       data: {
         bookingCode,
         customerId:    leadCustomerId,
-        agentId:       agentId || null,
+        agentId:        agentId        || null,
+        agentContactId: agentContactId || null,
         openTripId:    openTripId || null,
         source:        source || 'DIRECT',
         tripType:      tripType || 'PRIVATE_CHARTER',
@@ -252,6 +270,7 @@ export async function POST(request: NextRequest) {
         discount:      parseFloat(discount) || 0,
         depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
         finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
+        holdUntil:      isOnHold && holdUntil ? new Date(holdUntil) : null,
         status:         isOnHold ? 'on_hold' : paymentStatus(paid, total),
         guestCount:     isOnHold ? 1 : guests.length,
         crewRequired:   crewRequired ?? false,
@@ -261,9 +280,10 @@ export async function POST(request: NextRequest) {
         currency:       currency || 'USD',
         exchangeRate:   (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
         salesperson:    session?.user?.name || null,
+        salespersonId:  session?.user?.id   || null,
         guests: {
           create: isOnHold
-            ? [{ customerId: leadCustomerId, isLead: true }]
+            ? [{ customerId: leadCustomerId, isLead: true, cabinId: holdCabinId || null }]
             : guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
                 customerId: g.customerId,
                 cabinId:    g.cabinId || null,
@@ -272,9 +292,9 @@ export async function POST(request: NextRequest) {
         },
         services: !isOnHold && (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
           ? {
-              create: (services as { name: string; price: number | string }[])
+              create: (services as { name: string; price: number | string; qty?: number }[])
                 .filter(s => s.name?.trim())
-                .map(s => ({ name: s.name, price: parseFloat(String(s.price)) || 0 })),
+                .map(s => ({ name: s.name, price: parseFloat(String(s.price)) || 0, quantity: s.qty ?? 1 })),
             }
           : undefined,
       },

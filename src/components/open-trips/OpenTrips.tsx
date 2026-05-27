@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2, RotateCw } from 'lucide-react'
+import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2, RotateCw, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -62,6 +62,11 @@ export default function OpenTrips() {
   const [loading,      setLoading]     = useState(true)
   const [searchTerm,   setSearch]      = useState('')
   const [statusFilter, setStatus]      = useState('all')
+  const [yearFilter,   setYearFilter]  = useState('all')
+  const [monthFilter,  setMonthFilter] = useState('all')
+  const [yachtFilter,  setYachtFilter] = useState('all')
+  const [page,         setPage]        = useState(1)
+  const PAGE_SIZE = 10
 
   const [dialogOpen,   setDialogOpen]  = useState(false)
   const [editTrip,     setEditTrip]    = useState<OpenTripRecord | null>(null)
@@ -93,6 +98,8 @@ export default function OpenTrips() {
     fetchTrips()
     fetch('/api/yachts').then(r => r.json()).then(d => setYachts(Array.isArray(d) ? d : []))
   }, [fetchTrips])
+
+  useEffect(() => { setPage(1) }, [searchTerm, statusFilter, yearFilter, monthFilter, yachtFilter])
 
   const openAdd = () => {
     setEditTrip(null)
@@ -186,14 +193,46 @@ export default function OpenTrips() {
     finally { setImporting(false); e.target.value = '' }
   }
 
-  const filtered = trips.filter(t => {
-    const q = searchTerm.toLowerCase()
-    const matchSearch = t.title.toLowerCase().includes(q) ||
-      t.destination.toLowerCase().includes(q) ||
-      t.yacht.name.toLowerCase().includes(q)
-    const matchStatus = statusFilter === 'all' || t.status === statusFilter
-    return matchSearch && matchStatus
-  })
+  const today = new Date(); today.setHours(0,0,0,0)
+  const isActiveTrip = (t: OpenTripRecord) =>
+    new Date(t.startDate) > today && t.status !== 'closed' && t.status !== 'cancelled'
+
+  const tripYachts = [...new Map(trips.map(t => [t.yachtId, t.yacht.name])).entries()]
+  const tripYears  = [...new Set(trips.map(t => new Date(t.startDate).getFullYear()))].sort((a, b) => b - a)
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  const hasFilters = statusFilter !== 'all' || yearFilter !== 'all' || monthFilter !== 'all' || yachtFilter !== 'all' || searchTerm !== ''
+
+  const filtered = trips
+    .filter(t => {
+      const q = searchTerm.toLowerCase()
+      const matchSearch = !q || t.title.toLowerCase().includes(q) ||
+        t.destination.toLowerCase().includes(q) ||
+        t.yacht.name.toLowerCase().includes(q)
+
+      const active = isActiveTrip(t)
+      const matchStatus =
+        statusFilter === 'all'    ? true :
+        statusFilter === 'active' ? active :
+        statusFilter === 'closed' ? !active :
+        t.status === statusFilter
+
+      const matchYear  = yearFilter  === 'all' || new Date(t.startDate).getFullYear().toString() === yearFilter
+      const matchMonth = monthFilter === 'all' || (new Date(t.startDate).getMonth() + 1).toString() === monthFilter
+      const matchYacht = yachtFilter === 'all' || t.yachtId === yachtFilter
+
+      return matchSearch && matchStatus && matchYear && matchMonth && matchYacht
+    })
+    .sort((a, b) => {
+      const aActive = isActiveTrip(a), bActive = isActiveTrip(b)
+      if (aActive !== bActive) return aActive ? -1 : 1
+      if (aActive) return new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+      return new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+    })
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="space-y-6">
@@ -235,59 +274,154 @@ export default function OpenTrips() {
         const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const bookedCabins = trips.reduce((s, t) => s + t.spotsBooked, 0)
         const lostCabins   = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+
+        const tripStats = [
+          { label: 'Total',  value: trips.length,       color: '#6b7280' },
+          { label: 'Active', value: activeTrips.length, color: '#4a9f6e' },
+        ]
+        const cabinStats = [
+          { label: 'Total',     value: totalCabins,  color: ACCENT },
+          { label: 'Available', value: activeCabins, color: '#4b8bca' },
+          { label: 'Booked',    value: bookedCabins, color: '#8b5cf6' },
+          { label: 'Lost',      value: lostCabins,   color: '#e8547a' },
+        ]
+
         return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        {[
-          { label: 'Total Cabins',  value: totalCabins,   color: ACCENT },
-          { label: 'Active Cabins', value: activeCabins,  color: '#4a9f6e' },
-          { label: 'Booked Cabins', value: bookedCabins,  color: '#4b8bca' },
-          { label: 'Lost Cabins',   value: lostCabins,    color: '#e8547a' },
-        ].map(s => (
-          <Card key={s.label}>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="flex flex-col sm:flex-row divide-y sm:divide-y-0 sm:divide-x">
+
+                {/* Trips group */}
+                <div className="sm:w-56 shrink-0 px-5 py-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
+                    Trips
+                  </p>
+                  <div className="flex gap-6">
+                    {loading
+                      ? tripStats.map(s => (
+                          <div key={s.label} className="space-y-1.5">
+                            <Skeleton className="h-7 w-10" />
+                            <Skeleton className="h-3 w-10" />
+                          </div>
+                        ))
+                      : tripStats.map(s => (
+                          <div key={s.label}>
+                            <div className="text-2xl font-bold leading-none" style={{ color: s.color }}>
+                              {s.value}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1.5">{s.label}</div>
+                          </div>
+                        ))
+                    }
+                  </div>
+                </div>
+
+                {/* Cabins group */}
+                <div className="flex-1 px-5 py-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
+                    Cabins
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+                    {loading
+                      ? cabinStats.map(s => (
+                          <div key={s.label} className="space-y-1.5">
+                            <Skeleton className="h-7 w-12" />
+                            <Skeleton className="h-3 w-14" />
+                          </div>
+                        ))
+                      : cabinStats.map(s => (
+                          <div key={s.label}>
+                            <div className="text-2xl font-bold leading-none" style={{ color: s.color }}>
+                              {s.value}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                              {s.label}
+                            </div>
+                          </div>
+                        ))
+                    }
+                  </div>
+                </div>
+
               </div>
-              <div className="text-2xl font-bold">{s.value}</div>
             </CardContent>
           </Card>
-        ))}
-      </div>
         )
       })()}
 
       {/* Filters + List */}
       <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle>Scheduled Trips</CardTitle>
-              <CardDescription>{loading ? 'Loading...' : `${filtered.length} trip${filtered.length !== 1 ? 's' : ''}`}</CardDescription>
+              <CardDescription>
+                {loading ? 'Loading…' : `${filtered.length} trip${filtered.length !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}`}
+              </CardDescription>
             </div>
+            {hasFilters && (
+              <button
+                onClick={() => { setSearch(''); setStatus('all'); setYearFilter('all'); setMonthFilter('all'); setYachtFilter('all') }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" /> Clear filters
+              </button>
+            )}
+          </div>
+
+          {/* Filter bar */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {/* Search */}
+            <div className="relative flex-1 min-w-40">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search title, destination, yacht…"
+                value={searchTerm}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+            {/* Status */}
             <Select value={statusFilter} onValueChange={setStatus}>
-              <SelectTrigger className="w-32 sm:w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="h-8 w-32 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="closed">Closed/Past</SelectItem>
                 <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="full">Full</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
+                <SelectItem value="full">Sold Out</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            {/* Year */}
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="h-8 w-28 text-sm"><SelectValue placeholder="Year" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {tripYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* Month */}
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="h-8 w-28 text-sm"><SelectValue placeholder="Month" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {MONTHS.map((m, i) => <SelectItem key={i+1} value={String(i+1)}>{m}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* Yacht */}
+            <Select value={yachtFilter} onValueChange={setYachtFilter}>
+              <SelectTrigger className="h-8 w-36 text-sm"><SelectValue placeholder="Yacht" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Yachts</SelectItem>
+                {tripYachts.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Input
-              placeholder="Search by title, destination, yacht..."
-              value={searchTerm}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full sm:max-w-sm"
-            />
-          </div>
 
+        <CardContent className="space-y-4 pt-0">
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)}
@@ -300,7 +434,7 @@ export default function OpenTrips() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filtered.map(t => {
+              {paginated.map(t => {
                 const pct    = t.maxCapacity > 0 ? (t.spotsBooked / t.maxCapacity) * 100 : 0
                 const isFull = t.spotsAvailable === 0
 
@@ -431,6 +565,52 @@ export default function OpenTrips() {
                   })()
                 )
               })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2 border-t">
+              <p className="text-xs text-muted-foreground">
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline" size="icon" className="h-7 w-7"
+                  disabled={page === 1}
+                  onClick={() => setPage(p => p - 1)}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                  .reduce<(number | '…')[]>((acc, p, i, arr) => {
+                    if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('…')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, i) =>
+                    p === '…'
+                      ? <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">…</span>
+                      : <Button
+                          key={p}
+                          variant={page === p ? 'default' : 'outline'}
+                          size="icon" className="h-7 w-7 text-xs"
+                          style={page === p ? { backgroundColor: ACCENT, color: 'white', borderColor: ACCENT } : {}}
+                          onClick={() => setPage(p as number)}
+                        >
+                          {p}
+                        </Button>
+                  )
+                }
+                <Button
+                  variant="outline" size="icon" className="h-7 w-7"
+                  disabled={page === totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

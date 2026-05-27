@@ -375,7 +375,7 @@ export default function Yachts() {
                   <div className="col-span-2 flex items-center justify-between rounded-lg border px-4 py-3">
                     <div>
                       <Label>Can Diving</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Kapal ini bisa digunakan untuk kegiatan diving</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">This vessel can be used for diving activities</p>
                     </div>
                     <Switch checked={canDiving} onCheckedChange={setCanDiving} />
                   </div>

@@ -29,6 +29,7 @@ interface BookingEvent {
   depositAmount?: number
   notes?: string
   salesperson?: string
+  salespersonUser?: { name: string | null } | null
   isOwnBooking?: boolean  // undefined = admin/manager (all own), false = SALES viewing others
 }
 
@@ -79,9 +80,9 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 34   /* px per event lane */
-const DAY_H     = 40   /* px for day-number row — extra space below date number */
-const MIN_ROW_H = 185  /* minimum row height — guaranteed space for 4 event lanes */
+const LANE_H    = 34   
+const DAY_H     = 40   
+const MIN_ROW_H = 185  
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -157,12 +158,19 @@ function MonthGrid({
       })
     }
 
+    const bookingBarColor = (status: string) => {
+      if (status === 'on_hold')                                                    return '#22c55e'  // green  — hold
+      if (status === 'pending')                                                    return '#eab308'  // yellow — waiting payment
+      if (['confirmed','partially_paid','fully_paid','completed'].includes(status)) return '#ef4444' // red    — booked/paid
+      return '#94a3b8'  // grey — cancelled / unknown
+    }
+
     bookings.forEach(b => addSegs(
       b.id,
-      [b.yachtName, b.customerName, b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
-      yachtColorMap[b.yachtName] ?? '#64748b', false, false,
+      [b.yachtName, b.customerName, b.salespersonUser?.name || b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
+      bookingBarColor(b.status), false, false,
       new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
-      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${b.salesperson ? ` · Sales: ${b.salesperson}` : ''}`,
+      `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${(b.salespersonUser?.name || b.salesperson) ? ` · Sales: ${b.salespersonUser?.name || b.salesperson}` : ''}`,
       b, undefined,
     ))
 
@@ -349,7 +357,7 @@ function MonthGrid({
                       opacity: isOthersSalesBooking ? 0.72 : 1,
                     }}
                     title={isOthersSalesBooking
-                      ? `Booked by ${seg.bookingRef?.salesperson ?? 'other sales'}`
+                      ? `Booked by ${seg.bookingRef ? (seg.bookingRef.salespersonUser?.name || seg.bookingRef.salesperson) ?? 'other sales' : 'other sales'}`
                       : seg.tooltip
                     }
                     onClick={e => {
@@ -365,7 +373,7 @@ function MonthGrid({
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
                             {isOthersSalesBooking
-                              ? `↳ Booked · ${seg.bookingRef.salesperson ?? 'sales'}`
+                              ? `↳ Booked · ${(seg.bookingRef.salespersonUser?.name || seg.bookingRef.salesperson) ?? 'sales'}`
                               : `↳ ${seg.bookingRef.customerName || seg.bookingRef.yachtName}`
                             }
                           </span>
@@ -403,7 +411,7 @@ function MonthGrid({
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               flexShrink: 1, minWidth: 0, textShadow: '0 1px 2px rgba(0,0,0,0.3)',
                             }}>
-                              🔒 Booked by {bk.salesperson ?? 'Other Sales'}
+                              🔒 Booked by {(bk.salespersonUser?.name || bk.salesperson) ?? 'Other Sales'}
                             </span>
                             <span style={{
                               fontSize: 9, fontWeight: 700, color: 'white',
@@ -466,12 +474,19 @@ function MonthGrid({
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px' }}>
                             {(ot.cabinStatuses ?? []).map(c => {
                               const isTripClosed = ot.status === 'closed'
-                              const isPaid    = c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'confirmed' || c.bookingStatus === 'completed'
-                              const isPending = c.bookingStatus !== null && !isPaid
-                              const dotColor  = isTripClosed ? '#ef4444' : isPaid ? '#ef4444' : isPending ? '#f59e0b' : '#22c55e'
+                              // Dot color follows booking status legend
+                              const bs = c.bookingStatus
+                              const dotColor = bs === null
+                                ? (isTripClosed ? '#94a3b8' : '#ffffff')                                         // empty: grey if closed, white if open
+                                : bs === 'on_hold'
+                                  ? '#22c55e'                                                                     // hold → green
+                                  : bs === 'pending'
+                                    ? '#eab308'                                                                   // waiting payment → yellow
+                                    : '#ef4444'                                                                   // confirmed/paid → red
+                              const dotBorder = dotColor === '#ffffff' ? '1.5px solid #475569' : 'none'
                               return (
                                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                                  <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }} />
+                                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, border: dotBorder, flexShrink: 0, boxSizing: 'border-box' }} />
                                   <span style={{ fontSize: 9, color: '#334155', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name}</span>
                                 </div>
                               )
@@ -524,19 +539,19 @@ function MonthGrid({
                                 </span>
                               </div>
                               {/* Row 2: Yacht name + salesperson */}
-                              {(bk.yachtName || bk.salesperson) && (
+                              {(bk.yachtName || bk.salespersonUser?.name || bk.salesperson) && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, marginTop: 2 }}>
                                   {bk.yachtName && (
                                     <span style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
                                       {bk.yachtName}
                                     </span>
                                   )}
-                                  {bk.yachtName && bk.salesperson && (
+                                  {bk.yachtName && (bk.salespersonUser?.name || bk.salesperson) && (
                                     <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, flexShrink: 0 }}>·</span>
                                   )}
-                                  {bk.salesperson && (
+                                  {(bk.salespersonUser?.name || bk.salesperson) && (
                                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
-                                      {bk.salesperson}
+                                      {bk.salespersonUser?.name || bk.salesperson}
                                     </span>
                                   )}
                                 </div>
@@ -611,6 +626,7 @@ export default function CalendarView() {
   const [selectedDate, setSelectedDate]         = useState('')
   const [wizardOpenTripId, setWizardOpenTripId] = useState<string | undefined>(undefined)
   const [wizardYachtId, setWizardYachtId]       = useState<string | undefined>(undefined)
+  const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
@@ -765,7 +781,8 @@ export default function CalendarView() {
             startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
             status: b.status, tripType: b.tripType,
             customerName: b.customer?.name, bookingCode: b.bookingCode,
-            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined, salesperson: b.salesperson ?? undefined,
+            totalPrice: b.totalPrice, depositAmount: b.depositPaid, notes: b.notes ?? undefined,
+            salesperson: b.salesperson ?? undefined, salespersonUser: b.salespersonUser ?? null,
             isOwnBooking: b.isOwnBooking,  // undefined for admin/manager, true/false for SALES
           }))
       )
@@ -1071,9 +1088,10 @@ export default function CalendarView() {
       {(() => {
         const todayDate = new Date(); todayDate.setHours(0,0,0,0)
         const filterOtByYacht = (t: OpenTripEvent) => yachtFilter === 'all' || t.yacht?.name === yachtFilter
-        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
-        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
-        const filteredOt   = openTrips.filter(filterOtByYacht)
+        const isNotPrivatePC = (t: OpenTripEvent) => !(t.status === 'closed' && t.closedReason?.toLowerCase().includes('private'))
+        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
+        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
+        const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t))
         const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const closedCabins = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const totalCabins  = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
@@ -1598,12 +1616,28 @@ export default function CalendarView() {
                       <div className="text-sm font-semibold">USD {selectedBooking.totalPrice?.toLocaleString() ?? '–'}</div>
                     </div>
                   </div>
-                  {(selectedBooking.salesperson || selectedBooking.notes) && (
-                    <div className="grid gap-3" style={{ gridTemplateColumns: selectedBooking.salesperson && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
-                      {selectedBooking.salesperson && (
+                  {selectedBooking.status === 'on_hold' && bookingFullDetail?.holdUntil && (() => {
+                    const exp     = new Date(bookingFullDetail.holdUntil)
+                    const expired = exp < new Date()
+                    return (
+                      <div className={`rounded-lg border p-3 ${expired ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                        <div className={`text-[11px] mb-1 font-medium ${expired ? 'text-red-600' : 'text-amber-700'}`}>
+                          {expired ? '⚠ Hold Expired' : 'Hold Until'}
+                        </div>
+                        <p className={`text-sm font-semibold ${expired ? 'text-red-700' : 'text-amber-800'}`}>
+                          {exp.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {' '}
+                          {exp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    )
+                  })()}
+                  {((selectedBooking.salespersonUser?.name || selectedBooking.salesperson) || selectedBooking.notes) && (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: (selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
+                      {(selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && (
                         <div className="rounded-lg border p-3">
                           <div className="text-[11px] text-muted-foreground mb-1">Salesperson</div>
-                          <p className="text-sm font-semibold">{selectedBooking.salesperson}</p>
+                          <p className="text-sm font-semibold">{selectedBooking.salespersonUser?.name || selectedBooking.salesperson}</p>
                         </div>
                       )}
                       {selectedBooking.notes && (
@@ -1661,17 +1695,32 @@ export default function CalendarView() {
 
                   <DialogFooter className="gap-2 pt-1">
                     <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
-                    <Button
-                      variant="outline"
-                      className="border-sky-300 text-sky-700 hover:bg-sky-50"
-                      onClick={() => window.open(`/print/crew-sheet/booking/${selectedBooking.id}`, '_blank')}
-                    >
-                      <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
-                    </Button>
-                    {new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
-                      <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
-                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
+                    {selectedBooking.status === 'on_hold' ? (
+                      <Button
+                        onClick={() => {
+                          setIsDetailOpen(false)
+                          setCompleteBookingId(selectedBooking.id)
+                          setWizardOpen(true)
+                        }}
+                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5 mr-2" /> Complete Booking
                       </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          className="border-sky-300 text-sky-700 hover:bg-sky-50"
+                          onClick={() => window.open(`/print/crew-sheet/booking/${selectedBooking.id}`, '_blank')}
+                        >
+                          <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
+                        </Button>
+                        {new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
+                          <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
+                            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
+                          </Button>
+                        )}
+                      </>
                     )}
                   </DialogFooter>
                 </div>
@@ -1950,22 +1999,25 @@ export default function CalendarView() {
                     const isClosed = otDetail.status === 'closed'
                     const isPaidStatus = (b: string | null) => b === 'partially_paid' || b === 'fully_paid' || b === 'completed' || b === 'confirmed'
                     const paid     = isClosed ? total : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && isPaidStatus(c.bookingStatus)).length ?? 0)
-                    const pending  = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && !isPaidStatus(c.bookingStatus)).length ?? 0)
+                    const onHold   = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && c.bookingStatus === 'on_hold').length ?? 0)
+                    const pending  = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => c.guests?.length > 0 && !isPaidStatus(c.bookingStatus) && c.bookingStatus !== 'on_hold').length ?? 0)
                     const avail    = isClosed ? 0     : (otDetail.cabins?.filter((c: any) => !c.guests?.length).length ?? 0)
                     const paidPct  = total ? (paid    / total) * 100 : 0
+                    const holdPct  = total ? (onHold  / total) * 100 : 0
                     const pendPct  = total ? (pending / total) * 100 : 0
                     const availPct = total ? (avail   / total) * 100 : 100
                     return (
                       <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
                         {/* Numbers row */}
-                        <div className="grid grid-cols-4 divide-x text-center">
+                        <div className="grid grid-cols-5 divide-x text-center">
                           {[
                             { label: 'Total',               val: total,   color: 'text-foreground'  },
-                            { label: 'Available',           val: avail,   color: 'text-emerald-600' },
-                            { label: 'Waiting for Payment', val: pending, color: 'text-amber-500'   },
+                            { label: 'Available',           val: avail,   color: 'text-slate-500'   },
+                            { label: 'On Hold',             val: onHold,  color: 'text-green-600'   },
+                            { label: 'Waiting Payment',     val: pending, color: 'text-amber-500'   },
                             { label: 'Booked',              val: paid,    color: 'text-red-500'     },
                           ].map(s => (
-                            <div key={s.label} className="px-3">
+                            <div key={s.label} className="px-2">
                               <div className={`text-2xl font-bold ${s.color}`}>{s.val}</div>
                               <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{s.label}</div>
                             </div>
@@ -1973,16 +2025,18 @@ export default function CalendarView() {
                         </div>
                         {/* Progress bar */}
                         <div className="h-2.5 rounded-full overflow-hidden bg-muted flex">
-                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"     style={{ width: `${paidPct}%` }} />}
-                          {pending > 0 && <div className="h-full bg-amber-400 transition-all"   style={{ width: `${pendPct}%` }} />}
-                          {avail   > 0 && <div className="h-full bg-emerald-400 transition-all" style={{ width: `${availPct}%` }} />}
+                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"   style={{ width: `${paidPct}%` }} />}
+                          {pending > 0 && <div className="h-full bg-amber-400 transition-all" style={{ width: `${pendPct}%` }} />}
+                          {onHold  > 0 && <div className="h-full bg-green-400 transition-all" style={{ width: `${holdPct}%` }} />}
+                          {avail   > 0 && <div className="h-full bg-slate-200 transition-all" style={{ width: `${availPct}%` }} />}
                         </div>
                         {/* Legend */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 flex-wrap">
                           {[
-                            { dot: 'bg-emerald-400', label: 'Available' },
-                            { dot: 'bg-amber-400',   label: 'Waiting for Payment' },
-                            { dot: 'bg-red-400',     label: 'Booked' },
+                            { dot: 'border border-slate-400 bg-white', label: 'Available' },
+                            { dot: 'bg-green-400',  label: 'On Hold' },
+                            { dot: 'bg-amber-400',  label: 'Waiting for Payment' },
+                            { dot: 'bg-red-400',    label: 'Booked' },
                           ].map(l => (
                             <div key={l.label} className="flex items-center gap-1.5">
                               <span className={`w-2 h-2 rounded-full ${l.dot} shrink-0`} />
@@ -2008,31 +2062,34 @@ export default function CalendarView() {
                         </button>
                       )}
                     </div>
-                    {otDetail.status === 'closed' ? (
-                      <div className="px-4 py-6 flex flex-col items-center justify-center gap-2 text-center">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-                          <AlertCircle className="w-4 h-4 text-amber-600" />
-                        </div>
-                        <p className="text-sm font-semibold text-amber-700">
-                          {otDetail.closedReason ?? 'Trip ini sudah ditutup'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Kabin tidak tersedia untuk open trip ini.</p>
-                      </div>
-                    ) : (
                     <div className="divide-y">
+                      {otDetail.status === 'closed' && (
+                        <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b">
+                          <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <p className="text-xs text-slate-500">{otDetail.closedReason ?? 'Trip ini sudah ditutup'}</p>
+                        </div>
+                      )}
                       {otDetail.cabins?.map((c: any) => {
+                        const isTripClosed = otDetail.status === 'closed'
                         const hasGuests = c.guests?.length > 0
-                        const isPaid    = hasGuests && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
-                        const isPending = hasGuests && !isPaid
-                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit
-                        const dotCls    = isPaid    ? 'bg-red-400'
+                        const isHold    = hasGuests && c.bookingStatus === 'on_hold'
+                        const isPaid    = hasGuests && !isHold && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
+                        const isPending = hasGuests && !isHold && !isPaid
+                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit && !isTripClosed
+                        const dotCls    = isHold    ? 'bg-green-400'
+                                        : isPaid    ? 'bg-red-400'
                                         : isPending ? 'bg-amber-400'
-                                        : 'bg-emerald-400'
-                        const badgeCls  = isPaid    ? 'bg-red-100 text-red-700 border border-red-200'
+                                        : isTripClosed ? 'bg-slate-300'
+                                        : 'bg-white border border-slate-400'
+                        const badgeCls  = isHold    ? 'bg-green-100 text-green-700 border border-green-200'
+                                        : isPaid    ? 'bg-red-100 text-red-700 border border-red-200'
                                         : isPending ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                        const badgeLabel = isPaid    ? 'Booked'
+                                        : isTripClosed ? 'bg-slate-100 text-slate-400 border border-slate-200'
+                                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        const badgeLabel = isHold    ? 'On Hold'
+                                         : isPaid    ? 'Booked'
                                          : isPending ? 'Waiting for Payment'
+                                         : isTripClosed ? 'Closed'
                                          : 'Available'
                         const isAddingHere = otAddCabinId === c.id
                         return (
@@ -2132,7 +2189,6 @@ export default function CalendarView() {
                         <p className="text-sm text-muted-foreground text-center py-8">No cabins found for this yacht.</p>
                       )}
                     </div>
-                    )}
                   </div>
 
                   <DialogFooter className="gap-2">
@@ -2237,11 +2293,12 @@ export default function CalendarView() {
       {/* ── New Booking Wizard ── */}
       <BookingWizard
         open={wizardOpen}
-        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined) } }}
+        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined); setCompleteBookingId(undefined) } }}
         onSuccess={() => { fetchBookings(); fetchOpenTrips() }}
         preselectedDate={selectedDate}
         preselectedOpenTripId={wizardOpenTripId}
         preselectedYachtId={wizardYachtId}
+        completeBookingId={completeBookingId}
       />
 
     </div>

@@ -51,6 +51,18 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id
         token.role = (user as { role: string }).role
+        return token
+      }
+      if (token.id) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.id as string },
+          select: { name: true, email: true, role: true },
+        })
+        if (dbUser) {
+          token.name  = dbUser.name
+          token.email = dbUser.email
+          token.role  = dbUser.role
+        }
       }
       return token
     },
@@ -67,5 +79,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
+    maxAge:    8 * 60 * 60,  // 8 jam — expired setelah 8 jam tidak aktif
+    updateAge: 60 * 60,      // perpanjang token tiap 1 jam jika masih aktif
   },
 }

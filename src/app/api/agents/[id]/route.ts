@@ -34,7 +34,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const { id } = await params
     const body = await request.json()
-    const { name, email, phone, company, commission, isActive } = body
+    const { name, commission, isActive, salespersonId } = body
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
@@ -42,11 +42,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: {
         name,
-        email:      email      !== undefined ? (email      || null)                  : undefined,
-        phone:      phone      !== undefined ? (phone      || null)                  : undefined,
-        company:    company    !== undefined ? (company    || null)                  : undefined,
-        commission: commission !== undefined ? parseFloat(String(commission)) || 0   : undefined,
-        isActive:   isActive   !== undefined ? Boolean(isActive)                     : undefined,
+        commission:    commission    !== undefined ? parseFloat(String(commission)) || 0 : undefined,
+        isActive:      isActive      !== undefined ? Boolean(isActive)               : undefined,
+        salespersonId: salespersonId !== undefined ? (salespersonId || null)          : undefined,
       },
     })
 

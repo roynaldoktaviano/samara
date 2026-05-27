@@ -16,8 +16,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         bookings: {
           where: { status: { not: 'cancelled' } },
           include: {
-            customer: { select: { id: true, name: true } },
-            agent: { select: { name: true } },
+            customer:        { select: { id: true, name: true } },
+            agent:           { select: { name: true } },
+            salespersonUser: { select: { name: true } },
             guests: {
               include: {
                 customer: { select: { id: true, name: true } },
@@ -34,7 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // Build cabin availability map
     const occupancyMap: Record<string, { guests: { id: string; bgId: string; name: string }[]; bookingStatus: string | null; salesperson: string; bookingId: string }> = {}
     trip.bookings.forEach(b => {
-      const sales = b.salesperson || b.agent?.name || 'Direct'
+      const sales = b.salespersonUser?.name ?? b.salesperson ?? b.agent?.name ?? 'Direct'
       b.guests.forEach(g => {
         if (g.cabinId) {
           if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales, bookingId: b.id }

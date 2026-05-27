@@ -12,8 +12,9 @@ export async function GET(request: NextRequest) {
     const agents = await db.agent.findMany({
       where: all ? undefined : { isActive: true },
       select: {
-        id: true, name: true, email: true, phone: true,
-        company: true, commission: true, isActive: true, createdAt: true,
+        id: true, name: true, commission: true, isActive: true, createdAt: true,
+        salespersonId: true,
+        salesperson: { select: { id: true, name: true } },
         _count: { select: { bookings: true } },
       },
       orderBy: { name: 'asc' },
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, email, phone, company, commission } = body
+    const { name, commission, salespersonId } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -43,10 +44,8 @@ export async function POST(request: NextRequest) {
     const agent = await db.agent.create({
       data: {
         name,
-        email:      email      || null,
-        phone:      phone      || null,
-        company:    company    || null,
-        commission: commission ? parseFloat(commission) : 0,
+        commission:    commission ? parseFloat(commission) : 0,
+        salespersonId: salespersonId || null,
       },
     })
 

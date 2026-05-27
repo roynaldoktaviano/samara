@@ -3,105 +3,88 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    const [bookings, openTrips] = await Promise.all([
+    const [bookings, openTrips, yachts] = await Promise.all([
       db.booking.findMany({
         where: { status: { not: 'cancelled' } },
         select: {
           id: true,
           startDate: true,
           endDate: true,
-          tripType: true,
           status: true,
+          tripType: true,
           yacht: { select: { id: true, name: true } },
+          openTrip: { select: { id: true } },
+        },
+        orderBy: { startDate: 'asc' },
+        take: 1000,
+      }),
+      db.openTrip.findMany({
+        where: { status: { not: 'cancelled' } },
+        include: {
+          bookings: {
+            where: { status: { not: 'cancelled' } },
+            include: {
+              guests: {
+                include: { cabin: { select: { id: true, name: true } } },
+              },
+            },
+          },
+          yacht: {
+            include: { cabins: { orderBy: { name: 'asc' } } },
+          },
         },
         orderBy: { startDate: 'asc' },
       }),
-      db.openTrip.findMany({
-        select: {
-          id: true,
-          title: true,
-          startDate: true,
-          endDate: true,
-          status: true,
-          closedReason: true,
-          destination: true,
-          maxCapacity: true,
-          yacht: {
-            select: {
-              id: true, name: true,
-              cabins: { select: { id: true, name: true, capacity: true }, orderBy: { name: 'asc' } },
-            },
-          },
-          bookings: {
-            where: { status: { not: 'cancelled' } },
-            select: {
-              status: true,
-              guests: { select: { cabinId: true } },
-            },
-          },
-        },
-        orderBy: { startDate: 'asc' },
+      db.yacht.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
       }),
     ])
 
-    const sanitizedBookings = bookings.map(b => ({
-      id: b.id,
-      yachtId: b.yacht?.id ?? '',
-      yachtName: b.yacht?.name ?? '',
-      startDate: b.startDate.toISOString().split('T')[0],
-      endDate: b.endDate.toISOString().split('T')[0],
-      tripType: b.tripType,
-      status: b.status,
-    }))
-
-    const sanitizedOpenTrips = openTrips
-    .filter(t => !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))
-    .map(t => {
-      // Build per-cabin occupancy
-      const cabinBookingStatus: Record<string, string> = {}
+    // Build cabin statuses for each open trip
+    const trips = openTrips.map(t => {
+      const cabinMap: Record<string, string | null> = {}
       t.bookings.forEach(b => {
         b.guests.forEach(g => {
-          if (g.cabinId) cabinBookingStatus[g.cabinId] = b.status
+          if (g.cabinId) cabinMap[g.cabinId] = b.status
         })
       })
 
-      const cabins = (t.yacht?.cabins ?? []).map(c => ({
-        id: c.id,
-        name: c.name,
-        bookingStatus: cabinBookingStatus[c.id] ?? null,
-      }))
-
-      const occupiedCabins = cabins.filter(c => c.bookingStatus !== null).length
-      const spotsAvailable = Math.max(0, t.maxCapacity - occupiedCabins)
-
-      let effectiveStatus = t.status
-      if (t.status !== 'cancelled' && t.status !== 'closed') {
-        if (new Date() >= new Date(t.startDate)) effectiveStatus = 'closed'
-        else if (spotsAvailable === 0)            effectiveStatus = 'full'
-        else                                      effectiveStatus = 'open'
-      }
+      const spotsAvailable = t.yacht.cabins.filter(c => !cabinMap[c.id]).length
 
       return {
         id: t.id,
         title: t.title,
-        yachtId: t.yacht?.id ?? '',
-        yachtName: t.yacht?.name ?? '',
-        startDate: t.startDate.toISOString().split('T')[0],
-        endDate: t.endDate.toISOString().split('T')[0],
-        status: effectiveStatus,
-        destination: t.destination,
-        maxCapacity: t.maxCapacity,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        status: t.status,
+        closedReason: (t as any).closedReason ?? null,
         spotsAvailable,
-        cabins,
+        maxCapacity: t.yacht.cabins.length,
+        yacht: { id: t.yacht.id, name: t.yacht.name },
+        cabinStatuses: t.yacht.cabins.map(c => ({
+          id: c.id,
+          name: c.name,
+          bookingStatus: cabinMap[c.id] ?? null,
+        })),
       }
     })
 
-    return NextResponse.json(
-      { bookings: sanitizedBookings, openTrips: sanitizedOpenTrips },
-      { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' } },
-    )
-  } catch (error) {
-    console.error('Public calendar error:', error)
+    // Bookings: only expose schedule + status + yacht (no customer data)
+    const safeBookings = bookings.map(b => ({
+      id: b.id,
+      startDate: b.startDate,
+      endDate: b.endDate,
+      status: b.status,
+      tripType: b.tripType,
+      yachtName: b.yacht?.name ?? '',
+      yachtId: b.yacht?.id ?? '',
+      openTripId: b.openTrip?.id ?? null,
+    }))
+
+    return NextResponse.json({ bookings: safeBookings, openTrips: trips, yachts })
+  } catch (err) {
+    console.error('public calendar error:', err)
     return NextResponse.json({ error: 'Failed to load calendar' }, { status: 500 })
   }
 }
