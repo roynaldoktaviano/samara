@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/external',
   '/agent/calendar',
   '/api/public',
+  '/api/webhooks',
 ]
 
 function isPublic(pathname: string) {

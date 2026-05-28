@@ -112,6 +112,7 @@ model Customer {
   foodData            Json?
   drinksData          Json?
   divingData          Json?
+  passportImage       String?
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt

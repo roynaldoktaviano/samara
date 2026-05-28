@@ -19,47 +19,42 @@ export interface GuestFormState {
   email: string; phone: string; passport: string
   dateOfBirth: string; address: string; nationality: string
   passportExpiry: string; emergencyContact: string
-  dietaryRequirements: string; allergies: string; drinkPreferences: string
-  equipmentSizes: string; operationalNotes: string
+  operationalNotes: string
 }
 
 export const GUEST_FORM_EMPTY: GuestFormState = {
   firstName: '', lastName: '', gender: '', email: '', phone: '',
   passport: '', dateOfBirth: '', address: '', nationality: '',
   passportExpiry: '', emergencyContact: '',
-  dietaryRequirements: '', allergies: '', drinkPreferences: '',
-  equipmentSizes: '', operationalNotes: '',
+  operationalNotes: '',
 }
 
 export function toGuestFormState(data: any): GuestFormState {
   const parts = (data.name ?? '').trim().split(/\s+/)
   return {
-    firstName:           data.firstName           || parts[0]                 || '',
-    lastName:            data.lastName            || parts.slice(1).join(' ') || '',
-    gender:              data.gender              ?? '',
-    email:               data.email               ?? '',
-    phone:               data.phone               ?? '',
-    passport:            data.passport            ?? '',
-    dateOfBirth:         data.dateOfBirth ? data.dateOfBirth.split('T')[0] : '',
-    address:             data.address             ?? '',
-    nationality:         data.nationality         ?? '',
-    passportExpiry:      data.passportExpiry ? data.passportExpiry.split('T')[0] : '',
-    emergencyContact:    data.emergencyContact    ?? '',
-    dietaryRequirements: data.dietaryRequirements ?? '',
-    allergies:           data.allergies           ?? '',
-    drinkPreferences:    data.drinkPreferences    ?? '',
-    equipmentSizes:      data.equipmentSizes      ?? '',
-    operationalNotes:    data.operationalNotes    ?? '',
+    firstName:        data.firstName        || parts[0]                 || '',
+    lastName:         data.lastName         || parts.slice(1).join(' ') || '',
+    gender:           data.gender           ?? '',
+    email:            data.email            ?? '',
+    phone:            data.phone            ?? '',
+    passport:         data.passport         ?? '',
+    dateOfBirth:      data.dateOfBirth ? data.dateOfBirth.split('T')[0] : '',
+    address:          data.address          ?? '',
+    nationality:      data.nationality      ?? '',
+    passportExpiry:   data.passportExpiry ? data.passportExpiry.split('T')[0] : '',
+    emergencyContact: data.emergencyContact ?? '',
+    operationalNotes: data.operationalNotes ?? '',
   }
 }
 
 type SheetTab = 'profile' | 'medical' | 'food' | 'drinks' | 'diving'
 
-const BASE_TABS: { id: SheetTab; label: string }[] = [
+const ALL_TABS: { id: SheetTab; label: string }[] = [
   { id: 'profile',  label: 'Profile'  },
   { id: 'medical',  label: 'Medical'  },
   { id: 'food',     label: 'Food'     },
   { id: 'drinks',   label: 'Drinks'   },
+  { id: 'diving',   label: 'Diving'   },
 ]
 
 
@@ -124,18 +119,19 @@ function getInitials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
-function Field({ label, children, col2 }: { label: string; children: React.ReactNode; col2?: boolean }) {
+function Field({ label, hint, children, col2 }: { label: string; hint?: string; children: React.ReactNode; col2?: boolean }) {
   return (
     <div className={col2 ? 'col-span-2' : ''}>
       <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="mt-1.5">{children}</div>
+      {hint && <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">{hint}</p>}
     </div>
   )
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
+    <div className="flex items-center gap-2 mb-4 mt-1">
       <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">{children}</span>
       <div className="h-px flex-1 bg-border" />
     </div>
@@ -154,24 +150,64 @@ function YesNo({ value, onChange }: { value: string; onChange: (v: string) => vo
   )
 }
 
+/* ── Image upload helper ── */
+function ImageUpload({ label, value, onChange }: { label: string; value: string; onChange: (b64: string) => void }) {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => onChange(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+  return (
+    <div>
+      <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <div className="mt-1.5 space-y-2">
+        {value ? (
+          <div className="relative group w-full">
+            <img src={value} alt={label} className="w-full max-h-48 object-contain rounded-lg border bg-muted/20" />
+            <button
+              type="button"
+              onClick={() => onChange('')}
+              className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+            >✕</button>
+          </div>
+        ) : (
+          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors">
+            <span className="text-xs text-muted-foreground">Click to upload</span>
+            <span className="text-[10px] text-muted-foreground/60 mt-0.5">JPG, PNG, PDF</span>
+            <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFile} />
+          </label>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Section components ── */
-function ProfileTab({ form, setForm, isEdit }: { form: GuestFormState; setForm: (f: GuestFormState) => void; isEdit: boolean }) {
+function ProfileTab({ form, setForm, isEdit, passportImage, onPassportImage }: {
+  form: GuestFormState
+  setForm: (f: GuestFormState) => void
+  isEdit: boolean
+  passportImage: string
+  onPassportImage: (v: string) => void
+}) {
   const set = (k: keyof GuestFormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm({ ...form, [k]: e.target.value })
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
         <SectionTitle>Personal Information</SectionTitle>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First Name *">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="First Name *" hint="Legal name exactly as on passport">
             <Input value={form.firstName} onChange={set('firstName')} placeholder="First name" className="h-8 text-sm" />
           </Field>
-          <Field label="Last Name">
+          <Field label="Last Name" hint="Legal surname exactly as on passport">
             <Input value={form.lastName} onChange={set('lastName')} placeholder="Last name" className="h-8 text-sm" />
           </Field>
-          <Field label="Gender">
+          <Field label="Gender" hint="Used for crew briefing and cabin assignment">
             <Select value={form.gender} onValueChange={v => setForm({ ...form, gender: v })}>
               <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
@@ -181,58 +217,44 @@ function ProfileTab({ form, setForm, isEdit }: { form: GuestFormState; setForm: 
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Date of Birth">
+          <Field label="Date of Birth" hint="Used to determine age category (adult / child)">
             <Input type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} className="h-8 text-sm" />
           </Field>
-          <Field label="Nationality">
+          <Field label="Nationality" hint="Country of citizenship as stated on passport">
             <NationalitySelect value={form.nationality} onChange={v => setForm({ ...form, nationality: v })} />
           </Field>
-          <Field label="Email">
+          <Field label="Email" hint="Used for booking confirmations and communications">
             <Input type="email" value={form.email} onChange={set('email')} placeholder="email@example.com" className="h-8 text-sm" />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone" hint="WhatsApp number preferred, with country code">
             <Input type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" className="h-8 text-sm" />
           </Field>
-          <Field label="Emergency Contact">
+          <Field label="Emergency Contact" hint="Full name and phone number of the emergency contact">
             <Input value={form.emergencyContact} onChange={set('emergencyContact')} placeholder="Name & phone" className="h-8 text-sm" />
           </Field>
-          <Field label="Passport / ID Number">
+          <Field label="Passport / ID Number" hint="As printed on the travel document">
             <Input value={form.passport} onChange={set('passport')} placeholder="A1234567" className="h-8 text-sm" />
           </Field>
-          <Field label="Passport Expiry">
+          <Field label="Passport Expiry" hint="Must be valid for at least 6 months past travel date">
             <Input type="date" value={form.passportExpiry} onChange={set('passportExpiry')} className="h-8 text-sm" />
           </Field>
-          <Field label="Address" col2>
+          <Field label="Address" hint="City and country of residence" col2>
             <Input value={form.address} onChange={set('address')} placeholder="City, Country" className="h-8 text-sm" />
           </Field>
+          {isEdit && (
+            <Field label="Passport Scan" hint="Upload a photo or scan of the passport data page" col2>
+              <ImageUpload label="Passport Scan" value={passportImage} onChange={onPassportImage} />
+            </Field>
+          )}
         </div>
       </div>
 
       {isEdit && (
         <div>
-          <SectionTitle>General Preferences</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Dietary Requirements / Food Preferences">
-              <Textarea rows={2} value={form.dietaryRequirements} onChange={set('dietaryRequirements')}
-                placeholder="Vegetarian, Halal…" className="text-sm resize-none" />
-            </Field>
-            <Field label="Food Allergies">
-              <Textarea rows={2} value={form.allergies} onChange={set('allergies')}
-                placeholder="Shellfish, Peanuts…" className="text-sm resize-none" />
-            </Field>
-            <Field label="Drink Preferences">
-              <Input value={form.drinkPreferences} onChange={set('drinkPreferences')}
-                placeholder="Coffee, Beer, Wine…" className="h-8 text-sm" />
-            </Field>
-            <Field label="Equipment Sizes">
-              <Input value={form.equipmentSizes} onChange={set('equipmentSizes')}
-                placeholder="Wetsuit M, Fins L, BCD S" className="h-8 text-sm" />
-            </Field>
-            <Field label="Operational Notes" col2>
-              <Textarea rows={2} value={form.operationalNotes} onChange={set('operationalNotes')}
-                placeholder="Internal crew notes…" className="text-sm resize-none" />
-            </Field>
-          </div>
+          <SectionTitle>Notes</SectionTitle>
+          <Textarea rows={3} value={form.operationalNotes} onChange={set('operationalNotes')}
+            placeholder="Internal crew notes…" className="text-sm resize-none" />
+          <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Internal notes visible to crew and operations team only</p>
         </div>
       )}
     </div>
@@ -242,12 +264,12 @@ function ProfileTab({ form, setForm, isEdit }: { form: GuestFormState; setForm: 
 function JsonTab({ data, onChange, fields }: {
   data: any
   onChange: (k: string, v: string) => void
-  fields: { key: string; label: string; type?: string; options?: string[]; rows?: number; col2?: boolean }[]
+  fields: { key: string; label: string; hint?: string; type?: string; options?: string[]; rows?: number; col2?: boolean }[]
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-4">
       {fields.map(f => (
-        <Field key={f.key} label={f.label} col2={f.col2}>
+        <Field key={f.key} label={f.label} hint={f.hint} col2={f.col2}>
           {f.options ? (
             <Select value={data[f.key] ?? ''} onValueChange={v => onChange(f.key, v)}>
               <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
@@ -277,62 +299,62 @@ function JsonTab({ data, onChange, fields }: {
 }
 
 const MEDICAL_FIELDS = [
-  { key: 'medicalConditions',          label: 'Medical Conditions',           rows: 2 },
-  { key: 'medications',                label: 'Medications',                  rows: 2 },
-  { key: 'foodAllergy',                label: 'Food Allergy',                 type: 'yesno' },
-  { key: 'foodAllergyDetails',         label: 'Food Allergy Details',         rows: 2 },
-  { key: 'otherAllergies',             label: 'Other Allergies',              rows: 2 },
-  { key: 'motionSickness',             label: 'Motion Sickness',              type: 'yesno' },
-  { key: 'physicalLimitations',        label: 'Physical Limitations',         rows: 2 },
-  { key: 'specialAssistance',          label: 'Special Assistance Required',  type: 'yesno' },
-  { key: 'emergencyContactName',       label: 'Emergency Contact Name',       },
-  { key: 'emergencyContactRelationship', label: 'Relationship',               },
-  { key: 'emergencyContactPhone',      label: 'Emergency Phone',              type: 'tel' },
-  { key: 'emergencyContactEmail',      label: 'Emergency Email',              type: 'email', col2: true },
+  { key: 'medicalConditions',            label: 'Medical Conditions',          hint: 'Any diagnosed conditions the crew should be aware of',         rows: 2 },
+  { key: 'medications',                  label: 'Medications',                 hint: 'Current medications including name and dosage',                rows: 2 },
+  { key: 'foodAllergy',                  label: 'Food Allergy',                hint: 'Does the guest have any food allergies?',                      type: 'yesno' },
+  { key: 'foodAllergyDetails',           label: 'Food Allergy Details',        hint: 'Describe the allergy and severity',                            rows: 2 },
+  { key: 'otherAllergies',               label: 'Other Allergies',             hint: 'e.g. latex, sunscreen, insect bites',                          rows: 2 },
+  { key: 'motionSickness',               label: 'Motion Sickness',             hint: 'Is the guest prone to seasickness?',                           type: 'yesno' },
+  { key: 'physicalLimitations',          label: 'Physical Limitations',        hint: 'Any mobility or physical restrictions the crew should know',   rows: 2 },
+  { key: 'specialAssistance',            label: 'Special Assistance Required', hint: 'Does the guest need any special assistance on board?',         type: 'yesno' },
+  { key: 'emergencyContactName',         label: 'Emergency Contact Name',      hint: 'Full name of the person to contact in an emergency' },
+  { key: 'emergencyContactRelationship', label: 'Relationship',                hint: 'e.g. Spouse, Parent, Sibling, Friend' },
+  { key: 'emergencyContactPhone',        label: 'Emergency Phone',             hint: 'Phone number with country code',                               type: 'tel' },
+  { key: 'emergencyContactEmail',        label: 'Emergency Email',             hint: 'Email address of the emergency contact',                       type: 'email', col2: true },
 ]
 
 const FOOD_FIELDS = [
-  { key: 'dietaryType',        label: 'Dietary Type',          },
-  { key: 'allergy',            label: 'Allergy',               options: ['None','Nuts','Shellfish','Dairy','Gluten','Other'] },
-  { key: 'allergyDetails',     label: 'Allergy Details',       rows: 2 },
-  { key: 'dislikes',           label: 'Dislikes',              rows: 2 },
-  { key: 'favoriteFoods',      label: 'Favorite Foods',        rows: 2 },
-  { key: 'breakfastPreference',label: 'Breakfast Preference',  },
-  { key: 'lactoseIntolerant',  label: 'Lactose Intolerant',    type: 'yesno' },
-  { key: 'glutenFree',         label: 'Gluten Free',           type: 'yesno' },
-  { key: 'halal',              label: 'Halal',                 type: 'yesno' },
-  { key: 'vegetarian',         label: 'Vegetarian',            type: 'yesno' },
-  { key: 'vegan',              label: 'Vegan',                 type: 'yesno' },
-  { key: 'pescatarian',        label: 'Pescatarian',           type: 'yesno' },
-  { key: 'kosher',             label: 'Kosher',                type: 'yesno' },
-  { key: 'snackPreference',    label: 'Snack Preference',      },
+  { key: 'dietaryType',         label: 'Dietary Type',         hint: 'e.g. Omnivore, Vegetarian, Vegan, Halal' },
+  { key: 'allergy',             label: 'Allergy',              hint: 'Select the primary food allergy',          options: ['None','Nuts','Shellfish','Dairy','Gluten','Other'] },
+  { key: 'allergyDetails',      label: 'Allergy Details',      hint: 'Describe the allergy and severity level',  rows: 2 },
+  { key: 'dislikes',            label: 'Dislikes',             hint: 'Ingredients or dishes to avoid',           rows: 2 },
+  { key: 'favoriteFoods',       label: 'Favorite Foods',       hint: 'Foods the guest particularly enjoys',      rows: 2 },
+  { key: 'breakfastPreference', label: 'Breakfast Preference', hint: 'e.g. Continental, Full English, Light' },
+  { key: 'lactoseIntolerant',   label: 'Lactose Intolerant',   hint: 'Avoid all dairy products',                 type: 'yesno' },
+  { key: 'glutenFree',          label: 'Gluten Free',          hint: 'Avoid gluten-containing foods',            type: 'yesno' },
+  { key: 'halal',               label: 'Halal',                hint: 'Halal-certified food required',            type: 'yesno' },
+  { key: 'vegetarian',          label: 'Vegetarian',           hint: 'No meat or fish',                          type: 'yesno' },
+  { key: 'vegan',               label: 'Vegan',                hint: 'No animal products whatsoever',            type: 'yesno' },
+  { key: 'pescatarian',         label: 'Pescatarian',          hint: 'No meat, but fish is fine',                type: 'yesno' },
+  { key: 'kosher',              label: 'Kosher',               hint: 'Kosher-certified food required',           type: 'yesno' },
+  { key: 'snackPreference',     label: 'Snack Preference',     hint: 'e.g. Fruit, Nuts, Chips, Chocolate' },
 ]
 
 const DRINKS_FIELDS = [
-  { key: 'drinksAlcohol',      label: 'Drinks Alcohol',        type: 'yesno' },
-  { key: 'winePreference',     label: 'Wine Preference',       },
-  { key: 'spiritsPreference',  label: 'Spirits Preference',    },
-  { key: 'cocktailPreference', label: 'Cocktail Preference',   },
-  { key: 'beerPreference',     label: 'Beer Preference',       },
-  { key: 'coffeePreference',   label: 'Coffee Preference',     },
-  { key: 'teaPreference',      label: 'Tea Preference',        },
-  { key: 'softDrinkPreference',label: 'Soft Drink Preference', },
-  { key: 'waterPreference',    label: 'Water Preference',      },
-  { key: 'drinkNotes',         label: 'Notes',                 rows: 2, col2: true },
+  { key: 'drinksAlcohol',       label: 'Drinks Alcohol',       hint: 'Will the guest consume alcoholic beverages?',     type: 'yesno' },
+  { key: 'winePreference',      label: 'Wine Preference',      hint: 'e.g. Red, White, Rosé, Champagne' },
+  { key: 'spiritsPreference',   label: 'Spirits Preference',   hint: 'e.g. Whisky, Vodka, Gin, Rum' },
+  { key: 'cocktailPreference',  label: 'Cocktail Preference',  hint: 'Favorite cocktails or mixers' },
+  { key: 'beerPreference',      label: 'Beer Preference',      hint: 'e.g. Lager, Craft IPA, Non-alcoholic' },
+  { key: 'coffeePreference',    label: 'Coffee Preference',    hint: 'e.g. Espresso, Flat White, Cappuccino, No coffee' },
+  { key: 'teaPreference',       label: 'Tea Preference',       hint: 'e.g. English Breakfast, Green Tea, Herbal' },
+  { key: 'softDrinkPreference', label: 'Soft Drink Preference',hint: 'e.g. Cola, Juice, Sparkling water' },
+  { key: 'waterPreference',     label: 'Water Preference',     hint: 'Still or sparkling, brand preference' },
+  { key: 'drinkNotes',          label: 'Notes',                hint: 'Any other drink preferences or restrictions',     rows: 2, col2: true },
 ]
 
 const DIVING_FIELDS = [
-  { key: 'isDiver',           label: 'Is Diver',               type: 'yesno' },
-  { key: 'diveLevel',         label: 'Dive Level',             options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
-  { key: 'certAgency',        label: 'Certification Agency',   },
-  { key: 'diveCount',         label: 'Number of Dives',        type: 'number' },
-  { key: 'lastDiveDate',      label: 'Last Dive Date',         type: 'date' },
-  { key: 'diveRentalRequired',label: 'Equipment Rental',       type: 'yesno' },
-  { key: 'wetsuitSize',       label: 'Wetsuit Size',           },
-  { key: 'bcdSize',           label: 'BCD Size',               },
-  { key: 'finsSize',          label: 'Fins Size',              },
-  { key: 'maskSize',          label: 'Mask Size',              },
-  { key: 'divingNotes',       label: 'Diving Notes',           rows: 2, col2: true },
+  { key: 'isDiver',            label: 'Is Diver',              hint: 'Is the guest a certified diver?',                                     type: 'yesno' },
+  { key: 'diveLevel',          label: 'Dive Level',            hint: 'Highest certification level achieved',                                options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
+  { key: 'certAgency',         label: 'Certification Agency',  hint: 'e.g. PADI, SSI, NAUI, CMAS' },
+  { key: 'diveCount',          label: 'Number of Dives',       hint: 'Total number of logged dives',                                        type: 'number' },
+  { key: 'lastDiveDate',       label: 'Last Dive Date',        hint: 'Date of most recent dive',                                            type: 'date' },
+  { key: 'diveRentalRequired', label: 'Equipment Rental',      hint: 'Does the guest need to rent dive equipment on board?',                type: 'yesno' },
+  { key: 'wetsuitSize',        label: 'Wetsuit Size',          hint: 'e.g. XS, S, M, L, XL' },
+  { key: 'bcdSize',            label: 'BCD Size',              hint: 'e.g. XS, S, M, L, XL' },
+  { key: 'finsSize',           label: 'Fins Size',             hint: 'Foot size or fin size (EU / US)' },
+  { key: 'maskSize',           label: 'Mask Size',             hint: 'Standard or wide-face' },
+  { key: 'divingNotes',        label: 'Diving Notes',          hint: 'Any special diving requirements or requests',                         rows: 2, col2: true },
 ]
 
 interface Props {
@@ -357,6 +379,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
   const [loading, setLoading]         = useState(false)
   const [saving, setSaving]           = useState(false)
   const [guestName, setGuestName]     = useState('')
+  const [passportImage, setPassportImage] = useState('')
   const [generatingLink, setGeneratingLink] = useState(false)
   const [guestLink, setGuestLink]     = useState('')
   const [linkCopied, setLinkCopied]   = useState(false)
@@ -366,6 +389,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
     if (!guestId) {
       setForm(GUEST_FORM_EMPTY)
       setMedData({}); setFoodData({}); setDrinkData({}); setDivData({})
+      setPassportImage('')
       setGuestName('')
       return
     }
@@ -380,6 +404,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         setFoodData(data.foodData    ?? {})
         setDrinkData(data.drinksData ?? {})
         setDivData(data.divingData   ?? {})
+        setPassportImage(data.passportImage ?? '')
       })
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
       .finally(() => setLoading(false))
@@ -418,10 +443,11 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
       const body = {
         ...form,
         ...(isEdit && {
-          medicalData:  medData,
-          foodData:     foodData,
-          drinksData:   drinkData,
-          ...(hasDiving && { divingData: divData }),
+          medicalData:   medData,
+          foodData:      foodData,
+          drinksData:    drinkData,
+          divingData:    divData,
+          passportImage: passportImage || null,
         }),
       }
       const res = isEdit
@@ -441,10 +467,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
 
   const displayName = [form.firstName, form.lastName].filter(Boolean).join(' ') || guestName
 
-  const allTabs: { id: SheetTab; label: string }[] = hasDiving
-    ? [...BASE_TABS, { id: 'diving', label: 'Diving' }]
-    : BASE_TABS
-  const visibleTabs = isEdit ? allTabs : allTabs.filter(t => t.id === 'profile')
+  const visibleTabs = isEdit ? ALL_TABS : ALL_TABS.filter(t => t.id === 'profile')
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
@@ -504,19 +527,44 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
           <div className="flex-1 overflow-y-auto px-5 py-5">
 
             {activeTab === 'profile' && (
-              <ProfileTab form={form} setForm={setForm} isEdit={isEdit} />
+              <ProfileTab form={form} setForm={setForm} isEdit={isEdit}
+                passportImage={passportImage} onPassportImage={setPassportImage} />
             )}
             {activeTab === 'medical' && (
-              <JsonTab data={medData} onChange={jsonSetter(setMedData)} fields={MEDICAL_FIELDS} />
+              <div className="space-y-1">
+                <JsonTab data={medData} onChange={jsonSetter(setMedData)} fields={MEDICAL_FIELDS} />
+              </div>
             )}
             {activeTab === 'food' && (
-              <JsonTab data={foodData} onChange={jsonSetter(setFoodData)} fields={FOOD_FIELDS} />
+              <div className="space-y-1">
+                <JsonTab data={foodData} onChange={jsonSetter(setFoodData)} fields={FOOD_FIELDS} />
+              </div>
             )}
             {activeTab === 'drinks' && (
-              <JsonTab data={drinkData} onChange={jsonSetter(setDrinkData)} fields={DRINKS_FIELDS} />
+              <div className="space-y-1">
+                <JsonTab data={drinkData} onChange={jsonSetter(setDrinkData)} fields={DRINKS_FIELDS} />
+              </div>
             )}
             {activeTab === 'diving' && (
-              <JsonTab data={divData} onChange={jsonSetter(setDivData)} fields={DIVING_FIELDS} />
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Is Diver" hint="Is the guest a certified diver?">
+                    <YesNo value={divData.isDiver ?? ''} onChange={v => setDivData((prev: any) => ({ ...prev, isDiver: v }))} />
+                  </Field>
+                </div>
+                <div className={divData.isDiver === 'no' ? 'opacity-40 pointer-events-none select-none' : ''}>
+                  <JsonTab data={divData} onChange={jsonSetter(setDivData)} fields={DIVING_FIELDS.filter(f => f.key !== 'isDiver')} />
+                  <div className="mt-6">
+                    <SectionTitle>Diving Certificate</SectionTitle>
+                    <ImageUpload
+                      label="Upload Certificate"
+                      value={divData.certImage ?? ''}
+                      onChange={v => setDivData((prev: any) => ({ ...prev, certImage: v }))}
+                    />
+                    <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Upload a photo or scan of the guest's dive certification card</p>
+                  </div>
+                </div>
+              </div>
             )}
 
           </div>

@@ -121,6 +121,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
       medicalData, foodData, drinksData, housekeepingData, serviceData, divingData, surfingData,
+      passportImage,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -148,6 +149,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(serviceData      !== undefined && { serviceData }),
         ...(divingData       !== undefined && { divingData }),
         ...(surfingData      !== undefined && { surfingData }),
+        ...(passportImage    !== undefined && { passportImage: passportImage || null }),
       },
     })
 

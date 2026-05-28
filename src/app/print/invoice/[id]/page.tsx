@@ -135,30 +135,91 @@ export default function InvoicePage() {
     <>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; background: #f3f4f6; }
+        html, body { background: #f3f4f6; }
         @media print {
-          @page { margin: 0.7cm; size: A4 portrait; }
-          html, body { background: white; height: 100%; }
+          @page { margin: 0; size: A4 portrait; }
+          html, body { background: white; }
+          .so { display: none !important; }
+          .il { display: none !important; }
+          .inv-bd { display: block !important; }
+          .nc { break-inside: avoid; page-break-inside: avoid; }
+          .pb { page-break-before: always; break-before: page; }
         }
         @media screen {
+          table.inv { display: block; max-width: 660px; margin: 0 auto; background: white; }
+          table.inv > thead, table.inv > tfoot { display: none; }
+          table.inv > tbody, table.inv > tbody > tr, table.inv > tbody > tr > td { display: block; }
           body { padding: 24px 0 40px; }
         }
       `}</style>
 
-      <div style={{
-        maxWidth: 660,
-        margin: '0 auto',
-        background: 'white',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 'calc(297mm - 1.4cm)',
-        fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif",
-        fontSize: 11,
-        color: '#1f2937',
-        position: 'relative',
-      }}>
+      <table className="inv" style={{ borderCollapse: 'collapse', width: '100%', fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", fontSize: 11, color: '#1f2937' }}>
 
-        {/* ── LUNAS stamp ── */}
+        {/* ── Repeating print header ── */}
+        <thead>
+          <tr>
+            <td style={{ background: 'white', padding: '11px 32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 8, letterSpacing: 2, color: '#b8a882', textTransform: 'uppercase', fontWeight: 600 }}>
+                  {payment.invoiceNumber}
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+                  alt="Samara Liveaboard"
+                  style={{ height: 22, objectFit: 'contain', display: 'block' }}
+                />
+              </div>
+            </td>
+          </tr>
+        </thead>
+
+        {/* ── Repeating print footer ── */}
+        <tfoot>
+          <tr>
+            <td style={{ background: 'white', padding: '10px 32px 13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: '#374151', marginBottom: 3 }}>
+                    Samara Liveaboard
+                  </div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>samaraliveaboard.com</div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>Bali, Indonesia</div>
+                </div>
+                <div style={{
+                  fontFamily: 'Palatino Linotype, Palatino, Book Antiqua, Georgia, serif',
+                  fontSize: 24,
+                  color: ACCENT,
+                  fontStyle: 'italic',
+                  fontWeight: 400,
+                  lineHeight: 1,
+                  letterSpacing: 0.5,
+                }}>
+                  Thank you
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tfoot>
+
+        {/* ── Content ── */}
+        <tbody>
+          <tr>
+            <td>
+              <div className="inv-bd" style={{
+                maxWidth: 660,
+                margin: '0 auto',
+                background: 'white',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 'calc(297mm - 1.4cm)',
+                position: 'relative',
+              }}>
+
+        {/* ── Page 1 wrapper (position: relative so PAID stamp stays on this page) ── */}
+        <div style={{ position: 'relative' }}>
+
+        {/* ── PAID stamp ── */}
         {payment.status === 'confirmed' && (
           <div style={{
             position: 'absolute',
@@ -183,12 +244,12 @@ export default function InvoicePage() {
           </div>
         )}
 
-        {/* ── Top accent bar ── */}
-        <div style={{ backgroundColor: ACCENT, height: 5, flexShrink: 0 }} />
+        {/* ── Top accent bar (screen only — print uses fixed header) ── */}
+        <div className="so" style={{ backgroundColor: ACCENT, height: 5, flexShrink: 0 }} />
 
         {/* ── Header ── */}
         <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '14px 22px', borderRight: '1px solid #e5e7eb', minWidth: 190 }}>
+          <div className="il" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '14px 22px', borderRight: '1px solid #e5e7eb', minWidth: 190 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
@@ -402,11 +463,11 @@ export default function InvoicePage() {
           </div>
         )}
 
-        {/* ── Spacer ── */}
-        <div style={{ flex: 1 }} />
+        {/* ── Spacer (screen only — pushes footer to bottom on screen) ── */}
+        <div className="so" style={{ flex: 1 }} />
 
-        {/* ── Footer ── */}
-        <div style={{ flexShrink: 0 }}>
+        {/* ── Footer (screen only — print uses fixed footer) ── */}
+        <div className="so" style={{ flexShrink: 0 }}>
           <div style={{ margin: '0 22px', paddingTop: 10, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12 }}>
             <div>
               <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>Thank you for sailing with Samara.</div>
@@ -420,7 +481,146 @@ export default function InvoicePage() {
           <div style={{ backgroundColor: ACCENT, height: 5 }} />
         </div>
 
-      </div>
+        </div>{/* ── end page 1 wrapper ── */}
+
+        {/* ══════════════════════════════════════════════════════════
+            PAGE 2 — INCLUSIONS & EXCLUSIONS
+            ══════════════════════════════════════════════════════════ */}
+        <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
+
+          {/* ── INCLUSIONS & EXCLUSIONS NOTES header bar ── */}
+          <div className="nc" style={{ backgroundColor: '#f3f4f6', padding: '9px 20px', textAlign: 'center', marginBottom: 20 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: '#374151', textTransform: 'uppercase' }}>
+              Inclusions &amp; Exclusions Notes
+            </span>
+          </div>
+
+          <div style={{ marginBottom: 28, textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#374151', lineHeight: 1.8 }}>
+              Alcoholic beverages, merchandise goods, and crew gratuities can be settled on board in USD / EUR / IDR.
+            </div>
+            <div style={{ fontSize: 11, color: '#374151', lineHeight: 1.8 }}>
+              For daily exchange rates, please refer to www.xe.com.
+            </div>
+          </div>
+
+          {/* ── INCLUDE header bar ── */}
+          <div className="nc" style={{ backgroundColor: '#f3f4f6', padding: '9px 20px', textAlign: 'center', marginBottom: 18 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: '#374151', textTransform: 'uppercase' }}>
+              Samara&apos;s Services &amp; Fees Include
+            </span>
+          </div>
+
+          <div style={{ marginBottom: 32 }}>
+            {[
+              'Transfers to / from the port or hotel at the respective embarkation point.',
+              'Accommodation on board in private or shared cabin with air conditioning, hot water shower and toilet.',
+              'All meals: breakfast, lunch, dinner, and snacks prepared fresh by our on-board chef.',
+              'Non-alcoholic beverages throughout — water, juices, coffee, tea, and soft drinks.',
+              'Standard snorkeling equipment for all guests: mask, fins, and snorkel.',
+              'Guided snorkeling trips, island-hopping excursions, and onboard activities as per the program itinerary.',
+              'Complementary beach BBQ dinner (subject to weather and itinerary).',
+              'Professional English-speaking guide and experienced crew service.',
+              'All government port taxes, harbour dues, and departure fees.',
+              'Welcome drinks and safety briefing upon embarkation.',
+            ].map((item, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
+                <span style={{ color: ACCENT, fontWeight: 700, fontSize: 14, lineHeight: 1.4, flexShrink: 0, marginTop: 1 }}>•</span>
+                <span style={{ fontSize: 11, color: '#374151', lineHeight: 1.65 }}>{item}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ── EXCLUDE header bar ── */}
+          <div className="nc" style={{ backgroundColor: '#f3f4f6', padding: '9px 20px', textAlign: 'center', marginBottom: 18 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: '#374151', textTransform: 'uppercase' }}>
+              Samara&apos;s Services &amp; Fees Exclude
+            </span>
+          </div>
+
+          <div style={{ marginBottom: 32 }}>
+            {[
+              'National park and marine reserve entry fees (e.g., Komodo National Park).',
+              'Spirits, alcoholic beverages, mocktails, and smoothies.',
+              'Scuba diving activities, equipment rental, and lessons.',
+              'Photo and video packages.',
+              'Crew gratuities — entirely at guests\' discretion and greatly appreciated.',
+              'Flights and any costs for overweight luggage (international and domestic).',
+              'Travel insurance or any other personal insurance (strongly recommended).',
+              'Purchase of merchandise, souvenirs, or personal items on board.',
+              'Personal expenses: laundry, telecommunications, etc.',
+              'Visa-on-arrival, immigration, or customs fees.',
+              'Pre / post trip accommodation.',
+            ].map((item, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
+                <span style={{ color: '#374151', fontWeight: 700, fontSize: 14, lineHeight: 1.4, flexShrink: 0, marginTop: 1 }}>•</span>
+                <span style={{ fontSize: 11, color: '#374151', lineHeight: 1.65 }}>{item}</span>
+              </div>
+            ))}
+          </div>
+
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════
+            PAGE 3 — TERMS AND CONDITIONS
+            ══════════════════════════════════════════════════════════ */}
+        <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
+
+          <div className="nc" style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: '#111827', letterSpacing: 0.3, marginBottom: 8 }}>
+              Samara Liveaboard Terms and Conditions
+            </div>
+            <div style={{ height: 3, width: 56, backgroundColor: ACCENT, borderRadius: 2 }} />
+          </div>
+
+          {([
+            ['Cancellation Policy', `Should you need to cancel your booking, we ask you to notify us at your earliest convenience. All cancellations must be submitted in writing to reservations@samaraliveaboard.com.\n\nRefund or cancellation charges will depend on the date of cancellation, as specified below:\n\nA) Booking deposit: The initial deposit is non-refundable under any circumstances.\nB) 60 days or more before departure: 50% cancellation fee will be deducted from all payments made.\nC) No refund can be granted on cancellations made 59 days or less prior to departure.\n\nAny refunds outside of our terms will be subject to a claim on your travel insurance. Samara Liveaboard is not responsible for any charges arising from the transfer process in the event of a refund.`],
+            ['Payments', `All bank transfer fees must be borne by the guest and accounted for in their transfer. Any shortfall greater than USD 100 must be settled prior to boarding Samara Liveaboard.\n\nAny shortfall of less than USD 100 can be settled on board by credit card or cash upon arrival.\n\nPayment deadlines missed by more than 4 weeks past the due date may result in the booked spaces being released. No refunds will be granted for any prior payments made.`],
+            ['Personal Information', `Samara Liveaboard discloses guests' personal information only for the purpose of delivering liveaboard services and to comply with applicable privacy legislation.\n\nPrior to any trip, we require a completed guest information sheet including passport details and flight information. The deadline to submit these details is 4 weeks prior to trip departure. Failure to do so may result in extra charges or cancellation of your booking with no refund.`],
+            ['Health and Safety', `Guests must disclose any medical conditions, allergies, dietary requirements, or physical limitations prior to boarding. Samara Liveaboard reserves the right to refuse boarding if a guest's condition poses a safety risk to themselves or others.\n\nGuests are responsible for their own health and safety during the charter and must adhere to all safety instructions provided by the crew at all times. Life jackets must be worn as directed.`],
+            ['Illness', `If a guest is unable to participate in activities due to illness while on board, no refund will be given. If required, a supporting letter for travel insurance purposes can be provided by Samara Liveaboard. For illnesses prior to departure, please refer to the Cancellation Policy above.`],
+            ['Weather', `For closed port situations or adverse weather, alternative products and / or destinations will be offered where possible. Rainy or cloudy weather alone is not a valid reason for cancellation, and we strictly follow harbour master recommendations. In the event of poor weather or sea conditions, the guest shall have no claim against Samara Liveaboard or its operators.`],
+            ['Program Changes', `Samara Liveaboard and its operators reserve the right to rearrange the order of any itinerary, or to cancel or substitute elements of any schedule without notice when local conditions force such changes. In such cases, no refund will be provided for missed activities or sessions.`],
+            ['Responsibility', `There is nothing more important to us than the safety of our guests, and all activities are carried out under strict supervision. It is your responsibility to ensure you have a suitable level of fitness to undertake the trip.\n\nSamara Liveaboard is not responsible for any losses, damage, death, medical expenses, injuries, or claims whatsoever arising from, connected with, or related to any activities engaged in by guests while on board or ashore. Guests engage in all activities at their own risk. Samara Liveaboard is not responsible for any interruptions caused by flight delays, loss of luggage, broken equipment, or any other travel arrangements made by external parties.`],
+            ['Insurance', `All guests are strongly recommended to obtain comprehensive travel health insurance prior to departure to cover unforeseen circumstances including medical expenses, emergency evacuation, trip cancellation, and repatriation. Proof of insurance may be requested prior to embarkation.`],
+            ['Onboard Rules', `Guests are expected to conduct themselves respectfully toward fellow guests, crew members, and the natural environment at all times. Any behaviour deemed disruptive or unsafe by the captain may result in removal from the vessel without refund.\n\nThe use or possession of illegal substances is strictly prohibited on board. Samara Liveaboard operates in environmentally sensitive marine areas — guests must not touch, collect, or damage any coral, marine life, or protected species.`],
+            ['Force Majeure', `Samara Liveaboard is not liable for failure to perform its obligations if such failure is as a result of events beyond our reasonable control, including: acts of God (fire, flood, earthquake, storm, hurricane, volcanic eruption, or other natural disaster), war, invasion, act of foreign enemies, hostilities, civil war, rebellion, revolution, insurrection, terrorist activities, nationalization, government sanction, blockage, embargo, labour dispute, strike, or pandemic.`],
+          ] as [string, string][]).map(([title, body]) => (
+            <div className="nc" key={title} style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8, paddingBottom: 5, borderBottom: '1px solid #f3f4f6' }}>
+                {title}
+              </div>
+              {body.split('\n\n').map((para, pi) => (
+                <div key={pi} style={{ marginBottom: pi < body.split('\n\n').length - 1 ? 9 : 0 }}>
+                  {para.split('\n').map((line, li) => (
+                    <div key={li} style={{ fontSize: 11, color: '#374151', lineHeight: 1.75 }}>{line}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {/* ── Closing message ── */}
+          <div style={{ marginTop: 36, paddingTop: 22, borderTop: `1px solid #e5e7eb`, textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#374151', lineHeight: 1.75, marginBottom: 4 }}>
+              Thank you for choosing Samara Liveaboard.
+            </div>
+            <div style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.75 }}>
+              Our entire crew will be more than grateful to welcome you aboard.
+            </div>
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
+              <div style={{ height: 2, width: 40, backgroundColor: ACCENT, borderRadius: 2 }} />
+            </div>
+          </div>
+
+        </div>
+
+              </div>
+            </td>
+          </tr>
+        </tbody>
+
+      </table>
     </>
   )
 }
