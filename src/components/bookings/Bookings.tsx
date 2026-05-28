@@ -242,6 +242,12 @@ export default function Bookings() {
   useEffect(() => { fetchBookings() }, [fetchBookings])
   useEffect(() => { if (canManageBookings) fetchPayments() }, [canManageBookings, fetchPayments])
 
+  useEffect(() => {
+    const handler = () => { fetchPayments(); fetchBookings() }
+    window.addEventListener('payment-updated', handler)
+    return () => window.removeEventListener('payment-updated', handler)
+  }, [fetchPayments, fetchBookings])
+
   /* ── edit booking ── */
   const openEdit = (b: BookingRecord) => {
     setEditBooking(b)
