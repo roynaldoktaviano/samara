@@ -7,7 +7,14 @@ import { logActivity } from '@/lib/activity'
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (role !== 'ADMIN') return null
+  if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') return null
+  return session
+}
+
+async function requireManage() {
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(role)) return null
   return session
 }
 
@@ -28,7 +35,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdmin()
+    const session = await requireManage()
     if (!session) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     const userRole = (session?.user as { role?: string })?.role ?? ''
-    if (userRole !== 'ADMIN') {
+    if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

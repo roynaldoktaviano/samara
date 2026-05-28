@@ -3,10 +3,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-async function requireAdmin() {
+async function requireManage() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (role !== 'ADMIN') return null
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(role)) return null
   return session
 }
 
@@ -26,7 +26,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdmin()
+    const session = await requireManage()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { id } = await params

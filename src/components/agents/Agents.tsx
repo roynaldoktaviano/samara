@@ -52,7 +52,8 @@ const ACCENT = '#bdac7e'
 export default function Agents() {
   const { data: session } = useSession()
   const userRole = (session?.user as { role?: string })?.role ?? ''
-  const isAdmin = userRole === 'ADMIN'
+  const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
+  const canManage = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
 
   const [agents,     setAgents]     = useState<AgentRecord[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -229,7 +230,7 @@ export default function Agents() {
             {loading ? '…' : `${activeCount} active agent${activeCount !== 1 ? 's' : ''}`}
           </p>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Button
             onClick={openCreate}
             style={{ backgroundColor: ACCENT, color: 'white' }}
@@ -272,7 +273,7 @@ export default function Agents() {
             <div className="py-12 text-center text-muted-foreground">
               <Briefcase className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm">{search ? 'No agents found' : 'No agents yet'}</p>
-              {isAdmin && !search && (
+              {canManage && !search && (
                 <Button onClick={openCreate} variant="outline" size="sm" className="mt-3">
                   <Plus className="h-4 w-4 mr-1" /> Add First Agent
                 </Button>
@@ -288,7 +289,7 @@ export default function Agents() {
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Status</th>
-                    {isAdmin && <th className="pb-3 font-medium text-muted-foreground text-right">Actions</th>}
+                    {canManage && <th className="pb-3 font-medium text-muted-foreground text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -339,8 +340,8 @@ export default function Agents() {
                         </Badge>
                       </td>
 
-                      {/* Actions — admin only */}
-                      {isAdmin && (
+                      {/* Actions */}
+                      {canManage && (
                         <td className="py-3 text-right">
                           <div className="flex items-center gap-1 justify-end">
                             <Button
@@ -350,19 +351,21 @@ export default function Agents() {
                             >
                               <Pencil className="h-3 w-3 mr-1" /> Edit
                             </Button>
-                            <Button
-                              variant="ghost" size="sm"
-                              className={`h-7 px-2 text-xs ${a.isActive
-                                ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
-                                : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
-                              }`}
-                              onClick={() => setConfirmAgent(a)}
-                            >
-                              {a.isActive
-                                ? <><UserX    className="h-3 w-3 mr-1" /> Deactivate</>
-                                : <><UserCheck className="h-3 w-3 mr-1" /> Activate</>
-                              }
-                            </Button>
+                            {isAdmin && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className={`h-7 px-2 text-xs ${a.isActive
+                                  ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                                  : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                }`}
+                                onClick={() => setConfirmAgent(a)}
+                              >
+                                {a.isActive
+                                  ? <><UserX    className="h-3 w-3 mr-1" /> Deactivate</>
+                                  : <><UserCheck className="h-3 w-3 mr-1" /> Activate</>
+                                }
+                              </Button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -375,8 +378,8 @@ export default function Agents() {
         </CardContent>
       </Card>
 
-      {/* ── Create / Edit Sheet (admin only) ── */}
-      {isAdmin && (
+      {/* ── Create / Edit Sheet ── */}
+      {canManage && (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent className="sm:max-w-md flex flex-col gap-0 p-0">
             {/* Colored header */}
