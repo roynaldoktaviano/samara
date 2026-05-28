@@ -21,6 +21,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
+import { toast } from 'sonner'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
