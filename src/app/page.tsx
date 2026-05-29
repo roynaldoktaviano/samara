@@ -22,9 +22,10 @@ import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
 import Statistics from '@/components/statistics/Statistics'
+import SalesStats from '@/components/statistics/SalesStats'
 import Banks from '@/components/banks/Banks'
 
-type View = 'dashboard' | 'statistics' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks'
 
 type NavItem = {
   id: View
@@ -38,9 +39,10 @@ const navigationItems: NavItem[] = [
   { id: 'yachts',      label: 'Yachts',      icon: Anchor,          roles: ['ADMIN'] },
   { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES'] },
   { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'FINANCE'] },
-  { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'SALES', 'MARKETING'] },
+  { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'MARKETING'] },
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
   { id: 'statistics',  label: 'Statistics',  icon: TrendingUp,      roles: ['ADMIN', 'FINANCE'] },
+  { id: 'sales-stats', label: 'Statistics',  icon: TrendingUp,      roles: ['SALES'] },
   { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
   { id: 'banks',         label: 'Bank Accounts', icon: Building2, roles: ['ADMIN', 'FINANCE'] },
   { id: 'vouchers',      label: 'Vouchers',    icon: Tag,    roles: ['ADMIN'] },
@@ -140,6 +142,9 @@ export default function Home() {
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [sidebarDefaultOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1280 : true
+  )
 
   // ── Notifications ──────────────────────────────────────────────────
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -307,15 +312,16 @@ export default function Home() {
       case 'vouchers':      return <Vouchers />
       case 'activity-log':  return <ActivityLog />
       case 'statistics':    return <Statistics />
+      case 'sales-stats':  return <SalesStats />
       default:              return <CalendarView />
     }
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <div className="flex min-h-screen bg-background w-full">
         <Sidebar>
-          <SidebarHeader className="p-6 border-b">
+          <SidebarHeader className="p-4 border-b">
             <div className="flex items-center gap-3">
               <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png" alt="Samara liveaboard logo" />
             </div>
@@ -375,7 +381,7 @@ export default function Home() {
         </Sidebar>
 
         <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-10 flex h-14 items-center border-b bg-background/95 backdrop-blur-sm px-4">
+          <header className="sticky top-0 z-10 flex h-12 items-center border-b bg-background/95 backdrop-blur-sm px-3 xl:px-4">
             <SidebarTrigger className="h-8 w-8 shrink-0" />
             <div className="flex-1" />
 
@@ -548,7 +554,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="p-3 sm:p-6 overflow-hidden">
+          <div className="p-3 sm:p-4 xl:p-6 overflow-hidden">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeView}

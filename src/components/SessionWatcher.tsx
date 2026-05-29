@@ -2,20 +2,25 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
+
+const PUBLIC_PATHS = ['/agent/calendar', '/external', '/login']
 
 export function SessionWatcher() {
   const { status } = useSession()
+  const pathname = usePathname()
   const wasAuthenticated = useRef(false)
   const [expired, setExpired] = useState(false)
 
   useEffect(() => {
+    if (PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))) return
     if (status === 'authenticated') {
       wasAuthenticated.current = true
     }
     if (status === 'unauthenticated' && wasAuthenticated.current) {
       setExpired(true)
     }
-  }, [status])
+  }, [status, pathname])
 
   if (!expired) return null
 

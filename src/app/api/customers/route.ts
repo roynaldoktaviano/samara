@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
       isChild,
+      medicalData, foodData, drinksData, divingData, passportImage,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -75,6 +76,11 @@ export async function POST(request: NextRequest) {
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
         isChild: isChild ?? false,
+        ...(medicalData   !== undefined && { medicalData }),
+        ...(foodData      !== undefined && { foodData }),
+        ...(drinksData    !== undefined && { drinksData }),
+        ...(divingData    !== undefined && { divingData }),
+        ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })
 

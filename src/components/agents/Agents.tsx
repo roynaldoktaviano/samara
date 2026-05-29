@@ -18,7 +18,7 @@ import {
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
   Loader2, Mail, Building2, Percent, RotateCw,
-  Users, Trash2, Check, X, MessageCircle,
+  Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight,
 } from 'lucide-react'
 
 interface AgentRecord {
@@ -68,7 +68,7 @@ export default function Agents() {
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
 
-  // contacts
+  // contacts (sheet)
   const [contacts,       setContacts]       = useState<AgentContact[]>([])
   const [contactsLoading, setContactsLoading] = useState(false)
   const [addingContact,  setAddingContact]  = useState(false)
@@ -76,6 +76,11 @@ export default function Agents() {
   const [savingContact,  setSavingContact]  = useState(false)
   const [editingContact, setEditingContact] = useState<AgentContact | null>(null)
   const [editContactForm, setEditContactForm] = useState(EMPTY_CONTACT)
+
+  // inline expand/collapse contacts in table
+  const [expandedId,        setExpandedId]        = useState<string | null>(null)
+  const [contactsCache,     setContactsCache]     = useState<Record<string, AgentContact[]>>({})
+  const [contactsLoadingId, setContactsLoadingId] = useState<string | null>(null)
 
   const fetchAgents = useCallback(async () => {
     setLoading(true)
@@ -101,9 +106,29 @@ export default function Agents() {
     setContactsLoading(true)
     try {
       const res = await fetch(`/api/agents/${agentId}/contacts`)
-      if (res.ok) setContacts(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setContacts(data)
+        setContactsCache(prev => ({ ...prev, [agentId]: data }))
+      }
     } finally {
       setContactsLoading(false)
+    }
+  }
+
+  const handleToggleExpand = async (agentId: string) => {
+    if (expandedId === agentId) { setExpandedId(null); return }
+    setExpandedId(agentId)
+    if (contactsCache[agentId]) return
+    setContactsLoadingId(agentId)
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts`)
+      if (res.ok) {
+        const data = await res.json()
+        setContactsCache(prev => ({ ...prev, [agentId]: data }))
+      }
+    } finally {
+      setContactsLoadingId(null)
     }
   }
 
@@ -161,7 +186,11 @@ export default function Agents() {
       })
       if (res.ok) {
         const c = await res.json()
-        setContacts(prev => [...prev, c])
+        setContacts(prev => {
+          const updated = [...prev, c]
+          setContactsCache(cache => ({ ...cache, [editing.id]: updated }))
+          return updated
+        })
         setContactForm(EMPTY_CONTACT)
         setAddingContact(false)
       }
@@ -179,7 +208,11 @@ export default function Agents() {
       })
       if (res.ok) {
         const updated = await res.json()
-        setContacts(prev => prev.map(c => c.id === updated.id ? updated : c))
+        setContacts(prev => {
+          const next = prev.map(c => c.id === updated.id ? updated : c)
+          setContactsCache(cache => ({ ...cache, [editing.id]: next }))
+          return next
+        })
         setEditingContact(null)
       }
     } finally { setSavingContact(false) }
@@ -189,7 +222,13 @@ export default function Agents() {
     if (!editing) return
     try {
       const res = await fetch(`/api/agents/${editing.id}/contacts/${contactId}`, { method: 'DELETE' })
-      if (res.ok) setContacts(prev => prev.filter(c => c.id !== contactId))
+      if (res.ok) {
+        setContacts(prev => {
+          const next = prev.filter(c => c.id !== contactId)
+          if (editing) setContactsCache(cache => ({ ...cache, [editing.id]: next }))
+          return next
+        })
+      }
     } catch (e) { console.error(e) }
   }
 
@@ -284,6 +323,7 @@ export default function Agents() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left">
+                    <th className="pb-3 w-8" />
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Agent</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
@@ -294,7 +334,17 @@ export default function Agents() {
                 </thead>
                 <tbody className="divide-y">
                   {filtered.map(a => (
-                    <tr key={a.id} className="hover:bg-muted/30 transition-colors">
+                    <>
+                    <tr key={a.id} className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
+
+                      {/* Expand chevron */}
+                      <td className="py-3 pr-2 w-8">
+                        <span className="flex items-center justify-center text-muted-foreground">
+                          {expandedId === a.id
+                            ? <ChevronDown className="h-4 w-4" />
+                            : <ChevronRight className="h-4 w-4" />}
+                        </span>
+                      </td>
 
                       {/* Avatar + name */}
                       <td className="py-3 pr-4">
@@ -342,7 +392,7 @@ export default function Agents() {
 
                       {/* Actions */}
                       {canManage && (
-                        <td className="py-3 text-right">
+                        <td className="py-3 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
                             <Button
                               variant="ghost" size="sm"
@@ -370,6 +420,56 @@ export default function Agents() {
                         </td>
                       )}
                     </tr>
+
+                    {/* ── Expanded contacts row ── */}
+                    {expandedId === a.id && (
+                      <tr key={`${a.id}-contacts`} className="bg-muted/20">
+                        <td />
+                        <td colSpan={canManage ? 5 : 4} className="pb-3 pt-1 pr-4">
+                          <div className="pl-12">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                              Contact Persons
+                            </p>
+                            {contactsLoadingId === a.id ? (
+                              <div className="flex gap-2">
+                                {[...Array(2)].map((_, i) => (
+                                  <div key={i} className="h-9 w-44 rounded-lg bg-muted animate-pulse" />
+                                ))}
+                              </div>
+                            ) : !contactsCache[a.id]?.length ? (
+                              <p className="text-xs text-muted-foreground py-1">No contact persons added yet.</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {contactsCache[a.id].map(c => (
+                                  <div key={c.id} className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
+                                    <div className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                                      style={{ backgroundColor: ACCENT }}>
+                                      {c.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-xs leading-tight">{c.name}</p>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        {c.email && (
+                                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                            <Mail className="h-3 w-3" />{c.email}
+                                          </span>
+                                        )}
+                                        {c.whatsapp && (
+                                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                            <MessageCircle className="h-3 w-3" />{c.whatsapp}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </>
                   ))}
                 </tbody>
               </table>

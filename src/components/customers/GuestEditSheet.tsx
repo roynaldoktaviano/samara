@@ -140,13 +140,16 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function YesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <Select value={value || ''} onValueChange={onChange}>
-      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="yes">Yes</SelectItem>
-        <SelectItem value="no">No</SelectItem>
-      </SelectContent>
-    </Select>
+    <div className="flex gap-1.5">
+      <button type="button" onClick={() => onChange(value === 'yes' ? '' : 'yes')}
+        className={['flex-1 h-7 rounded text-xs font-semibold border transition-all',
+          value === 'yes' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
+        ].join(' ')}>Yes</button>
+      <button type="button" onClick={() => onChange(value === 'no' ? '' : 'no')}
+        className={['flex-1 h-7 rounded text-xs font-semibold border transition-all',
+          value === 'no' ? 'bg-red-400 text-white border-red-400' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
+        ].join(' ')}>No</button>
+    </div>
   )
 }
 
@@ -185,10 +188,9 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
 }
 
 /* ── Section components ── */
-function ProfileTab({ form, setForm, isEdit, passportImage, onPassportImage }: {
+function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
   form: GuestFormState
   setForm: (f: GuestFormState) => void
-  isEdit: boolean
   passportImage: string
   onPassportImage: (v: string) => void
 }) {
@@ -241,22 +243,18 @@ function ProfileTab({ form, setForm, isEdit, passportImage, onPassportImage }: {
           <Field label="Address" hint="City and country of residence" col2>
             <Input value={form.address} onChange={set('address')} placeholder="City, Country" className="h-8 text-sm" />
           </Field>
-          {isEdit && (
-            <Field label="Passport Scan" hint="Upload a photo or scan of the passport data page" col2>
-              <ImageUpload label="Passport Scan" value={passportImage} onChange={onPassportImage} />
-            </Field>
-          )}
+          <Field label="Passport Scan" hint="Upload a photo or scan of the passport data page" col2>
+            <ImageUpload label="Passport Scan" value={passportImage} onChange={onPassportImage} />
+          </Field>
         </div>
       </div>
 
-      {isEdit && (
-        <div>
-          <SectionTitle>Notes</SectionTitle>
-          <Textarea rows={3} value={form.operationalNotes} onChange={set('operationalNotes')}
-            placeholder="Internal crew notes…" className="text-sm resize-none" />
-          <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Internal notes visible to crew and operations team only</p>
-        </div>
-      )}
+      <div>
+        <SectionTitle>Notes</SectionTitle>
+        <Textarea rows={3} value={form.operationalNotes} onChange={set('operationalNotes')}
+          placeholder="Internal crew notes…" className="text-sm resize-none" />
+        <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Internal notes visible to crew and operations team only</p>
+      </div>
     </div>
   )
 }
@@ -267,33 +265,43 @@ function JsonTab({ data, onChange, fields }: {
   fields: { key: string; label: string; hint?: string; type?: string; options?: string[]; rows?: number; col2?: boolean }[]
 }) {
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {fields.map(f => (
-        <Field key={f.key} label={f.label} hint={f.hint} col2={f.col2}>
-          {f.options ? (
-            <Select value={data[f.key] ?? ''} onValueChange={v => onChange(f.key, v)}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>
-                {f.options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ) : f.type === 'yesno' ? (
-            <YesNo value={data[f.key] ?? ''} onChange={v => onChange(f.key, v)} />
-          ) : f.rows ? (
-            <Textarea rows={f.rows}
-              value={data[f.key] ?? ''}
-              onChange={e => onChange(f.key, e.target.value)}
-              className="text-sm resize-none"
-            />
-          ) : (
-            <Input type={f.type ?? 'text'}
-              value={data[f.key] ?? ''}
-              onChange={e => onChange(f.key, e.target.value)}
-              className="h-8 text-sm"
-            />
-          )}
-        </Field>
-      ))}
+    <div className="grid grid-cols-2 gap-x-5 gap-y-4 items-start">
+      {fields.map(f => {
+        if (f.type === 'section') {
+          return (
+            <div key={f.key} className={`${f.col2 ? 'col-span-2' : ''} flex items-center gap-2 pt-1`}>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">{f.label}</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+          )
+        }
+        return (
+          <Field key={f.key} label={f.label} hint={f.hint} col2={f.col2}>
+            {f.options ? (
+              <Select value={data[f.key] ?? ''} onValueChange={v => onChange(f.key, v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  {f.options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : f.type === 'yesno' ? (
+              <YesNo value={data[f.key] ?? ''} onChange={v => onChange(f.key, v)} />
+            ) : f.rows ? (
+              <Textarea rows={f.rows}
+                value={data[f.key] ?? ''}
+                onChange={e => onChange(f.key, e.target.value)}
+                className="text-sm resize-none"
+              />
+            ) : (
+              <Input type={f.type ?? 'text'}
+                value={data[f.key] ?? ''}
+                onChange={e => onChange(f.key, e.target.value)}
+                className="h-8 text-sm"
+              />
+            )}
+          </Field>
+        )
+      })}
     </div>
   )
 }
@@ -307,7 +315,8 @@ const MEDICAL_FIELDS = [
   { key: 'motionSickness',               label: 'Motion Sickness',             hint: 'Is the guest prone to seasickness?',                           type: 'yesno' },
   { key: 'physicalLimitations',          label: 'Physical Limitations',        hint: 'Any mobility or physical restrictions the crew should know',   rows: 2 },
   { key: 'specialAssistance',            label: 'Special Assistance Required', hint: 'Does the guest need any special assistance on board?',         type: 'yesno' },
-  { key: 'emergencyContactName',         label: 'Emergency Contact Name',      hint: 'Full name of the person to contact in an emergency' },
+  { key: '_emergency',                   label: 'Emergency Contact',           type: 'section', col2: true },
+  { key: 'emergencyContactName',         label: 'Name',                        hint: 'Full name of the person to contact in an emergency' },
   { key: 'emergencyContactRelationship', label: 'Relationship',                hint: 'e.g. Spouse, Parent, Sibling, Friend' },
   { key: 'emergencyContactPhone',        label: 'Emergency Phone',             hint: 'Phone number with country code',                               type: 'tel' },
   { key: 'emergencyContactEmail',        label: 'Emergency Email',             hint: 'Email address of the emergency contact',                       type: 'email', col2: true },
@@ -315,31 +324,34 @@ const MEDICAL_FIELDS = [
 
 const FOOD_FIELDS = [
   { key: 'dietaryType',         label: 'Dietary Type',         hint: 'e.g. Omnivore, Vegetarian, Vegan, Halal' },
-  { key: 'allergy',             label: 'Allergy',              hint: 'Select the primary food allergy',          options: ['None','Nuts','Shellfish','Dairy','Gluten','Other'] },
-  { key: 'allergyDetails',      label: 'Allergy Details',      hint: 'Describe the allergy and severity level',  rows: 2 },
-  { key: 'dislikes',            label: 'Dislikes',             hint: 'Ingredients or dishes to avoid',           rows: 2 },
-  { key: 'favoriteFoods',       label: 'Favorite Foods',       hint: 'Foods the guest particularly enjoys',      rows: 2 },
+  { key: 'allergy',             label: 'Allergy',              hint: 'Select the primary food allergy',         options: ['None','Nuts','Shellfish','Dairy','Gluten','Other'] },
+  { key: 'allergyDetails',      label: 'Allergy Details',      hint: 'Describe the allergy and severity level', rows: 2 },
+  { key: 'dislikes',            label: 'Dislikes',             hint: 'Ingredients or dishes to avoid',          rows: 2 },
+  { key: 'favoriteFoods',       label: 'Favorite Foods',       hint: 'Foods the guest particularly enjoys',     rows: 2, col2: true },
   { key: 'breakfastPreference', label: 'Breakfast Preference', hint: 'e.g. Continental, Full English, Light' },
-  { key: 'lactoseIntolerant',   label: 'Lactose Intolerant',   hint: 'Avoid all dairy products',                 type: 'yesno' },
-  { key: 'glutenFree',          label: 'Gluten Free',          hint: 'Avoid gluten-containing foods',            type: 'yesno' },
-  { key: 'halal',               label: 'Halal',                hint: 'Halal-certified food required',            type: 'yesno' },
-  { key: 'vegetarian',          label: 'Vegetarian',           hint: 'No meat or fish',                          type: 'yesno' },
-  { key: 'vegan',               label: 'Vegan',                hint: 'No animal products whatsoever',            type: 'yesno' },
-  { key: 'pescatarian',         label: 'Pescatarian',          hint: 'No meat, but fish is fine',                type: 'yesno' },
-  { key: 'kosher',              label: 'Kosher',               hint: 'Kosher-certified food required',           type: 'yesno' },
   { key: 'snackPreference',     label: 'Snack Preference',     hint: 'e.g. Fruit, Nuts, Chips, Chocolate' },
+  { key: '_restrictions',       label: 'Dietary Restrictions', type: 'section', col2: true },
+  { key: 'lactoseIntolerant',   label: 'Lactose Intolerant',   hint: 'Avoid all dairy products',                type: 'yesno' },
+  { key: 'glutenFree',          label: 'Gluten Free',          hint: 'Avoid gluten-containing foods',           type: 'yesno' },
+  { key: 'halal',               label: 'Halal',                hint: 'Halal-certified food required',           type: 'yesno' },
+  { key: 'vegetarian',          label: 'Vegetarian',           hint: 'No meat or fish',                         type: 'yesno' },
+  { key: 'vegan',               label: 'Vegan',                hint: 'No animal products whatsoever',           type: 'yesno' },
+  { key: 'pescatarian',         label: 'Pescatarian',          hint: 'No meat, but fish is fine',               type: 'yesno' },
+  { key: 'kosher',              label: 'Kosher',               hint: 'Kosher-certified food required',          type: 'yesno' },
 ]
 
 const DRINKS_FIELDS = [
   { key: 'drinksAlcohol',       label: 'Drinks Alcohol',       hint: 'Will the guest consume alcoholic beverages?',     type: 'yesno' },
-  { key: 'winePreference',      label: 'Wine Preference',      hint: 'e.g. Red, White, Rosé, Champagne' },
-  { key: 'spiritsPreference',   label: 'Spirits Preference',   hint: 'e.g. Whisky, Vodka, Gin, Rum' },
-  { key: 'cocktailPreference',  label: 'Cocktail Preference',  hint: 'Favorite cocktails or mixers' },
-  { key: 'beerPreference',      label: 'Beer Preference',      hint: 'e.g. Lager, Craft IPA, Non-alcoholic' },
-  { key: 'coffeePreference',    label: 'Coffee Preference',    hint: 'e.g. Espresso, Flat White, Cappuccino, No coffee' },
-  { key: 'teaPreference',       label: 'Tea Preference',       hint: 'e.g. English Breakfast, Green Tea, Herbal' },
-  { key: 'softDrinkPreference', label: 'Soft Drink Preference',hint: 'e.g. Cola, Juice, Sparkling water' },
-  { key: 'waterPreference',     label: 'Water Preference',     hint: 'Still or sparkling, brand preference' },
+  { key: '_alcoholic',          label: 'Alcoholic',            type: 'section' },
+  { key: 'winePreference',      label: 'Wine',                 hint: 'e.g. Red, White, Rosé, Champagne' },
+  { key: 'spiritsPreference',   label: 'Spirits',              hint: 'e.g. Whisky, Vodka, Gin, Rum' },
+  { key: 'cocktailPreference',  label: 'Cocktails',            hint: 'Favorite cocktails or mixers' },
+  { key: 'beerPreference',      label: 'Beer',                 hint: 'e.g. Lager, Craft IPA, Non-alcoholic' },
+  { key: '_nonalcoholic',       label: 'Non-Alcoholic',        type: 'section' },
+  { key: 'coffeePreference',    label: 'Coffee',               hint: 'e.g. Espresso, Flat White, Cappuccino, No coffee' },
+  { key: 'teaPreference',       label: 'Tea',                  hint: 'e.g. English Breakfast, Green Tea, Herbal' },
+  { key: 'softDrinkPreference', label: 'Soft Drinks',          hint: 'e.g. Cola, Juice, Sparkling water' },
+  { key: 'waterPreference',     label: 'Water',                hint: 'Still or sparkling, brand preference' },
   { key: 'drinkNotes',          label: 'Notes',                hint: 'Any other drink preferences or restrictions',     rows: 2, col2: true },
 ]
 
@@ -442,13 +454,11 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
     try {
       const body = {
         ...form,
-        ...(isEdit && {
-          medicalData:   medData,
-          foodData:      foodData,
-          drinksData:    drinkData,
-          divingData:    divData,
-          passportImage: passportImage || null,
-        }),
+        medicalData:   medData,
+        foodData:      foodData,
+        drinksData:    drinkData,
+        divingData:    divData,
+        passportImage: passportImage || null,
       }
       const res = isEdit
         ? await fetch(`/api/customers/${guestId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -467,7 +477,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
 
   const displayName = [form.firstName, form.lastName].filter(Boolean).join(' ') || guestName
 
-  const visibleTabs = isEdit ? ALL_TABS : ALL_TABS.filter(t => t.id === 'profile')
+  const visibleTabs = ALL_TABS
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
@@ -497,26 +507,24 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         </div>
 
         {/* Tab bar */}
-        {isEdit && (
-          <div className="shrink-0 bg-white border-b">
-            <div className="flex overflow-x-auto scrollbar-none">
-              {visibleTabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={[
-                    'px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors shrink-0',
-                    activeTab === tab.id
-                      ? 'border-[#1a5f6e] text-[#1a5f6e]'
-                      : 'border-transparent text-muted-foreground hover:text-foreground',
-                  ].join(' ')}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+        <div className="shrink-0 bg-white border-b">
+          <div className="flex overflow-x-auto scrollbar-none">
+            {visibleTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={[
+                  'px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors shrink-0',
+                  activeTab === tab.id
+                    ? 'border-[#1a5f6e] text-[#1a5f6e]'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* Body */}
         {loading ? (
@@ -527,7 +535,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
           <div className="flex-1 overflow-y-auto px-5 py-5">
 
             {activeTab === 'profile' && (
-              <ProfileTab form={form} setForm={setForm} isEdit={isEdit}
+              <ProfileTab form={form} setForm={setForm}
                 passportImage={passportImage} onPassportImage={setPassportImage} />
             )}
             {activeTab === 'medical' && (
