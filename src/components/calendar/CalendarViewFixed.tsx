@@ -609,6 +609,7 @@ export default function CalendarView() {
     return () => { document.body.style.overflow = '' }
   }, [isFullscreen])
   const [bookings, setBookings]         = useState<BookingEvent[]>([])
+  const [cancelledOtCabins, setCancelledOtCabins] = useState<{ yachtName: string; count: number }[]>([])
   const [yachts, setYachts]             = useState<DbYacht[]>([])
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
@@ -773,8 +774,15 @@ export default function CalendarView() {
   const fetchBookings = useCallback(async () => {
     try {
       const data = await fetch('/api/bookings?view=calendar').then(r => r.json())
+      const rawData = Array.isArray(data) ? data : []
+      // Track cancelled open-trip cabins separately (filtered out below)
+      setCancelledOtCabins(
+        rawData
+          .filter((b: any) => b.status === 'cancelled' && b.tripType === 'OPEN_TRIP')
+          .map((b: any) => ({ yachtName: b.yacht?.name ?? '', count: b.guestCount ?? 1 }))
+      )
       setBookings(
-        (Array.isArray(data) ? data : [])
+        rawData
           .filter((b: any) => b.status !== 'cancelled')
           .map((b: any) => ({
             id: b.id, yachtName: b.yacht?.name ?? '',
@@ -1092,10 +1100,13 @@ export default function CalendarView() {
         const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
         const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
         const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t))
-        const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
-        const closedCabins = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
-        const totalCabins  = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
-        const bookedCabins = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
+        const activeCabins    = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const cancelledCabins = cancelledOtCabins
+          .filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+          .reduce((s, b) => s + b.count, 0)
+        const totalCabins     = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
+        const bookedCabins    = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
+        const closedCabins    = Math.max(0, closedTrips.reduce((s, t) => s + t.spotsAvailable, 0) - cancelledCabins)
         const viewYear  = currentDate.getFullYear()
         const viewMonth = currentDate.getMonth()
         const yachtLabel = yachtFilter === 'all' ? 'All Yachts' : yachtFilter
@@ -1190,7 +1201,7 @@ export default function CalendarView() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Open Trip</span>
                   <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Cabin Overview</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <LayoutGrid className="h-3.5 w-3.5 text-slate-500" />
@@ -1201,7 +1212,7 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400">all open trips</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 sm:border-x sm:border-slate-200 sm:px-4">
+                  <div className="flex items-center gap-3 xl:border-x xl:border-slate-200 xl:px-4">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <Waves className="h-3.5 w-3.5 text-slate-500" />
                     </div>
@@ -1211,7 +1222,7 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400">open to book</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 sm:border-r sm:border-slate-200 sm:pr-4">
+                  <div className="flex items-center gap-3 xl:border-r xl:border-slate-200 xl:pr-4">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <CheckCircle className="h-3.5 w-3.5 text-slate-500" />
                     </div>
@@ -1221,7 +1232,7 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400">confirmed / paid</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 xl:border-r xl:border-slate-200 xl:pr-4">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                       <BedDouble className="h-3.5 w-3.5 text-slate-500" />
                     </div>
@@ -1229,6 +1240,16 @@ export default function CalendarView() {
                       <p className="text-[10px] text-slate-400 font-medium">Closed Cabins</p>
                       <p className="text-xl font-bold text-slate-700 leading-none">{closedCabins}</p>
                       <p className="text-[10px] text-slate-400">past / closed trips</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50">
+                      <UserMinus className="h-3.5 w-3.5 text-red-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-medium">Cancelled Cabins</p>
+                      <p className="text-xl font-bold leading-none" style={{ color: cancelledCabins > 0 ? '#ef4444' : '#cbd5e1' }}>{cancelledCabins}</p>
+                      <p className="text-[10px] text-slate-400">was booked, now free</p>
                     </div>
                   </div>
                 </div>

@@ -1283,7 +1283,10 @@ export default function Bookings() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Total Price (USD)</Label>
-                  <Input type="number" min="0" value={editTotal} disabled className="bg-muted text-muted-foreground cursor-not-allowed" />
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                    <Input type="number" min="0" value={editTotal} onChange={e => setEditTotal(e.target.value)} className="pl-7" />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Amount Paid (USD)</Label>

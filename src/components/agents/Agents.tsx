@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -334,8 +334,8 @@ export default function Agents() {
                 </thead>
                 <tbody className="divide-y">
                   {filtered.map(a => (
-                    <>
-                    <tr key={a.id} className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
+                    <React.Fragment key={a.id}>
+                    <tr className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
 
                       {/* Expand chevron */}
                       <td className="py-3 pr-2 w-8">
@@ -469,7 +469,7 @@ export default function Agents() {
                         </td>
                       </tr>
                     )}
-                    </>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

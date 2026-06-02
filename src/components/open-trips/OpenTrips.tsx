@@ -73,8 +73,9 @@ export default function OpenTrips() {
   const [submitting,   setSubmitting]  = useState(false)
   const [form,         setForm]        = useState(emptyForm())
 
-  const [deleteTarget, setDeleteTarget] = useState<OpenTripRecord | null>(null)
-  const [deleting,     setDeleting]    = useState(false)
+  const [deleteTarget,      setDeleteTarget]      = useState<OpenTripRecord | null>(null)
+  const [deleting,          setDeleting]          = useState(false)
+  const [cancelledCabins,   setCancelledCabins]   = useState(0)
 
   // CSV import state
   const [importOpen,     setImportOpen]     = useState(false)
@@ -97,6 +98,10 @@ export default function OpenTrips() {
   useEffect(() => {
     fetchTrips()
     fetch('/api/yachts').then(r => r.json()).then(d => setYachts(Array.isArray(d) ? d : []))
+    fetch('/api/bookings?status=cancelled&tripType=OPEN_TRIP')
+      .then(r => r.json())
+      .then((d: any[]) => Array.isArray(d) && setCancelledCabins(d.reduce((s, b) => s + (b.guestCount ?? 1), 0)))
+      .catch(() => {})
   }, [fetchTrips])
 
   useEffect(() => { setPage(1) }, [searchTerm, statusFilter, yearFilter, monthFilter, yachtFilter])
@@ -270,20 +275,22 @@ export default function OpenTrips() {
         const today = new Date(); today.setHours(0,0,0,0)
         const activeTrips = trips.filter(t => new Date(t.startDate) > today && t.status !== 'closed' && t.status !== 'cancelled')
         const closedTrips = trips.filter(t => new Date(t.startDate) <= today || t.status === 'closed' || t.status === 'cancelled')
-        const totalCabins  = trips.reduce((s, t) => s + t.maxCapacity, 0)
-        const activeCabins = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
-        const bookedCabins = trips.reduce((s, t) => s + t.spotsBooked, 0)
-        const lostCabins   = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const totalCabins     = trips.reduce((s, t) => s + t.maxCapacity, 0)
+        const activeCabins    = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const bookedCabins    = trips.reduce((s, t) => s + t.spotsBooked, 0)
+        const rawLostCabins   = closedTrips.reduce((s, t) => s + t.spotsAvailable, 0)
+        const lostCabins      = Math.max(0, rawLostCabins - cancelledCabins)
 
         const tripStats = [
           { label: 'Total',  value: trips.length,       color: '#6b7280' },
           { label: 'Active', value: activeTrips.length, color: '#4a9f6e' },
         ]
         const cabinStats = [
-          { label: 'Total',     value: totalCabins,  color: ACCENT },
-          { label: 'Available', value: activeCabins, color: '#4b8bca' },
-          { label: 'Booked',    value: bookedCabins, color: '#8b5cf6' },
-          { label: 'Lost',      value: lostCabins,   color: '#e8547a' },
+          { label: 'Total',       value: totalCabins,      color: ACCENT,     sub: undefined },
+          { label: 'Available',   value: activeCabins,     color: '#4b8bca',  sub: undefined },
+          { label: 'Booked',      value: bookedCabins,     color: '#8b5cf6',  sub: undefined },
+          { label: 'Cancelled',   value: cancelledCabins,  color: '#f97316',  sub: 'was booked' },
+          { label: 'Lost',        value: lostCabins,       color: '#e8547a',  sub: 'never booked' },
         ]
 
         return (
@@ -321,7 +328,7 @@ export default function OpenTrips() {
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
                     Cabins
                   </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-x-6 gap-y-3">
                     {loading
                       ? cabinStats.map(s => (
                           <div key={s.label} className="space-y-1.5">
@@ -336,8 +343,11 @@ export default function OpenTrips() {
                             </div>
                             <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                              {s.label}
+                              <span>{s.label}</span>
                             </div>
+                            {s.sub && (
+                              <div className="text-[10px] text-muted-foreground/60 mt-0.5 pl-3">{s.sub}</div>
+                            )}
                           </div>
                         ))
                     }
