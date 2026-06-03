@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/central-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("CENTRAL_DATABASE_URL")
+  directUrl = env("CENTRAL_DIRECT_URL")
+}
+
+model CentralUser {
+  id           String       @id @default(cuid())
+  name         String?
+  email        String       @unique
+  password     String
+  isSuperAdmin Boolean      @default(false)
+  isActive     Boolean      @default(true)
+  tenants      UserTenant[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("central_users")
+}
+
+model Tenant {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  domain      String?
+  databaseUrl String
+  isActive    Boolean      @default(true)
+  users       UserTenant[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("tenants")
+}
+
+model UserTenant {
+  id        String      @id @default(cuid())
+  userId    String
+  tenantId  String
+  user      CentralUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([userId, tenantId])
+  @@map("user_tenants")
+}

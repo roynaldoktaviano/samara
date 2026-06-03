@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, CalendarSearch, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarSearch, X, RotateCw } from 'lucide-react'
 
 /* ── Types ── */
 interface PublicBooking {
@@ -149,7 +149,7 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
 /* ════════════════════════════════════════
    Mobile View
 ════════════════════════════════════════ */
-function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, next, filteredBookings, filteredOpenTrips, colorMap, filterStart, filterEnd, setFilterStart, setFilterEnd }: {
+function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, next, filteredBookings, filteredOpenTrips, colorMap, filterStart, filterEnd, setFilterStart, setFilterEnd, refreshing, onRefresh }: {
   data: { bookings: PublicBooking[]; openTrips: PublicOpenTrip[]; yachts: Yacht[] } | null
   loading: boolean; year: number; month: number
   yachtFilter: string; setFilter: (v: string) => void
@@ -158,6 +158,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
   colorMap: Record<string, string>
   filterStart: string; filterEnd: string
   setFilterStart: (v: string) => void; setFilterEnd: (v: string) => void
+  refreshing: boolean; onRefresh: () => void
 }) {
   const now = new Date()
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
@@ -240,6 +241,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
 
   return (
     <div style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
 
       {/* ── Header ── */}
       <div style={{ backgroundColor: 'white', padding: '12px 16px 0', flexShrink: 0 }}>
@@ -256,13 +258,20 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
             <span style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{MONTH_NAMES[month]}</span>
             <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>{year}</span>
           </div>
-          {/* Clipped logo — only the swirl icon, wordmark hidden */}
-          <div style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', flexShrink: 0, backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Full Samara logo + refresh */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img
               src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp"
-              alt="S"
-              style={{ height: 26, width: 'auto', objectFit: 'cover', objectPosition: 'left center' }}
+              alt="Samara Liveaboard"
+              style={{ height: 28, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
             />
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <RotateCw size={14} color="#64748b" style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+            </button>
           </div>
         </div>
 
@@ -277,14 +286,14 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
             value={filterStart}
             onChange={e => setFilterStart(e.target.value)}
             style={{
-              flex: 1, fontSize: 12, padding: '6px 8px', borderRadius: 8,
+              flex: 1, fontSize: 14, padding: '7px 10px', borderRadius: 8,
               border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
               backgroundColor: filterStart ? '#e0f2f7' : '#f8fafc',
               color: filterStart ? '#0f766e' : '#94a3b8',
               outline: 'none', minWidth: 0,
             }}
           />
-          <span style={{ color: '#cbd5e1', fontSize: 11, flexShrink: 0 }}>—</span>
+          <span style={{ color: '#cbd5e1', fontSize: 13, flexShrink: 0 }}>—</span>
           <input
             type="date"
             onKeyDown={e => e.preventDefault()}
@@ -295,7 +304,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
               else setFilterEnd(val)
             }}
             style={{
-              flex: 1, fontSize: 12, padding: '6px 8px', borderRadius: 8,
+              flex: 1, fontSize: 14, padding: '7px 10px', borderRadius: 8,
               border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
               backgroundColor: filterEnd ? '#e0f2f7' : '#f8fafc',
               color: filterEnd ? '#0f766e' : '#94a3b8',
@@ -535,16 +544,24 @@ export function PublicCalendarView() {
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  useEffect(() => {
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchData = (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
     fetch('/api/public/calendar')
       .then(r => r.json())
       .then(d => {
-        setData(d); setLoading(false)
+        setData(d)
+        setLoading(false)
+        setRefreshing(false)
         const sorted = sortYachts(d.yachts ?? [])
-        if (sorted.length > 0) setFilter(sorted[0].name)
+        if (sorted.length > 0 && !yachtFilter) setFilter(sorted[0].name)
       })
-      .catch(() => setLoading(false))
-  }, [])
+      .catch(() => { setLoading(false); setRefreshing(false) })
+  }
+
+  useEffect(() => { fetchData() }, [])
 
   // Auto-navigate to the filter start month
   useEffect(() => {
@@ -584,6 +601,7 @@ export function PublicCalendarView() {
         colorMap={colorMap}
         filterStart={filterStart} filterEnd={filterEnd}
         setFilterStart={setFilterStart} setFilterEnd={setFilterEnd}
+        refreshing={refreshing} onRefresh={() => fetchData(true)}
       />
     )
   }
@@ -598,14 +616,17 @@ export function PublicCalendarView() {
   const maxLanes: Record<number, number> = {}
   segments.forEach(s => { maxLanes[s.weekIdx] = Math.max(maxLanes[s.weekIdx] ?? 0, s.lane + 1) })
   const todayStr  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`
+  const todayDate = new Date(todayStr)
   const fEnd      = filterEnd || filterStart
   const filterActive = !!(filterStart || filterEnd)
 
   return (
     <div style={{ height: '100dvh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
 
       {/* Header */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        {/* Left: logo + title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara Liveaboard" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
           <div style={{ width: 1, height: 32, backgroundColor: '#e2e8f0' }} />
@@ -614,114 +635,124 @@ export function PublicCalendarView() {
             <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>Samara Liveaboard — Availability Schedule</p>
           </div>
         </div>
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
-
-        {/* LEFT: month nav + date filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Month nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button onClick={prev} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={16} color="#475569" />
-            </button>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', minWidth: 148, textAlign: 'center' }}>{MONTH_NAMES[month]} {year}</span>
-            <button onClick={next} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronRight size={16} color="#475569" />
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div style={{ width: 1, height: 24, backgroundColor: '#e2e8f0', flexShrink: 0 }} />
-
-          {/* Date range filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <CalendarSearch size={14} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</span>
-              <input
-                type="date"
-            onKeyDown={e => e.preventDefault()}
-                value={filterStart}
-                onChange={e => setFilterStart(e.target.value)}
-                style={{
-                  fontSize: 12, padding: '4px 8px', borderRadius: 6,
-                  border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                  backgroundColor: filterStart ? '#e0f2f7' : 'white',
-                  color: filterStart ? '#1a5f6e' : '#475569',
-                  outline: 'none', cursor: 'pointer',
-                }}
-              />
+        {/* Right: legend */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
+          {[
+            { color: '#ef4444', label: 'Booked',    border: 'none' },
+            { color: '#eab308', label: 'Pending',   border: 'none' },
+            { color: '#22c55e', label: 'On Hold',   border: 'none' },
+            { color: '#ffffff', label: 'Available', border: '1.5px solid #475569' },
+          ].map(l => (
+            <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: l.color, border: l.border, flexShrink: 0, boxSizing: 'border-box' as const }} />
+              <span style={{ fontSize: 11, color: '#64748b' }}>{l.label}</span>
             </div>
-            <span style={{ color: '#94a3b8', fontSize: 13, paddingTop: 13, flexShrink: 0 }}>→</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</span>
-              <input
-                type="date"
-            onKeyDown={e => e.preventDefault()}
-                value={filterEnd}
-                onChange={e => {
-                  const val = e.target.value
-                  if (val && filterStart && val < filterStart) { setFilterEnd(filterStart); setFilterStart(val) }
-                  else setFilterEnd(val)
-                }}
-                style={{
-                  fontSize: 12, padding: '4px 8px', borderRadius: 6,
-                  border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                  backgroundColor: filterEnd ? '#e0f2f7' : 'white',
-                  color: filterEnd ? '#1a5f6e' : '#475569',
-                  outline: 'none', cursor: 'pointer',
-                }}
-              />
-            </div>
-            {filterActive && (
-              <button
-                onClick={() => { setFilterStart(''); setFilterEnd('') }}
-                style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 13, flexShrink: 0 }}
-                title="Clear date filter"
-              >
-                <X size={11} color="#64748b" />
-              </button>
-            )}
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 20, height: 9, borderRadius: 2, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>Open Trip</span>
           </div>
         </div>
+      </div>
 
-        {/* RIGHT: yacht filters + legend */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-          {data && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              {sortedYachts.map(y => (
+      {/* Toolbar: LEFT vessel filter | CENTER month nav | RIGHT date filter */}
+      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 20px', display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+
+        {/* LEFT: vessel type filter + refresh */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Vessel</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              {data && sortedYachts.map(y => (
                 <button key={y.id} onClick={() => setFilter(y.name)}
                   style={{
                     padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: yachtFilter === y.name ? `2px solid ${colorMap[y.name]}` : '1px solid #e2e8f0',
                     background: yachtFilter === y.name ? colorMap[y.name] : 'white',
                     color: yachtFilter === y.name ? 'white' : '#475569',
+                    transition: 'all 0.15s',
                   }}>
                   {y.name}
                 </button>
               ))}
             </div>
-          )}
-          {/* Legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center', justifyContent: 'flex-end' }}>
-            {[
-              { color: '#ef4444', label: 'Booked', border: 'none' },
-              { color: '#eab308', label: 'Pending', border: 'none' },
-              { color: '#22c55e', label: 'On Hold', border: 'none' },
-              { color: '#ffffff', label: 'Available', border: '1.5px solid #475569' },
-            ].map(l => (
-              <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: l.color, border: l.border, flexShrink: 0, boxSizing: 'border-box' as const }} />
-                <span style={{ fontSize: 10, color: '#94a3b8' }}>{l.label}</span>
-              </div>
-            ))}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 20, height: 9, borderRadius: 2, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: '#94a3b8' }}>Open Trip</span>
-            </div>
           </div>
+          {/* Refresh button */}
+          <button
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            title="Refresh schedule"
+            style={{
+              width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0',
+              background: refreshing ? '#f0f9ff' : 'white', cursor: refreshing ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              marginTop: 14,
+            }}
+          >
+            <RotateCw size={14} color={refreshing ? '#1a5f6e' : '#64748b'} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+          </button>
+        </div>
+
+        {/* CENTER: month navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={prev} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={16} color="#475569" />
+          </button>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', minWidth: 148, textAlign: 'center' }}>{MONTH_NAMES[month]} {year}</span>
+          <button onClick={next} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRight size={16} color="#475569" />
+          </button>
+        </div>
+
+        {/* RIGHT: date range filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+          <CalendarSearch size={14} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</span>
+            <input
+              type="date"
+              onKeyDown={e => e.preventDefault()}
+              value={filterStart}
+              onChange={e => setFilterStart(e.target.value)}
+              style={{
+                fontSize: 12, padding: '4px 8px', borderRadius: 6,
+                border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                backgroundColor: filterStart ? '#e0f2f7' : 'white',
+                color: filterStart ? '#1a5f6e' : '#475569',
+                outline: 'none', cursor: 'pointer',
+              }}
+            />
+          </div>
+          <span style={{ color: '#94a3b8', fontSize: 13, paddingTop: 13, flexShrink: 0 }}>→</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</span>
+            <input
+              type="date"
+              onKeyDown={e => e.preventDefault()}
+              value={filterEnd}
+              onChange={e => {
+                const val = e.target.value
+                if (val && filterStart && val < filterStart) { setFilterEnd(filterStart); setFilterStart(val) }
+                else setFilterEnd(val)
+              }}
+              style={{
+                fontSize: 12, padding: '4px 8px', borderRadius: 6,
+                border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
+                backgroundColor: filterEnd ? '#e0f2f7' : 'white',
+                color: filterEnd ? '#1a5f6e' : '#475569',
+                outline: 'none', cursor: 'pointer',
+              }}
+            />
+          </div>
+          {filterActive && (
+            <button
+              onClick={() => { setFilterStart(''); setFilterEnd('') }}
+              style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 13, flexShrink: 0 }}
+              title="Clear date filter"
+            >
+              <X size={11} color="#64748b" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -745,13 +776,14 @@ export function PublicCalendarView() {
                       {week.map((day, di) => {
                         const ds        = day > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
                         const isToday   = ds === todayStr
+                        const isPast    = day > 0 && ds < todayStr
                         const inFilt    = day > 0 && !!filterStart && ds >= filterStart && ds <= fEnd
                         const isFiltSt  = day > 0 && !!filterStart && ds === filterStart
                         const isFiltEnd = day > 0 && !!fEnd && ds === fEnd
                         const isSingle  = filterStart === fEnd || !fEnd
 
-                        // Red tint: day has any booking or open trip on this yacht
-                        const isOccupied = day > 0 && (
+                        // Red tint: day has any booking or open trip on this yacht (only future/today)
+                        const isOccupied = day > 0 && !isPast && (
                           filteredBookings.some(b => ds >= b.startDate.split('T')[0] && ds <= b.endDate.split('T')[0]) ||
                           allOpenTrips.some(t => ds >= t.startDate.split('T')[0] && ds <= t.endDate.split('T')[0])
                         )
@@ -768,7 +800,7 @@ export function PublicCalendarView() {
                           <div key={di} style={{
                             borderRight: di < 6 ? '1px solid #f1f5f9' : 'none',
                             padding: '5px 6px',
-                            backgroundColor: isOccupied ? '#fff5f5' : di === 0 ? '#fafafa' : 'white',
+                            backgroundColor: isPast ? '#f8fafc' : isOccupied ? '#fff5f5' : di === 0 ? '#fafafa' : 'white',
                             position: 'relative',
                           }}>
                             {/* Filter range bar behind date */}
@@ -789,6 +821,7 @@ export function PublicCalendarView() {
                                 fontWeight: isToday || isFiltSt || isFiltEnd ? 700 : 500,
                                 color: (isFiltSt || isFiltEnd) ? 'white'
                                   : isToday ? '#1a5f6e'
+                                  : isPast ? '#c1cdd8'
                                   : inFilt ? '#1a5f6e'
                                   : isOccupied ? '#f87171'
                                   : di === 0 ? '#94a3b8' : '#475569',
@@ -819,6 +852,8 @@ export function PublicCalendarView() {
                       const ot     = seg.openTripRef
                       const bk     = seg.bookingRef
                       const nights = ot ? Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000) : 0
+                      const segStartDate = new Date((ot?.startDate ?? bk?.startDate ?? '').split('T')[0])
+                      const isPastSeg   = segStartDate < todayDate
                       const barStyle: React.CSSProperties = {
                         position: 'absolute', top,
                         left: `calc(${lPct}% + ${lOff}px)`,
@@ -826,6 +861,8 @@ export function PublicCalendarView() {
                         height: LANE_H - 8,
                         borderRadius: seg.isRealStart && seg.isRealEnd ? 4 : seg.isRealStart ? '4px 0 0 4px' : seg.isRealEnd ? '0 4px 4px 0' : 0,
                         overflow: 'hidden', display: 'flex', alignItems: 'flex-start', zIndex: 10, cursor: 'default',
+                        opacity: isPastSeg ? 0.35 : 1,
+                        filter: isPastSeg ? 'grayscale(60%)' : 'none',
                       }
                       if (seg.isStripe) {
                         const gap = `${seg.color}44`
