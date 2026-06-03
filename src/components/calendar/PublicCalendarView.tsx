@@ -190,28 +190,35 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
 
   // Booking color highlights per day
   const dateHighlights = useMemo(() => {
+    const todayDs = new Date().toISOString().split('T')[0]
     const map: Record<number, { color: string; id: string }> = {}
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     const mark = (day: number, color: string, id: string, allowOverwrite = true) => {
       if (allowOverwrite || !map[day]) map[day] = { color, id }
     }
     filteredBookings.filter(b => b.tripType === 'PRIVATE_CHARTER').forEach(b => {
-      const color = bookingBarColor(b.status)
+      const activeColor = bookingBarColor(b.status)
       const s = b.startDate.split('T')[0]
       const e = b.endDate.split('T')[0]
       for (let d = 1; d <= daysInMonth; d++) {
         const ds = dateStr(year, month, d)
-        if (ds >= s && ds <= e) mark(d, color, b.id)
+        if (ds >= s && ds <= e) {
+          const isPast = s < todayDs
+          mark(d, isPast ? '#c8d4de' : activeColor, b.id)
+        }
       }
     })
     filteredOpenTrips.forEach(t => {
       const isFull = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
-      const color  = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const activeColor = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
       const s = t.startDate.split('T')[0]
       const e = t.endDate.split('T')[0]
       for (let d = 1; d <= daysInMonth; d++) {
         const ds = dateStr(year, month, d)
-        if (ds >= s && ds <= e) mark(d, color, t.id, false)
+        if (ds >= s && ds <= e) {
+          const isPast = s < todayDs
+          mark(d, isPast ? '#c8d4de' : activeColor, t.id, false)
+        }
       }
     })
     return map
@@ -426,17 +433,26 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
           ) : (
             <>
               {eventsForDay.trips.map(t => {
-                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
-                const isClosed = t.status === 'closed'
-                const isFull   = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
+                const nights    = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
+                const isClosed  = t.status === 'closed'
+                const isFull    = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
+                const todayDs   = new Date().toISOString().split('T')[0]
+                const isPastTrip = t.startDate.split('T')[0] < todayDs
                 return (
-                  <div key={t.id} style={{ backgroundColor: 'white', borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div key={t.id} style={{
+                    backgroundColor: isPastTrip ? '#f8fafc' : 'white',
+                    borderRadius: 14, padding: '14px 16px', marginBottom: 10,
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                    opacity: isPastTrip ? 0.7 : 1,
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                       <div>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{t.title}</p>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: isPastTrip ? '#94a3b8' : '#1e293b' }}>{t.title}</p>
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>{t.yacht.name} · {nights + 1}D/{nights}N · Open Trip</p>
                       </div>
-                      {isClosed ? (
+                      {isPastTrip ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', backgroundColor: '#e2e8f0', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>PAST</span>
+                      ) : isClosed ? (
                         <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', backgroundColor: '#f1f5f9', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>CLOSED</span>
                       ) : isFull ? (
                         <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', backgroundColor: '#fee2e2', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>
@@ -447,12 +463,16 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
                       {t.cabinStatuses.map(c => {
                         const bs = c.bookingStatus
-                        const dotColor = isClosed ? '#ef4444' : bs === null ? '#ffffff' : bs === 'on_hold' ? '#22c55e' : bs === 'pending' ? '#eab308' : '#ef4444'
+                        const dotColor = isPastTrip ? '#c8d4de'
+                          : isClosed ? '#ef4444'
+                          : bs === null ? '#ffffff'
+                          : bs === 'on_hold' ? '#22c55e'
+                          : bs === 'pending' ? '#eab308' : '#ef4444'
                         const dotBorder = dotColor === '#ffffff' ? '1.5px solid #94a3b8' : 'none'
                         return (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: dotColor, border: dotBorder, flexShrink: 0, boxSizing: 'border-box' }} />
-                            <span style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>{c.name}</span>
+                            <span style={{ fontSize: 11, color: isPastTrip ? '#94a3b8' : '#475569', fontWeight: 600 }}>{c.name}</span>
                           </div>
                         )
                       })}
@@ -461,13 +481,23 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                 )
               })}
               {eventsForDay.bookings.filter(b => b.tripType === 'PRIVATE_CHARTER').map(b => {
-                const badge    = STATUS_BADGE[b.status] ?? { bg: '#f1f5f9', color: '#64748b', label: b.status }
-                const barColor = bookingBarColor(b.status)
+                const todayDs   = new Date().toISOString().split('T')[0]
+                const isPastBk  = b.startDate.split('T')[0] < todayDs
+                const badge     = isPastBk
+                  ? { bg: '#e2e8f0', color: '#64748b', label: 'PAST' }
+                  : STATUS_BADGE[b.status] ?? { bg: '#f1f5f9', color: '#64748b', label: b.status }
+                const barColor  = isPastBk ? '#c8d4de' : bookingBarColor(b.status)
                 return (
-                  <div key={b.id} style={{ backgroundColor: 'white', borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', borderLeft: `4px solid ${barColor}` }}>
+                  <div key={b.id} style={{
+                    backgroundColor: isPastBk ? '#f8fafc' : 'white',
+                    borderRadius: 14, padding: '14px 16px', marginBottom: 10,
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                    borderLeft: `4px solid ${barColor}`,
+                    opacity: isPastBk ? 0.7 : 1,
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <div>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{b.yachtName}</p>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: isPastBk ? '#94a3b8' : '#1e293b' }}>{b.yachtName}</p>
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>Private Charter</p>
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: badge.color, backgroundColor: badge.bg, borderRadius: 6, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>{badge.label}</span>
