@@ -147,6 +147,65 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
 }
 
 /* ════════════════════════════════════════
+   Security Guard
+════════════════════════════════════════ */
+function SecurityGuard() {
+  const [devToolsOpen, setDevToolsOpen] = useState(false)
+
+  useEffect(() => {
+    // Block keyboard shortcuts
+    const handleKey = (e: KeyboardEvent) => {
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key)) ||
+        (e.metaKey && e.altKey && ['I','J','C'].includes(e.key)) ||
+        (e.ctrlKey && e.key === 'U') ||
+        (e.ctrlKey && e.key === 'S') ||
+        (e.ctrlKey && e.key === 'P')
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    document.addEventListener('keydown', handleKey, true)
+
+    // DevTools detection via window size diff
+    const checkDevTools = () => {
+      const threshold = 160
+      const open =
+        window.outerWidth - window.innerWidth > threshold ||
+        window.outerHeight - window.innerHeight > threshold
+      setDevToolsOpen(open)
+    }
+    const interval = setInterval(checkDevTools, 1000)
+
+    return () => {
+      document.removeEventListener('keydown', handleKey, true)
+      clearInterval(interval)
+    }
+  }, [])
+
+  if (!devToolsOpen) return null
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 99999,
+      backgroundColor: 'rgba(15,23,42,0.97)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'system-ui, sans-serif',
+    }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+      <h2 style={{ color: 'white', fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>
+        Developer Tools Detected
+      </h2>
+      <p style={{ color: '#94a3b8', fontSize: 14, margin: 0, textAlign: 'center', maxWidth: 320 }}>
+        Please close Developer Tools to continue viewing the schedule.
+      </p>
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════
    Mobile View
 ════════════════════════════════════════ */
 function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, next, filteredBookings, filteredOpenTrips, colorMap, filterStart, filterEnd, setFilterStart, setFilterEnd, refreshing, onRefresh }: {
@@ -247,8 +306,12 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
   const fEnd = filterEnd || filterStart
 
   return (
-    <div style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div
+      style={{ height: '100dvh', backgroundColor: '#f5f7fa', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden', userSelect: 'none' }}
+      onContextMenu={e => e.preventDefault()}
+    >
       <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+      <SecurityGuard />
 
       {/* ── Header ── */}
       <div style={{ backgroundColor: 'white', padding: '12px 16px 0', flexShrink: 0 }}>
@@ -561,6 +624,8 @@ export function PublicCalendarView() {
   const [mounted, setMounted]    = useState(false)
   const [filterStart, setFilterStart] = useState('')
   const [filterEnd,   setFilterEnd]   = useState('')
+  const [agentName,   setAgentName]   = useState<string | null>(null)
+  const [accessDenied, setAccessDenied] = useState(false)
 
   const now = new Date()
   const [year,  setYear]  = useState(now.getFullYear())
@@ -591,7 +656,50 @@ export function PublicCalendarView() {
       .catch(() => { setLoading(false); setRefreshing(false) })
   }
 
-  useEffect(() => { fetchData() }, [])
+  // Verify token/cookie access
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token  = params.get('token')
+
+    const verify = async () => {
+      if (token) {
+        // First visit with token: verify and set cookie
+        const res = await fetch('/api/public/verify-calendar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        })
+        if (res.ok) {
+          const d = await res.json()
+          setAgentName(d.agentName ?? null)
+          // Clean token from URL without reload
+          window.history.replaceState({}, '', '/agent/calendar')
+          fetchData()
+        } else {
+          setAccessDenied(true)
+          setLoading(false)
+        }
+      } else {
+        // Subsequent visits: verify cookie
+        const res = await fetch('/api/public/verify-calendar')
+        if (res.ok) {
+          const d = await res.json()
+          if (d.valid) {
+            setAgentName(d.agentName ?? null)
+            fetchData()
+          } else {
+            setAccessDenied(true)
+            setLoading(false)
+          }
+        } else {
+          setAccessDenied(true)
+          setLoading(false)
+        }
+      }
+    }
+
+    verify()
+  }, [])
 
   // Auto-navigate to the filter start month
   useEffect(() => {
@@ -620,6 +728,25 @@ export function PublicCalendarView() {
   const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
   if (!mounted) return null
+
+  // Access denied screen
+  if (accessDenied) {
+    return (
+      <div
+        style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', padding: 24 }}
+        onContextMenu={e => e.preventDefault()}
+      >
+        <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp" alt="Samara" style={{ height: 36, marginBottom: 32, objectFit: 'contain' }} />
+        <div style={{ backgroundColor: 'white', borderRadius: 16, padding: '32px 40px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', textAlign: 'center', maxWidth: 360 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+          <h1 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: '#1e293b' }}>Access Required</h1>
+          <p style={{ margin: 0, fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
+            This page is only accessible via a personal invite link. Please contact Samara Liveaboard to get your access link.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (isMobile) {
     return (
@@ -650,9 +777,21 @@ export function PublicCalendarView() {
   const fEnd      = filterEnd || filterStart
   const filterActive = !!(filterStart || filterEnd)
 
+  const watermarkText = agentName
+    ? `${agentName} · ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : 'Samara Liveaboard'
+
   return (
-    <div style={{ height: '100dvh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+    <div
+      style={{ height: '100dvh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden', userSelect: 'none' }}
+      onContextMenu={e => e.preventDefault()}
+    >
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+        * { -webkit-user-select: none !important; user-select: none !important; }
+        input, textarea { -webkit-user-select: text !important; user-select: text !important; }
+      `}</style>
+      <SecurityGuard />
 
       {/* Header */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -955,6 +1094,22 @@ export function PublicCalendarView() {
         )}
 
       </div>
+
+      {/* Watermark */}
+      {agentName && (
+        <div style={{
+          position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9998,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transform: 'rotate(-30deg)',
+        }}>
+          <span style={{
+            fontSize: 18, fontWeight: 700, color: 'rgba(0,0,0,0.045)',
+            whiteSpace: 'nowrap', letterSpacing: 2,
+          }}>
+            {watermarkText}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

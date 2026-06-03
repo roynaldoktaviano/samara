@@ -5,7 +5,6 @@ import type { NextRequest } from 'next/server'
 const PUBLIC_PATHS = [
   '/login',
   '/external',
-  '/agent/calendar',
   '/api/public',
   '/api/webhooks',
 ]
@@ -19,9 +18,16 @@ const authMiddleware = withAuth({
 })
 
 export default function middleware(req: NextRequest) {
-  if (isPublic(req.nextUrl.pathname)) {
-    return NextResponse.next()
+  const { pathname } = req.nextUrl
+
+  // ── Agent calendar: token required in URL every time ──
+  if (pathname === '/agent/calendar' || pathname.startsWith('/agent/calendar/')) {
+    const token = req.nextUrl.searchParams.get('token')
+    if (token) return NextResponse.next() // page will verify token
+    return NextResponse.rewrite(new URL('/agent/calendar/denied', req.url))
   }
+
+  if (isPublic(pathname)) return NextResponse.next()
   return (authMiddleware as any)(req, {} as any)
 }
 

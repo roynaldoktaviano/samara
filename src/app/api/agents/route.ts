@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
       select: {
         id: true, name: true, commission: true, isActive: true, createdAt: true,
         country: true, agentType: true, contract: true,
+        calendarToken: true, calendarActive: true,
         salespersonId: true,
         salesperson: { select: { id: true, name: true } },
         _count: { select: { bookings: true } },

@@ -126,21 +126,37 @@ model Customer {
 }
 
 model Agent {
-  id            String         @id @default(cuid())
-  name          String
-  commission    Float          @default(0)
-  isActive      Boolean        @default(true)
-  country       String?
-  agentType     String?
-  contract      String?
-  salespersonId String?
-  salesperson   User?          @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
-  bookings      Booking[]
-  contacts      AgentContact[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                 String               @id @default(cuid())
+  name               String
+  commission         Float                @default(0)
+  isActive           Boolean              @default(true)
+  country            String?
+  agentType          String?
+  contract           String?
+  calendarToken      String?              @unique
+  calendarActive     Boolean              @default(false)
+  salespersonId      String?
+  salesperson        User?                @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+  bookings           Booking[]
+  contacts           AgentContact[]
+  calendarAccessLogs CalendarAccessLog[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@index([salespersonId])
+}
+
+model CalendarAccessLog {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  ip           String?
+  userAgent    String?
+  isSuspicious Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([agentId])
+  @@index([createdAt])
 }
 
 model AgentContact {

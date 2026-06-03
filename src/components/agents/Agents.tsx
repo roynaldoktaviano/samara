@@ -19,6 +19,7 @@ import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
   Loader2, Mail, Building2, Percent, RotateCw,
   Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight,
+  Link2, Copy, ShieldOff, ShieldCheck, BarChart2, AlertTriangle,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -77,10 +78,20 @@ interface AgentRecord {
   country: string | null
   agentType: string | null
   contract: string | null
+  calendarToken: string | null
+  calendarActive: boolean
   salespersonId: string | null
   salesperson: { id: string; name: string | null } | null
   createdAt: string
   _count: { bookings: number }
+}
+
+interface CalendarStats {
+  hasToken: boolean
+  isActive: boolean
+  totalAccess: number
+  lastAccess: string | null
+  suspiciousCount: number
 }
 
 interface SalesUser {
@@ -135,6 +146,15 @@ export default function Agents() {
   const [contactsCache,     setContactsCache]     = useState<Record<string, AgentContact[]>>({})
   const [contactsLoadingId, setContactsLoadingId] = useState<string | null>(null)
 
+  // calendar token management (admin only)
+  const [calendarConfirm,   setCalendarConfirm]   = useState<{ agent: AgentRecord; action: 'generate' | 'reset' | 'deactivate' | 'activate' | 'revoke' } | null>(null)
+  const [calendarActing,    setCalendarActing]    = useState(false)
+  const [calendarStats,     setCalendarStats]     = useState<Record<string, CalendarStats>>({})
+  const [statsAgent,        setStatsAgent]        = useState<AgentRecord | null>(null)
+  const [statsData,         setStatsData]         = useState<any>(null)
+  const [statsLoading,      setStatsLoading]      = useState(false)
+  const [copiedId,          setCopiedId]          = useState<string | null>(null)
+
   const fetchAgents = useCallback(async () => {
     setLoading(true)
     try {
@@ -183,6 +203,50 @@ export default function Agents() {
     } finally {
       setContactsLoadingId(null)
     }
+  }
+
+  const calendarBaseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+
+  const handleCalendarAction = async () => {
+    if (!calendarConfirm) return
+    const { agent, action } = calendarConfirm
+    setCalendarActing(true)
+    try {
+      let res: Response
+      if (action === 'generate' || action === 'reset') {
+        res = await fetch(`/api/agents/${agent.id}/calendar-token`, { method: 'POST' })
+      } else if (action === 'deactivate') {
+        res = await fetch(`/api/agents/${agent.id}/calendar-token`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: false }),
+        })
+      } else if (action === 'activate') {
+        res = await fetch(`/api/agents/${agent.id}/calendar-token`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: true }),
+        })
+      } else {
+        res = await fetch(`/api/agents/${agent.id}/calendar-token`, { method: 'DELETE' })
+      }
+      if (res.ok) { await fetchAgents(); setCalendarConfirm(null) }
+    } catch (e) { console.error(e) }
+    finally { setCalendarActing(false) }
+  }
+
+  const copyCalendarLink = (token: string, agentId: string) => {
+    const link = `${calendarBaseUrl}/agent/calendar?token=${token}`
+    navigator.clipboard.writeText(link)
+    setCopiedId(agentId)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const openStats = async (agent: AgentRecord) => {
+    setStatsAgent(agent)
+    setStatsLoading(true)
+    setStatsData(null)
+    const res = await fetch(`/api/agents/${agent.id}/calendar-stats`)
+    if (res.ok) setStatsData(await res.json())
+    setStatsLoading(false)
   }
 
   const openCreate = () => {
@@ -393,6 +457,7 @@ export default function Agents() {
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Country</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Type</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
+                    {isAdmin && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
@@ -451,6 +516,56 @@ export default function Agents() {
                             }`}>{a.contract}</span>
                           : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
+
+                      {/* Calendar Access (admin only) */}
+                      {isAdmin && (
+                        <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1.5">
+                            {!a.calendarToken ? (
+                              <button
+                                onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
+                                className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                              >
+                                <Link2 className="h-3 w-3" /> Generate
+                              </button>
+                            ) : (
+                              <>
+                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {a.calendarActive ? 'Active' : 'Off'}
+                                </span>
+                                <button
+                                  onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                  title="Copy link"
+                                >
+                                  {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                </button>
+                                <button
+                                  onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                  title={a.calendarActive ? 'Deactivate' : 'Activate'}
+                                >
+                                  {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
+                                </button>
+                                <button
+                                  onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                  title="Reset token"
+                                >
+                                  <RotateCw className="h-3 w-3 text-amber-500" />
+                                </button>
+                                <button
+                                  onClick={() => openStats(a)}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                  title="View access stats"
+                                >
+                                  <BarChart2 className="h-3 w-3" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )}
 
                       {/* Salesperson */}
                       <td className="py-3 pr-4">
@@ -516,7 +631,7 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={canManage ? 8 : 7} className="pb-3 pt-1 pr-4">
+                        <td colSpan={isAdmin ? 9 : canManage ? 8 : 7} className="pb-3 pt-1 pr-4">
                           <div className="pl-12">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                               Contact Persons
@@ -947,6 +1062,103 @@ export default function Agents() {
               {toggling && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {confirmAgent?.isActive ? 'Yes, Deactivate' : 'Yes, Activate'}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Calendar Token Confirmation ── */}
+      <AlertDialog open={!!calendarConfirm} onOpenChange={v => !v && setCalendarConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {calendarConfirm?.action === 'generate' && <><Link2 className="h-4 w-4 text-[#bdac7e]" /> Generate Calendar Link</>}
+              {calendarConfirm?.action === 'reset' && <><RotateCw className="h-4 w-4 text-amber-500" /> Reset Calendar Token</>}
+              {calendarConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-red-500" /> Deactivate Calendar Access</>}
+              {calendarConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-emerald-600" /> Activate Calendar Access</>}
+              {calendarConfirm?.action === 'revoke' && <><AlertTriangle className="h-4 w-4 text-red-600" /> Revoke Calendar Token</>}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {calendarConfirm?.action === 'generate' && `Generate a unique calendar access link for ${calendarConfirm.agent.name}. Share this link so they can view the vessel schedule.`}
+              {calendarConfirm?.action === 'reset' && `Reset the calendar token for ${calendarConfirm?.agent.name}. The old link will immediately stop working and a new link will be generated.`}
+              {calendarConfirm?.action === 'deactivate' && `Deactivate calendar access for ${calendarConfirm?.agent.name}. Their link will stop working immediately. The token is preserved and can be reactivated later.`}
+              {calendarConfirm?.action === 'activate' && `Reactivate calendar access for ${calendarConfirm?.agent.name}. Their existing link will work again.`}
+              {calendarConfirm?.action === 'revoke' && `Permanently revoke the calendar token for ${calendarConfirm?.agent.name}. This cannot be undone — a new token will need to be generated.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={calendarActing}
+              onClick={handleCalendarAction}
+              className={
+                calendarConfirm?.action === 'deactivate' || calendarConfirm?.action === 'revoke'
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : calendarConfirm?.action === 'activate'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'text-white'
+              }
+              style={calendarConfirm?.action === 'generate' || calendarConfirm?.action === 'reset' ? { backgroundColor: ACCENT } : {}}
+            >
+              {calendarActing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {calendarConfirm?.action === 'generate' && 'Generate Link'}
+              {calendarConfirm?.action === 'reset' && 'Yes, Reset Token'}
+              {calendarConfirm?.action === 'deactivate' && 'Yes, Deactivate'}
+              {calendarConfirm?.action === 'activate' && 'Yes, Activate'}
+              {calendarConfirm?.action === 'revoke' && 'Yes, Revoke'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Calendar Stats Modal ── */}
+      <AlertDialog open={!!statsAgent} onOpenChange={v => !v && setStatsAgent(null)}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <BarChart2 className="h-4 w-4" style={{ color: ACCENT }} />
+              Calendar Access — {statsAgent?.name}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="space-y-4 py-2">
+            {statsLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : statsData ? (
+              <>
+                {/* Summary */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Total Opens', value: statsData.totalAccess, color: 'text-foreground' },
+                    { label: 'Last Access', value: statsData.lastAccess ? new Date(statsData.lastAccess).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—', color: 'text-foreground' },
+                    { label: 'Suspicious', value: statsData.suspiciousCount, color: statsData.suspiciousCount > 0 ? 'text-red-600' : 'text-muted-foreground' },
+                  ].map(s => (
+                    <div key={s.label} className="rounded-lg border p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+                      <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Recent logs */}
+                {statsData.recentLogs?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Access</p>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {statsData.recentLogs.map((log: any) => (
+                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-red-50 text-red-700' : 'bg-muted/30'}`}>
+                          <span className="font-mono">{log.ip}</span>
+                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
+                          <span className="text-muted-foreground shrink-0">{new Date(log.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
