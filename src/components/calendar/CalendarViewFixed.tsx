@@ -80,7 +80,7 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 34   
+const LANE_H    = 50
 const DAY_H     = 40   
 const MIN_ROW_H = 185  
 
@@ -129,9 +129,10 @@ function MonthGrid({
       label: string; color: string; isStripe: boolean; isFull: boolean
       tooltip: string; bookingRef?: BookingEvent; openTripRef?: OpenTripEvent
       lane: number; laneSpan: number
+      showDetails: boolean  // true on the widest segment of this event
     }
 
-    const raw: Omit<Seg, 'lane' | 'laneSpan'>[] = []
+    const raw: Omit<Seg, 'lane' | 'laneSpan' | 'showDetails'>[] = []
 
     const addSegs = (
       id: string, label: string, color: string, isStripe: boolean, isFull: boolean,
@@ -189,6 +190,21 @@ function MonthGrid({
       )
     })
 
+    /* Pre-compute which raw segment key is the widest per event (for showDetails) */
+    const widestKeyByEvent = new Map<string, string>()
+    raw.forEach(seg => {
+      const baseId = seg.key.replace(/-w\d+$/, '')
+      const existingKey = widestKeyByEvent.get(baseId)
+      if (!existingKey) {
+        widestKeyByEvent.set(baseId, seg.key)
+      } else {
+        const existingSeg = raw.find(s => s.key === existingKey)!
+        if ((seg.endCol - seg.startCol) > (existingSeg.endCol - existingSeg.startCol)) {
+          widestKeyByEvent.set(baseId, seg.key)
+        }
+      }
+    })
+
     /* Assign lanes — open trips occupy 2 consecutive lanes */
     const result: Seg[][] = weeks.map(() => [])
     weeks.forEach((_, wi) => {
@@ -210,9 +226,12 @@ function MonthGrid({
           while (laneEnds.length <= lane + s) laneEnds.push(-1)
           laneEnds[lane + s] = seg.endCol
         }
-        result[wi].push({ ...seg, lane, laneSpan: span })
+        const baseId = seg.key.replace(/-w\d+$/, '')
+        const showDetails = widestKeyByEvent.get(baseId) === seg.key
+        result[wi].push({ ...seg, lane, laneSpan: span, showDetails })
       })
     })
+
     return result
   }, [bookings, openTrips, yachtColorMap, year, month, weeks])
 
@@ -367,8 +386,8 @@ function MonthGrid({
                       else if (seg.openTripRef) onOpenTripClick(seg.openTripRef)
                     }}
                   >
-                    {!seg.isRealStart && (
-                      /* Continuation bar — show condensed label so user can identify the event */
+                    {!seg.showDetails && (
+                      /* Non-detail bar — show condensed label so user can identify the event */
                       seg.bookingRef ? (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
@@ -386,7 +405,7 @@ function MonthGrid({
                         </div>
                       ) : null
                     )}
-                    {seg.isRealStart && isOthersSalesBooking && (() => {
+                    {seg.showDetails && isOthersSalesBooking && (() => {
                       const bk = seg.bookingRef!
                       const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
                         on_hold:        { bg: 'rgba(249,115,22,0.85)', label: 'ON HOLD'   },
@@ -429,7 +448,7 @@ function MonthGrid({
                         </div>
                       )
                     })()}
-                    {seg.isRealStart && !isOthersSalesBooking && (
+                    {seg.showDetails && !isOthersSalesBooking && (
                       seg.isStripe && ot ? (
                         /* Open trip pill — 2-row white overlay */
                         <div style={{
@@ -487,7 +506,7 @@ function MonthGrid({
                               return (
                                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                                   <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, border: dotBorder, flexShrink: 0, boxSizing: 'border-box' }} />
-                                  <span style={{ fontSize: 9, color: '#334155', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name}</span>
+                                  <span style={{ fontSize: 9, color: '#334155', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name.replace(/\s*cabin\s*$/i, '')}</span>
                                 </div>
                               )
                             })}
