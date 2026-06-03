@@ -20,12 +20,63 @@ import {
   Loader2, Mail, Building2, Percent, RotateCw,
   Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight,
 } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { NATIONALITIES } from '@/lib/nationalities'
+
+function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const filtered = query.trim()
+    ? NATIONALITIES.filter(n => n.toLowerCase().includes(query.toLowerCase()))
+    : NATIONALITIES
+  return (
+    <Popover open={open} onOpenChange={v => { setOpen(v); if (!v) setQuery('') }}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+          <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select country'}</span>
+          <ChevronDown className="h-3.5 w-3.5 opacity-50 ml-2 shrink-0" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              placeholder="Search country…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="overflow-y-scroll p-1 overscroll-contain" style={{ maxHeight: 208 }} onWheel={e => e.stopPropagation()}>
+            {filtered.length === 0
+              ? <p className="py-4 text-center text-sm text-muted-foreground">Not found.</p>
+              : filtered.map(n => (
+                <button key={n} type="button"
+                  onClick={() => { onChange(n === value ? '' : n); setOpen(false); setQuery('') }}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent text-left"
+                >
+                  <Check className={`h-3.5 w-3.5 shrink-0 ${value === n ? 'opacity-100' : 'opacity-0'}`} />
+                  {n}
+                </button>
+              ))
+            }
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 interface AgentRecord {
   id: string
   name: string
   commission: number
   isActive: boolean
+  country: string | null
+  agentType: string | null
+  contract: string | null
   salespersonId: string | null
   salesperson: { id: string; name: string | null } | null
   createdAt: string
@@ -43,10 +94,12 @@ interface AgentContact {
   name: string
   email: string | null
   whatsapp: string | null
+  jobTitle: string | null
+  dateOfBirth: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', salespersonId: '' }
-const EMPTY_CONTACT = { name: '', email: '', whatsapp: '' }
+const EMPTY_FORM = { name: '', commission: '0', salespersonId: '', country: '', agentType: '', contract: '' }
+const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 
 export default function Agents() {
@@ -147,6 +200,9 @@ export default function Agents() {
       name:          a.name,
       commission:    String(a.commission),
       salespersonId: a.salespersonId ?? '',
+      country:       a.country    ?? '',
+      agentType:     a.agentType  ?? '',
+      contract:      a.contract   ?? '',
     })
     setAddingContact(false)
     setEditingContact(null)
@@ -168,6 +224,9 @@ export default function Agents() {
           name:          form.name.trim(),
           commission:    parseFloat(form.commission) || 0,
           salespersonId: form.salespersonId || null,
+          country:       form.country   || null,
+          agentType:     form.agentType || null,
+          contract:      form.contract  || null,
         }),
       })
       if (res.ok) { await fetchAgents(); setSheetOpen(false) }
@@ -182,7 +241,10 @@ export default function Agents() {
       const res = await fetch(`/api/agents/${editing.id}/contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contactForm),
+        body: JSON.stringify({
+          ...contactForm,
+          dateOfBirth: contactForm.dateOfBirth || null,
+        }),
       })
       if (res.ok) {
         const c = await res.json()
@@ -204,7 +266,10 @@ export default function Agents() {
       const res = await fetch(`/api/agents/${editing.id}/contacts/${editingContact.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editContactForm),
+        body: JSON.stringify({
+          ...editContactForm,
+          dateOfBirth: editContactForm.dateOfBirth || null,
+        }),
       })
       if (res.ok) {
         const updated = await res.json()
@@ -325,6 +390,9 @@ export default function Agents() {
                   <tr className="border-b text-left">
                     <th className="pb-3 w-8" />
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Agent</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Country</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Type</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
@@ -359,6 +427,29 @@ export default function Agents() {
                             <div className="font-semibold">{a.name}</div>
                           </div>
                         </div>
+                      </td>
+
+                      {/* Country */}
+                      <td className="py-3 pr-4 text-sm text-muted-foreground">
+                        {a.country || <span className="text-muted-foreground/40">—</span>}
+                      </td>
+
+                      {/* Agent Type */}
+                      <td className="py-3 pr-4">
+                        {a.agentType
+                          ? <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{a.agentType}</span>
+                          : <span className="text-muted-foreground/40 text-xs">—</span>}
+                      </td>
+
+                      {/* Contract */}
+                      <td className="py-3 pr-4">
+                        {a.contract
+                          ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                              a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
+                              a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
+                              'bg-red-50 text-red-600'
+                            }`}>{a.contract}</span>
+                          : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
                       {/* Salesperson */}
@@ -425,7 +516,7 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={canManage ? 5 : 4} className="pb-3 pt-1 pr-4">
+                        <td colSpan={canManage ? 8 : 7} className="pb-3 pt-1 pr-4">
                           <div className="pl-12">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                               Contact Persons
@@ -447,7 +538,10 @@ export default function Agents() {
                                       {c.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="font-medium text-xs leading-tight">{c.name}</p>
+                                      <div className="flex items-center gap-1.5">
+                                        <p className="font-medium text-xs leading-tight">{c.name}</p>
+                                        {c.jobTitle && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.jobTitle}</span>}
+                                      </div>
                                       <div className="flex items-center gap-2 mt-0.5">
                                         {c.email && (
                                           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -457,6 +551,11 @@ export default function Agents() {
                                         {c.whatsapp && (
                                           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                                             <MessageCircle className="h-3 w-3" />{c.whatsapp}
+                                          </span>
+                                        )}
+                                        {c.dateOfBirth && (
+                                          <span className="text-[11px] text-muted-foreground">
+                                            🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                                           </span>
                                         )}
                                       </div>
@@ -549,6 +648,46 @@ export default function Agents() {
                 </div>
               </div>
 
+              {/* Country, Agent Type, Contract */}
+              <div className="space-y-1.5">
+                <Label>Country</Label>
+                <CountrySelect value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Agent Type</Label>
+                  <Select
+                    value={form.agentType || 'none'}
+                    onValueChange={v => setForm(f => ({ ...f, agentType: v === 'none' ? '' : v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="— Select type —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      <SelectItem value="Wholesale">Wholesale</SelectItem>
+                      <SelectItem value="Affiliator">Affiliator</SelectItem>
+                      <SelectItem value="Retail">Retail</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Contract</Label>
+                  <Select
+                    value={form.contract || 'none'}
+                    onValueChange={v => setForm(f => ({ ...f, contract: v === 'none' ? '' : v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="— Select —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="Not Yet">Not Yet</SelectItem>
+                      <SelectItem value="Not Qualified">Not Qualified</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               {/* ── Contact Persons (edit mode only) ── */}
               {editing && (
                 <div className="pt-2">
@@ -584,12 +723,20 @@ export default function Agents() {
                           {editingContact?.id === c.id ? (
                             /* inline edit form */
                             <div className="space-y-2">
-                              <Input
-                                placeholder="Name *"
-                                value={editContactForm.name}
-                                onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
-                                className="h-7 text-sm"
-                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  placeholder="Name *"
+                                  value={editContactForm.name}
+                                  onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
+                                  className="h-7 text-sm"
+                                />
+                                <Input
+                                  placeholder="Job Title"
+                                  value={editContactForm.jobTitle}
+                                  onChange={e => setEditContactForm(f => ({ ...f, jobTitle: e.target.value }))}
+                                  className="h-7 text-sm"
+                                />
+                              </div>
                               <div className="grid grid-cols-2 gap-2">
                                 <Input
                                   placeholder="Email"
@@ -598,12 +745,19 @@ export default function Agents() {
                                   className="h-7 text-sm"
                                 />
                                 <Input
-                                  placeholder="No. Telepon / WA"
+                                  placeholder="WhatsApp"
                                   value={editContactForm.whatsapp}
                                   onChange={e => setEditContactForm(f => ({ ...f, whatsapp: e.target.value }))}
                                   className="h-7 text-sm"
                                 />
                               </div>
+                              <Input
+                                type="date"
+                                placeholder="Date of Birth"
+                                value={editContactForm.dateOfBirth}
+                                onChange={e => setEditContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
                               <div className="flex gap-2 justify-end">
                                 <button
                                   type="button"
@@ -626,7 +780,12 @@ export default function Agents() {
                             /* display row */
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="text-sm font-medium truncate">{c.name}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium truncate">{c.name}</p>
+                                  {c.jobTitle && (
+                                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">{c.jobTitle}</span>
+                                  )}
+                                </div>
                                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                   {c.email && (
                                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -638,6 +797,11 @@ export default function Agents() {
                                       <MessageCircle className="h-3 w-3" />{c.whatsapp}
                                     </span>
                                   )}
+                                  {c.dateOfBirth && (
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
@@ -645,7 +809,7 @@ export default function Agents() {
                                   type="button"
                                   onClick={() => {
                                     setEditingContact(c)
-                                    setEditContactForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '' })
+                                    setEditContactForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '', jobTitle: c.jobTitle ?? '', dateOfBirth: c.dateOfBirth ? c.dateOfBirth.split('T')[0] : '' })
                                     setAddingContact(false)
                                   }}
                                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -668,13 +832,21 @@ export default function Agents() {
                       {/* Add form */}
                       {addingContact && (
                         <div className="rounded-lg border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
-                          <Input
-                            autoFocus
-                            placeholder="Name *"
-                            value={contactForm.name}
-                            onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                            className="h-7 text-sm"
-                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              autoFocus
+                              placeholder="Name *"
+                              value={contactForm.name}
+                              onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                            <Input
+                              placeholder="Job Title"
+                              value={contactForm.jobTitle}
+                              onChange={e => setContactForm(f => ({ ...f, jobTitle: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                          </div>
                           <div className="grid grid-cols-2 gap-2">
                             <Input
                               placeholder="Email"
@@ -689,6 +861,13 @@ export default function Agents() {
                               className="h-7 text-sm"
                             />
                           </div>
+                          <Input
+                            type="date"
+                            placeholder="Date of Birth"
+                            value={contactForm.dateOfBirth}
+                            onChange={e => setContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
+                            className="h-7 text-sm"
+                          />
                           <div className="flex gap-2 justify-end">
                             <button
                               type="button"

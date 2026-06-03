@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
       where: all ? undefined : { isActive: true },
       select: {
         id: true, name: true, commission: true, isActive: true, createdAt: true,
+        country: true, agentType: true, contract: true,
         salespersonId: true,
         salesperson: { select: { id: true, name: true } },
         _count: { select: { bookings: true } },
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, commission, salespersonId } = body
+    const { name, commission, salespersonId, country, agentType, contract } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest) {
         name,
         commission:    commission ? parseFloat(commission) : 0,
         salespersonId: salespersonId || null,
+        country:       country   || null,
+        agentType:     agentType || null,
+        contract:      contract  || null,
       },
     })
 

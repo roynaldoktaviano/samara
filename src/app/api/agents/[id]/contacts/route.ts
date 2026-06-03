@@ -30,15 +30,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { id } = await params
-    const { name, email, whatsapp } = await request.json()
+    const { name, email, whatsapp, jobTitle, dateOfBirth } = await request.json()
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
     const contact = await db.agentContact.create({
       data: {
-        agentId:  id,
-        name:     name.trim(),
-        email:    email?.trim()    || null,
-        whatsapp: whatsapp?.trim() || null,
+        agentId:     id,
+        name:        name.trim(),
+        email:       email?.trim()    || null,
+        whatsapp:    whatsapp?.trim() || null,
+        jobTitle:    jobTitle?.trim() || null,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       },
     })
     return NextResponse.json(contact, { status: 201 })

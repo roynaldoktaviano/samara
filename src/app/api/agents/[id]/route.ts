@@ -41,7 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const { id } = await params
     const body = await request.json()
-    const { name, commission, isActive, salespersonId } = body
+    const { name, commission, isActive, salespersonId, country, agentType, contract } = body
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
@@ -52,6 +52,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         commission:    commission    !== undefined ? parseFloat(String(commission)) || 0 : undefined,
         isActive:      isActive      !== undefined ? Boolean(isActive)               : undefined,
         salespersonId: salespersonId !== undefined ? (salespersonId || null)          : undefined,
+        country:       country       !== undefined ? (country   || null)              : undefined,
+        agentType:     agentType     !== undefined ? (agentType || null)              : undefined,
+        contract:      contract      !== undefined ? (contract  || null)              : undefined,
       },
     })
 
