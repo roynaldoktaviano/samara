@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { db, withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 
 export async function GET(_: NextRequest) {
@@ -15,7 +15,7 @@ export async function GET(_: NextRequest) {
       ? { booking: { salesperson: { equals: userName, mode: 'insensitive' as const } } }
       : {}
 
-    const payments = await db.payment.findMany({
+    const payments = await withRetry(() => db.payment.findMany({
       where,
       select: {
         id: true,
@@ -55,7 +55,7 @@ export async function GET(_: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
-    })
+    }))
     // Strip base64 proof from list; return a boolean flag instead
     const result = payments.map(({ proofOfTransfer, ...p }) => ({
       ...p,
@@ -119,22 +119,23 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Notify Finance + Admin
-    const financeUsers = await db.user.findMany({
-      where: { role: { in: ['FINANCE', 'ADMIN'] } },
-      select: { id: true },
-    })
-    if (financeUsers.length > 0) {
-      await db.notification.createMany({
-        data: financeUsers.map(u => ({
-          userId: u.id,
-          type: 'INVOICE_REQUESTED',
-          title: 'Invoice diminta oleh Sales',
-          body: `${booking.bookingCode} — ${paymentType} diminta oleh ${submittedByName ?? 'Sales'}`,
-          paymentId: payment.id,
-        })),
+    // Notify Finance + Admin (fire-and-forget — never fails the main request)
+    db.user.findMany({ where: { role: { in: ['FINANCE', 'ADMIN'] } }, select: { id: true } })
+      .then(financeUsers => {
+        if (!financeUsers.length) return
+        return db.notification.createMany({
+          data: financeUsers.map(u => ({
+            userId: u.id,
+            type: 'INVOICE_REQUESTED',
+            title: 'Invoice diminta oleh Sales',
+            body: `${booking.bookingCode} — ${paymentType} diminta oleh ${submittedByName ?? 'Sales'}`,
+            paymentId: payment.id,
+            bookingId: bookingId,
+          })),
+          skipDuplicates: true,
+        })
       })
-    }
+      .catch(() => {})
 
     const userRole = (session?.user as { role?: string })?.role ?? ''
     logActivity({

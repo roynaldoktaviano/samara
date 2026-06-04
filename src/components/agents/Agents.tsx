@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,8 +18,9 @@ import {
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
   Loader2, Mail, Building2, Percent, RotateCw,
-  Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight,
+  Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight, ChevronLeft,
   Link2, Copy, ShieldOff, ShieldCheck, BarChart2, AlertTriangle,
+  Download, Upload,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -116,8 +117,9 @@ const ACCENT = '#bdac7e'
 export default function Agents() {
   const { data: session } = useSession()
   const userRole = (session?.user as { role?: string })?.role ?? ''
-  const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
-  const canManage = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+  const isAdmin     = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
+  const canManage   = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+  const canCalendar = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
 
   const [agents,     setAgents]     = useState<AgentRecord[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -145,6 +147,27 @@ export default function Agents() {
   const [expandedId,        setExpandedId]        = useState<string | null>(null)
   const [contactsCache,     setContactsCache]     = useState<Record<string, AgentContact[]>>({})
   const [contactsLoadingId, setContactsLoadingId] = useState<string | null>(null)
+
+  // filters & pagination
+  const [filterCountry,     setFilterCountry]     = useState('')
+  const [filterType,        setFilterType]         = useState('')
+  const [filterSalesperson, setFilterSalesperson]  = useState('')
+  const [page,              setPage]               = useState(0)
+  const [pageSize,          setPageSize]           = useState(10)
+
+  // reset page when filters/search change
+  useEffect(() => { setPage(0) }, [search, filterCountry, filterType, filterSalesperson])
+
+  // export / import
+  const [exporting,       setExporting]       = useState(false)
+  const [importResult,    setImportResult]    = useState<{
+    agentsCreated: number; agentsExisting: number
+    contactsCreated: number; contactsSkipped: number
+    skippedContacts: { row: number; agent: string; reason: string }[]
+    errors: string[]
+  } | null>(null)
+  const [importing,       setImporting]       = useState(false)
+  const [showSkipDetails, setShowSkipDetails] = useState(false)
 
   // calendar token management (admin only)
   const [calendarConfirm,   setCalendarConfirm]   = useState<{ agent: AgentRecord; action: 'generate' | 'reset' | 'deactivate' | 'activate' | 'revoke' } | null>(null)
@@ -375,12 +398,59 @@ export default function Agents() {
     finally { setToggling(false) }
   }
 
-  const filtered = agents.filter(a =>
-    a.name.toLowerCase().includes(search.toLowerCase()) ||
-    (a.salesperson?.name ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const res = await fetch('/api/agents/export')
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `agents-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally { setExporting(false) }
+  }
 
-  const activeCount = agents.filter(a => a.isActive).length
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImporting(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res  = await fetch('/api/agents/import', { method: 'POST', body: fd })
+      const data = await res.json()
+      setImportResult(data)
+      if (data.agentsCreated > 0) fetchAgents()
+    } finally { setImporting(false) }
+  }
+
+  // Filter options derived from loaded data
+  const countryOptions     = useMemo(() => [...new Set(agents.map(a => a.country).filter(Boolean) as string[])].sort(), [agents])
+  const typeOptions        = useMemo(() => [...new Set(agents.map(a => a.agentType).filter(Boolean) as string[])].sort(), [agents])
+  const salespersonOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    agents.forEach(a => { if (a.salesperson?.id && a.salesperson.name) map.set(a.salesperson.id, a.salesperson.name) })
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [agents])
+
+  const filtered = agents.filter(a => {
+    if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !(a.salesperson?.name ?? '').toLowerCase().includes(search.toLowerCase())) return false
+    if (filterCountry     && a.country              !== filterCountry)     return false
+    if (filterType        && a.agentType             !== filterType)        return false
+    if (filterSalesperson && a.salesperson?.id       !== filterSalesperson) return false
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage   = Math.min(page, totalPages - 1)
+  const paginated  = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+
+  const activeCount    = agents.filter(a => a.isActive).length
+  const hasActiveFilter = !!(filterCountry || filterType || filterSalesperson)
 
   return (
     <div className="space-y-6">
@@ -398,26 +468,101 @@ export default function Agents() {
             {loading ? '…' : `${activeCount} active agent${activeCount !== 1 ? 's' : ''}`}
           </p>
         </div>
-        {canManage && (
-          <Button
-            onClick={openCreate}
-            style={{ backgroundColor: ACCENT, color: 'white' }}
-            className="hover:opacity-90"
-          >
-            <Plus className="h-4 w-4 mr-2" /> Add Agent
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <>
+              <Button
+                variant="outline" size="sm"
+                onClick={handleExport}
+                disabled={exporting}
+                className="h-8 px-3 text-xs"
+              >
+                {exporting
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                Export CSV
+              </Button>
+
+              <label className="cursor-pointer">
+                <input
+                  type="file" accept=".csv" className="hidden"
+                  onChange={handleImport}
+                  disabled={importing}
+                />
+                <span
+                  className={`inline-flex items-center h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground font-medium transition-colors ${importing ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  {importing
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                  Import CSV
+                </span>
+              </label>
+            </>
+          )}
+
+          {canManage && (
+            <Button
+              onClick={openCreate}
+              style={{ backgroundColor: ACCENT, color: 'white' }}
+              className="hover:opacity-90"
+            >
+              <Plus className="h-4 w-4 mr-2" /> Add Agent
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Search name, company, email…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+      {/* Search + Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            className="pl-9 h-9 w-56"
+            placeholder="Search agent…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        <Select value={filterCountry || 'all'} onValueChange={v => setFilterCountry(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-44 text-sm">
+            <SelectValue placeholder="All Countries" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Countries</SelectItem>
+            {countryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterType || 'all'} onValueChange={v => setFilterType(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-40 text-sm">
+            <SelectValue placeholder="All Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            {typeOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterSalesperson || 'all'} onValueChange={v => setFilterSalesperson(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-44 text-sm">
+            <SelectValue placeholder="All Salespersons" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Salespersons</SelectItem>
+            {salespersonOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilter && (
+          <button
+            onClick={() => { setFilterCountry(''); setFilterType(''); setFilterSalesperson('') }}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3.5 w-3.5" /> Clear filters
+          </button>
+        )}
       </div>
 
       {/* Table card */}
@@ -427,7 +572,7 @@ export default function Agents() {
             Agent List
             {!loading && (
               <span className="ml-2 font-normal text-muted-foreground text-sm">
-                ({filtered.length})
+                ({filtered.length}{filtered.length !== agents.length ? ` of ${agents.length}` : ''})
               </span>
             )}
           </CardTitle>
@@ -440,8 +585,8 @@ export default function Agents() {
           ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Briefcase className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{search ? 'No agents found' : 'No agents yet'}</p>
-              {canManage && !search && (
+              <p className="text-sm">{search || hasActiveFilter ? 'No agents match the filters' : 'No agents yet'}</p>
+              {canManage && !search && !hasActiveFilter && (
                 <Button onClick={openCreate} variant="outline" size="sm" className="mt-3">
                   <Plus className="h-4 w-4 mr-1" /> Add First Agent
                 </Button>
@@ -457,7 +602,7 @@ export default function Agents() {
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Country</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Type</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
-                    {isAdmin && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
+                    {canCalendar && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
@@ -466,7 +611,7 @@ export default function Agents() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filtered.map(a => (
+                  {paginated.map(a => (
                     <React.Fragment key={a.id}>
                     <tr className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
 
@@ -517,8 +662,8 @@ export default function Agents() {
                           : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
-                      {/* Calendar Access (admin only) */}
-                      {isAdmin && (
+                      {/* Calendar Access */}
+                      {canCalendar && (
                         <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
                             {!a.calendarToken ? (
@@ -631,53 +776,48 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={isAdmin ? 9 : canManage ? 8 : 7} className="pb-3 pt-1 pr-4">
-                          <div className="pl-12">
+                        <td colSpan={isAdmin ? 9 : canCalendar ? 9 : canManage ? 8 : 7} className="py-2 pr-4">
+                          <div className="pl-12 pr-2">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                               Contact Persons
                             </p>
                             {contactsLoadingId === a.id ? (
-                              <div className="flex gap-2">
-                                {[...Array(2)].map((_, i) => (
-                                  <div key={i} className="h-9 w-44 rounded-lg bg-muted animate-pulse" />
-                                ))}
+                              <div className="space-y-1.5">
+                                {[...Array(2)].map((_, i) => <div key={i} className="h-8 w-full rounded bg-muted animate-pulse" />)}
                               </div>
                             ) : !contactsCache[a.id]?.length ? (
                               <p className="text-xs text-muted-foreground py-1">No contact persons added yet.</p>
                             ) : (
-                              <div className="flex flex-wrap gap-2">
-                                {contactsCache[a.id].map(c => (
-                                  <div key={c.id} className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
-                                    <div className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-                                      style={{ backgroundColor: ACCENT }}>
-                                      {c.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="font-medium text-xs leading-tight">{c.name}</p>
-                                        {c.jobTitle && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.jobTitle}</span>}
-                                      </div>
-                                      <div className="flex items-center gap-2 mt-0.5">
-                                        {c.email && (
-                                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                                            <Mail className="h-3 w-3" />{c.email}
-                                          </span>
-                                        )}
-                                        {c.whatsapp && (
-                                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                                            <MessageCircle className="h-3 w-3" />{c.whatsapp}
-                                          </span>
-                                        )}
-                                        {c.dateOfBirth && (
-                                          <span className="text-[11px] text-muted-foreground">
-                                            🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-muted">
+                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Name</th>
+                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Job Title</th>
+                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Email</th>
+                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">WhatsApp</th>
+                                    <th className="pb-1.5 text-left font-medium text-muted-foreground">Birthday</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-muted/60">
+                                  {contactsCache[a.id].map(c => (
+                                    <tr key={c.id} className="hover:bg-muted/30">
+                                      <td className="py-1.5 pr-4 font-medium text-foreground">{c.name}</td>
+                                      <td className="py-1.5 pr-4 text-muted-foreground">{c.jobTitle || <span className="opacity-30">—</span>}</td>
+                                      <td className="py-1.5 pr-4 text-muted-foreground">
+                                        {c.email
+                                          ? <a href={`mailto:${c.email}`} className="hover:underline">{c.email}</a>
+                                          : <span className="opacity-30">—</span>}
+                                      </td>
+                                      <td className="py-1.5 pr-4 text-muted-foreground">{c.whatsapp || <span className="opacity-30">—</span>}</td>
+                                      <td className="py-1.5 text-muted-foreground">
+                                        {c.dateOfBirth
+                                          ? new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                                          : <span className="opacity-30">—</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             )}
                           </div>
                         </td>
@@ -687,6 +827,63 @@ export default function Agents() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && filtered.length > 0 && (
+            <div className="flex items-center justify-between pt-4 border-t text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <span className="text-xs">Rows per page</span>
+                <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(0) }}>
+                  <SelectTrigger className="h-7 w-16 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50, 100].map(n => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <span className="text-xs">
+                {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filtered.length)} of {filtered.length}
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(0)}
+                  disabled={safePage === 0}
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="First page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={safePage === 0}
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-xs px-1">Page {safePage + 1} / {totalPages}</span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={safePage >= totalPages - 1}
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setPage(totalPages - 1)}
+                  disabled={safePage >= totalPages - 1}
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Last page"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </CardContent>
@@ -1159,6 +1356,102 @@ export default function Agents() {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Import Result ── */}
+      <AlertDialog open={!!importResult} onOpenChange={v => { if (!v) { setImportResult(null); setShowSkipDetails(false) } }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Upload className="h-4 w-4" style={{ color: ACCENT }} /> Import Result
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="space-y-3 py-1">
+            {/* Summary grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Agents Created</p>
+                <p className="text-2xl font-bold text-emerald-600">{importResult?.agentsCreated ?? 0}</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Agents Existing</p>
+                <p className="text-2xl font-bold text-blue-500">{importResult?.agentsExisting ?? 0}</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Contacts Created</p>
+                <p className="text-2xl font-bold text-emerald-600">{importResult?.contactsCreated ?? 0}</p>
+              </div>
+              <button
+                className="rounded-lg border p-3 text-center hover:bg-muted/40 transition-colors cursor-pointer"
+                onClick={() => (importResult?.contactsSkipped ?? 0) > 0 && setShowSkipDetails(v => !v)}
+              >
+                <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                  Contacts Skipped
+                  {(importResult?.contactsSkipped ?? 0) > 0 && (
+                    <span className="text-[10px] text-amber-500 underline">
+                      {showSkipDetails ? '▲ hide' : '▼ details'}
+                    </span>
+                  )}
+                </p>
+                <p className="text-2xl font-bold text-amber-600">{importResult?.contactsSkipped ?? 0}</p>
+              </button>
+            </div>
+
+            {/* Skipped contacts detail */}
+            {showSkipDetails && (importResult?.skippedContacts?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-1.5">
+                  Skipped Detail ({importResult!.skippedContacts.length} rows)
+                </p>
+                {/* Group by reason first */}
+                {(() => {
+                  type SkippedItem = { row: number; agent: string; reason: string }
+                  const grouped = importResult!.skippedContacts.reduce<Record<string, SkippedItem[]>>((acc, s) => {
+                    ;(acc[s.reason] ??= []).push(s)
+                    return acc
+                  }, {})
+                  return (
+                    <div className="space-y-2">
+                      {Object.entries(grouped).map(([reason, items]) => (
+                        <div key={reason} className="rounded-lg border border-amber-100 bg-amber-50/50">
+                          <div className="flex items-center justify-between px-3 py-1.5 border-b border-amber-100">
+                            <span className="text-xs font-semibold text-amber-700">{reason}</span>
+                            <span className="text-[10px] font-bold text-amber-500 bg-amber-100 rounded px-1.5 py-0.5">{items.length}</span>
+                          </div>
+                          <div className="max-h-36 overflow-y-auto divide-y divide-amber-100">
+                            {items.map((s, i) => (
+                              <div key={i} className="flex items-center justify-between px-3 py-1 text-xs">
+                                <span className="text-amber-800 font-medium truncate max-w-[240px]">{s.agent}</span>
+                                <span className="text-amber-500 shrink-0 ml-2">row {s.row}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
+            {/* Errors */}
+            {importResult?.errors && importResult.errors.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-1.5">
+                  Errors ({importResult.errors.length})
+                </p>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {importResult.errors.map((e, i) => (
+                    <p key={i} className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">{e}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => { setImportResult(null); setShowSkipDetails(false) }}>Done</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

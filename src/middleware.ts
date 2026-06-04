@@ -20,10 +20,11 @@ const authMiddleware = withAuth({
 export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // ── Agent calendar: token required in URL every time ──
+  // ── Agent calendar: allow if token in URL OR cal-access cookie present ──
   if (pathname === '/agent/calendar' || pathname.startsWith('/agent/calendar/')) {
-    const token = req.nextUrl.searchParams.get('token')
-    if (token) return NextResponse.next() // page will verify token
+    const token  = req.nextUrl.searchParams.get('token')
+    const cookie = req.cookies.get('cal-access')?.value
+    if (token || cookie) return NextResponse.next()
     return NextResponse.rewrite(new URL('/agent/calendar/denied', req.url))
   }
 

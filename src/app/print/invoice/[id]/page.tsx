@@ -67,15 +67,20 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'R
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
-  const [payment, setPayment] = useState<PaymentDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [payment,    setPayment]    = useState<PaymentDetail | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [hasTncPdf,  setHasTncPdf]  = useState(false)
   const printed = useRef(false)
 
   useEffect(() => {
-    fetch(`/api/payments/${id}`)
-      .then(r => r.json())
-      .then(d => { setPayment(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    Promise.all([
+      fetch(`/api/payments/${id}`).then(r => r.json()),
+      fetch('/api/public/tnc-pdf', { method: 'HEAD' }).then(r => r.ok).catch(() => false),
+    ]).then(([paymentData, tncExists]) => {
+      setPayment(paymentData)
+      setHasTncPdf(!!tncExists)
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [id])
 
   useEffect(() => {
@@ -139,17 +144,19 @@ export default function InvoicePage() {
         @media print {
           @page { margin: 0; size: A4 portrait; }
           html, body { background: white; }
-          .so { display: none !important; }
-          .il { display: none !important; }
+          .so  { display: none !important; }
+          .il  { display: none !important; }
           .inv-bd { display: block !important; }
-          .nc { break-inside: avoid; page-break-inside: avoid; }
-          .pb { page-break-before: always; break-before: page; }
+          .nc  { break-inside: avoid; page-break-inside: avoid; }
+          .pb  { page-break-before: always; break-before: page; }
+          .sp  { display: block !important; }
         }
         @media screen {
           table.inv { display: block; max-width: 660px; margin: 0 auto; background: white; }
           table.inv > thead, table.inv > tfoot { display: none; }
           table.inv > tbody, table.inv > tbody > tr, table.inv > tbody > tr > td { display: block; }
           body { padding: 24px 0 40px; }
+          .sp  { display: none; }
         }
       `}</style>
 
@@ -484,6 +491,43 @@ export default function InvoicePage() {
         </div>{/* ── end page 1 wrapper ── */}
 
         {/* ══════════════════════════════════════════════════════════
+            TNC — screen: download bar | print: embedded PDF pages
+            ══════════════════════════════════════════════════════════ */}
+        {hasTncPdf ? (
+          <>
+            {/* Screen-only: info bar + download button */}
+            <div className="so" style={{ maxWidth: 660, margin: '0 auto', padding: '12px 22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>📎</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Terms &amp; Conditions PDF attached</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af' }}>Will be included when printing / saving as PDF</div>
+                  </div>
+                </div>
+                <a
+                  href="/api/public/tnc-pdf"
+                  download="Terms-and-Conditions.pdf"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#1a5f6e', backgroundColor: '#e0f2f7', borderRadius: 6, padding: '6px 12px', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                >
+                  ⬇ Download T&amp;C PDF
+                </a>
+              </div>
+            </div>
+
+            {/* Print-only: embed PDF as full A4 pages (hidden on screen) */}
+            <div className="sp pb" style={{ width: '210mm', height: '297mm', background: 'white' }}>
+              <embed
+                src="/api/public/tnc-pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH"
+                type="application/pdf"
+                style={{ width: '100%', height: '100%', display: 'block', border: 'none' }}
+              />
+            </div>
+          </>
+        ) : (
+        <>
+
+        {/* ══════════════════════════════════════════════════════════
             PAGE 2 — INCLUSIONS & EXCLUSIONS
             ══════════════════════════════════════════════════════════ */}
         <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
@@ -614,6 +658,9 @@ export default function InvoicePage() {
           </div>
 
         </div>
+
+        </> /* end hasTncPdf else */
+        )}
 
               </div>
             </td>

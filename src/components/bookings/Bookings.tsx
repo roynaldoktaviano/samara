@@ -94,8 +94,13 @@ interface PaymentRecord {
   }
 }
 
-const netBook = (b: BookingRecord) =>
-  b.source === 'AGENT' ? b.totalPrice * (1 - (b.agent?.commission ?? 0) / 100) : b.totalPrice
+const netBook = (b: BookingRecord) => {
+  const svcTotal  = b.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
+  const basePrice = b.totalPrice - svcTotal
+  const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
+  const commAmt   = b.source === 'AGENT' ? afterDisc * (b.agent?.commission ?? 0) / 100 : 0
+  return afterDisc + svcTotal - commAmt
+}
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
@@ -922,7 +927,13 @@ export default function Bookings() {
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
         <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
           {paymentBooking && (() => {
-            const net       = netBook(paymentBooking)
+            const svcTotal  = paymentBooking.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
+            const basePrice = paymentBooking.totalPrice - svcTotal
+            const discount  = paymentBooking.discount ?? 0
+            const afterDisc = Math.max(0, basePrice - discount)
+            const commPct   = paymentBooking.source === 'AGENT' ? (paymentBooking.agent?.commission ?? 0) : 0
+            const commAmt   = afterDisc * commPct / 100
+            const net       = afterDisc + svcTotal - commAmt
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
             const pct       = parseFloat(payPctValue) || 0
             const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
@@ -950,8 +961,26 @@ export default function Bookings() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total</span>
-                    <span className="font-medium">{fmtD(net)}</span>
+                    <span className="font-medium">{fmtD(paymentBooking.totalPrice)}</span>
                   </div>
+                  {(paymentBooking.discount ?? 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Discount</span>
+                      <span className="text-emerald-600 font-medium">−{fmtD(paymentBooking.discount)}</span>
+                    </div>
+                  )}
+                  {commAmt > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Commission ({commPct}%)</span>
+                      <span className="text-muted-foreground font-medium">−{fmtD(commAmt)}</span>
+                    </div>
+                  )}
+                  {((paymentBooking.discount ?? 0) > 0 || (paymentBooking.source === 'AGENT' && (paymentBooking.agent?.commission ?? 0) > 0)) && (
+                    <div className="flex justify-between border-t pt-1">
+                      <span className="text-muted-foreground">Net Total</span>
+                      <span className="font-semibold">{fmtD(net)}</span>
+                    </div>
+                  )}
                   {paymentBooking.depositPaid > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Already Paid</span>

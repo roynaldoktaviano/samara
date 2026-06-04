@@ -489,3 +489,13 @@ model Notification {
   @@index([userId, isRead])
   @@unique([userId, type, bookingId])
 }
+
+model SystemSetting {
+  key       String   @id
+  textValue String?
+  blobValue Bytes?
+  mimeType  String?
+  fileName  String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}

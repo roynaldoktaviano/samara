@@ -1,84 +1,103 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-export async function GET() {
+function summarise(rows: { tripType: string; source: string }[]) {
+  return {
+    total:          rows.length,
+    privateCharter: rows.filter(b => b.tripType === 'PRIVATE_CHARTER').length,
+    openTrip:       rows.filter(b => b.tripType === 'OPEN_TRIP').length,
+    direct:         rows.filter(b => b.source   === 'DIRECT').length,
+    viaAgent:       rows.filter(b => b.source   !== 'DIRECT').length,
+  }
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { searchParams } = new URL(request.url)
+    const yachtId  = searchParams.get('yachtId') || undefined
+    const fromParam = searchParams.get('from')
+    const toParam   = searchParams.get('to')
+
     const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
 
-    // This month bookings (not cancelled)
-    const thisMonthBookings = await db.booking.findMany({
-      where: { status: { not: 'cancelled' }, createdAt: { gte: startOfMonth } },
-      select: { tripType: true, source: true },
-    })
+    // Current period
+    const periodStart = fromParam
+      ? new Date(fromParam + 'T00:00:00')
+      : new Date(now.getFullYear(), now.getMonth(), 1)
+    const periodEnd = toParam
+      ? new Date(toParam + 'T23:59:59')
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
 
-    // Last month bookings for comparison
-    const lastMonthBookings = await db.booking.findMany({
-      where: {
-        status: { not: 'cancelled' },
-        createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
-      },
-      select: { tripType: true, source: true },
-    })
+    // Compare period: same duration, immediately before current period
+    const durationMs   = periodEnd.getTime() - periodStart.getTime()
+    const compareEnd   = new Date(periodStart.getTime() - 1)
+    const compareStart = new Date(compareEnd.getTime() - durationMs)
 
-    const summarise = (rows: { tripType: string; source: string }[]) => ({
-      total:          rows.length,
-      privateCharter: rows.filter(b => b.tripType === 'PRIVATE_CHARTER').length,
-      openTrip:       rows.filter(b => b.tripType === 'OPEN_TRIP').length,
-      direct:         rows.filter(b => b.source   === 'DIRECT').length,
-      viaAgent:       rows.filter(b => b.source   !== 'DIRECT').length,
-    })
+    const baseWhere = {
+      status:  { not: 'cancelled' as const },
+      ...(yachtId ? { yachtId } : {}),
+    }
 
-    // Top agents (all-time, by booking count)
+    const [currentBookings, compareBookings] = await Promise.all([
+      db.booking.findMany({
+        where: { ...baseWhere, createdAt: { gte: periodStart, lte: periodEnd } },
+        select: { tripType: true, source: true },
+      }),
+      db.booking.findMany({
+        where: { ...baseWhere, createdAt: { gte: compareStart, lte: compareEnd } },
+        select: { tripType: true, source: true },
+      }),
+    ])
+
+    // Top agents (within current period)
     const agentAgg = await db.booking.groupBy({
       by: ['agentId'],
-      where: { status: { not: 'cancelled' }, agentId: { not: null } },
+      where: { ...baseWhere, agentId: { not: null }, createdAt: { gte: periodStart, lte: periodEnd } },
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
       take: 10,
     })
 
-    const agentIds = agentAgg.map(r => r.agentId).filter(Boolean) as string[]
-    const agents   = await db.agent.findMany({
-      where: { id: { in: agentIds } },
-      select: { id: true, name: true },
-    })
-    const agentMap = Object.fromEntries(agents.map(a => [a.id, a.name]))
-
-    // This-month count per agent (for "this month" badge)
-    const agentThisMonth = await db.booking.groupBy({
+    // All-time total per agent (for context)
+    const agentAllTime = await db.booking.groupBy({
       by: ['agentId'],
-      where: {
-        status: { not: 'cancelled' },
-        agentId: { not: null },
-        createdAt: { gte: startOfMonth },
-      },
+      where: { ...baseWhere, agentId: { not: null } },
       _count: { id: true },
     })
-    const agentThisMonthMap = Object.fromEntries(
-      agentThisMonth.map(r => [r.agentId as string, r._count.id])
-    )
+    const agentAllTimeMap = Object.fromEntries(agentAllTime.map(r => [r.agentId as string, r._count.id]))
 
-    const topAgents = agentAgg
-      .filter(r => r.agentId)
-      .map(r => ({
-        agentId:    r.agentId as string,
-        name:       agentMap[r.agentId as string] ?? 'Unknown',
-        total:      r._count.id,
-        thisMonth:  agentThisMonthMap[r.agentId as string] ?? 0,
-      }))
+    const agentIds = agentAgg.map(r => r.agentId).filter(Boolean) as string[]
+    const agents   = await db.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } })
+    const agentMap = Object.fromEntries(agents.map(a => [a.id, a.name]))
 
-    // Top nationalities from customers who have bookings
+    const topAgents = agentAgg.filter(r => r.agentId).map(r => ({
+      agentId:   r.agentId as string,
+      name:      agentMap[r.agentId as string] ?? 'Unknown',
+      period:    r._count.id,
+      total:     agentAllTimeMap[r.agentId as string] ?? r._count.id,
+    }))
+
+    // Top nationalities: guests who were ON a trip during the selected period
+    // A trip overlaps the period if startDate <= periodEnd AND endDate >= periodStart
+    const tripOverlap = {
+      status:   { not: 'cancelled' as const },
+      startDate: { lte: periodEnd },
+      endDate:   { gte: periodStart },
+      ...(yachtId ? { yachtId } : {}),
+    }
     const nationalityAgg = await db.customer.groupBy({
       by: ['nationality'],
       where: {
         nationality: { not: null },
-        deletedAt: null,
+        deletedAt:   null,
         OR: [
-          { bookings: { some: { status: { not: 'cancelled' } } } },
-          { guestOf:  { some: { booking: { status: { not: 'cancelled' } } } } },
+          { bookings: { some: tripOverlap } },
+          { guestOf:  { some: { booking: tripOverlap } } },
         ],
       },
       _count: { id: true },
@@ -90,12 +109,22 @@ export async function GET() {
       .filter(r => r.nationality)
       .map(r => ({ nationality: r.nationality as string, count: r._count.id }))
 
+    const yachts = await db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
+
+    // Build human-readable period labels
+    const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    const periodLabel  = `${fmt(periodStart)} – ${fmt(periodEnd)}`
+    const compareLabel = `${fmt(compareStart)} – ${fmt(compareEnd)}`
+
     return NextResponse.json({
-      thisMonth:        summarise(thisMonthBookings),
-      lastMonth:        summarise(lastMonthBookings),
+      current:         summarise(currentBookings),
+      compare:         summarise(compareBookings),
       topAgents,
       topNationalities,
-      monthLabel: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+      yachts,
+      periodLabel,
+      compareLabel,
+      updatedAt: now.toISOString(),
     })
   } catch (error) {
     console.error('Error fetching sales stats:', error)

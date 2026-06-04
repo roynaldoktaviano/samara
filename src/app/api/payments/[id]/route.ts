@@ -105,21 +105,45 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Generate invoice ${invoiceNumber} (${existing.booking.bookingCode}) — ${amount}`,
       }).catch(() => {})
 
-      // Notify Sales submitter
+      // Notify Sales submitter that invoice is ready (fire-and-forget)
       if (existing.submittedByUserId) {
-        await db.notification.upsert({
+        db.notification.upsert({
           where: { userId_type_bookingId: { userId: existing.submittedByUserId, type: 'INVOICE_READY', bookingId: existing.bookingId } },
           create: {
-            userId: existing.submittedByUserId,
-            type: 'INVOICE_READY',
-            title: 'Invoice siap didownload',
-            body: `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`,
+            userId:    existing.submittedByUserId,
+            type:      'INVOICE_READY',
+            title:     'Invoice siap didownload',
+            body:      `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`,
             paymentId: id,
             bookingId: existing.bookingId,
           },
-          update: { isRead: false, title: 'Invoice siap didownload', body: `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`, createdAt: new Date() },
-        })
+          update: {
+            isRead:    false,
+            title:     'Invoice siap didownload',
+            body:      `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`,
+            createdAt: new Date(),
+          },
+        }).catch(() => {})
       }
+
+      // Notify all Finance + Admin that an invoice was generated (fire-and-forget)
+      db.user.findMany({ where: { role: { in: ['FINANCE', 'ADMIN', 'SUPER_ADMIN'] } }, select: { id: true } })
+        .then(financeUsers => {
+          const targets = financeUsers.filter(u => u.id !== actorId) // exclude self
+          if (!targets.length) return
+          return db.notification.createMany({
+            data: targets.map(u => ({
+              userId:    u.id,
+              type:      'INVOICE_GENERATED',
+              title:     'Invoice di-generate',
+              body:      `${invoiceNumber} (${existing.booking.bookingCode}) di-generate oleh ${actorName}`,
+              paymentId: id,
+              bookingId: existing.bookingId,
+            })),
+            skipDuplicates: true,
+          })
+        })
+        .catch(() => {})
 
       return NextResponse.json({ ok: true, invoiceNumber })
     }
@@ -155,23 +179,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Submit bukti transfer ${existing.invoiceNumber} (${existing.booking.bookingCode})`,
       }).catch(() => {})
 
-      // Notify Finance + Admin
-      const financeUsers = await db.user.findMany({
-        where: { role: { in: ['FINANCE', 'ADMIN'] } },
-        select: { id: true },
-      })
-      if (financeUsers.length > 0) {
-        await db.notification.createMany({
-          data: financeUsers.map(u => ({
-            userId: u.id,
-            type: 'PROOF_SUBMITTED',
-            title: 'Bukti transfer diterima',
-            body: `${existing.invoiceNumber} (${existing.booking.bookingCode}) menunggu konfirmasi pembayaran`,
-            paymentId: id,
-          })),
-          skipDuplicates: true,
+      // Notify Finance + Admin (fire-and-forget)
+      db.user.findMany({ where: { role: { in: ['FINANCE', 'ADMIN'] } }, select: { id: true } })
+        .then(financeUsers => {
+          if (!financeUsers.length) return
+          return db.notification.createMany({
+            data: financeUsers.map(u => ({
+              userId:    u.id,
+              type:      'PROOF_SUBMITTED',
+              title:     'Bukti transfer diterima',
+              body:      `${existing.invoiceNumber} (${existing.booking.bookingCode}) menunggu konfirmasi pembayaran`,
+              paymentId: id,
+              bookingId: existing.bookingId,
+            })),
+            skipDuplicates: true,
+          })
         })
-      }
+        .catch(() => {})
 
       return NextResponse.json({ ok: true })
     }
@@ -234,15 +258,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }).catch(() => {})
 
         if (recipientUserId) {
-          await db.notification.create({
-            data: {
-              userId: recipientUserId,
-              type: 'PAYMENT_CONFIRMED',
-              title: 'Pembayaran dikonfirmasi ✓',
-              body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${actorName}`,
+          db.notification.upsert({
+            where: { userId_type_bookingId: { userId: recipientUserId, type: 'PAYMENT_CONFIRMED', bookingId: payment.bookingId } },
+            create: {
+              userId:    recipientUserId,
+              type:      'PAYMENT_CONFIRMED',
+              title:     'Pembayaran dikonfirmasi ✓',
+              body:      `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${actorName}`,
               paymentId: id,
+              bookingId: payment.bookingId,
             },
-          })
+            update: {
+              isRead:    false,
+              title:     'Pembayaran dikonfirmasi ✓',
+              body:      `${payment.invoiceNumber} (${payment.booking.bookingCode}) telah dikonfirmasi oleh ${actorName}`,
+              createdAt: new Date(),
+            },
+          }).catch(() => {})
         }
       } else {
         await db.payment.update({
@@ -257,15 +289,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }).catch(() => {})
 
         if (recipientUserId) {
-          await db.notification.create({
-            data: {
-              userId: recipientUserId,
-              type: 'PAYMENT_REJECTED',
-              title: 'Pembayaran ditolak',
-              body: `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${actorName}`,
+          db.notification.upsert({
+            where: { userId_type_bookingId: { userId: recipientUserId, type: 'PAYMENT_REJECTED', bookingId: payment.bookingId } },
+            create: {
+              userId:    recipientUserId,
+              type:      'PAYMENT_REJECTED',
+              title:     'Pembayaran ditolak',
+              body:      `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${actorName}`,
               paymentId: id,
+              bookingId: payment.bookingId,
             },
-          })
+            update: {
+              isRead:    false,
+              title:     'Pembayaran ditolak',
+              body:      `${payment.invoiceNumber} (${payment.booking.bookingCode}) ditolak oleh ${actorName}`,
+              createdAt: new Date(),
+            },
+          }).catch(() => {})
         }
       }
 

@@ -7,7 +7,7 @@ import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2 } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings } from 'lucide-react'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -24,8 +24,28 @@ import ActivityLog from '@/components/activity/ActivityLog'
 import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
 import Banks from '@/components/banks/Banks'
+import TncPdfSettings from '@/components/settings/TncPdfSettings'
+import FinanceStats from '@/components/statistics/FinanceStats'
+import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks'
+function FinanceTabView() {
+  const [tab, setTab] = useState<'overview' | 'summary'>('summary')
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 border-b">
+        {(['summary', 'overview'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${tab === t ? 'border-[#1a5f6e] text-[#1a5f6e]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            {t === 'summary' ? 'Revenue Summary' : 'Finance Overview'}
+          </button>
+        ))}
+      </div>
+      {tab === 'summary' ? <FinanceRevenueTable /> : <FinanceStats />}
+    </div>
+  )
+}
+
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings'
 
 type NavItem = {
   id: View
@@ -41,13 +61,15 @@ const navigationItems: NavItem[] = [
   { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'FINANCE'] },
   { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'MARKETING'] },
   { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
-  { id: 'statistics',  label: 'Statistics',  icon: TrendingUp,      roles: ['ADMIN', 'FINANCE'] },
-  { id: 'sales-stats', label: 'Statistics',  icon: TrendingUp,      roles: ['SALES'] },
+  { id: 'statistics',    label: 'Statistics',  icon: TrendingUp, roles: ['ADMIN'] },
+  { id: 'finance-stats', label: 'Finance',     icon: TrendingUp, roles: ['ADMIN', 'FINANCE'] },
+  { id: 'sales-stats',   label: 'Statistics',  icon: TrendingUp, roles: ['SALES'] },
   { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
   { id: 'banks',         label: 'Bank Accounts', icon: Building2, roles: ['ADMIN', 'FINANCE'] },
   { id: 'vouchers',      label: 'Vouchers',    icon: Tag,    roles: ['ADMIN'] },
   { id: 'users',         label: 'Team',        icon: UserCog, roles: ['ADMIN'] },
-  { id: 'activity-log',  label: 'Activity Log', icon: Shield, roles: ['ADMIN'] },
+  { id: 'activity-log',  label: 'Activity Log', icon: Shield,    roles: ['ADMIN'] },
+  { id: 'settings',      label: 'Settings',     icon: Settings,  roles: ['ADMIN', 'SUPER_ADMIN'] },
 ]
 
 const roleBadgeColor: Record<string, string> = {
@@ -310,9 +332,19 @@ export default function Home() {
       case 'agents':       return <Agents />
       case 'banks':         return <Banks />
       case 'vouchers':      return <Vouchers />
-      case 'activity-log':  return <ActivityLog />
-      case 'statistics':    return <Statistics />
-      case 'sales-stats':  return <SalesStats />
+      case 'activity-log':   return <ActivityLog />
+      case 'statistics':     return <Statistics />
+      case 'finance-stats':  return <FinanceTabView />
+      case 'sales-stats':    return <SalesStats />
+      case 'settings':      return (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-2xl font-bold tracking-tight">Settings</h3>
+            <p className="text-muted-foreground text-sm">Konfigurasi sistem</p>
+          </div>
+          <TncPdfSettings />
+        </div>
+      )
       default:              return <CalendarView />
     }
   }
