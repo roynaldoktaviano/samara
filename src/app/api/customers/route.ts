@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
+    const limit  = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 500
 
     const where: Record<string, unknown> = { deletedAt: null }
     if (search) {
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
         bookings: { select: { totalPrice: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 500,
+      take: limit,
     })
 
     const result = customers.map(c => ({

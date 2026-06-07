@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2 } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { BookingWizard } from '@/components/bookings/BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
+import WaitingListManager from '@/components/bookings/WaitingListManager'
 import { cn } from '@/lib/utils'
 
 interface BookingEvent {
@@ -80,9 +81,9 @@ function stripeStyle(color: string, full = false): React.CSSProperties {
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
-const LANE_H    = 50
-const DAY_H     = 40   
-const MIN_ROW_H = 185  
+const LANE_H    = 36
+const DAY_H     = 40
+const MIN_ROW_H = 160
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -638,6 +639,8 @@ export default function CalendarView() {
   /* date filter */
   const [filterMode, setFilterMode]     = useState<'single' | 'range'>('single')
   const [filterFrom, setFilterFrom]     = useState(todayStr())
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false)
+  const [dateBtnRect, setDateBtnRect] = useState<DOMRect | null>(null)
   const [filterTo,   setFilterTo]       = useState(todayStr())
   const [filterActive, setFilterActive] = useState(false)
   const [selectedBooking, setSelectedBooking]   = useState<BookingEvent | null>(null)
@@ -651,6 +654,7 @@ export default function CalendarView() {
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
   const [editGuestId, setEditGuestId]           = useState<string | null>(null)
+  const [wlBooking, setWlBooking]               = useState<{ id: string; code: string; startDate: string; endDate: string; yachtId?: string; openTripId?: string } | null>(null)
 
   // Booking edit state
   const [isBookingEditing, setIsBookingEditing] = useState(false)
@@ -694,6 +698,43 @@ export default function CalendarView() {
       setOtDetailLoading(false)
     }
   }, [])
+
+  const handleCabinClick = useCallback(async (c: any) => {
+    if (!c.bookingId) {
+      // Available cabin — open booking wizard for this trip
+      setWizardOpenTripId(otDetail?.id)
+      setWizardOpen(true)
+      return
+    }
+    // Booked cabin — show booking detail
+    setSelectedBooking({
+      id:          c.bookingId,
+      yachtName:   otDetail?.yacht?.name ?? '',
+      startDate:   otDetail?.startDate ?? '',
+      endDate:     otDetail?.endDate   ?? '',
+      status:      c.bookingStatus as BookingEvent['status'],
+      tripType:    'OPEN_TRIP',
+      customerName: c.guests?.[0]?.name ?? '—',
+      bookingCode:  c.bookingCode ?? undefined,
+      salesperson:  c.salesperson ?? undefined,
+    })
+    setIsDetailOpen(true)
+    setBookingDetailLoading(true)
+    setBookingFullDetail(null)
+    try {
+      const data = await fetch(`/api/bookings/${c.bookingId}`).then(r => r.json())
+      setBookingFullDetail(data)
+      setSelectedBooking(prev => prev ? {
+        ...prev,
+        totalPrice:      data.totalPrice,
+        depositAmount:   data.depositPaid,
+        notes:           data.notes,
+        salespersonUser: data.salespersonUser,
+      } : prev)
+    } finally {
+      setBookingDetailLoading(false)
+    }
+  }, [otDetail])
 
   const startBookingEdit = useCallback(async () => {
     if (!selectedBooking) return
@@ -1378,50 +1419,77 @@ export default function CalendarView() {
               ))}
             </div>
 
-            {/* Group: Date */}
-            <div className="flex items-center gap-1.5 px-4 py-2.5 shrink-0">
-              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Date</span>
-              {(['today','week','month'] as const).map(p => (
-                <button key={p} onClick={() => handlePreset(p)}
-                  className="h-6 px-2.5 text-[11px] font-medium rounded-full transition-all text-slate-500 hover:bg-slate-100 shrink-0 whitespace-nowrap">
-                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
-                </button>
-              ))}
-              <div className="flex rounded-full bg-slate-100 overflow-hidden text-[11px] shrink-0 ml-1">
-                {(['single','range'] as const).map(m => (
-                  <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
-                    className="h-6 px-2.5 transition-all font-medium"
-                    style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white', borderRadius: '9999px' } : { color: '#94a3b8' }}>
-                    {m === 'single' ? 'Single' : 'Range'}
-                  </button>
-                ))}
-              </div>
-              <input type="date" value={filterFrom}
-                onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
-                className="h-6 text-[11px] border rounded-full px-2.5 bg-slate-50 w-30 shrink-0" />
-              {filterMode === 'range' && (<>
-                <span className="text-slate-400 text-[11px] shrink-0">–</span>
-                <input type="date" value={filterTo} min={filterFrom}
-                  onChange={e => setFilterTo(e.target.value)}
-                  className="h-6 text-[11px] border rounded-full px-2.5 bg-slate-50 w-30 shrink-0" />
-              </>)}
-              <button onClick={handleFilterApply}
-                className="h-6 px-3 text-[11px] font-semibold rounded-full text-white shrink-0 transition-all hover:opacity-90"
-                style={{ backgroundColor: '#bdac7e' }}>
-                Apply
-              </button>
-              {filterActive && (
-                <button onClick={clearDateFilter} title="Clear"
-                  className="h-6 w-6 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 shrink-0 transition-all">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-              {filterActive && (
-                <span className="text-[11px] font-semibold shrink-0 whitespace-nowrap" style={{ color: '#bdac7e' }}>
-                  {filterFrom === filterTo
+            {/* Group: Date — compact dropdown */}
+            <div className="relative flex items-center px-4 py-2.5 shrink-0">
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-2 shrink-0">Date</span>
+              <button
+                onClick={e => { setDateBtnRect((e.currentTarget as HTMLButtonElement).getBoundingClientRect()); setDateDropdownOpen(v => !v) }}
+                className={[
+                  'h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
+                  filterActive ? 'text-white' : 'text-slate-500 hover:bg-slate-100',
+                ].join(' ')}
+                style={filterActive ? { backgroundColor: '#bdac7e' } : {}}
+              >
+                <CalendarIcon className="h-3 w-3" />
+                {filterActive
+                  ? (filterFrom === filterTo
                     ? new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
-                    : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
-                </span>
+                    : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}`)
+                  : 'Filter'}
+                {filterActive
+                  ? <span onClickCapture={e => { e.stopPropagation(); clearDateFilter() }} className="hover:opacity-70 flex items-center"><X className="h-3 w-3" /></span>
+                  : <ChevronDown className="h-3 w-3 opacity-40" />}
+              </button>
+
+              {dateDropdownOpen && dateBtnRect && (
+                <>
+                  {/* Backdrop */}
+                  <div className="fixed inset-0 z-40" onClick={() => setDateDropdownOpen(false)} />
+                  {/* Dropdown panel — fixed so overflow-x-auto on parent doesn't clip it */}
+                  <div className="fixed z-50 bg-white border border-border rounded-xl shadow-xl p-3 space-y-2.5 w-64"
+                    style={{ top: dateBtnRect.bottom + 4, left: dateBtnRect.left }}
+                  >
+                    {/* Presets */}
+                    <div className="flex gap-1.5 flex-wrap">
+                      {(['today','week','month'] as const).map(p => (
+                        <button key={p} onClick={() => { handlePreset(p); setDateDropdownOpen(false) }}
+                          className="h-6 px-2.5 text-[11px] font-medium rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">
+                          {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Mode toggle */}
+                    <div className="flex rounded-full bg-slate-100 overflow-hidden text-[11px] w-fit">
+                      {(['single','range'] as const).map(m => (
+                        <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
+                          className="h-6 px-3 transition-all font-medium"
+                          style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white', borderRadius: '9999px' } : { color: '#94a3b8' }}>
+                          {m === 'single' ? 'Single' : 'Range'}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Date inputs */}
+                    <div className="flex items-center gap-2">
+                      <input type="date" value={filterFrom}
+                        onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
+                        className="h-7 text-[11px] border rounded-lg px-2 bg-slate-50 flex-1 min-w-0" />
+                      {filterMode === 'range' && (<>
+                        <span className="text-slate-400 text-[11px] shrink-0">–</span>
+                        <input type="date" value={filterTo} min={filterFrom}
+                          onChange={e => setFilterTo(e.target.value)}
+                          className="h-7 text-[11px] border rounded-lg px-2 bg-slate-50 flex-1 min-w-0" />
+                      </>)}
+                    </div>
+                    {/* Apply */}
+                    <button
+                      onClick={() => { handleFilterApply(); setDateDropdownOpen(false) }}
+                      className="w-full h-7 text-[11px] font-semibold rounded-lg text-white hover:opacity-90 transition-opacity"
+                      style={{ backgroundColor: '#bdac7e' }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </>
               )}
             </div>
 
@@ -1733,8 +1801,26 @@ export default function CalendarView() {
                     )}
                   </div>
 
-                  <DialogFooter className="gap-2 pt-1">
+                  <DialogFooter className="gap-2 pt-1 flex-wrap">
                     <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+                    {canEdit && selectedBooking.status !== 'cancelled' && (
+                      <Button
+                        variant="outline"
+                        className="border-amber-300 text-amber-700 hover:bg-amber-50 gap-1.5"
+                        onClick={() => {
+                          setIsDetailOpen(false)
+                          setWlBooking({
+                            id:         selectedBooking.id,
+                            code:       selectedBooking.bookingCode ?? selectedBooking.id,
+                            startDate:  selectedBooking.startDate,
+                            endDate:    selectedBooking.endDate,
+                            openTripId: otDetail?.id,
+                          })
+                        }}
+                      >
+                        <Users className="h-4 w-4" /> Waiting List
+                      </Button>
+                    )}
                     {selectedBooking.status === 'on_hold' ? (
                       <Button
                         onClick={() => {
@@ -2133,7 +2219,11 @@ export default function CalendarView() {
                                          : 'Available'
                         const isAddingHere = otAddCabinId === c.id
                         return (
-                          <div key={c.id} className="px-4 py-3 hover:bg-muted/20 transition-colors">
+                          <div
+                            key={c.id}
+                            className="px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+                            onClick={() => handleCabinClick(c)}
+                          >
                             <div className="flex items-center gap-3">
                               {/* Status dot */}
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
@@ -2148,13 +2238,13 @@ export default function CalendarView() {
                                   <div className="mt-1 flex flex-wrap gap-1.5 items-center">
                                     {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
                                       <div key={g.id} className="flex items-center gap-0.5">
-                                        <button onClick={() => setEditGuestId(g.id)}
+                                        <button onClick={e => { e.stopPropagation(); setEditGuestId(g.id) }}
                                           className="text-[10px] bg-muted border rounded-l px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
                                           {g.name}
                                         </button>
                                         {g.bgId && (
                                           <button
-                                            onClick={() => window.open(`/print/guest-sheet/${g.bgId}`, '_blank')}
+                                            onClick={e => { e.stopPropagation(); window.open(`/print/guest-sheet/${g.bgId}`, '_blank') }}
                                             className="text-[10px] bg-sky-50 border border-sky-200 rounded-r px-1.5 py-px text-sky-600 hover:bg-sky-100 transition-colors"
                                             title="Guest Sheet"
                                           >
@@ -2165,7 +2255,8 @@ export default function CalendarView() {
                                     ))}
                                     {canAddMore && (
                                       <button
-                                        onClick={() => {
+                                        onClick={e => {
+                                          e.stopPropagation()
                                           if (isAddingHere) { setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([]) }
                                           else { setOtAddCabinId(c.id); setOtAddBookingId(c.bookingId); setOtAddQ(''); setOtAddResults([]) }
                                         }}
@@ -2191,7 +2282,7 @@ export default function CalendarView() {
                             </div>
                             {/* Inline add-guest form */}
                             {isAddingHere && (
-                              <div className="mt-2 ml-5 border rounded-lg bg-muted/30 p-2 space-y-1.5">
+                              <div className="mt-2 ml-5 border rounded-lg bg-muted/30 p-2 space-y-1.5" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                   <input
                                     autoFocus
@@ -2340,6 +2431,20 @@ export default function CalendarView() {
         preselectedYachtId={wizardYachtId}
         completeBookingId={completeBookingId}
       />
+
+      {/* ── Waiting List Modal ── */}
+      {wlBooking && (
+        <WaitingListManager
+          open={!!wlBooking}
+          onOpenChange={v => !v && setWlBooking(null)}
+          bookingId={wlBooking.id}
+          bookingCode={wlBooking.code}
+          startDate={wlBooking.startDate}
+          endDate={wlBooking.endDate}
+          yachtId={wlBooking.yachtId}
+          openTripId={wlBooking.openTripId}
+        />
+      )}
 
     </div>
   )

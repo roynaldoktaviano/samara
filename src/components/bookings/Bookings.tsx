@@ -16,11 +16,12 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
-  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight,
+  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, Clock, Users,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
+import WaitingListManager from './WaitingListManager'
 import { toast } from 'sonner'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -202,6 +203,7 @@ export default function Bookings() {
   const [detailCabins,        setDetailCabins]        = useState<any[]>([])
   const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
   const [cancelDialogBooking, setCancelDialogBooking] = useState<BookingRecord | null>(null)
+
   const [cancelReasonText,    setCancelReasonText]    = useState('')
   const [cancelSaving,        setCancelSaving]        = useState(false)
   /* reschedule inside edit dialog */
@@ -225,6 +227,15 @@ export default function Bookings() {
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
+
+  /* waiting list */
+  const [waitingListBooking, setWaitingListBooking] = useState<BookingRecord | null>(null)
+
+  /* extend hold */
+  const [extendHoldBooking,  setExtendHoldBooking]  = useState<BookingRecord | null>(null)
+  const [extendHoldDate,     setExtendHoldDate]     = useState('')
+  const [extendHoldTime,     setExtendHoldTime]     = useState('23:59')
+  const [extendHoldSaving,   setExtendHoldSaving]   = useState(false)
 
   /* ── fetchers ── */
   const fetchBookings = useCallback(async () => {
@@ -359,6 +370,35 @@ export default function Bookings() {
       setDetailBooking(null)
     } catch (e) { console.error(e) }
     finally { setCancelSaving(false) }
+  }
+
+  /* ── extend hold ── */
+  const openExtendHold = (b: BookingRecord) => {
+    const defaultDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    setExtendHoldDate(b.holdUntil ? new Date(b.holdUntil).toISOString().split('T')[0] : defaultDate)
+    setExtendHoldTime(b.holdUntil ? new Date(b.holdUntil).toTimeString().slice(0, 5) : '23:59')
+    setExtendHoldBooking(b)
+  }
+
+  const saveExtendHold = async () => {
+    if (!extendHoldBooking || !extendHoldDate) return
+    setExtendHoldSaving(true)
+    try {
+      const holdUntil = new Date(`${extendHoldDate}T${extendHoldTime || '23:59'}:00`).toISOString()
+      const res = await fetch(`/api/bookings/${extendHoldBooking.id}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ holdUntil }),
+      })
+      if (!res.ok) throw new Error('Gagal menyimpan')
+      toast.success('Hold diperpanjang')
+      setExtendHoldBooking(null)
+      await fetchBookings()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Terjadi kesalahan')
+    } finally {
+      setExtendHoldSaving(false)
+    }
   }
 
   /* ── request invoice ── */
@@ -706,22 +746,20 @@ export default function Bookings() {
                   <TableHead className="hidden md:table-cell">Paid</TableHead>
                   <TableHead className="hidden lg:table-cell">Due Dates</TableHead>
                   <TableHead>Status</TableHead>
-                  {canManageBookings && <TableHead className="hidden sm:table-cell text-center">Payment</TableHead>}
-                  {canManageBookings && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading || (canManageBookings && paymentsLoading) ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: canManageBookings ? 12 : 10 }).map((_, j) => (
+                      {Array.from({ length: 10 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canManageBookings ? 12 : 10} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                       {bookings.length === 0
                         ? 'No bookings yet — click "New Booking" to get started.'
                         : 'No bookings match the current filters.'}
@@ -792,129 +830,17 @@ export default function Bookings() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[b.status] ?? 'bg-muted text-muted-foreground'}`}>
                         {STATUS_LABELS[b.status] ?? b.status}
                       </span>
-                    </TableCell>
-                    {canManageBookings && (() => {
-                      const bookingPmts     = payments.filter(p => p.bookingId === b.id)
-                      const activePmt       = bookingPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation'].includes(p.status))
-                      const confirmedPmts   = bookingPmts.filter(p => p.status === 'confirmed')
-                      const hasConfirmedPmt = confirmedPmts.length > 0
-                      const hasSettlement   = bookingPmts.some(p => p.paymentType === 'PELUNASAN')
-                      const pelunasanBlocked = bookingPmts.length > 0 && !hasConfirmedPmt
-                      const canRequest      = b.status !== 'cancelled' && b.status !== 'fully_paid' && b.status !== 'completed' && b.status !== 'on_hold' && !activePmt && !hasSettlement
-                      const holdExpiry = b.holdUntil ? new Date(b.holdUntil) : null
-                      const isExpired  = holdExpiry ? holdExpiry < new Date() : false
-                      const isUrgent   = holdExpiry && !isExpired ? (holdExpiry.getTime() - Date.now()) < 2 * 60 * 60 * 1000 : false
-                      return (
-                        <TableCell className="hidden sm:table-cell" onClick={e => e.stopPropagation()}>
-                          {b.status === 'cancelled' ? null : (
-                          <div className="flex flex-col gap-1 min-w-0">
-
-                            {/* On Hold */}
-                            {b.status === 'on_hold' ? (
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <Button
-                                  variant="ghost" size="sm"
-                                  className="h-6 px-2 text-[11px] font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-full border border-orange-200"
-                                  onClick={() => { setCompleteBookingId(b.id); setWizardOpen(true) }}
-                                >
-                                  <ChevronRight className="h-3 w-3 mr-0.5" /> Complete
-                                </Button>
-                                {holdExpiry && (
-                                  <span className={`text-[10px] font-medium ${isExpired ? 'text-red-500' : isUrgent ? 'text-orange-500' : 'text-muted-foreground'}`}>
-                                    {isExpired ? '⚠ Expired' : `until ${holdExpiry.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${holdExpiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                                  </span>
-                                )}
-                              </div>
-                            ) : activePmt ? (
-                              /* Active payment in progress */
-                              <div className="flex flex-col gap-1">
-                                {activePmt.status === 'requested' && (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 w-fit">
-                                    ⏳ Awaiting Finance
-                                  </span>
-                                )}
-                                {activePmt.status === 'invoice_ready' && (
-                                  <>
-                                    <button
-                                      onClick={() => window.open(`/print/invoice/${activePmt.id}`, '_blank')}
-                                      className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-violet-600 border border-violet-200 hover:bg-violet-50 transition-colors w-fit"
-                                    >
-                                      <Receipt className="h-2.5 w-2.5" /> Download Invoice
-                                    </button>
-                                    <Button
-                                      variant="ghost" size="sm"
-                                      className="h-6 px-2 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded-full border border-emerald-200 w-fit"
-                                      onClick={() => openProofUpload(activePmt)}
-                                    >
-                                      <Upload className="h-3 w-3 mr-1" /> Submit Proof
-                                    </Button>
-                                  </>
-                                )}
-                                {activePmt.status === 'pending_confirmation' && (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 w-fit">
-                                    ⏳ Awaiting Confirmation
-                                  </span>
-                                )}
-                              </div>
-                            ) : canRequest ? (
-                              <Button
-                                variant="ghost" size="sm"
-                                disabled={pelunasanBlocked}
-                                title={pelunasanBlocked ? 'Confirm the deposit first' : undefined}
-                                className={`h-6 px-2 text-[11px] font-semibold rounded-full border w-fit ${pelunasanBlocked ? 'opacity-35 cursor-not-allowed border-border text-muted-foreground' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
-                                onClick={() => !pelunasanBlocked && openPayment(b)}
-                              >
-                                <CreditCard className="h-3 w-3 mr-1" /> Request Invoice
-                              </Button>
-                            ) : null}
-
-                            {/* Confirmed invoices */}
-                            {confirmedPmts.length > 0 && (
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {confirmedPmts.map((p, idx) => (
-                                  <button
-                                    key={p.id}
-                                    onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')}
-                                    className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors"
-                                    title={p.invoiceNumber}
-                                  >
-                                    <Receipt className="h-2.5 w-2.5" />
-                                    {p.paymentType === 'PELUNASAN' ? 'LUNAS ✓' : 'DP ✓'}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                      {b.status === 'on_hold' && b.holdUntil && (() => {
+                        const exp = new Date(b.holdUntil)
+                        const expired = exp < new Date()
+                        const urgent  = !expired && (exp.getTime() - Date.now()) < 2 * 60 * 60 * 1000
+                        return (
+                          <div className={`text-[10px] font-medium mt-0.5 ${expired ? 'text-red-500' : urgent ? 'text-orange-500' : 'text-muted-foreground'}`}>
+                            {expired ? '⚠ Expired' : `until ${exp.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${exp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
                           </div>
-                          )}
-                        </TableCell>
-                      )
-                    })()}
-                    {canManageBookings && (
-                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-end gap-1">
-                          {b.status !== 'cancelled' && b.guests.length > 0 && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-600 hover:bg-sky-50" title="Guest Travel Details" onClick={() => openTravel(b)}>
-                              <PlaneTakeoff className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {b.status !== 'cancelled' && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(b)}>
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {userRole === 'ADMIN' && b.status === 'cancelled' && (
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
-                              title="Delete booking"
-                              onClick={() => deleteBooking(b)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
+                        )
+                      })()}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1484,6 +1410,15 @@ export default function Bookings() {
             const net        = Math.max(0, basePrice - db_.discount) + svcTotal - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)
             const fmtAmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const detailPmts      = payments.filter(p => p.bookingId === db_.id)
+            const detailActivePmt = detailPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation'].includes(p.status))
+            const detailConfirmed = detailPmts.filter(p => p.status === 'confirmed')
+            const detailHasPmt    = detailConfirmed.length > 0
+            const detailHasLunas  = detailPmts.some(p => p.paymentType === 'PELUNASAN')
+            const detailBlocked   = detailPmts.length > 0 && !detailHasPmt
+            const detailCanReq    = db_.status !== 'cancelled' && db_.status !== 'fully_paid' && db_.status !== 'completed' && db_.status !== 'on_hold' && !detailActivePmt && !detailHasLunas
+            const detailHoldExp   = db_.holdUntil ? new Date(db_.holdUntil) : null
+            const detailExpired   = detailHoldExp ? detailHoldExp < new Date() : false
             return (
               <>
                 {/* Header */}
@@ -1783,47 +1718,97 @@ export default function Bookings() {
                   </div>
                 </div>
 
-                {/* On Hold banner */}
-                {db_.status === 'on_hold' && (
-                  <div className="shrink-0 mx-5 mb-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-orange-700">Booking On Hold</p>
-                      <p className="text-xs text-orange-600 mt-0.5">This booking has not been confirmed yet. Continue to fill in pricing & payment.</p>
+                {/* Actions */}
+                {canManageBookings && db_.status !== 'cancelled' && (
+                  <div className="shrink-0 border-t px-5 py-3 space-y-2">
+                    {/* Payment status banners */}
+                    {detailActivePmt?.status === 'requested' && (
+                      <p className="text-[11px] text-blue-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Invoice sent — awaiting Finance team</p>
+                    )}
+                    {detailActivePmt?.status === 'pending_confirmation' && (
+                      <p className="text-[11px] text-amber-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Proof submitted — awaiting confirmation</p>
+                    )}
+                    {/* Confirmed invoice badges */}
+                    {detailConfirmed.length > 0 && (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {detailConfirmed.map(p => (
+                          <button key={p.id} onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                            <Receipt className="h-3 w-3" /> {p.paymentType === 'PELUNASAN' ? 'Full Payment ✓' : 'Deposit ✓'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Compact action chips */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {db_.status === 'on_hold' && (
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 hover:bg-orange-100 transition-colors"
+                          onClick={async () => { setDetailBooking(null); const res = await fetch(`/api/bookings/${db_.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'pending' }) }); if (res.ok) fetchBookings() }}
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" /> Complete Booking
+                        </button>
+                      )}
+                      {db_.status === 'on_hold' && (
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-100 transition-colors"
+                          onClick={() => { setDetailBooking(null); openExtendHold(db_) }}
+                          title={detailHoldExp && !detailExpired ? `Expires ${detailHoldExp.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : undefined}
+                        >
+                          <Clock className="h-3.5 w-3.5" /> Extend Hold
+                        </button>
+                      )}
+                      {detailCanReq && (
+                        <button
+                          disabled={detailBlocked}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          onClick={() => { if (!detailBlocked) { setDetailBooking(null); openPayment(db_) } }}
+                          title={detailBlocked ? 'Confirm deposit first' : undefined}
+                        >
+                          <CreditCard className="h-3.5 w-3.5" /> Request Invoice
+                        </button>
+                      )}
+                      {detailActivePmt?.status === 'invoice_ready' && (
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors" onClick={() => window.open(`/print/invoice/${detailActivePmt.id}`, '_blank')}>
+                          <Receipt className="h-3.5 w-3.5" /> Download Invoice
+                        </button>
+                      )}
+                      {detailActivePmt?.status === 'invoice_ready' && (
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors" onClick={() => { setDetailBooking(null); openProofUpload(detailActivePmt) }}>
+                          <Upload className="h-3.5 w-3.5" /> Submit Proof
+                        </button>
+                      )}
+                      {db_.guests.length > 0 && (
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 bg-sky-50 border border-sky-200 rounded-full px-3 py-1.5 hover:bg-sky-100 transition-colors" onClick={() => { setDetailBooking(null); openTravel(db_) }}>
+                          <PlaneTakeoff className="h-3.5 w-3.5" /> Travel Details
+                        </button>
+                      )}
+                      {(db_.status === 'on_hold' || db_.status === 'pending' || db_.status === 'partially_paid' || db_.status === 'fully_paid') && (
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:bg-amber-100 transition-colors" onClick={() => { setDetailBooking(null); setWaitingListBooking(db_) }}>
+                          <Users className="h-3.5 w-3.5" /> Waiting List
+                        </button>
+                      )}
+                      <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground bg-muted/60 border border-border rounded-full px-3 py-1.5 hover:bg-muted transition-colors" onClick={() => { setDetailBooking(null); openEdit(db_) }}>
+                        <Edit className="h-3.5 w-3.5" /> Edit Booking
+                      </button>
                     </div>
-                    <Button
-                      size="sm"
-                      style={{ backgroundColor: '#f59e0b', color: 'white' }}
-                      className="hover:opacity-90 shrink-0"
-                      onClick={async () => {
-                        setDetailBooking(null)
-                        // Re-open booking wizard in "complete" mode via a PATCH to change status to pending first
-                        const res = await fetch(`/api/bookings/${db_.id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status: 'pending' }),
-                        })
-                        if (res.ok) fetchBookings()
-                      }}
-                    >
-                      Complete Booking
-                    </Button>
                   </div>
                 )}
 
                 {/* Footer */}
-                <div className="shrink-0 border-t px-5 py-3 flex justify-between items-center">
+                <div className="shrink-0 border-t px-5 py-3 flex justify-between items-center gap-2">
                   {db_.status !== 'cancelled' ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => openCancelDialog(db_)}
-                      className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
-                    >
+                    <button className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors" onClick={() => openCancelDialog(db_)}>
                       Cancel Booking
-                    </Button>
-                  ) : (
-                    <div />
-                  )}
-                  <Button variant="outline" onClick={() => setDetailBooking(null)}>Close</Button>
+                    </button>
+                  ) : <div />}
+                  <div className="flex items-center gap-2">
+                    {userRole === 'ADMIN' && db_.status === 'cancelled' && (
+                      <Button variant="outline" size="sm" className="border-red-300 text-red-500 hover:bg-red-50 gap-1.5" onClick={() => { setDetailBooking(null); deleteBooking(db_) }}>
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => setDetailBooking(null)}>Close</Button>
+                  </div>
                 </div>
               </>
             )
@@ -1889,6 +1874,67 @@ export default function Bookings() {
         onSuccess={fetchBookings}
         completeBookingId={completeBookingId}
       />
+
+      {/* ════ Waiting List Manager ════ */}
+      {waitingListBooking && (
+        <WaitingListManager
+          open={!!waitingListBooking}
+          onOpenChange={v => !v && setWaitingListBooking(null)}
+          bookingId={waitingListBooking.id}
+          bookingCode={waitingListBooking.bookingCode}
+          startDate={waitingListBooking.startDate}
+          endDate={waitingListBooking.endDate}
+          yachtId={waitingListBooking.yacht?.id}
+          openTripId={waitingListBooking.openTrip?.id}
+          currentCustomerId={waitingListBooking.customer.id}
+        />
+      )}
+
+      {/* ════ Extend Hold Dialog ════ */}
+      <Dialog open={!!extendHoldBooking} onOpenChange={v => !v && setExtendHoldBooking(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-500" /> Extend Hold
+            </DialogTitle>
+          </DialogHeader>
+          {extendHoldBooking && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Booking <span className="font-mono font-semibold text-foreground">{extendHoldBooking.bookingCode}</span> — {extendHoldBooking.customer.name}
+              </p>
+              <div className="space-y-1.5">
+                <Label>Tanggal Hold Baru</Label>
+                <Input
+                  type="date"
+                  value={extendHoldDate}
+                  onChange={e => setExtendHoldDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  disabled={extendHoldSaving}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Waktu</Label>
+                <Input
+                  type="time"
+                  value={extendHoldTime}
+                  onChange={e => setExtendHoldTime(e.target.value)}
+                  disabled={extendHoldSaving}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtendHoldBooking(null)} disabled={extendHoldSaving}>
+              Batal
+            </Button>
+            <Button onClick={saveExtendHold} disabled={extendHoldSaving || !extendHoldDate}>
+              {extendHoldSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

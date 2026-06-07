@@ -64,6 +64,12 @@ enum VoucherType {
   FIXED
 }
 
+enum WaitingListStatus {
+  waiting
+  promoted
+  cancelled
+}
+
 enum PaymentStatus {
   requested
   invoice_ready
@@ -82,8 +88,9 @@ model User {
   role          Role      @default(SALES)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  bookings      Booking[] @relation("SalespersonBookings")
-  managedAgents Agent[]   @relation("AgentSalesperson")
+  bookings         Booking[]     @relation("SalespersonBookings")
+  managedAgents    Agent[]       @relation("AgentSalesperson")
+  waitingListItems WaitingList[]
 }
 
 model Customer {
@@ -118,6 +125,7 @@ model Customer {
   updatedAt           DateTime       @updatedAt
   bookings            Booking[]
   guestOf             BookingGuest[]
+  waitingListItems    WaitingList[]
 
   @@index([deletedAt])
   @@index([name])
@@ -193,12 +201,13 @@ model Yacht {
   deletedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  bookings     Booking[]
-  crew         Crew[]
-  cabins       Cabin[]
-  openTrips    OpenTrip[]
-  maintenances Maintenance[]
-  expenses     Expense[]
+  bookings         Booking[]
+  crew             Crew[]
+  cabins           Cabin[]
+  openTrips        OpenTrip[]
+  maintenances     Maintenance[]
+  expenses         Expense[]
+  waitingListItems WaitingList[]
 }
 
 model Cabin {
@@ -243,10 +252,11 @@ model OpenTrip {
   maxCapacity   Int      @default(0)
   status        OpenTripStatus @default(open)
   closedReason  String?
-  bookings      Booking[]
-  yacht         Yacht    @relation(fields: [yachtId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  bookings         Booking[]
+  waitingListItems WaitingList[]
+  yacht            Yacht    @relation(fields: [yachtId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([yachtId])
   @@index([status])
@@ -296,6 +306,8 @@ model Booking {
   payments        Payment[]
   expenses        Expense[]
   notifications   Notification[]
+  waitingList     WaitingList[]        @relation("BookingWaitingList")
+  slotHistory     WaitingListHistory[] @relation("BookingSlotHistory")
 
   @@index([status])
   @@index([openTripId, status])
@@ -488,6 +500,51 @@ model Notification {
 
   @@index([userId, isRead])
   @@unique([userId, type, bookingId])
+}
+
+model WaitingList {
+  id                String            @id @default(cuid())
+  bookingId         String?
+  yachtId           String?
+  openTripId        String?
+  startDate         DateTime
+  endDate           DateTime
+  customerId        String?
+  contactName       String
+  contactPhone      String?
+  contactEmail      String?
+  notes             String?
+  priority          Int               @default(0)
+  status            WaitingListStatus @default(waiting)
+  salespersonId     String?
+  promotedBookingId String?
+
+  booking         Booking?   @relation("BookingWaitingList", fields: [bookingId], references: [id], onDelete: Cascade)
+  yacht           Yacht?     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  openTrip        OpenTrip?  @relation(fields: [openTripId], references: [id], onDelete: Cascade)
+  customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  salesperson     User?      @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([bookingId, status])
+  @@index([yachtId, status])
+  @@index([openTripId, status])
+  @@index([status])
+}
+
+model WaitingListHistory {
+  id           String    @id @default(cuid())
+  bookingId    String
+  holderName   String
+  customerId   String?
+  cancelledAt  DateTime
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+
+  booking  Booking  @relation("BookingSlotHistory", fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
 }
 
 model SystemSetting {

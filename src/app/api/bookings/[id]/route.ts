@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
+import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -45,7 +46,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -80,6 +81,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
         ...(hasDiving       !== undefined && { hasDiving:       Boolean(hasDiving) }),
         ...(agentContactId  !== undefined && { agentContactId:  agentContactId || null }),
+        ...(holdUntil       !== undefined && { holdUntil:       holdUntil ? new Date(holdUntil) : null }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },
@@ -212,6 +214,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       },
       select: { id: true, bookingCode: true, status: true },
     })
+
+    // When booking is cancelled, promote waiting list entries (awaited so fetchBookings sees the new on_hold booking)
+    if (computedStatus === 'cancelled') {
+      await promoteWaitingListForBooking(id).catch(e => console.error('promote waiting list failed:', e))
+    }
 
     const userId   = session?.user?.id   ?? ''
     const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'

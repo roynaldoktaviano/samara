@@ -29,6 +29,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           },
           orderBy: { id: 'desc' },
         },
+        waitingListItems: {
+          include: {
+            booking:  { select: { bookingCode: true, tripType: true, destination: true, yachtId: true } },
+            yacht:    { select: { name: true } },
+            openTrip: { select: { title: true, destination: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     })
 
@@ -65,9 +73,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       cabin: g.cabin?.name ?? '',
     }))
 
+    const asWaitingList = customer.waitingListItems.map(w => ({
+      id: `wl-${w.id}`,
+      bookingCode: w.booking?.bookingCode ?? `WL-${w.id.slice(-6).toUpperCase()}`,
+      tripType: w.openTripId ? 'OPEN_TRIP' : (w.booking?.tripType ?? 'PRIVATE_CHARTER'),
+      startDate: w.startDate,
+      endDate: w.endDate,
+      destination: w.openTrip?.destination ?? w.booking?.destination ?? '',
+      status: w.status,
+      totalPrice: 0,
+      yachtName: w.yacht?.name ?? '',
+      tripTitle: w.openTrip?.title ?? '',
+      isLead: false,
+      cabin: '',
+      isWaitingList: true,
+      wlStatus: w.status,
+    }))
+
     // Deduplicate (guest can appear in both as lead booking and guestOf)
     const seen = new Set<string>()
-    const tripHistory = [...asLead, ...asGuest]
+    const tripHistory = [...asLead, ...asGuest, ...asWaitingList]
       .filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true })
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
 

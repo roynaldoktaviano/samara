@@ -50,6 +50,8 @@ interface TripEntry {
   tripTitle: string
   isLead: boolean
   cabin: string
+  isWaitingList?: boolean
+  wlStatus?: string
 }
 
 interface GuestDetail extends Guest {
@@ -424,22 +426,30 @@ export default function Guests() {
               <div>
                 <p className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <Ship className="h-4 w-4 text-muted-foreground" />
-                  Trip History ({detail.tripHistory.length})
+                  Trip History ({detail.tripHistory.filter(t => !t.isWaitingList).length})
+                  {detail.tripHistory.some(t => t.isWaitingList) && (
+                    <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
+                      +{detail.tripHistory.filter(t => t.isWaitingList).length} waiting list
+                    </span>
+                  )}
                 </p>
                 {detail.tripHistory.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No trips yet.</p>
                 ) : (
                   <div className="space-y-2">
                     {detail.tripHistory.map(t => (
-                      <div key={t.id} className="rounded-lg border p-3 text-sm">
+                      <div key={t.id} className={`rounded-lg border p-3 text-sm ${t.isWaitingList ? 'border-amber-200 bg-amber-50/40' : ''}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
-                              {t.isLead && <span className="text-[10px] bg-[#bdac7e]/20 text-[#8a7040] rounded px-1.5 py-0.5 font-medium">Lead</span>}
+                              {t.isWaitingList && (
+                                <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
+                              )}
+                              {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-[#bdac7e]/20 text-[#8a7040] rounded px-1.5 py-0.5 font-medium">Lead</span>}
                               {t.cabin && <span className="text-[10px] text-muted-foreground">{t.cabin}</span>}
                             </div>
-                            <p className="font-medium mt-1">{t.tripTitle || t.destination}</p>
+                            <p className="font-medium mt-1">{t.tripTitle || t.destination || '—'}</p>
                             {t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
                             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                               <Calendar className="h-3 w-3" />
@@ -447,10 +457,22 @@ export default function Guests() {
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
-                              {t.status}
-                            </Badge>
-                            <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            {t.isWaitingList ? (
+                              <Badge variant="outline" className={`text-[10px] ${
+                                t.wlStatus === 'waiting'   ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                t.wlStatus === 'promoted'  ? 'bg-green-50 text-green-700 border-green-200' :
+                                                             'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}>
+                                {t.wlStatus === 'waiting' ? 'Menunggu' : t.wlStatus === 'promoted' ? 'Dipromosi' : 'Dibatalkan'}
+                              </Badge>
+                            ) : (
+                              <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
+                                {t.status}
+                              </Badge>
+                            )}
+                            {!t.isWaitingList && (
+                              <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            )}
                           </div>
                         </div>
                       </div>

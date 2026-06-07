@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
+import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -48,11 +49,8 @@ export async function GET(request: NextRequest) {
       data: { status: 'cancelled' },
     }).catch(e => console.error('auto-cancel failed:', e))
 
-    // Auto-cancel on_hold bookings whose hold deadline has passed
-    db.booking.updateMany({
-      where: { status: 'on_hold', holdUntil: { lt: new Date() } },
-      data: { status: 'cancelled', cancelReason: 'Hold expired' },
-    }).catch(e => console.error('auto-cancel on_hold failed:', e))
+    // Auto-cancel expired on_hold bookings and promote waiting list entries
+    processExpiredHoldsAndPromote().catch(e => console.error('processExpiredHolds failed:', e))
 
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
