@@ -83,18 +83,19 @@ export default function SalesStats() {
   const [to,          setTo]          = useState(thisMonth.to)
   const [activePreset,setActivePreset]= useState('This Month')
   const [tick,        setTick]        = useState(0)
+  const [scope,       setScope]       = useState<'mine' | 'all'>('mine')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchStats = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const qs = new URLSearchParams({ from, to, ...(yachtId !== 'all' ? { yachtId } : {}) })
+      const qs = new URLSearchParams({ from, to, scope, ...(yachtId !== 'all' ? { yachtId } : {}) })
       const res = await fetch(`/api/stats/sales?${qs}`)
       if (res.ok) setData(await res.json())
     } catch (e) { console.error(e) }
     finally { setLoading(false); setRefreshing(false) }
-  }, [from, to, yachtId])
+  }, [from, to, yachtId, scope])
 
   useEffect(() => { fetchStats() }, [fetchStats])
 
@@ -131,7 +132,26 @@ export default function SalesStats() {
       {/* ── Header row 1: title + refresh ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-2xl font-bold tracking-tight">Sales Overview</h3>
+          <div className="flex items-center gap-3 mb-0.5">
+            <h3 className="text-2xl font-bold tracking-tight">Sales Overview</h3>
+            {/* Scope toggle */}
+            <div className="flex items-center rounded-lg border bg-muted p-0.5 text-xs font-semibold">
+              <button
+                onClick={() => setScope('mine')}
+                className="px-3 py-1 rounded-md transition-colors"
+                style={scope === 'mine' ? { background: TEAL, color: 'white' } : { color: '#6b7280' }}
+              >
+                My Sales
+              </button>
+              <button
+                onClick={() => setScope('all')}
+                className="px-3 py-1 rounded-md transition-colors"
+                style={scope === 'all' ? { background: TEAL, color: 'white' } : { color: '#6b7280' }}
+              >
+                All Sales
+              </button>
+            </div>
+          </div>
           <p className="text-muted-foreground text-sm">
             {loading ? 'Loading…' : (
               <>

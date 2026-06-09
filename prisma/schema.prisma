@@ -285,7 +285,9 @@ model Booking {
   holdUntil      DateTime?
   guestCount     Int             @default(1)
   crewRequired   Boolean         @default(false)
-  hasDiving      Boolean         @default(false)
+  hasDiving           Boolean         @default(false)
+  masterFormToken     String?         @unique
+  masterFormExpiresAt DateTime?
   salesperson     String?
   salespersonId   String?
   notes           String?

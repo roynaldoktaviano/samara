@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
           select: {
             hasDiving: true, tripType: true, bookingCode: true,
             startDate: true, endDate: true, destination: true,
-            yacht: { select: { name: true } },
+            yacht: { select: { name: true, canDiving: true } },
             openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
           },
         },
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     })
     if (bg?.booking) {
       const b = bg.booking as any
-      hasDiving  = b.hasDiving ?? false
+      hasDiving  = (b.hasDiving ?? false) && (b.yacht?.canDiving ?? false)
       isOpenTrip = b.tripType === 'OPEN_TRIP'
       tripInfo = {
         bookingCode: b.bookingCode,

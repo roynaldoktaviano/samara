@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, User, Link2, Copy, Check, ExternalLink, ChevronsUpDown, Search } from 'lucide-react'
+import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
 
@@ -392,12 +392,8 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
   const [saving, setSaving]           = useState(false)
   const [guestName, setGuestName]     = useState('')
   const [passportImage, setPassportImage] = useState('')
-  const [generatingLink, setGeneratingLink] = useState(false)
-  const [guestLink, setGuestLink]     = useState('')
-  const [linkCopied, setLinkCopied]   = useState(false)
-
   useEffect(() => {
-    if (!open) { setGuestLink(''); setLinkCopied(false); setActiveTab('profile'); return }
+    if (!open) { setActiveTab('profile'); return }
     if (!guestId) {
       setForm(GUEST_FORM_EMPTY)
       setMedData({}); setFoodData({}); setDrinkData({}); setDivData({})
@@ -425,28 +421,6 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
 
   const jsonSetter = (setter: (d: any) => void) => (k: string, v: string) =>
     setter((prev: any) => ({ ...prev, [k]: v }))
-
-  const handleGenerateLink = async () => {
-    if (!guestId) return
-    setGeneratingLink(true)
-    try {
-      const res = await fetch(`/api/customers/${guestId}/generate-link`, { method: 'POST' })
-      if (!res.ok) throw new Error()
-      const { link } = await res.json()
-      setGuestLink(bookingGuestId ? `${link}?bg=${bookingGuestId}` : link)
-    } catch {
-      toast.error('Failed to generate link')
-    } finally {
-      setGeneratingLink(false)
-    }
-  }
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(guestLink)
-    setLinkCopied(true)
-    toast.success('Link copied!')
-    setTimeout(() => setLinkCopied(false), 2000)
-  }
 
   const handleSave = async () => {
     if (!form.firstName.trim()) return
@@ -580,30 +554,6 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
 
         {/* Footer */}
         <div className="shrink-0 px-5 py-3.5 border-t space-y-2.5">
-          {isEdit && (
-            <div className="flex items-center gap-2">
-              {guestLink ? (
-                <>
-                  <div className="flex-1 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 min-w-0">
-                    <Link2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                    <span className="flex-1 text-xs text-emerald-700 truncate font-mono">{guestLink}</span>
-                  </div>
-                  <button onClick={copyLink} className="shrink-0 p-1.5 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Copy link">
-                    {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                  <a href={guestLink} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1.5 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Open in new tab">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </>
-              ) : (
-                <Button variant="outline" size="sm" onClick={handleGenerateLink} disabled={generatingLink}
-                  className="h-8 text-xs gap-1.5 border-dashed">
-                  {generatingLink ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                  Generate Guest Form Link
-                </Button>
-              )}
-            </div>
-          )}
 
           <div className="flex items-center justify-end gap-2">
             <Button variant="outline" onClick={onClose} disabled={saving} className="h-8 px-4 text-sm">Cancel</Button>

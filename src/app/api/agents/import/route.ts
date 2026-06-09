@@ -134,7 +134,12 @@ export async function POST(request: NextRequest) {
     const agentType    = col(row, 'agentType', 'type') || null
     const isActiveRaw  = col(row, 'isActive', 'active') || 'true'
     const isActive     = isActiveRaw.toLowerCase() !== 'false'
-    const salespersonId = matchSalesperson(col(row, 'salesperson', 'sales', 'pic'))
+    const salespersonRaw = col(row, 'salesperson', 'sales', 'pic')
+    const salespersonId  = matchSalesperson(salespersonRaw)
+    if (!salespersonId) {
+      errors.push(`Row ${rowNum} ("${name}"): salesperson "${salespersonRaw || '(empty)'}" tidak ditemukan — baris dilewati`)
+      continue
+    }
 
     if (!agentMeta.has(key)) {
       agentMeta.set(key, { name, commission, country, agentType, contract, isActive, salespersonId })
@@ -157,8 +162,23 @@ export async function POST(request: NextRequest) {
   for (const [key, meta] of agentMeta) {
     const existingId = existingMap.get(key)
     if (existingId) {
-      agentIdMap.set(key, existingId)
-      agentsUpdated++
+      try {
+        await db.agent.update({
+          where: { id: existingId },
+          data: {
+            commission:    meta.commission,
+            country:       meta.country,
+            agentType:     meta.agentType,
+            contract:      meta.contract,
+            isActive:      meta.isActive,
+            ...(meta.salespersonId ? { salespersonId: meta.salespersonId } : {}),
+          },
+        })
+        agentIdMap.set(key, existingId)
+        agentsUpdated++
+      } catch (e: any) {
+        errors.push(`Agent "${meta.name}": ${e.message ?? 'update failed'}`)
+      }
     } else {
       try {
         const agent = await db.agent.create({
@@ -190,10 +210,7 @@ export async function POST(request: NextRequest) {
     if (!agentName) continue
 
     const contactName = col(row, 'contactName', 'contact', 'contactPerson', 'person').trim()
-    if (!contactName) {
-      skippedContacts.push({ row: i + 2, agent: agentName, reason: 'No contact name' })
-      continue
-    }
+    if (!contactName) continue
 
     const agentId = agentIdMap.get(agentName.toLowerCase().trim())
     if (!agentId) {
@@ -213,29 +230,50 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await db.agentContact.create({
-        data: {
+      // Check existing contact by agentId + name (case-insensitive)
+      const existingContact = await db.agentContact.findFirst({
+        where: {
           agentId,
-          name:        contactName,
-          email:       contactEmail,
-          whatsapp:    contactWhatsapp,
-          jobTitle:    contactJobTitle,
-          dateOfBirth,
+          name: { equals: contactName, mode: 'insensitive' },
         },
+        select: { id: true },
       })
-      contactsCreated++
+
+      if (existingContact) {
+        await db.agentContact.update({
+          where: { id: existingContact.id },
+          data: {
+            ...(contactEmail    ? { email:       contactEmail }    : {}),
+            ...(contactWhatsapp ? { whatsapp:    contactWhatsapp } : {}),
+            ...(contactJobTitle ? { jobTitle:    contactJobTitle } : {}),
+            ...(dateOfBirth     ? { dateOfBirth: dateOfBirth }     : {}),
+          },
+        })
+      } else {
+        await db.agentContact.create({
+          data: {
+            agentId,
+            name:        contactName,
+            email:       contactEmail,
+            whatsapp:    contactWhatsapp,
+            jobTitle:    contactJobTitle,
+            dateOfBirth,
+          },
+        })
+        contactsCreated++
+      }
     } catch (e: any) {
       skippedContacts.push({ row: i + 2, agent: agentName, reason: e.message ?? 'Create failed' })
     }
   }
 
-  if (agentsCreated > 0) {
+  if (agentsCreated > 0 || agentsUpdated > 0) {
     logActivity({
       userId:   session!.user.id,
       userName: session!.user.name ?? session!.user.email ?? 'Unknown',
       userRole: role,
       action: 'CREATE', entity: 'Agent', entityId: 'bulk',
-      detail: `Import ${agentsCreated} agent, ${contactsCreated} kontak via CSV`,
+      detail: `Import CSV: ${agentsCreated} agent baru, ${agentsUpdated} diupdate, ${contactsCreated} kontak baru`,
     }).catch(() => {})
   }
 

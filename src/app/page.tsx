@@ -101,6 +101,7 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PAYMENT_SUBMITTED: Clock,
   PAYMENT_CONFIRMED: CheckCircle2,
   PAYMENT_REJECTED:  XCircle,
+  INVOICE_READY:     CreditCard,
   DEPOSIT_DUE_H2:    Bell,
   DEPOSIT_DUE_H1:    Bell,
   DEPOSIT_DUE_H0:    Bell,
@@ -109,6 +110,7 @@ const NOTIF_COLOR: Record<string, string> = {
   PAYMENT_SUBMITTED: 'text-amber-600',
   PAYMENT_CONFIRMED: 'text-green-600',
   PAYMENT_REJECTED:  'text-red-600',
+  INVOICE_READY:     'text-violet-600',
   DEPOSIT_DUE_H2:    'text-amber-500',
   DEPOSIT_DUE_H1:    'text-orange-500',
   DEPOSIT_DUE_H0:    'text-red-600',
@@ -218,7 +220,7 @@ export default function Home() {
       const res = await fetch('/api/payments')
       if (res.ok) {
         const data = await res.json()
-        setPendingPayments(data.filter((p: { status: string }) => p.status === 'pending_confirmation').length)
+        setPendingPayments(data.filter((p: { status: string }) => p.status === 'pending_confirmation' || p.status === 'requested').length)
       }
     } catch { /* silent */ }
   }, [])
@@ -314,6 +316,17 @@ export default function Home() {
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const visibleNavItems = navigationItems.filter((item) => item.roles.includes(userRole))
 
+  const invoiceReadyCount = !isFinance
+    ? notifications.filter(n => !n.isRead && n.type === 'INVOICE_READY').length
+    : 0
+
+  const markInvoiceReadyAsRead = () => {
+    const unreadInvoiceReady = notifications.filter(n => !n.isRead && n.type === 'INVOICE_READY')
+    if (!unreadInvoiceReady.length) return
+    unreadInvoiceReady.forEach(n => fetch(`/api/notifications/${n.id}`, { method: 'PATCH' }).catch(() => {}))
+    setNotifications(prev => prev.map(n => n.type === 'INVOICE_READY' ? { ...n, isRead: true } : n))
+  }
+
   const isCurrentViewAllowed = visibleNavItems.some((item) => item.id === currentView)
   const activeView = isCurrentViewAllowed ? currentView : visibleNavItems[0]?.id ?? 'calendar'
 
@@ -366,17 +379,20 @@ export default function Home() {
                 {visibleNavItems.map((item) => {
                   const Icon = item.icon
                   const showDot =
-                    item.id === 'payments' && (
-                      isFinance ? pendingPayments > 0 : unreadCount > 0
-                    )
-                  const dotCount = item.id === 'payments'
-                    ? (isFinance ? pendingPayments : unreadCount)
-                    : 0
+                    (item.id === 'payments' && isFinance && pendingPayments > 0) ||
+                    (item.id === 'bookings' && !isFinance && invoiceReadyCount > 0)
+                  const dotCount =
+                    item.id === 'payments' && isFinance ? pendingPayments :
+                    item.id === 'bookings' && !isFinance ? invoiceReadyCount :
+                    0
 
                   return (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
-                        onClick={() => setCurrentView(item.id)}
+                        onClick={() => {
+                          setCurrentView(item.id)
+                          if (item.id === 'bookings') markInvoiceReadyAsRead()
+                        }}
                         isActive={activeView === item.id}
                       >
                         <div className="relative shrink-0">

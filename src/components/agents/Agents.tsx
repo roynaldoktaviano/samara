@@ -116,10 +116,14 @@ const ACCENT = '#bdac7e'
 
 export default function Agents() {
   const { data: session } = useSession()
-  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const userRole  = (session?.user as { role?: string })?.role ?? ''
+  const userId    = session?.user?.id ?? ''
   const isAdmin     = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
+  const isSales     = userRole === 'SALES'
   const canManage   = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
   const canCalendar = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+
+  const canActOnAgent = (a: AgentRecord) => isAdmin || a.salespersonId === userId
 
   const [agents,     setAgents]     = useState<AgentRecord[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -149,6 +153,7 @@ export default function Agents() {
   const [contactsLoadingId, setContactsLoadingId] = useState<string | null>(null)
 
   // filters & pagination
+  const [scope,             setScope]             = useState<'mine' | 'all'>('mine')
   const [filterCountry,     setFilterCountry]     = useState('')
   const [filterType,        setFilterType]         = useState('')
   const [filterSalesperson, setFilterSalesperson]  = useState('')
@@ -438,6 +443,7 @@ export default function Agents() {
   }, [agents])
 
   const filtered = agents.filter(a => {
+    if (isSales && scope === 'mine' && a.salespersonId !== userId) return false
     if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !(a.salesperson?.name ?? '').toLowerCase().includes(search.toLowerCase())) return false
     if (filterCountry     && a.country              !== filterCountry)     return false
     if (filterType        && a.agentType             !== filterType)        return false
@@ -458,11 +464,29 @@ export default function Agents() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 mb-0.5">
             <h3 className="text-2xl font-bold tracking-tight">Agents</h3>
             <button onClick={() => fetchAgents()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
+            {isSales && (
+              <div className="flex items-center rounded-lg border bg-muted p-0.5 text-xs font-semibold">
+                <button
+                  onClick={() => setScope('mine')}
+                  className="px-3 py-1 rounded-md transition-colors"
+                  style={scope === 'mine' ? { background: ACCENT, color: 'white' } : { color: '#6b7280' }}
+                >
+                  My Agents
+                </button>
+                <button
+                  onClick={() => setScope('all')}
+                  className="px-3 py-1 rounded-md transition-colors"
+                  style={scope === 'all' ? { background: ACCENT, color: 'white' } : { color: '#6b7280' }}
+                >
+                  All Agents
+                </button>
+              </div>
+            )}
           </div>
           <p className="text-muted-foreground text-sm">
             {loading ? '…' : `${activeCount} active agent${activeCount !== 1 ? 's' : ''}`}
@@ -667,17 +691,20 @@ export default function Agents() {
                         <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
                             {!a.calendarToken ? (
-                              <button
-                                onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
-                                className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
-                              >
-                                <Link2 className="h-3 w-3" /> Generate
-                              </button>
+                              canActOnAgent(a) && (
+                                <button
+                                  onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
+                                  className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                                >
+                                  <Link2 className="h-3 w-3" /> Generate
+                                </button>
+                              )
                             ) : (
                               <>
                                 <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                                   {a.calendarActive ? 'Active' : 'Off'}
                                 </span>
+                                {/* Copy always visible if token exists */}
                                 <button
                                   onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
                                   className="p-1 rounded hover:bg-muted text-muted-foreground"
@@ -685,27 +712,34 @@ export default function Agents() {
                                 >
                                   {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
                                 </button>
-                                <button
-                                  onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
-                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                  title={a.calendarActive ? 'Deactivate' : 'Activate'}
-                                >
-                                  {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
-                                </button>
-                                <button
-                                  onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
-                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                  title="Reset token"
-                                >
-                                  <RotateCw className="h-3 w-3 text-amber-500" />
-                                </button>
-                                <button
-                                  onClick={() => openStats(a)}
-                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                  title="View access stats"
-                                >
-                                  <BarChart2 className="h-3 w-3" />
-                                </button>
+                                {/* Activate/deactivate, reset, stats — only for owner or admin */}
+                                {canActOnAgent(a) && (
+                                  <>
+                                    <button
+                                      onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
+                                      className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                      title={a.calendarActive ? 'Deactivate' : 'Activate'}
+                                    >
+                                      {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
+                                    </button>
+                                    <button
+                                      onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
+                                      className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                      title="Reset token"
+                                    >
+                                      <RotateCw className="h-3 w-3 text-amber-500" />
+                                    </button>
+                                  </>
+                                )}
+                                {canActOnAgent(a) && (
+                                  <button
+                                    onClick={() => openStats(a)}
+                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                    title="View access stats"
+                                  >
+                                    <BarChart2 className="h-3 w-3" />
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -745,14 +779,16 @@ export default function Agents() {
                       {canManage && (
                         <td className="py-3 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => openEdit(a)}
-                            >
-                              <Pencil className="h-3 w-3 mr-1" /> Edit
-                            </Button>
-                            {isAdmin && (
+                            {canActOnAgent(a) && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => openEdit(a)}
+                              >
+                                <Pencil className="h-3 w-3 mr-1" /> Edit
+                              </Button>
+                            )}
+                            {canActOnAgent(a) && (
                               <Button
                                 variant="ghost" size="sm"
                                 className={`h-7 px-2 text-xs ${a.isActive

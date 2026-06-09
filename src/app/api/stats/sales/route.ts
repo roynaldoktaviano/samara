@@ -19,9 +19,11 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const yachtId  = searchParams.get('yachtId') || undefined
+    const yachtId   = searchParams.get('yachtId') || undefined
     const fromParam = searchParams.get('from')
     const toParam   = searchParams.get('to')
+    const scope     = searchParams.get('scope') ?? 'mine' // 'mine' | 'all'
+    const userId    = session.user.id
 
     const now = new Date()
 
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
     const baseWhere = {
       status:  { not: 'cancelled' as const },
       ...(yachtId ? { yachtId } : {}),
+      ...(scope === 'mine' ? { salespersonId: userId } : {}),
     }
 
     const [currentBookings, compareBookings] = await Promise.all([
@@ -82,13 +85,10 @@ export async function GET(request: NextRequest) {
       total:     agentAllTimeMap[r.agentId as string] ?? r._count.id,
     }))
 
-    // Top nationalities: guests who were ON a trip during the selected period
-    // A trip overlaps the period if startDate <= periodEnd AND endDate >= periodStart
-    const tripOverlap = {
-      status:   { not: 'cancelled' as const },
-      startDate: { lte: periodEnd },
-      endDate:   { gte: periodStart },
-      ...(yachtId ? { yachtId } : {}),
+    // Top nationalities: guests on bookings CREATED during the selected period
+    const bookingInPeriod = {
+      ...baseWhere,
+      createdAt: { gte: periodStart, lte: periodEnd },
     }
     const nationalityAgg = await db.customer.groupBy({
       by: ['nationality'],
@@ -96,8 +96,8 @@ export async function GET(request: NextRequest) {
         nationality: { not: null },
         deletedAt:   null,
         OR: [
-          { bookings: { some: tripOverlap } },
-          { guestOf:  { some: { booking: tripOverlap } } },
+          { bookings: { some: bookingInPeriod } },
+          { guestOf:  { some: { booking: bookingInPeriod } } },
         ],
       },
       _count: { id: true },

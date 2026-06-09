@@ -17,6 +17,7 @@ import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, Clock, Users,
+  Link2, Copy, Check, ExternalLink,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -227,6 +228,12 @@ export default function Bookings() {
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
+  const [guestLinks,          setGuestLinks]          = useState<Record<string, string>>({})
+  const [generatingGuestLink, setGeneratingGuestLink] = useState<string | null>(null)
+  const [copiedGuestLink,     setCopiedGuestLink]     = useState<string | null>(null)
+  const [masterLinks,         setMasterLinks]         = useState<Record<string, string>>({})
+  const [generatingMaster,    setGeneratingMaster]    = useState<string | null>(null)
+  const [copiedMaster,        setCopiedMaster]        = useState<string | null>(null)
 
   /* waiting list */
   const [waitingListBooking, setWaitingListBooking] = useState<BookingRecord | null>(null)
@@ -512,6 +519,52 @@ export default function Bookings() {
       await openDetail(fresh ?? detailBooking!)
     } catch (e) { console.error(e) }
     finally { setCabinSaving(null) }
+  }
+
+  const handleGenerateGuestLink = async (customerId: string, bgId: string) => {
+    setGeneratingGuestLink(bgId)
+    try {
+      const res = await fetch(`/api/customers/${customerId}/generate-link`, { method: 'POST' })
+      if (!res.ok) throw new Error()
+      const { link } = await res.json()
+      setGuestLinks(prev => ({ ...prev, [bgId]: `${link}?bg=${bgId}` }))
+    } catch {
+      toast.error('Failed to generate link')
+    } finally {
+      setGeneratingGuestLink(null)
+    }
+  }
+
+  const copyGuestLink = (bgId: string) => {
+    const link = guestLinks[bgId]
+    if (!link) return
+    navigator.clipboard.writeText(link)
+    setCopiedGuestLink(bgId)
+    toast.success('Link copied!')
+    setTimeout(() => setCopiedGuestLink(null), 2000)
+  }
+
+  const handleGenerateMasterLink = async (bookingId: string) => {
+    setGeneratingMaster(bookingId)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/generate-master-link`, { method: 'POST' })
+      if (!res.ok) throw new Error()
+      const { link } = await res.json()
+      setMasterLinks(prev => ({ ...prev, [bookingId]: link }))
+    } catch {
+      toast.error('Failed to generate master link')
+    } finally {
+      setGeneratingMaster(null)
+    }
+  }
+
+  const copyMasterLink = (bookingId: string) => {
+    const link = masterLinks[bookingId]
+    if (!link) return
+    navigator.clipboard.writeText(link)
+    setCopiedMaster(bookingId)
+    toast.success('Master link copied!')
+    setTimeout(() => setCopiedMaster(null), 2000)
   }
 
   /* ── submit payment proof ── */
@@ -840,6 +893,11 @@ export default function Bookings() {
                           </div>
                         )
                       })()}
+                      {payments.some(p => p.bookingId === b.id && p.status === 'invoice_ready') && (
+                        <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 border border-violet-200">
+                          <CreditCard className="w-2.5 h-2.5" /> Invoice Ready
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1626,9 +1684,34 @@ export default function Bookings() {
 
                   {/* Guests */}
                   <div className="px-5 py-4 space-y-3">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Guests ({db_.guests.length} pax)
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Guests ({db_.guests.length} pax)
+                      </p>
+                      {canManageBookings && db_.status !== 'cancelled' && db_.guests.length > 1 && (
+                        <div className="flex items-center gap-1.5">
+                          {masterLinks[db_.id] ? (
+                            <>
+                              <div className="flex items-center gap-1.5 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 max-w-[160px]">
+                                <Users className="h-3 w-3 text-violet-600 shrink-0" />
+                                <span className="text-[10px] text-violet-700 truncate font-mono">{masterLinks[db_.id]}</span>
+                              </div>
+                              <button onClick={() => copyMasterLink(db_.id)} className="p-1 rounded text-violet-700 hover:bg-violet-50 border border-violet-200" title="Copy master link">
+                                {copiedMaster === db_.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                              </button>
+                              <a href={masterLinks[db_.id]} target="_blank" rel="noopener noreferrer" className="p-1 rounded text-violet-700 hover:bg-violet-50 border border-violet-200" title="Open master form">
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </>
+                          ) : (
+                            <Button variant="outline" size="sm" onClick={() => handleGenerateMasterLink(db_.id)} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 border-dashed px-2 border-violet-300 text-violet-700 hover:bg-violet-50">
+                              {generatingMaster === db_.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Users className="h-2.5 w-2.5" />}
+                              Master Link
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {db_.guests.length === 0 && (
                       <p className="text-sm text-muted-foreground">No registered guests.</p>
@@ -1712,6 +1795,31 @@ export default function Bookings() {
                               </div>
                             </div>
                           )}
+
+                          {/* Guest form link */}
+                          {canManageBookings && db_.status !== 'cancelled' && (
+                            <div className="border-t pt-2">
+                              {guestLinks[g.id] ? (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex-1 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 min-w-0">
+                                    <Link2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                                    <span className="flex-1 text-[11px] text-emerald-700 truncate font-mono">{guestLinks[g.id]}</span>
+                                  </div>
+                                  <button onClick={() => copyGuestLink(g.id)} className="shrink-0 p-1 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Copy link">
+                                    {copiedGuestLink === g.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                  </button>
+                                  <a href={guestLinks[g.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Open in new tab">
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </div>
+                              ) : (
+                                <Button variant="outline" size="sm" onClick={() => handleGenerateGuestLink(g.customerId, g.id)} disabled={generatingGuestLink === g.id} className="h-7 text-xs gap-1.5 border-dashed w-full">
+                                  {generatingGuestLink === g.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                                  Generate Guest Form Link
+                                </Button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1743,7 +1851,7 @@ export default function Bookings() {
                       {db_.status === 'on_hold' && (
                         <button
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 hover:bg-orange-100 transition-colors"
-                          onClick={async () => { setDetailBooking(null); const res = await fetch(`/api/bookings/${db_.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'pending' }) }); if (res.ok) fetchBookings() }}
+                          onClick={() => { setDetailBooking(null); setCompleteBookingId(db_.id); setWizardOpen(true) }}
                         >
                           <ChevronRight className="h-3.5 w-3.5" /> Complete Booking
                         </button>
