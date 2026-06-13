@@ -69,18 +69,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       const existing = await db.payment.findUnique({
         where: { id },
-        include: { booking: { select: { id: true, bookingCode: true, depositPaid: true, totalPrice: true, salesperson: true } } },
+        include: { booking: { select: { id: true, bookingCode: true, depositPaid: true, totalPrice: true, salespersonId: true } } },
       })
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       if (existing.status !== 'requested') {
         return NextResponse.json({ error: 'Hanya bisa generate invoice dari status "requested"' }, { status: 400 })
       }
 
-      // Generate sequential invoice number INV-{bookingCode}-{nn}
-      const confirmedCount = await db.payment.count({
-        where: { bookingId: existing.bookingId, status: { in: ['invoice_ready', 'pending_confirmation', 'confirmed'] } },
-      })
-      const invoiceNumber = `INV-${existing.booking.bookingCode}-${String(confirmedCount + 1).padStart(2, '0')}`
+      const { nextVal } = await import('@/lib/counter')
+      const invNum      = await nextVal(`payment_inv:${existing.booking.bookingCode}`)
+      const invoiceNumber = `INV-${existing.booking.bookingCode}-${String(invNum).padStart(2, '0')}`
 
       await db.payment.update({
         where: { id },
@@ -105,12 +103,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Generate invoice ${invoiceNumber} (${existing.booking.bookingCode}) — ${amount}`,
       }).catch(() => {})
 
-      // Notify Sales submitter that invoice is ready (fire-and-forget)
-      if (existing.submittedByUserId) {
+      // Notify the relevant salesperson(s) that invoice is ready (fire-and-forget)
+      const invoiceReadyTargets = new Set<string>([
+        existing.submittedByUserId,
+        existing.booking.salespersonId,
+      ].filter(Boolean) as string[])
+
+      for (const recipientId of invoiceReadyTargets) {
         db.notification.upsert({
-          where: { userId_type_bookingId: { userId: existing.submittedByUserId, type: 'INVOICE_READY', bookingId: existing.bookingId } },
+          where: { userId_type_bookingId: { userId: recipientId, type: 'INVOICE_READY', bookingId: existing.bookingId } },
           create: {
-            userId:    existing.submittedByUserId,
+            userId:    recipientId,
             type:      'INVOICE_READY',
             title:     'Invoice siap didownload',
             body:      `${invoiceNumber} (${existing.booking.bookingCode}) sudah di-generate oleh Finance`,
@@ -211,8 +214,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         include: {
           booking: {
             select: {
-              id: true, bookingCode: true, totalPrice: true, depositPaid: true, salesperson: true,
-              source: true,
+              id: true, bookingCode: true, totalPrice: true, depositPaid: true,
+              salespersonId: true, source: true,
               agent: { select: { commission: true } },
             },
           },
@@ -223,15 +226,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Hanya bisa konfirmasi/tolak dari status "pending_confirmation"' }, { status: 400 })
       }
 
-      // Resolve recipient
-      let recipientUserId = payment.submittedByUserId
-      if (!recipientUserId && payment.booking.salesperson) {
-        const sp = await db.user.findFirst({
-          where: { name: { equals: payment.booking.salesperson, mode: 'insensitive' } },
-          select: { id: true },
-        })
-        if (sp) recipientUserId = sp.id
-      }
+      // Resolve recipient: prefer submittedByUserId, fall back to booking salespersonId
+      const recipientUserId = payment.submittedByUserId ?? payment.booking.salespersonId ?? null
 
       if (action === 'confirm') {
         const newDepositPaid = payment.booking.depositPaid + payment.amount

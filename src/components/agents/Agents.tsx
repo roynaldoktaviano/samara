@@ -677,61 +677,57 @@ export default function Agents() {
 
                       {/* Contract */}
                       <td className="py-3 pr-4">
-                        {a.contract
-                          ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                              a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
-                              a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
-                              'bg-red-50 text-red-600'
-                            }`}>{a.contract}</span>
-                          : <span className="text-muted-foreground/40 text-xs">—</span>}
+                        {canActOnAgent(a) ? (
+                          a.contract
+                            ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
+                                a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
+                                'bg-red-50 text-red-600'
+                              }`}>{a.contract}</span>
+                            : <span className="text-muted-foreground/40 text-xs">—</span>
+                        ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
                       {/* Calendar Access */}
                       {canCalendar && (
                         <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1.5">
-                            {!a.calendarToken ? (
-                              canActOnAgent(a) && (
+                          {!canActOnAgent(a) ? (
+                            <span className="text-muted-foreground/40 text-xs">—</span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              {!a.calendarToken ? (
                                 <button
                                   onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
                                   className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
                                 >
                                   <Link2 className="h-3 w-3" /> Generate
                                 </button>
-                              )
-                            ) : (
-                              <>
-                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                                  {a.calendarActive ? 'Active' : 'Off'}
-                                </span>
-                                {/* Copy always visible if token exists */}
-                                <button
-                                  onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
-                                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                  title="Copy link"
-                                >
-                                  {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                                </button>
-                                {/* Activate/deactivate, reset, stats — only for owner or admin */}
-                                {canActOnAgent(a) && (
-                                  <>
-                                    <button
-                                      onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
-                                      className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                      title={a.calendarActive ? 'Deactivate' : 'Activate'}
-                                    >
-                                      {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
-                                    </button>
-                                    <button
-                                      onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
-                                      className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                      title="Reset token"
-                                    >
-                                      <RotateCw className="h-3 w-3 text-amber-500" />
-                                    </button>
-                                  </>
-                                )}
-                                {canActOnAgent(a) && (
+                              ) : (
+                                <>
+                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {a.calendarActive ? 'Active' : 'Off'}
+                                  </span>
+                                  <button
+                                    onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
+                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                    title="Copy link"
+                                  >
+                                    {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                  </button>
+                                  <button
+                                    onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
+                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                    title={a.calendarActive ? 'Deactivate' : 'Activate'}
+                                  >
+                                    {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
+                                  </button>
+                                  <button
+                                    onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
+                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                    title="Reset token"
+                                  >
+                                    <RotateCw className="h-3 w-3 text-amber-500" />
+                                  </button>
                                   <button
                                     onClick={() => openStats(a)}
                                     className="p-1 rounded hover:bg-muted text-muted-foreground"
@@ -739,10 +735,10 @@ export default function Agents() {
                                   >
                                     <BarChart2 className="h-3 w-3" />
                                   </button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </td>
                       )}
 
@@ -756,7 +752,9 @@ export default function Agents() {
 
                       {/* Commission */}
                       <td className="py-3 pr-4 text-center">
-                        <span className="font-semibold" style={{ color: ACCENT }}>{a.commission}%</span>
+                        {canActOnAgent(a)
+                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commission}%</span>
+                          : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
                       {/* Booking count */}

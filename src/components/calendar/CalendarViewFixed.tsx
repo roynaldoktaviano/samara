@@ -619,7 +619,10 @@ function getPreset(preset: string): [string, string] {
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function CalendarView() {
   const { data: session } = useSession()
-  const canEdit = ['ADMIN', 'SALES'].includes((session?.user as { role?: string })?.role ?? '')
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const userId   = (session?.user as { id?: string })?.id   ?? ''
+  const isAdmin  = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
+  const canEdit = ['ADMIN', 'SALES'].includes(userRole)
 
   const [currentDate, setCurrentDate]   = useState(new Date())
   const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')
@@ -653,8 +656,9 @@ export default function CalendarView() {
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
-  const [editGuestId, setEditGuestId]           = useState<string | null>(null)
   const [wlBooking, setWlBooking]               = useState<{ id: string; code: string; startDate: string; endDate: string; yachtId?: string; openTripId?: string } | null>(null)
+  const [selectedCabinCtx, setSelectedCabinCtx] = useState<{ cabinId: string; bookingId: string; isFull: boolean; isOwnCabin: boolean } | null>(null)
+  const [detailAddingGuest, setDetailAddingGuest] = useState(false)
 
   // Booking edit state
   const [isBookingEditing, setIsBookingEditing] = useState(false)
@@ -717,7 +721,15 @@ export default function CalendarView() {
       customerName: c.guests?.[0]?.name ?? '—',
       bookingCode:  c.bookingCode ?? undefined,
       salesperson:  c.salesperson ?? undefined,
+      isOwnBooking: isAdmin ? undefined : (c.salespersonId === userId),
     })
+    setSelectedCabinCtx({
+      cabinId:    c.id,
+      bookingId:  c.bookingId,
+      isFull:     !!c.isFull,
+      isOwnCabin: isAdmin || !c.salespersonId || c.salespersonId === userId,
+    })
+    setDetailAddingGuest(false)
     setIsDetailOpen(true)
     setBookingDetailLoading(true)
     setBookingFullDetail(null)
@@ -1680,7 +1692,7 @@ export default function CalendarView() {
       </Card>
 
       {/* ── Booking Detail Dialog ── */}
-      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null) } }}>
+      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null); setSelectedCabinCtx(null); setDetailAddingGuest(false); setOtAddQ(''); setOtAddResults([]) } }}>
         <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
@@ -1759,45 +1771,111 @@ export default function CalendarView() {
 
                   {/* Guests */}
                   <div className="rounded-xl border overflow-hidden">
-                    <div className="bg-muted/40 px-4 py-2 border-b">
+                    <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Guests</p>
+                      {selectedCabinCtx?.isOwnCabin && !selectedCabinCtx.isFull && !bookingDetailLoading && (
+                        <button
+                          onClick={() => { setDetailAddingGuest(v => !v); setOtAddQ(''); setOtAddResults([]) }}
+                          className="text-[10px] font-semibold text-[#bdac7e] hover:text-[#a89660] flex items-center gap-1"
+                        >
+                          <Plus className="h-3 w-3" />
+                          {detailAddingGuest ? 'Cancel' : 'Add Guest'}
+                        </button>
+                      )}
                     </div>
                     {bookingDetailLoading ? (
                       <div className="flex items-center justify-center py-6">
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       </div>
-                    ) : bookingFullDetail?.guests?.length > 0 ? (
-                      <div className="divide-y">
-                        {bookingFullDetail.guests.map((g: any) => (
-                          <div
-                            key={g.id}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 cursor-pointer transition-colors group"
-                            onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
-                            title="Edit guest details"
-                          >
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
-                              {g.customer?.name?.[0] ?? '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
-                                {g.isLead && (
-                                  <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
-                                )}
-                              </div>
-                              {g.cabin && (
-                                <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
-                                  <BedDouble className="w-3 h-3" />
-                                  <span>{g.cabin.name}</span>
-                                </div>
-                              )}
-                            </div>
-                            <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity" />
-                          </div>
-                        ))}
-                      </div>
                     ) : (
-                      <p className="text-xs text-muted-foreground text-center py-4">No guests registered</p>
+                      <>
+                        {bookingFullDetail?.guests?.length > 0 ? (
+                          <div className="divide-y">
+                            {bookingFullDetail.guests.map((g: any) => (
+                              <div
+                                key={g.id}
+                                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group"
+                              >
+                                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
+                                  {g.customer?.name?.[0] ?? '?'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
+                                    {g.isLead && (
+                                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
+                                    )}
+                                  </div>
+                                  {g.cabin && (
+                                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+                                      <BedDouble className="w-3 h-3" />
+                                      <span>{g.cabin.name}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {g.id && (
+                                    <button
+                                      onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                                      className="p-1.5 rounded hover:bg-sky-50 text-sky-500"
+                                      title="Guest Sheet"
+                                    >
+                                      <BookOpen className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
+                                    className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                                    title="Edit guest"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground text-center py-4">No guests registered</p>
+                        )}
+                        {/* Add guest inline form */}
+                        {detailAddingGuest && selectedCabinCtx && (
+                          <div className="border-t p-3 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <input
+                                autoFocus
+                                className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                                placeholder="Search guest by name..."
+                                value={otAddQ}
+                                onChange={e => { setOtAddCabinId(selectedCabinCtx.cabinId); setOtAddBookingId(selectedCabinCtx.bookingId); searchOtGuest(e.target.value) }}
+                              />
+                              {otAddSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                            </div>
+                            {otAddResults.length > 0 && (
+                              <div className="border rounded-md bg-background divide-y max-h-40 overflow-y-auto">
+                                {otAddResults.map((r: any) => (
+                                  <button
+                                    key={r.id}
+                                    disabled={otAddSaving}
+                                    onClick={async () => {
+                                      await addGuestToOtBooking(r.id)
+                                      setDetailAddingGuest(false)
+                                      const updated = await fetch(`/api/bookings/${selectedCabinCtx.bookingId}`).then(res => res.json())
+                                      setBookingFullDetail(updated)
+                                    }}
+                                    className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors"
+                                  >
+                                    <span className="text-xs font-medium">{r.name}</span>
+                                    {otAddSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 text-muted-foreground" />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {otAddQ.length > 0 && !otAddSearching && otAddResults.length === 0 && (
+                              <p className="text-[10px] text-muted-foreground px-1">No guests found.</p>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -1821,7 +1899,7 @@ export default function CalendarView() {
                         <Users className="h-4 w-4" /> Waiting List
                       </Button>
                     )}
-                    {selectedBooking.status === 'on_hold' ? (
+                    {selectedBooking.isOwnBooking !== false && selectedBooking.status === 'on_hold' ? (
                       <Button
                         onClick={() => {
                           setIsDetailOpen(false)
@@ -1832,7 +1910,7 @@ export default function CalendarView() {
                       >
                         <ChevronRight className="w-3.5 h-3.5 mr-2" /> Complete Booking
                       </Button>
-                    ) : (
+                    ) : selectedBooking.status !== 'on_hold' ? (
                       <>
                         <Button
                           variant="outline"
@@ -1841,13 +1919,13 @@ export default function CalendarView() {
                         >
                           <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
                         </Button>
-                        {new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
+                        {selectedBooking.isOwnBooking !== false && new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
                           <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                             <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
                           </Button>
                         )}
                       </>
-                    )}
+                    ) : null}
                   </DialogFooter>
                 </div>
               ) : (
@@ -2197,11 +2275,10 @@ export default function CalendarView() {
                       )}
                       {otDetail.cabins?.map((c: any) => {
                         const isTripClosed = otDetail.status === 'closed'
-                        const hasGuests = c.guests?.length > 0
-                        const isHold    = hasGuests && c.bookingStatus === 'on_hold'
-                        const isPaid    = hasGuests && !isHold && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
-                        const isPending = hasGuests && !isHold && !isPaid
-                        const canAddMore = hasGuests && !c.isFull && c.bookingId && canEdit && !isTripClosed
+                        const hasGuests    = c.guests?.length > 0
+                        const isHold       = hasGuests && c.bookingStatus === 'on_hold'
+                        const isPaid       = hasGuests && !isHold && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
+                        const isPending    = hasGuests && !isHold && !isPaid
                         const dotCls    = isHold    ? 'bg-green-400'
                                         : isPaid    ? 'bg-red-400'
                                         : isPending ? 'bg-amber-400'
@@ -2217,7 +2294,6 @@ export default function CalendarView() {
                                          : isPending ? 'Waiting for Payment'
                                          : isTripClosed ? 'Closed'
                                          : 'Available'
-                        const isAddingHere = otAddCabinId === c.id
                         return (
                           <div
                             key={c.id}
@@ -2235,36 +2311,12 @@ export default function CalendarView() {
                                   {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
                                 </div>
                                 {hasGuests && (
-                                  <div className="mt-1 flex flex-wrap gap-1.5 items-center">
+                                  <div className="mt-1 flex flex-wrap gap-1 items-center">
                                     {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
-                                      <div key={g.id} className="flex items-center gap-0.5">
-                                        <button onClick={e => { e.stopPropagation(); setEditGuestId(g.id) }}
-                                          className="text-[10px] bg-muted border rounded-l px-1.5 py-px text-foreground hover:bg-background hover:border-foreground/30 transition-colors">
-                                          {g.name}
-                                        </button>
-                                        {g.bgId && (
-                                          <button
-                                            onClick={e => { e.stopPropagation(); window.open(`/print/guest-sheet/${g.bgId}`, '_blank') }}
-                                            className="text-[10px] bg-sky-50 border border-sky-200 rounded-r px-1.5 py-px text-sky-600 hover:bg-sky-100 transition-colors"
-                                            title="Guest Sheet"
-                                          >
-                                            <BookOpen className="h-2.5 w-2.5" />
-                                          </button>
-                                        )}
-                                      </div>
+                                      <span key={g.id} className="text-[10px] bg-muted border rounded px-1.5 py-px text-foreground">
+                                        {g.name}
+                                      </span>
                                     ))}
-                                    {canAddMore && (
-                                      <button
-                                        onClick={e => {
-                                          e.stopPropagation()
-                                          if (isAddingHere) { setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([]) }
-                                          else { setOtAddCabinId(c.id); setOtAddBookingId(c.bookingId); setOtAddQ(''); setOtAddResults([]) }
-                                        }}
-                                        className="text-[10px] text-[#bdac7e] border border-[#bdac7e]/40 rounded px-1.5 py-px hover:bg-[#bdac7e]/10 transition-colors font-semibold"
-                                      >
-                                        {isAddingHere ? '✕' : '+ Add Guest'}
-                                      </button>
-                                    )}
                                   </div>
                                 )}
                               </div>
@@ -2280,39 +2332,6 @@ export default function CalendarView() {
                                 )}
                               </div>
                             </div>
-                            {/* Inline add-guest form */}
-                            {isAddingHere && (
-                              <div className="mt-2 ml-5 border rounded-lg bg-muted/30 p-2 space-y-1.5" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    autoFocus
-                                    className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-[#bdac7e]"
-                                    placeholder="Search guest by name..."
-                                    value={otAddQ}
-                                    onChange={e => searchOtGuest(e.target.value)}
-                                  />
-                                  {otAddSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
-                                </div>
-                                {otAddResults.length > 0 && (
-                                  <div className="border rounded-md bg-background divide-y max-h-40 overflow-y-auto">
-                                    {otAddResults.map((r: any) => (
-                                      <button
-                                        key={r.id}
-                                        disabled={otAddSaving}
-                                        onClick={() => addGuestToOtBooking(r.id)}
-                                        className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors"
-                                      >
-                                        <span className="text-xs font-medium">{r.name}</span>
-                                        {otAddSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 text-muted-foreground" />}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                {otAddQ.length > 0 && !otAddSearching && otAddResults.length === 0 && (
-                                  <p className="text-[10px] text-muted-foreground px-1">No guests found.</p>
-                                )}
-                              </div>
-                            )}
                           </div>
                         )
                       })}
@@ -2406,14 +2425,7 @@ export default function CalendarView() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Guest Edit Sheet (open trip guests) ── */}
-      <GuestEditSheet
-        open={!!editGuestId}
-        guestId={editGuestId}
-        onClose={() => setEditGuestId(null)}
-      />
-
-      {/* ── Guest Edit Sheet (booking edit dialog guests) ── */}
+      {/* ── Guest Edit Sheet ── */}
       <GuestEditSheet
         open={guestSheetOpen}
         guestId={guestEditTarget?.customer?.id ?? null}

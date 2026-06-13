@@ -123,9 +123,10 @@ model Customer {
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
-  bookings            Booking[]
-  guestOf             BookingGuest[]
-  waitingListItems    WaitingList[]
+  bookings             Booking[]
+  guestOf              BookingGuest[]
+  waitingListItems     WaitingList[]
+  waitingListHistories WaitingListHistory[] @relation("WaitingListHistoryCustomer")
 
   @@index([deletedAt])
   @@index([name])
@@ -152,6 +153,7 @@ model Agent {
   updatedAt          DateTime             @updatedAt
 
   @@index([salespersonId])
+  @@index([name])
 }
 
 model CalendarAccessLog {
@@ -254,7 +256,7 @@ model OpenTrip {
   closedReason  String?
   bookings         Booking[]
   waitingListItems WaitingList[]
-  yacht            Yacht    @relation(fields: [yachtId], references: [id])
+  yacht            Yacht    @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -298,18 +300,19 @@ model Booking {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   customer        Customer        @relation(fields: [customerId], references: [id])
-  agent           Agent?          @relation(fields: [agentId], references: [id])
+  agent           Agent?          @relation(fields: [agentId], references: [id], onDelete: SetNull)
   agentContact    AgentContact?   @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
   yacht           Yacht?          @relation(fields: [yachtId], references: [id])
-  openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id])
+  openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id], onDelete: SetNull)
   salespersonUser User?           @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
   guests          BookingGuest[]
   services        BookingService[]
   payments        Payment[]
   expenses        Expense[]
   notifications   Notification[]
-  waitingList     WaitingList[]        @relation("BookingWaitingList")
-  slotHistory     WaitingListHistory[] @relation("BookingSlotHistory")
+  waitingList          WaitingList[]        @relation("BookingWaitingList")
+  slotHistory          WaitingListHistory[] @relation("BookingSlotHistory")
+  promotedWaitingLists WaitingList[]        @relation("WaitingListPromotedBooking")
 
   @@index([status])
   @@index([openTripId, status])
@@ -367,7 +370,7 @@ model Crew {
   endDate   DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  yacht     Yacht     @relation(fields: [yachtId], references: [id])
+  yacht     Yacht     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
 
   @@index([yachtId])
 }
@@ -452,6 +455,7 @@ model Payment {
   @@index([bookingId])
   @@index([status])
   @@index([bankId])
+  @@index([createdAt])
 }
 
 model Voucher {
@@ -501,6 +505,8 @@ model Notification {
   booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
+  @@index([paymentId])
+  @@index([bookingId])
   @@unique([userId, type, bookingId])
 }
 
@@ -521,18 +527,21 @@ model WaitingList {
   salespersonId     String?
   promotedBookingId String?
 
-  booking         Booking?   @relation("BookingWaitingList", fields: [bookingId], references: [id], onDelete: Cascade)
-  yacht           Yacht?     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  openTrip        OpenTrip?  @relation(fields: [openTripId], references: [id], onDelete: Cascade)
-  customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  salesperson     User?      @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  booking          Booking?   @relation("BookingWaitingList", fields: [bookingId], references: [id], onDelete: Cascade)
+  yacht            Yacht?     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  openTrip         OpenTrip?  @relation(fields: [openTripId], references: [id], onDelete: Cascade)
+  customer         Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  salesperson      User?      @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
+  promotedBooking  Booking?   @relation("WaitingListPromotedBooking", fields: [promotedBookingId], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   @@index([bookingId, status])
   @@index([yachtId, status])
   @@index([openTripId, status])
   @@index([status])
+  @@index([salespersonId])
+  @@index([customerId])
 }
 
 model WaitingListHistory {
@@ -544,9 +553,11 @@ model WaitingListHistory {
   cancelReason String?
   createdAt    DateTime  @default(now())
 
-  booking  Booking  @relation("BookingSlotHistory", fields: [bookingId], references: [id], onDelete: Cascade)
+  booking  Booking   @relation("BookingSlotHistory", fields: [bookingId], references: [id], onDelete: Cascade)
+  customer Customer? @relation("WaitingListHistoryCustomer", fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([bookingId])
+  @@index([customerId])
 }
 
 model SystemSetting {
@@ -557,4 +568,9 @@ model SystemSetting {
   fileName  String?
   updatedAt DateTime @updatedAt
   updatedBy String?
+}
+
+model Counter {
+  key   String @id
+  value Int    @default(0)
 }

@@ -19,15 +19,17 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const yachtId   = searchParams.get('yachtId') || undefined
-    const fromParam = searchParams.get('from')
-    const toParam   = searchParams.get('to')
-    const scope     = searchParams.get('scope') ?? 'mine' // 'mine' | 'all'
-    const userId    = session.user.id
+    const yachtId              = searchParams.get('yachtId') || undefined
+    const fromParam            = searchParams.get('from')
+    const toParam              = searchParams.get('to')
+    const filterSalespersonId  = searchParams.get('salespersonId') || undefined
+
+    const userId   = session.user.id
+    const userRole = (session.user as { role?: string }).role ?? ''
+    const isAdmin  = userRole === 'ADMIN'
 
     const now = new Date()
 
-    // Current period
     const periodStart = fromParam
       ? new Date(fromParam + 'T00:00:00')
       : new Date(now.getFullYear(), now.getMonth(), 1)
@@ -35,15 +37,20 @@ export async function GET(request: NextRequest) {
       ? new Date(toParam + 'T23:59:59')
       : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
 
-    // Compare period: same duration, immediately before current period
     const durationMs   = periodEnd.getTime() - periodStart.getTime()
     const compareEnd   = new Date(periodStart.getTime() - 1)
     const compareStart = new Date(compareEnd.getTime() - durationMs)
 
+    // Admin can see all or filter by a specific salesperson.
+    // SALES users always see only their own bookings.
+    const salespersonFilter = isAdmin
+      ? (filterSalespersonId ? { salespersonId: filterSalespersonId } : {})
+      : { salespersonId: userId }
+
     const baseWhere = {
       status:  { not: 'cancelled' as const },
       ...(yachtId ? { yachtId } : {}),
-      ...(scope === 'mine' ? { salespersonId: userId } : {}),
+      ...salespersonFilter,
     }
 
     const [currentBookings, compareBookings] = await Promise.all([
@@ -57,7 +64,6 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
-    // Top agents (within current period)
     const agentAgg = await db.booking.groupBy({
       by: ['agentId'],
       where: { ...baseWhere, agentId: { not: null }, createdAt: { gte: periodStart, lte: periodEnd } },
@@ -66,7 +72,6 @@ export async function GET(request: NextRequest) {
       take: 10,
     })
 
-    // All-time total per agent (for context)
     const agentAllTime = await db.booking.groupBy({
       by: ['agentId'],
       where: { ...baseWhere, agentId: { not: null } },
@@ -85,7 +90,6 @@ export async function GET(request: NextRequest) {
       total:     agentAllTimeMap[r.agentId as string] ?? r._count.id,
     }))
 
-    // Top nationalities: guests on bookings CREATED during the selected period
     const bookingInPeriod = {
       ...baseWhere,
       createdAt: { gte: periodStart, lte: periodEnd },
@@ -111,7 +115,15 @@ export async function GET(request: NextRequest) {
 
     const yachts = await db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
 
-    // Build human-readable period labels
+    // Return salespeople list only for admins (for the filter dropdown)
+    const salespeople = isAdmin
+      ? await db.user.findMany({
+          where:   { role: 'SALES' },
+          select:  { id: true, name: true },
+          orderBy: { name: 'asc' },
+        })
+      : undefined
+
     const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     const periodLabel  = `${fmt(periodStart)} – ${fmt(periodEnd)}`
     const compareLabel = `${fmt(compareStart)} – ${fmt(compareEnd)}`
@@ -122,6 +134,7 @@ export async function GET(request: NextRequest) {
       topAgents,
       topNationalities,
       yachts,
+      salespeople,
       periodLabel,
       compareLabel,
       updatedAt: now.toISOString(),

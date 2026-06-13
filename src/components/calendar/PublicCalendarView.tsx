@@ -107,6 +107,7 @@ interface Segment {
   key: string; weekIdx: number; startCol: number; endCol: number
   isRealStart: boolean; isRealEnd: boolean; lane: number; laneSpan: number
   color: string; isStripe: boolean; label: string
+  showDetails: boolean
   bookingRef?: PublicBooking; openTripRef?: PublicOpenTrip
 }
 function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], colorMap: Record<string, string>, year: number, month: number): Segment[] {
@@ -133,7 +134,7 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
     const otColor = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
     add(t.id, t.title, otColor, true, new Date(t.startDate.split('T')[0] + 'T00:00:00'), new Date(t.endDate.split('T')[0] + 'T00:00:00'), undefined, t)
   })
-  const laned: Segment[] = []
+  const laned: Omit<Segment, 'showDetails'>[] = []
   const weekLanes: Record<number, { endCol: number; lane: number }[]> = {}
   raw.sort((a, b) => a.weekIdx - b.weekIdx || a.startCol - b.startCol).forEach(seg => {
     const used = weekLanes[seg.weekIdx] ?? []
@@ -143,7 +144,24 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
     weekLanes[seg.weekIdx] = used
     laned.push({ ...seg, lane, laneSpan: 1 })
   })
-  return laned
+  // showDetails: true on the widest (most columns) segment per event
+  const widestByEvent = new Map<string, string>()
+  laned.forEach(seg => {
+    const baseId = seg.key.replace(/-w\d+$/, '')
+    const existing = widestByEvent.get(baseId)
+    if (!existing) {
+      widestByEvent.set(baseId, seg.key)
+    } else {
+      const existSeg = laned.find(s => s.key === existing)!
+      if ((seg.endCol - seg.startCol) > (existSeg.endCol - existSeg.startCol)) {
+        widestByEvent.set(baseId, seg.key)
+      }
+    }
+  })
+  return laned.map(seg => ({
+    ...seg,
+    showDetails: widestByEvent.get(seg.key.replace(/-w\d+$/, '')) === seg.key,
+  }))
 }
 
 /* ════════════════════════════════════════
@@ -783,7 +801,7 @@ export function PublicCalendarView() {
 
   return (
     <div
-      style={{ height: '100dvh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden', userSelect: 'none' }}
+      style={{ height: '100dvh', width: '100%', maxWidth: '100vw', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden', userSelect: 'none' }}
       onContextMenu={e => e.preventDefault()}
     >
       <style>{`
@@ -828,8 +846,8 @@ export function PublicCalendarView() {
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 20px', display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, flexShrink: 0 }}>
 
         {/* LEFT: vessel type filter + refresh */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
             <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Vessel</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               {data && sortedYachts.map(y => (
@@ -926,21 +944,21 @@ export function PublicCalendarView() {
       </div>
 
       {/* Calendar */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '8px 16px' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '8px 16px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '80px 0', color: '#94a3b8', fontSize: 14 }}>Loading schedule…</div>
         ) : (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', minWidth: 700 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
               {DOW_LONG.map(d => <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>{d}</div>)}
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
               {weeks.map((week, wi) => {
                 const segs    = segsByWeek[wi] ?? []
                 const maxLane = maxLanes[wi] ?? 0
-                const rowH    = Math.max(baseRowH, DAY_H + maxLane * LANE_H + 8)
+                const rowMinH = Math.max(baseRowH, DAY_H + maxLane * LANE_H + 8)
                 return (
-                  <div key={wi} style={{ position: 'relative', height: rowH, flexShrink: 0, borderBottom: wi < weeks.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                  <div key={wi} style={{ position: 'relative', flex: 1, minHeight: rowMinH, borderBottom: wi < weeks.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', height: '100%' }}>
                       {week.map((day, di) => {
                         const ds        = day > 0 ? `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
@@ -1023,6 +1041,17 @@ export function PublicCalendarView() {
                       const nights = ot ? Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000) : 0
                       const segStartDate = new Date((ot?.startDate ?? bk?.startDate ?? '').split('T')[0])
                       const isPastSeg   = segStartDate < todayDate
+
+                      // Cross-month indicators
+                      const firstOfMonth  = new Date(year, month, 1)
+                      const lastOfMonth   = new Date(year, month + 1, 0)
+                      const eventEndDt    = new Date((ot?.endDate ?? bk?.endDate ?? '').split('T')[0])
+                      const eventStartDt  = new Date((ot?.startDate ?? bk?.startDate ?? '').split('T')[0])
+                      const goesToNext    = !seg.isRealEnd  && eventEndDt   > lastOfMonth
+                      const fromPrev      = !seg.isRealStart && eventStartDt < firstOfMonth
+                      const nextMonthName = MONTH_NAMES[(month + 1) % 12].slice(0, 3)
+                      const prevMonthName = MONTH_NAMES[(month + 11) % 12].slice(0, 3)
+
                       const barStyle: React.CSSProperties = {
                         position: 'absolute', top,
                         left: `calc(${lPct}% + ${lOff}px)`,
@@ -1038,25 +1067,47 @@ export function PublicCalendarView() {
                         barStyle.background = `repeating-linear-gradient(45deg,${seg.color} 0px,${seg.color} 3px,${gap} 3px,${gap} 8px)`
                         barStyle.outline = `1.5px solid ${seg.color}`; barStyle.outlineOffset = '-1px'
                       } else { barStyle.backgroundColor = seg.color }
+
+                      // Badge styles for cross-month indicators
+                      const monthBadgeBase: React.CSSProperties = {
+                        position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+                        fontSize: 9, fontWeight: 800, letterSpacing: '0.03em',
+                        borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap',
+                        backgroundColor: 'rgba(255,255,255,0.92)',
+                        color: seg.isStripe ? '#15803d' : seg.color,
+                        border: `1px solid ${seg.isStripe ? '#86efac' : 'rgba(255,255,255,0.4)'}`,
+                        zIndex: 11,
+                      }
+
                       return (
                         <div key={seg.key} style={barStyle}>
-                          {!seg.isRealStart && (
-                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
-                              <span style={{ fontSize: 10, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: seg.isStripe ? '#111827' : 'rgba(255,255,255,0.9)', textShadow: seg.isStripe ? 'none' : '0 1px 2px rgba(0,0,0,0.25)' }}>
-                                {ot ? `↳ ${ot.title}` : bk ? `↳ ${bk.yachtName}` : '↳'}
+                          {/* Continuation: not the detail-bearing segment */}
+                          {!seg.showDetails && ot && (
+                            <div style={{ margin: '2px 4px', backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 'calc(100% - 8px)', overflow: 'hidden', alignSelf: 'flex-start' }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {fromPrev ? `← ${prevMonthName}` : '↳'} {ot.title}
                               </span>
                             </div>
                           )}
-                          {seg.isRealStart && ot && (
+                          {!seg.showDetails && bk && (
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                              <span style={{ fontSize: 10, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.9)', textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>
+                                {fromPrev ? `← ${prevMonthName}` : '↳'} {bk.yachtName}
+                              </span>
+                            </div>
+                          )}
+                          {/* Detail card: only on the widest segment */}
+                          {seg.showDetails && ot && (
                             <div style={{ margin: '3px 6px', backgroundColor: 'rgba(255,255,255,0.93)', borderRadius: 5, padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 'calc(100% - 12px)', overflow: 'hidden', alignSelf: 'flex-start' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                                {fromPrev && <span style={{ fontSize: 9, fontWeight: 800, color: '#64748b', whiteSpace: 'nowrap', flexShrink: 0 }}>← {prevMonthName}</span>}
                                 <span style={{ fontSize: 12, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{ot.title}</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: '#475569', whiteSpace: 'nowrap', flexShrink: 0 }}>{ot.yacht.name}</span>
                                 <span style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{nights + 1}D/{nights}N</span>
                                 {ot.status === 'closed' && !ot.closedReason?.includes('Private Charter') && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', backgroundColor: '#64748b', borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>CLOSED</span>}
                                 {ot.status === 'full' && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', backgroundColor: '#ef4444', borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>}
                               </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px' }}>
+                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '3px 10px', overflow: 'hidden' }}>
                                 {ot.cabinStatuses.map(c => {
                                   const bs = c.bookingStatus
                                   const dotColor = ot.status === 'closed' ? '#ef4444' : bs === null ? '#ffffff' : bs === 'on_hold' ? '#22c55e' : bs === 'pending' ? '#eab308' : '#ef4444'
@@ -1071,11 +1122,12 @@ export function PublicCalendarView() {
                               </div>
                             </div>
                           )}
-                          {seg.isRealStart && bk && !ot && (() => {
+                          {seg.showDetails && bk && !ot && (() => {
                             const badge = STATUS_BADGE_BAR[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
                             return (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 14px', overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                  {fromPrev && <span style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.75)', whiteSpace: 'nowrap', flexShrink: 0 }}>← {prevMonthName}</span>}
                                   <span style={{ fontSize: 13, fontWeight: 700, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, textShadow: '0 1px 2px rgba(0,0,0,0.25)' }}>{bk.yachtName}</span>
                                   <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: badge.bg, borderRadius: 4, padding: '2px 7px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.4 }}>{badge.label}</span>
                                 </div>
@@ -1083,6 +1135,13 @@ export function PublicCalendarView() {
                               </div>
                             )
                           })()}
+
+                          {/* "→ NextMonth" badge — floats over the bar's right edge */}
+                          {goesToNext && (
+                            <div style={{ ...monthBadgeBase, right: 4 }}>
+                              {nextMonthName} →
+                            </div>
+                          )}
                         </div>
                       )
                     })}

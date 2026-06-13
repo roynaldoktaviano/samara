@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+
+async function requireFinance() {
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return null
+  return session
+}
 
 export async function GET(request: NextRequest) {
   try {
+    if (!await requireFinance()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { searchParams } = new URL(request.url)
     const category = searchParams.get('category')
     const yachtId = searchParams.get('yachtId')
@@ -35,6 +45,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!await requireFinance()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
     const body = await request.json()
     const {
       category,

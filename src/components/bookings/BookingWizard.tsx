@@ -10,6 +10,9 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
@@ -110,6 +113,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [agentId,        setAgentId]        = useState('')
   const [agentContactId, setAgentContactId] = useState('')
   const [agentContacts,  setAgentContacts]  = useState<AgentContactOpt[]>([])
+  const [agentOpen,      setAgentOpen]      = useState(false)
+  const [contactOpen,    setContactOpen]    = useState(false)
+  const [addingContact,  setAddingContact]  = useState(false)
+  const [newCName,       setNewCName]       = useState('')
+  const [newCPhone,      setNewCPhone]      = useState('')
+  const [newCEmail,      setNewCEmail]      = useState('')
+  const [savingContact,  setSavingContact]  = useState(false)
 
   /* step-1 PC */
   const [yachtId,    setYachtId]    = useState('')
@@ -165,6 +175,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [cabins,    setCabins]    = useState<CabinOpt[]>([])
   const [openTrips, setOpenTrips] = useState<OpenTripOpt[]>([])
   const [openTripsLoading, setOpenTripsLoading] = useState(false)
+  const [tripSearch,   setTripSearch]   = useState('')
+  const [tripPage,     setTripPage]     = useState(1)
+  const [tripSort,     setTripSort]     = useState<'nearest'|'furthest'|'longest'|'shortest'>('nearest')
+  const [tripDateFrom, setTripDateFrom] = useState('')
+  const [tripDateTo,   setTripDateTo]   = useState('')
   const [activeVouchers, setActiveVouchers] = useState<Array<{ id: string; code: string; name: string; type: string; value: number; minBooking: number | null; maxUses: number | null; usedCount: number }>>([])
   const [bookedCustomerIds,     setBookedCustomerIds]     = useState<string[]>([])
   const [existingCabinOccupancy,setExistingCabinOccupancy]= useState<Record<string,number>>({})
@@ -343,6 +358,26 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       .then(d => setAgentContacts(Array.isArray(d) ? d : []))
       .catch(() => setAgentContacts([]))
   }, [agentId])
+
+  const handleAddContact = async () => {
+    if (!newCName.trim() || !agentId) return
+    setSavingContact(true)
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCName.trim(), whatsapp: newCPhone.trim() || null, email: newCEmail.trim() || null }),
+      })
+      if (!res.ok) return
+      const c = await res.json()
+      setAgentContacts(prev => [...prev, c])
+      setAgentContactId(c.id)
+      setAddingContact(false)
+      setNewCName(''); setNewCPhone(''); setNewCEmail('')
+    } finally {
+      setSavingContact(false)
+    }
+  }
 
   /* fetch cabins when yacht changes — skipped when completing an on-hold booking (handled inline) */
   useEffect(() => {
@@ -890,6 +925,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* ════════════════════════════════════════════
      PHASE: AGENT INFO
   ════════════════════════════════════════════ */
+  const selectedAgent   = agents.find(a => a.id === agentId)
+  const selectedContact = agentContacts.find(c => c.id === agentContactId)
+
   const phaseAgentInfo = () => (
     <div className="space-y-5 py-2">
       <button
@@ -903,58 +941,191 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <div className="flex justify-center mb-3">
           <Badge style={{ backgroundColor: ACCENT, color: 'white' }} className="px-3 py-1">Via Agent</Badge>
         </div>
-        <h3 className="text-xl font-semibold">Select Agent</h3>
+        <h3 className="text-xl font-semibold">Agent Information</h3>
         <p className="text-sm text-muted-foreground mt-1">Select a travel agent for this booking</p>
       </div>
 
+      {/* Agent Company combobox */}
       <div className="space-y-1.5">
         <Label>Agent Company <span className="text-destructive">*</span></Label>
-        <Select value={agentId} onValueChange={v => { setAgentId(v); setAgentContactId('') }}>
-          <SelectTrigger><SelectValue placeholder="Select agent company…" /></SelectTrigger>
-          <SelectContent>
-            {agents.length === 0
-              ? <SelectItem value="_" disabled>No agents yet</SelectItem>
-              : agents.map(a => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name} ({a.commission}%)
-                  </SelectItem>
-                ))
-            }
-          </SelectContent>
-        </Select>
+        <Popover open={agentOpen} onOpenChange={setAgentOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="w-full flex items-center justify-between px-3 py-2 h-10 rounded-md border border-input bg-background text-sm hover:bg-accent/30 transition-colors"
+            >
+              {selectedAgent ? (
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium truncate">{selectedAgent.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full shrink-0 font-medium"
+                    style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                    {selectedAgent.commission}%
+                  </span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Select agent company…</span>
+              )}
+              <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0 ml-2" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="p-0" align="start" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+            <Command>
+              <CommandInput placeholder="Search agent…" />
+              <CommandList>
+                <CommandEmpty>
+                  <p className="text-muted-foreground text-sm">No agents found.</p>
+                </CommandEmpty>
+                <CommandGroup>
+                  {agents.map(a => (
+                    <CommandItem
+                      key={a.id}
+                      value={a.name}
+                      onSelect={() => { setAgentId(a.id); setAgentContactId(''); setAgentOpen(false) }}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <Check className={cn('w-4 h-4 shrink-0', agentId === a.id ? 'opacity-100' : 'opacity-0')}
+                        style={{ color: ACCENT }} />
+                      <span className="flex-1 truncate">{a.name}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0"
+                        style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                        {a.commission}%
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        {agents.length === 0 && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+            No agents registered yet. Please add an agent first via the <strong>Agents</strong> menu.
+          </p>
+        )}
       </div>
 
-      {/* Contact person — shown after company selected */}
+      {/* Contact Person combobox — shown after agent selected */}
       {agentId && (
         <div className="space-y-1.5">
           <Label>
             Contact Person
-            <span className="ml-1 text-muted-foreground font-normal text-xs">(optional)</span>
+            <span className="ml-1.5 text-muted-foreground font-normal text-xs">(optional)</span>
           </Label>
-          {agentContacts.length === 0 ? (
-            <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-              No contact persons at this agent yet. Add them via the <strong>Agents</strong> menu.
-            </p>
-          ) : (
-            <Select value={agentContactId} onValueChange={setAgentContactId}>
-              <SelectTrigger><SelectValue placeholder="Select contact person…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— None —</SelectItem>
-                {agentContacts.map(c => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}{c.whatsapp ? ` · ${c.whatsapp}` : c.email ? ` · ${c.email}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Popover open={contactOpen} onOpenChange={v => { setContactOpen(v); if (!v) setAddingContact(false) }}>
+            <PopoverTrigger asChild>
+              <button
+                className="w-full flex items-center justify-between px-3 py-2 h-10 rounded-md border border-input bg-background text-sm hover:bg-accent/30 transition-colors"
+              >
+                {selectedContact ? (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <User className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium truncate">{selectedContact.name}</span>
+                    {(selectedContact.whatsapp || selectedContact.email) && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        · {selectedContact.whatsapp || selectedContact.email}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">Select contact person…</span>
+                )}
+                <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0 ml-2" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="p-0" align="start" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+              {addingContact ? (
+                <div className="p-3 space-y-3">
+                  <p className="text-sm font-medium flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" style={{ color: ACCENT }} /> Add Contact Person
+                  </p>
+                  <Input
+                    placeholder="Name *"
+                    value={newCName}
+                    onChange={e => setNewCName(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Input
+                    placeholder="WhatsApp"
+                    value={newCPhone}
+                    onChange={e => setNewCPhone(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Input
+                    placeholder="Email"
+                    value={newCEmail}
+                    onChange={e => setNewCEmail(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1 h-8 text-xs"
+                      style={{ backgroundColor: ACCENT }}
+                      onClick={handleAddContact}
+                      disabled={!newCName.trim() || savingContact}
+                    >
+                      {savingContact ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={() => { setAddingContact(false); setNewCName(''); setNewCPhone(''); setNewCEmail('') }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Command>
+                  <CommandInput placeholder="Search contact…" />
+                  <CommandList>
+                    {agentContacts.length > 0 ? (
+                      <CommandGroup>
+                        <CommandItem
+                          value="__none__"
+                          onSelect={() => { setAgentContactId(''); setContactOpen(false) }}
+                          className="text-muted-foreground cursor-pointer"
+                        >
+                          <Check className={cn('w-4 h-4 shrink-0 mr-2', !agentContactId ? 'opacity-100' : 'opacity-0')}
+                            style={{ color: ACCENT }} />
+                          — None —
+                        </CommandItem>
+                        {agentContacts.map(c => (
+                          <CommandItem
+                            key={c.id}
+                            value={c.name}
+                            onSelect={() => { setAgentContactId(c.id); setContactOpen(false) }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={cn('w-4 h-4 shrink-0 mr-2', agentContactId === c.id ? 'opacity-100' : 'opacity-0')}
+                              style={{ color: ACCENT }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate">{c.name}</p>
+                              {(c.whatsapp || c.email) && (
+                                <p className="text-xs text-muted-foreground truncate">{c.whatsapp || c.email}</p>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    ) : (
+                      <CommandEmpty>No contacts yet.</CommandEmpty>
+                    )}
+                  </CommandList>
+                  <div className="border-t p-1">
+                    <button
+                      className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent transition-colors"
+                      style={{ color: ACCENT }}
+                      onClick={() => setAddingContact(true)}
+                    >
+                      <Plus className="w-4 h-4" /> Add new contact
+                    </button>
+                  </div>
+                </Command>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
-      )}
-
-      {agents.length === 0 && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          No agents registered yet. Please add an agent first via the <strong>Agents</strong> menu.
-        </p>
       )}
     </div>
   )
@@ -1154,100 +1325,237 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      STEP 1 — OPEN TRIP
   ════════════════════════════════════════════ */
   const step1OT = () => {
-    // Hide closed/cancelled trips — they're past or manually removed
-    const visibleTrips = openTrips.filter(t => t.status !== 'closed' && t.status !== 'cancelled')
+    const PAGE_SIZE = 6
+    const resetFilters = () => { setTripSearch(''); setTripDateFrom(''); setTripDateTo(''); setTripSort('nearest'); setTripPage(1) }
+    const hasActiveFilter = tripSearch || tripDateFrom || tripDateTo || tripSort !== 'nearest'
 
-    const statusBadge = (t: OpenTripOpt) => {
-      if (t.status === 'full')
-        return <Badge className="text-xs bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
-      return (
-        <Badge variant="outline" className="text-xs" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>
-          Open
-        </Badge>
-      )
+    // 1. hide closed/cancelled
+    let result = openTrips.filter(t => t.status !== 'closed' && t.status !== 'cancelled')
+
+    // 2. text search
+    const q = tripSearch.trim().toLowerCase()
+    if (q) result = result.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      t.destination.toLowerCase().includes(q) ||
+      t.yacht.name.toLowerCase().includes(q)
+    )
+
+    // 3. date range filter
+    if (tripDateFrom) result = result.filter(t => t.startDate.slice(0, 10) >= tripDateFrom)
+    if (tripDateTo)   result = result.filter(t => t.startDate.slice(0, 10) <= tripDateTo)
+
+    // 4. sort
+    result = [...result].sort((a, b) => {
+      const nights = (t: OpenTripOpt) =>
+        Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
+      if (tripSort === 'nearest')  return a.startDate.localeCompare(b.startDate)
+      if (tripSort === 'furthest') return b.startDate.localeCompare(a.startDate)
+      if (tripSort === 'longest')  return nights(b) - nights(a)
+      if (tripSort === 'shortest') return nights(a) - nights(b)
+      return 0
+    })
+
+    const totalPages = Math.max(1, Math.ceil(result.length / PAGE_SIZE))
+    const safePage   = Math.min(tripPage, totalPages)
+    const paged      = result.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+    const statusBadge = (t: OpenTripOpt) =>
+      t.status === 'full'
+        ? <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
+        : <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>Open</Badge>
+
+    const SORT_LABELS: Record<string, string> = {
+      nearest: 'Nearest', furthest: 'Furthest', longest: 'Longest', shortest: 'Shortest',
     }
 
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Select an available scheduled trip</p>
+      <div className="space-y-2.5">
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            className="pl-8 pr-8 h-9 text-sm"
+            placeholder="Search by trip name, destination, or yacht…"
+            value={tripSearch}
+            onChange={e => { setTripSearch(e.target.value); setTripPage(1) }}
+          />
+          {tripSearch && (
+            <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => { setTripSearch(''); setTripPage(1) }}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Filter row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* From date */}
+          <div className="relative flex items-center">
+            <CalendarIcon className="absolute left-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="date"
+              value={tripDateFrom}
+              onChange={e => { setTripDateFrom(e.target.value); setTripPage(1) }}
+              className="h-8 pl-7 pr-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'light' }}
+              placeholder="From"
+            />
+          </div>
+          <span className="text-xs text-muted-foreground">—</span>
+          {/* To date */}
+          <div className="relative flex items-center">
+            <CalendarIcon className="absolute left-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="date"
+              value={tripDateTo}
+              onChange={e => { setTripDateTo(e.target.value); setTripPage(1) }}
+              min={tripDateFrom || undefined}
+              className="h-8 pl-7 pr-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={{ colorScheme: 'light' }}
+            />
+          </div>
+
+          {/* Sort */}
+          <Select value={tripSort} onValueChange={v => { setTripSort(v as typeof tripSort); setTripPage(1) }}>
+            <SelectTrigger className="h-8 text-xs w-36 gap-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nearest">🗓 Nearest date</SelectItem>
+              <SelectItem value="furthest">🗓 Furthest date</SelectItem>
+              <SelectItem value="longest">⬆ Longest trip</SelectItem>
+              <SelectItem value="shortest">⬇ Shortest trip</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Clear all */}
+          {hasActiveFilter && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-1 h-8 px-2.5 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <X className="w-3 h-3" /> Reset
+            </button>
+          )}
+
+          <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap shrink-0">
+            {result.length} trip{result.length !== 1 ? 's' : ''}
+            {hasActiveFilter && tripSort !== 'nearest' && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                {SORT_LABELS[tripSort]}
+              </span>
+            )}
+          </span>
+        </div>
+
+        {/* Loading */}
         {openTripsLoading ? (
           <div className="grid grid-cols-2 gap-2">
-            {[...Array(4)].map((_, i) => (
+            {[...Array(6)].map((_, i) => (
               <div key={i} className="rounded-xl border p-4 space-y-2.5">
                 <div className="flex items-center gap-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-5 w-12 rounded-full" />
+                  <Skeleton className="h-4 w-32" /><Skeleton className="h-4 w-12 rounded-full" />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
+                <Skeleton className="h-3 w-20" /><Skeleton className="h-3 w-28" /><Skeleton className="h-3 w-24" />
               </div>
             ))}
           </div>
-        ) : visibleTrips.length === 0 ? (
-          <div className="text-center py-10 text-muted-foreground text-sm">
-            No open trips available. All trips are either full, closed, or none have been scheduled.
+        ) : result.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground gap-2">
+            <Search className="w-8 h-8 opacity-30" />
+            <p className="text-sm">{hasActiveFilter ? 'No trips match your filters.' : 'No open trips available.'}</p>
+            {hasActiveFilter && (
+              <button onClick={resetFilters} className="text-xs underline" style={{ color: ACCENT }}>Clear filters</button>
+            )}
           </div>
-        ) : null}
-        <div className="grid grid-cols-2 gap-2">
-          {!openTripsLoading && visibleTrips.map(t => {
-            const selected = openTripId === t.id
-            const isFull   = t.status === 'full'
-            const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
-            return (
-              <button
-                key={t.id}
-                onClick={() => !isFull && setOTId(t.id)}
-                disabled={isFull}
-                className={cn(
-                  'w-full text-left rounded-xl border transition-all duration-150',
-                  isFull
-                    ? 'border-border bg-muted/20 opacity-50 cursor-not-allowed'
-                    : selected
-                      ? 'shadow-sm'
-                      : 'border-border bg-card hover:border-foreground/20 hover:shadow-sm'
-                )}
-                style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}06` } : {}}
-              >
-                {/* Top row */}
-                <div className="flex items-center justify-between px-4 pt-3.5 pb-2 gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    {selected && !isFull && (
-                      <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: ACCENT }}>
-                        <Check className="w-2.5 h-2.5 text-white" />
-                      </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {paged.map(t => {
+                const selected = openTripId === t.id
+                const isFull   = t.status === 'full'
+                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => !isFull && setOTId(t.id)}
+                    disabled={isFull}
+                    className={cn(
+                      'w-full text-left rounded-xl border transition-all duration-150',
+                      isFull ? 'border-border bg-muted/20 opacity-50 cursor-not-allowed'
+                        : selected ? 'shadow-sm'
+                        : 'border-border bg-card hover:border-foreground/20 hover:shadow-sm'
                     )}
-                    <span className="font-semibold text-sm truncate">{t.title}</span>
-                    {statusBadge(t)}
-                  </div>
-                  {/* Cabin availability pill */}
-                  {isFull ? (
-                    <span className="text-[10px] font-semibold bg-red-100 text-red-600 rounded-full px-2.5 py-0.5 shrink-0">Sold Out</span>
-                  ) : (
-                    <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded-full px-2.5 py-0.5 shrink-0 whitespace-nowrap">
-                      {t.spotsAvailable}/{t.maxCapacity} cabin(s) available
-                    </span>
-                  )}
+                    style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}06` } : {}}
+                  >
+                    <div className="flex items-start justify-between px-3.5 pt-3 pb-1.5 gap-2">
+                      <div className="flex items-start gap-2 min-w-0">
+                        {selected && !isFull && (
+                          <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: ACCENT }}>
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-semibold text-sm leading-tight line-clamp-2">{t.title}</span>
+                          <div className="mt-1">{statusBadge(t)}</div>
+                        </div>
+                      </div>
+                      {isFull ? (
+                        <span className="text-[10px] font-semibold bg-red-100 text-red-600 rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">Sold Out</span>
+                      ) : (
+                        <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">
+                          {t.spotsAvailable}/{t.maxCapacity} cabin(s)
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-3.5 pb-3 text-xs text-muted-foreground space-y-0.5 border-t border-border/50 pt-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <Ship className="w-3 h-3 shrink-0 opacity-50" />
+                        <span className="truncate">{t.yacht.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <CalendarIcon className="w-3 h-3 shrink-0 opacity-50" />
+                        <span>{fmtDate(t.startDate)} → {fmtDate(t.endDate)}</span>
+                        <span className="text-[10px] bg-muted rounded px-1 py-px shrink-0">{nights}N</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Map className="w-3 h-3 shrink-0 opacity-50" />
+                        <span className="truncate">{t.destination}</span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs text-muted-foreground">
+                  {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, result.length)} of {result.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setTripPage(p => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-border bg-background hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-3 h-3" /> Prev
+                  </button>
+                  <span className="px-2 text-xs text-muted-foreground">{safePage} / {totalPages}</span>
+                  <button
+                    onClick={() => setTripPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-border bg-background hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
                 </div>
-                {/* Info rows */}
-                <div className="px-4 pb-3.5 text-xs text-muted-foreground space-y-0.5">
-                  <div className="flex items-center gap-1">
-                    <span className="opacity-60">🚢</span> {t.yacht.name}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="opacity-60">📅</span>
-                    {fmtDate(t.startDate)} → {fmtDate(t.endDate)}
-                    <span className="text-[10px] bg-muted rounded px-1 py-px">{nights}N</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="opacity-60">📍</span> {t.destination}
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     )
   }

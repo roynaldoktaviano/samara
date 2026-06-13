@@ -7,7 +7,11 @@ import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings, UserPen, Eye, EyeOff } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Bookings from '@/components/bookings/Bookings'
@@ -52,24 +56,34 @@ type NavItem = {
   label: string
   icon: React.ElementType
   roles: string[]
+  group: string
 }
 
+const NAV_GROUPS = [
+  { key: 'main',       label: 'Main'       },
+  { key: 'operations', label: 'Operations' },
+  { key: 'finance',    label: 'Finance'    },
+  { key: 'statistics', label: 'Statistics' },
+  { key: 'marketing',  label: 'Marketing'  },
+  { key: 'management', label: 'Management' },
+]
+
 const navigationItems: NavItem[] = [
-  { id: 'calendar',    label: 'Dashboard',   icon: Calendar,        roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING'] },
-  { id: 'yachts',      label: 'Yachts',      icon: Anchor,          roles: ['ADMIN'] },
-  { id: 'bookings',    label: 'Bookings',    icon: Calendar,        roles: ['ADMIN', 'SALES'] },
-  { id: 'payments',    label: 'Payments',    icon: CreditCard,      roles: ['ADMIN', 'FINANCE'] },
-  { id: 'open-trips',  label: 'Open Trips',  icon: Ship,            roles: ['ADMIN', 'MARKETING'] },
-  { id: 'customers',   label: 'Guests',      icon: Users,           roles: ['ADMIN', 'SALES', 'MARKETING'] },
-  { id: 'statistics',    label: 'Statistics',  icon: TrendingUp, roles: ['ADMIN'] },
-  { id: 'finance-stats', label: 'Finance',     icon: TrendingUp, roles: ['ADMIN', 'FINANCE'] },
-  { id: 'sales-stats',   label: 'Statistics',  icon: TrendingUp, roles: ['SALES'] },
-  { id: 'agents',      label: 'Agents',      icon: Briefcase,       roles: ['ADMIN', 'SALES', 'FINANCE'] },
-  { id: 'banks',         label: 'Bank Accounts', icon: Building2, roles: ['ADMIN', 'FINANCE'] },
-  { id: 'vouchers',      label: 'Vouchers',    icon: Tag,    roles: ['ADMIN'] },
-  { id: 'users',         label: 'Team',        icon: UserCog, roles: ['ADMIN'] },
-  { id: 'activity-log',  label: 'Activity Log', icon: Shield,    roles: ['ADMIN'] },
-  { id: 'settings',      label: 'Settings',     icon: Settings,  roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING'], group: 'main'       },
+  { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
+  { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },
+  { id: 'customers',     label: 'Guests',          icon: Users,      roles: ['ADMIN', 'SALES', 'MARKETING'],            group: 'operations' },
+  { id: 'yachts',        label: 'Yachts',          icon: Anchor,     roles: ['ADMIN'],                                  group: 'operations' },
+  { id: 'payments',      label: 'Payments',        icon: CreditCard, roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
+  { id: 'banks',         label: 'Bank Accounts',   icon: Building2,  roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
+  { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
+  { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
+  { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
+  { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES', 'FINANCE'],              group: 'marketing'  },
+  { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
+  { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
+  { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
+  { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
 ]
 
 const roleBadgeColor: Record<string, string> = {
@@ -166,6 +180,14 @@ export default function Home() {
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [profileOpen, setProfileOpen]   = useState(false)
+  const [profileName, setProfileName]   = useState('')
+  const [profileCurPw, setProfileCurPw] = useState('')
+  const [profileNewPw, setProfileNewPw] = useState('')
+  const [profileConfPw, setProfileConfPw] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [showCurPw, setShowCurPw]       = useState(false)
+  const [showNewPw, setShowNewPw]       = useState(false)
   const [sidebarDefaultOpen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1280 : true
   )
@@ -275,12 +297,49 @@ export default function Home() {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
   }
 
+  const openProfileDialog = () => {
+    setProfileName(session?.user?.name ?? '')
+    setProfileCurPw('')
+    setProfileNewPw('')
+    setProfileConfPw('')
+    setShowCurPw(false)
+    setShowNewPw(false)
+    setShowUserMenu(false)
+    setProfileOpen(true)
+  }
+
+  const handleProfileSave = async () => {
+    const trimName = profileName.trim()
+    if (!trimName) { toast.error('Name cannot be empty'); return }
+    if (profileNewPw && profileNewPw !== profileConfPw) { toast.error('New passwords do not match'); return }
+    if (profileNewPw && profileNewPw.length < 6) { toast.error('Password must be at least 6 characters'); return }
+    if (profileNewPw && !profileCurPw) { toast.error('Enter your current password to change it'); return }
+    setProfileSaving(true)
+    try {
+      const body: Record<string, string> = { name: trimName }
+      if (profileNewPw) { body.currentPassword = profileCurPw; body.newPassword = profileNewPw }
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Failed to update profile'); return }
+      toast.success('Profile updated')
+      setProfileOpen(false)
+    } catch {
+      toast.error('Failed to update profile')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
   const handleNotifClick = (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
-    if (n.paymentId) {
+    if (n.paymentId && isFinance) {
       setCurrentView('payments')
-    } else if (n.bookingId || n.type.startsWith('DEPOSIT_DUE')) {
+    } else if (n.bookingId || n.paymentId || n.type.startsWith('DEPOSIT_DUE')) {
       setCurrentView('bookings')
     }
   }
@@ -313,6 +372,7 @@ export default function Home() {
   }
 
   const userRole = session.user.role
+  const isAdmin   = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const visibleNavItems = navigationItems.filter((item) => item.roles.includes(userRole))
 
@@ -363,6 +423,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <div className="flex min-h-screen bg-background w-full">
         <Sidebar>
@@ -373,52 +434,68 @@ export default function Home() {
           </SidebarHeader>
 
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Main Menu</SidebarGroupLabel>
-              <SidebarMenu>
-                {visibleNavItems.map((item) => {
-                  const Icon = item.icon
-                  const showDot =
-                    (item.id === 'payments' && isFinance && pendingPayments > 0) ||
-                    (item.id === 'bookings' && !isFinance && invoiceReadyCount > 0)
-                  const dotCount =
-                    item.id === 'payments' && isFinance ? pendingPayments :
-                    item.id === 'bookings' && !isFinance ? invoiceReadyCount :
-                    0
+            {(() => {
+              const renderItems = (items: NavItem[]) => items.map((item) => {
+                const Icon = item.icon
+                const showDot =
+                  (item.id === 'payments' && isFinance && pendingPayments > 0) ||
+                  (item.id === 'bookings' && !isFinance && invoiceReadyCount > 0)
+                const dotCount =
+                  item.id === 'payments' && isFinance ? pendingPayments :
+                  item.id === 'bookings' && !isFinance ? invoiceReadyCount :
+                  0
+                return (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      onClick={() => {
+                        setCurrentView(item.id)
+                        if (item.id === 'bookings') markInvoiceReadyAsRead()
+                      }}
+                      isActive={activeView === item.id}
+                    >
+                      <div className="relative shrink-0">
+                        <Icon className="h-4 w-4" />
+                        <AnimatePresence>
+                          {showDot && (
+                            <motion.span
+                              key={dotCount}
+                              initial={{ scale: 0, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0, opacity: 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                              className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none"
+                            >
+                              {dotCount > 9 ? '9+' : dotCount}
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })
 
+              if (isAdmin) {
+                return NAV_GROUPS.map(group => {
+                  const groupItems = visibleNavItems.filter(i => i.group === group.key)
+                  if (!groupItems.length) return null
                   return (
-                    <SidebarMenuItem key={item.id}>
-                      <SidebarMenuButton
-                        onClick={() => {
-                          setCurrentView(item.id)
-                          if (item.id === 'bookings') markInvoiceReadyAsRead()
-                        }}
-                        isActive={activeView === item.id}
-                      >
-                        <div className="relative shrink-0">
-                          <Icon className="h-4 w-4" />
-                          <AnimatePresence>
-                            {showDot && (
-                              <motion.span
-                                key={dotCount}
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0, opacity: 0 }}
-                                transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none"
-                              >
-                                {dotCount > 9 ? '9+' : dotCount}
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    <SidebarGroup key={group.key}>
+                      <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                      <SidebarMenu>{renderItems(groupItems)}</SidebarMenu>
+                    </SidebarGroup>
                   )
-                })}
-              </SidebarMenu>
-            </SidebarGroup>
+                })
+              }
+
+              return (
+                <SidebarGroup>
+                  <SidebarGroupLabel>Menu</SidebarGroupLabel>
+                  <SidebarMenu>{renderItems(visibleNavItems)}</SidebarMenu>
+                </SidebarGroup>
+              )
+            })()}
           </SidebarContent>
 
           <SidebarFooter className="px-4 py-3 border-t">
@@ -539,12 +616,14 @@ export default function Home() {
                           View bookings →
                         </button>
                       )}
-                      <button
-                        onClick={() => { setCurrentView('payments'); setNotifOpen(false) }}
-                        className="text-xs text-[#1a5f6e] hover:underline"
-                      >
-                        View payments →
-                      </button>
+                      {isFinance && (
+                        <button
+                          onClick={() => { setCurrentView('payments'); setNotifOpen(false) }}
+                          className="text-xs text-[#1a5f6e] hover:underline"
+                        >
+                          View payments →
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -585,11 +664,19 @@ export default function Home() {
                       exit="hidden"
                       transition={{ duration: 0.15, ease: 'easeOut' }}
                       style={{ transformOrigin: 'top right' }}
-                      className="absolute right-0 top-full mt-1 w-44 rounded-md border bg-background shadow-md z-50"
+                      className="absolute right-0 top-full mt-1 w-48 rounded-md border bg-background shadow-md z-50 overflow-hidden"
                     >
                       <button
+                        onClick={openProfileDialog}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                      >
+                        <UserPen className="h-4 w-4 text-muted-foreground" />
+                        Edit Profile
+                      </button>
+                      <div className="border-t mx-2" />
+                      <button
                         onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-md"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                       >
                         <LogOut className="h-4 w-4" />
                         Sign Out
@@ -619,5 +706,103 @@ export default function Home() {
         </main>
       </div>
     </SidebarProvider>
+
+    {/* ── Edit Profile Dialog ── */}
+    <Dialog open={profileOpen} onOpenChange={v => { if (!v) setProfileOpen(false) }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Edit Profile</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* Name */}
+          <div className="space-y-1.5">
+            <Label htmlFor="profile-name">Name</Label>
+            <Input
+              id="profile-name"
+              value={profileName}
+              onChange={e => setProfileName(e.target.value)}
+              disabled={profileSaving}
+              placeholder="Your name"
+            />
+          </div>
+
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Change Password <span className="font-normal normal-case">(optional)</span></p>
+
+            {/* Current password */}
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-cur-pw">Current Password</Label>
+              <div className="relative">
+                <Input
+                  id="profile-cur-pw"
+                  type={showCurPw ? 'text' : 'password'}
+                  value={profileCurPw}
+                  onChange={e => setProfileCurPw(e.target.value)}
+                  disabled={profileSaving}
+                  placeholder="••••••••"
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowCurPw(v => !v)}
+                  tabIndex={-1}
+                >
+                  {showCurPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* New password */}
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-new-pw">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="profile-new-pw"
+                  type={showNewPw ? 'text' : 'password'}
+                  value={profileNewPw}
+                  onChange={e => setProfileNewPw(e.target.value)}
+                  disabled={profileSaving}
+                  placeholder="Min. 6 characters"
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowNewPw(v => !v)}
+                  tabIndex={-1}
+                >
+                  {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirm new password */}
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-conf-pw">Confirm New Password</Label>
+              <Input
+                id="profile-conf-pw"
+                type="password"
+                value={profileConfPw}
+                onChange={e => setProfileConfPw(e.target.value)}
+                disabled={profileSaving}
+                placeholder="Repeat new password"
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setProfileOpen(false)} disabled={profileSaving}>
+            Cancel
+          </Button>
+          <Button onClick={handleProfileSave} disabled={profileSaving}>
+            {profileSaving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

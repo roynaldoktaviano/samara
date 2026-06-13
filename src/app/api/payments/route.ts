@@ -8,11 +8,11 @@ export async function GET(_: NextRequest) {
   try {
     const session  = await getServerSession(authOptions)
     const userRole = (session?.user as { role?: string })?.role ?? ''
-    const userName = session?.user?.name ?? ''
+    const userId   = session?.user?.id ?? ''
 
-    // SALES: only their own payments (matched via booking.salesperson)
-    const where = userRole === 'SALES' && userName
-      ? { booking: { salesperson: { equals: userName, mode: 'insensitive' as const } } }
+    // SALES: only their own payments (matched via booking.salespersonId)
+    const where = userRole === 'SALES' && userId
+      ? { booking: { salespersonId: userId } }
       : {}
 
     const payments = await withRetry(() => db.payment.findMany({
@@ -46,6 +46,7 @@ export async function GET(_: NextRequest) {
             tripType: true,
             source: true,
             salesperson: true,
+            salespersonUser: { select: { name: true } },
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
@@ -96,9 +97,9 @@ export async function POST(request: NextRequest) {
     const submittedByName   = session?.user?.name ?? session?.user?.email ?? null
     const previouslyPaid    = booking.depositPaid
     const paymentType       = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
-    // Placeholder invoice number — Finance will set the real one when generating
-    const allCount    = await db.payment.count({ where: { bookingId } })
-    const invoiceNumber = `REQ-${booking.bookingCode}-${String(allCount + 1).padStart(2, '0')}`
+    const { nextVal } = await import('@/lib/counter')
+    const reqNum      = await nextVal(`payment_req:${booking.bookingCode}`)
+    const invoiceNumber = `REQ-${booking.bookingCode}-${String(reqNum).padStart(2, '0')}`
 
     const amount = (typeof requestedAmount === 'number' && requestedAmount > 0) ? requestedAmount : 0
 

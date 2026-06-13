@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Calendar, Ship, Users, TrendingUp, TrendingDown, Minus, Briefcase, Globe, RotateCw, ChevronDown } from 'lucide-react'
+import { Calendar, Ship, Users, TrendingUp, TrendingDown, Minus, Briefcase, Globe, RotateCw, UserCog } from 'lucide-react'
 
 /* ── constants ── */
 const TEAL        = '#1a5f6e'
@@ -17,10 +18,12 @@ interface Summary { total: number; privateCharter: number; openTrip: number; dir
 interface TopAgent { agentId: string; name: string; period: number; total: number }
 interface TopNationality { nationality: string; count: number }
 interface Yacht { id: string; name: string }
+interface Salesperson { id: string; name: string | null }
 interface StatsData {
   current: Summary; compare: Summary
   topAgents: TopAgent[]; topNationalities: TopNationality[]
-  yachts: Yacht[]; periodLabel: string; compareLabel: string; updatedAt: string
+  yachts: Yacht[]; salespeople?: Salesperson[]
+  periodLabel: string; compareLabel: string; updatedAt: string
 }
 
 /* ── date helpers ── */
@@ -73,29 +76,37 @@ function SplitBar({ label, value, total, color }: { label: string; value: number
 
 /* ── main component ── */
 export default function SalesStats() {
+  const { data: session } = useSession()
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const isAdmin  = userRole === 'ADMIN'
+
   const thisMonth = PRESETS[0].get()
 
-  const [data,        setData]        = useState<StatsData | null>(null)
-  const [loading,     setLoading]     = useState(true)
-  const [refreshing,  setRefreshing]  = useState(false)
-  const [yachtId,     setYachtId]     = useState('all')
-  const [from,        setFrom]        = useState(thisMonth.from)
-  const [to,          setTo]          = useState(thisMonth.to)
-  const [activePreset,setActivePreset]= useState('This Month')
-  const [tick,        setTick]        = useState(0)
-  const [scope,       setScope]       = useState<'mine' | 'all'>('mine')
+  const [data,            setData]            = useState<StatsData | null>(null)
+  const [loading,         setLoading]         = useState(true)
+  const [refreshing,      setRefreshing]      = useState(false)
+  const [yachtId,         setYachtId]         = useState('all')
+  const [from,            setFrom]            = useState(thisMonth.from)
+  const [to,              setTo]              = useState(thisMonth.to)
+  const [activePreset,    setActivePreset]    = useState('This Month')
+  const [tick,            setTick]            = useState(0)
+  const [salespersonId,   setSalespersonId]   = useState('all') // admin only
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchStats = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const qs = new URLSearchParams({ from, to, scope, ...(yachtId !== 'all' ? { yachtId } : {}) })
+      const qs = new URLSearchParams({
+        from, to,
+        ...(yachtId !== 'all' ? { yachtId } : {}),
+        ...(isAdmin && salespersonId !== 'all' ? { salespersonId } : {}),
+      })
       const res = await fetch(`/api/stats/sales?${qs}`)
       if (res.ok) setData(await res.json())
     } catch (e) { console.error(e) }
     finally { setLoading(false); setRefreshing(false) }
-  }, [from, to, yachtId, scope])
+  }, [from, to, yachtId, isAdmin, salespersonId])
 
   useEffect(() => { fetchStats() }, [fetchStats])
 
@@ -124,33 +135,41 @@ export default function SalesStats() {
 
   const cur = data?.current
   const cmp = data?.compare
-  const compareShort = data?.compareLabel ?? 'prev period'
+
+  // Resolve the label shown under the title
+  const scopeLabel = isAdmin
+    ? salespersonId !== 'all'
+      ? data?.salespeople?.find(s => s.id === salespersonId)?.name ?? 'Sales'
+      : 'All Sales'
+    : 'My Sales'
 
   return (
     <div className="space-y-5">
 
-      {/* ── Header row 1: title + refresh ── */}
+      {/* ── Header row 1: title + scope label ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-0.5">
             <h3 className="text-2xl font-bold tracking-tight">Sales Overview</h3>
-            {/* Scope toggle */}
-            <div className="flex items-center rounded-lg border bg-muted p-0.5 text-xs font-semibold">
-              <button
-                onClick={() => setScope('mine')}
-                className="px-3 py-1 rounded-md transition-colors"
-                style={scope === 'mine' ? { background: TEAL, color: 'white' } : { color: '#6b7280' }}
-              >
+            {/* Admin: salesperson filter dropdown. Sales: fixed "My Sales" badge */}
+            {isAdmin ? (
+              <Select value={salespersonId} onValueChange={setSalespersonId}>
+                <SelectTrigger className="h-8 w-44 text-xs font-semibold border rounded-lg" style={{ borderColor: TEAL, color: salespersonId !== 'all' ? TEAL : undefined }}>
+                  <UserCog className="h-3.5 w-3.5 mr-1 shrink-0" style={{ color: TEAL }} />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sales</SelectItem>
+                  {data?.salespeople?.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name ?? s.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="px-3 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: TEAL }}>
                 My Sales
-              </button>
-              <button
-                onClick={() => setScope('all')}
-                className="px-3 py-1 rounded-md transition-colors"
-                style={scope === 'all' ? { background: TEAL, color: 'white' } : { color: '#6b7280' }}
-              >
-                All Sales
-              </button>
-            </div>
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground text-sm">
             {loading ? 'Loading…' : (
@@ -161,6 +180,9 @@ export default function SalesStats() {
                 )}
                 {yachtId !== 'all' && data?.yachts && (
                   <span className="ml-1.5">· {data.yachts.find(y => y.id === yachtId)?.name}</span>
+                )}
+                {isAdmin && salespersonId !== 'all' && (
+                  <span className="ml-1.5">· {scopeLabel}</span>
                 )}
               </>
             )}
@@ -182,7 +204,6 @@ export default function SalesStats() {
 
       {/* ── Header row 2: filters ── */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Preset pills */}
         {PRESETS.map(p => (
           <button
             key={p.label}
@@ -200,7 +221,6 @@ export default function SalesStats() {
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        {/* Custom date range */}
         <input
           type="date" value={from}
           onChange={e => handleFromChange(e.target.value)}
@@ -215,7 +235,6 @@ export default function SalesStats() {
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        {/* Vessel filter */}
         <Select value={yachtId} onValueChange={setYachtId}>
           <SelectTrigger className="h-8 w-36 text-xs">
             <SelectValue />

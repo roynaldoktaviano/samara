@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) return null
+  return session
+}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
 
     const trip = await db.openTrip.findUnique({
@@ -33,19 +44,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!trip) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     // Build cabin availability map
-    const occupancyMap: Record<string, { guests: { id: string; bgId: string; name: string }[]; bookingStatus: string | null; salesperson: string; bookingId: string; bookingCode: string }> = {}
+    const occupancyMap: Record<string, { guests: { id: string; bgId: string; name: string }[]; bookingStatus: string | null; salesperson: string; salespersonId: string | null; bookingId: string; bookingCode: string }> = {}
     trip.bookings.forEach(b => {
       const sales = b.salespersonUser?.name ?? b.salesperson ?? b.agent?.name ?? 'Direct'
       b.guests.forEach(g => {
         if (g.cabinId) {
-          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales, bookingId: b.id, bookingCode: b.bookingCode }
+          if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales, salespersonId: b.salespersonId ?? null, bookingId: b.id, bookingCode: b.bookingCode }
           occupancyMap[g.cabinId].guests.push({ id: g.customer.id, bgId: g.id, name: g.customer.name })
         }
       })
     })
 
     const cabins = trip.yacht.cabins.map(c => {
-      const occ      = occupancyMap[c.id] ?? { guests: [], bookingStatus: null, salesperson: '' }
+      const occ      = occupancyMap[c.id] ?? { guests: [], bookingStatus: null, salesperson: '', salespersonId: null }
       const cap      = c.capacity ?? 2
       const occupied = occ.guests.length
       const spotsLeft = Math.max(0, cap - occupied)
@@ -61,9 +72,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         isFull,
         guests: occ.guests,
         bookingStatus: occ.bookingStatus,
-        salesperson: occ.salesperson,
-        bookingId:   occ.bookingId   ?? null,
-        bookingCode: occ.bookingCode ?? null,
+        salesperson:   occ.salesperson,
+        salespersonId: occ.salespersonId,
+        bookingId:     occ.bookingId   ?? null,
+        bookingCode:   occ.bookingCode ?? null,
       }
     })
 
@@ -113,6 +125,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = await params
     await db.openTrip.delete({ where: { id } })
     return NextResponse.json({ ok: true })
@@ -124,6 +137,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = await params
     const body = await request.json()
     const { title, description, destination, region, departurePort, arrivalPort, status, pricePerCabin } = body

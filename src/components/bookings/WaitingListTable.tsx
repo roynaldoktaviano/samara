@@ -57,8 +57,8 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
   return (
     <div className="rounded-lg border overflow-hidden">
       {/* Header row */}
-      <div className="grid grid-cols-[40px_1fr_1.4fr_40px] gap-0 bg-muted/60 border-b">
-        {['#', 'Name', 'Contact', ''].map((h, i) => (
+      <div className="grid grid-cols-[40px_1fr_1.4fr_100px_40px] gap-0 bg-muted/60 border-b">
+        {['#', 'Name', 'Contact', 'Added by', ''].map((h, i) => (
           <div key={i} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {h}
           </div>
@@ -73,7 +73,7 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
           <div
             key={item.id}
             className={[
-              'grid grid-cols-[40px_1fr_1.4fr_40px] gap-0 border-b last:border-0 items-center transition-colors',
+              'grid grid-cols-[40px_1fr_1.4fr_100px_40px] gap-0 border-b last:border-0 items-center transition-colors',
               dim ? 'opacity-50 bg-white' : 'bg-white hover:bg-slate-50/60',
             ].join(' ')}
           >
@@ -102,6 +102,13 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
                   <Mail className="h-3.5 w-3.5 shrink-0" /> {item.contactEmail}
                 </span>
               )}
+            </div>
+
+            {/* Added by (salesperson) */}
+            <div className="px-4 py-4">
+              <p className="text-xs text-muted-foreground truncate">
+                {item.salesperson?.name ?? '—'}
+              </p>
             </div>
 
             {/* Actions */}

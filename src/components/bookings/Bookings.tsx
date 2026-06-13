@@ -793,10 +793,7 @@ export default function Bookings() {
                   <TableHead className="hidden sm:table-cell">Type</TableHead>
                   <TableHead>Yacht / Trip</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Dates</TableHead>
-                  <TableHead className="hidden md:table-cell">Guests</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Paid</TableHead>
+                  <TableHead>Destination</TableHead>
                   <TableHead className="hidden lg:table-cell">Due Dates</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -805,14 +802,14 @@ export default function Bookings() {
                 {loading || (canManageBookings && paymentsLoading) ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 10 }).map((_, j) => (
+                      {Array.from({ length: 7 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                       {bookings.length === 0
                         ? 'No bookings yet — click "New Booking" to get started.'
                         : 'No bookings match the current filters.'}
@@ -843,8 +840,11 @@ export default function Bookings() {
                       <div className="text-sm font-medium">
                         {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : b.yacht?.name ?? '—'}
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {b.tripType === 'OPEN_TRIP' ? b.openTrip?.destination : b.yacht?.model}
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        <span>{fmtDate(b.startDate)}</span>
+                        <span className="mx-1">–</span>
+                        <span>{fmtDate(b.endDate)}</span>
+                        <span className="ml-1">· {getDays(b.startDate, b.endDate)}d</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -852,20 +852,10 @@ export default function Bookings() {
                       {b.agent && <div className="text-xs text-muted-foreground">via {b.agent.name}</div>}
                     </TableCell>
                     <TableCell>
-                      <div className="text-xs">
-                        <div>{fmtDate(b.startDate)}</div>
-                        <div className="text-muted-foreground">{fmtDate(b.endDate)}</div>
-                        <div className="text-muted-foreground">{getDays(b.startDate, b.endDate)}d</div>
+                      <div className="text-xs text-muted-foreground">
+                        {b.tripType === 'OPEN_TRIP' ? (b.openTrip?.destination ?? '—') : (b.destination ?? b.yacht?.model ?? '—')}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm">{b.guestCount}</TableCell>
-                    <TableCell className="text-sm font-medium">
-                      ${netBook(b).toLocaleString()}
-                      {b.source === 'AGENT' && (b.agent?.commission ?? 0) > 0
-                        ? <div className="text-xs text-blue-600">{b.agent!.commission}% comm</div>
-                        : b.discount > 0 && <div className="text-xs text-emerald-600">{b.discount}% off</div>}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm">${b.depositPaid.toLocaleString()}</TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <div className="text-xs space-y-0.5 min-w-20">
                         {b.depositDueDate ? (

@@ -221,14 +221,9 @@ export async function POST(request: NextRequest) {
     const tInit  = (tripType === 'OPEN_TRIP') ? 'ST' : 'PC'
     const prefix = `${yInit}-${tInit}-`
 
-    // Use highest existing number (not count) to avoid conflicts when there are gaps
-    const lastBooking = await db.booking.findFirst({
-      where: { bookingCode: { startsWith: prefix } },
-      orderBy: { bookingCode: 'desc' },
-      select: { bookingCode: true },
-    })
-    const lastNum = lastBooking ? (parseInt(lastBooking.bookingCode.slice(prefix.length)) || 0) : 0
-    const bookingCode = `${prefix}${String(lastNum + 1).padStart(4, '0')}`
+    const { nextVal } = await import('@/lib/counter')
+    const num         = await nextVal(`booking:${prefix}`)
+    const bookingCode = `${prefix}${String(num).padStart(4, '0')}`
 
     // For on-hold: use provided customer id, or find/create by phone+name
     let leadCustomerId: string
