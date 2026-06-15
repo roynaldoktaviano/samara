@@ -6,15 +6,17 @@ import { db, withRetry } from '@/lib/db'
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function netBooking(b: {
-  totalPrice: number; discount: number; source: string
-  agent: { commission: number } | null
+  totalPrice: number; discount: number; source: string; tripType: string;
+  agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
   services: { price: number; quantity: number }[]
 }) {
-  const svc  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const base = b.totalPrice - svc
-  const disc = Math.max(0, base - (b.discount ?? 0))
-  const comm = b.source === 'AGENT' ? disc * (b.agent?.commission ?? 0) / 100 : 0
-  return disc + svc - comm
+  const svc     = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+  const base    = b.totalPrice - svc
+  const disc    = Math.max(0, base - (b.discount ?? 0))
+  const commPct = b.source === 'AGENT'
+    ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
+    : 0
+  return disc + svc - disc * commPct / 100
 }
 
 export async function GET(request: NextRequest) {
@@ -32,9 +34,9 @@ export async function GET(request: NextRequest) {
       db.booking.findMany({
         where: { status: { not: 'cancelled' }, startDate: { gte: startOfYear, lte: endOfYear } },
         select: {
-          totalPrice: true, discount: true, source: true, startDate: true,
+          totalPrice: true, discount: true, source: true, startDate: true, tripType: true,
           salesperson: true, salespersonId: true,
-          agent:    { select: { commission: true } },
+          agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
           services: { select: { price: true, quantity: true } },
         },
       }),

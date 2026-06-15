@@ -50,7 +50,7 @@ export async function GET(_: NextRequest) {
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent: { select: { name: true, commission: true } },
+            agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
           },
         },
       },

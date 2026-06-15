@@ -67,7 +67,7 @@ interface Payment {
     customer: { name: string; email: string | null; phone: string | null }
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
-    agent: { name: string; commission: number | null } | null
+    agent: { name: string; commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
   }
 }
 
@@ -219,9 +219,10 @@ export default function Payments() {
     setShowRejectInput(false)
     setRejectNotes('')
     setProofPreview(null)
-    const net = p.booking.source === 'AGENT' && p.booking.agent?.commission
-      ? p.booking.totalPrice * (1 - p.booking.agent.commission / 100)
-      : p.booking.totalPrice
+    const commPct = p.booking.source === 'AGENT'
+      ? (p.booking.tripType === 'OPEN_TRIP' ? (p.booking.agent?.commissionOpenTrip ?? 0) : (p.booking.agent?.commissionPrivateCharter ?? 0))
+      : 0
+    const net = p.booking.totalPrice * (1 - commPct / 100)
     const remaining = Math.max(0, net - p.previouslyPaid)
     const isFullPayment = p.amount > 0 && Math.abs(p.amount - remaining) < 0.01
     setGenInvAmount(p.amount > 0 ? p.amount.toFixed(2) : '')
@@ -497,9 +498,12 @@ export default function Payments() {
                   <div>
                     <p className="text-xs text-muted-foreground mb-0.5">Total Booking</p>
                     <p className="font-semibold text-sm">${fmt(
-                      selected.booking.source === 'AGENT' && selected.booking.agent?.commission
-                        ? selected.booking.totalPrice * (1 - selected.booking.agent.commission / 100)
-                        : selected.booking.totalPrice
+                      (() => {
+                        const pct = selected.booking.source === 'AGENT'
+                          ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
+                          : 0
+                        return selected.booking.totalPrice * (1 - pct / 100)
+                      })()
                     )}</p>
                   </div>
                 </CardContent>

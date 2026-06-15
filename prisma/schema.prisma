@@ -136,9 +136,11 @@ model Customer {
 
 model Agent {
   id                 String               @id @default(cuid())
-  name               String
-  commission         Float                @default(0)
-  isActive           Boolean              @default(true)
+  name                      String
+  commission                Float                @default(0)
+  commissionOpenTrip        Float                @default(0)
+  commissionPrivateCharter  Float                @default(0)
+  isActive                  Boolean              @default(true)
   country            String?
   agentType          String?
   contract           String?

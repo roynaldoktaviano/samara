@@ -53,7 +53,7 @@ interface BookingRecord {
   yacht?: { id: string; name: string; model?: string; canDiving?: boolean; capacity?: number }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
-  agent?:        { id: string; name: string; commission?: number }
+  agent?:        { id: string; name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
   agentContact?: { id: string; name: string; email?: string | null; whatsapp?: string | null } | null
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
   salespersonId?: string | null
@@ -100,7 +100,10 @@ const netBook = (b: BookingRecord) => {
   const svcTotal  = b.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
   const basePrice = b.totalPrice - svcTotal
   const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
-  const commAmt   = b.source === 'AGENT' ? afterDisc * (b.agent?.commission ?? 0) / 100 : 0
+  const commPct   = b.source === 'AGENT'
+    ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
+    : 0
+  const commAmt   = afterDisc * commPct / 100
   return afterDisc + svcTotal - commAmt
 }
 
@@ -985,7 +988,9 @@ export default function Bookings() {
             const basePrice = paymentBooking.totalPrice - svcTotal
             const discount  = paymentBooking.discount ?? 0
             const afterDisc = Math.max(0, basePrice - discount)
-            const commPct   = paymentBooking.source === 'AGENT' ? (paymentBooking.agent?.commission ?? 0) : 0
+            const commPct   = paymentBooking.source === 'AGENT'
+              ? (paymentBooking.tripType === 'OPEN_TRIP' ? (paymentBooking.agent?.commissionOpenTrip ?? 0) : (paymentBooking.agent?.commissionPrivateCharter ?? 0))
+              : 0
             const commAmt   = afterDisc * commPct / 100
             const net       = afterDisc + svcTotal - commAmt
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
@@ -1029,7 +1034,7 @@ export default function Bookings() {
                       <span className="text-muted-foreground font-medium">−{fmtD(commAmt)}</span>
                     </div>
                   )}
-                  {((paymentBooking.discount ?? 0) > 0 || (paymentBooking.source === 'AGENT' && (paymentBooking.agent?.commission ?? 0) > 0)) && (
+                  {((paymentBooking.discount ?? 0) > 0 || (paymentBooking.source === 'AGENT' && commPct > 0)) && (
                     <div className="flex justify-between border-t pt-1">
                       <span className="text-muted-foreground">Net Total</span>
                       <span className="font-semibold">{fmtD(net)}</span>
@@ -1759,7 +1764,9 @@ export default function Bookings() {
             const db_ = detailBooking
             const svcTotal   = (db_.services ?? []).reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
             const basePrice  = db_.totalPrice - svcTotal
-            const commPct    = db_.source === 'AGENT' ? (db_.agent?.commission ?? 0) : 0
+            const commPct    = db_.source === 'AGENT'
+              ? (db_.tripType === 'OPEN_TRIP' ? (db_.agent?.commissionOpenTrip ?? 0) : (db_.agent?.commissionPrivateCharter ?? 0))
+              : 0
             const commAmt    = commPct > 0 ? Math.max(0, basePrice - db_.discount) * commPct / 100 : 0
             const net        = Math.max(0, basePrice - db_.discount) + svcTotal - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)

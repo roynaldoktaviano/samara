@@ -75,6 +75,8 @@ interface AgentRecord {
   id: string
   name: string
   commission: number
+  commissionOpenTrip: number
+  commissionPrivateCharter: number
   isActive: boolean
   country: string | null
   agentType: string | null
@@ -110,7 +112,7 @@ interface AgentContact {
   dateOfBirth: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', salespersonId: '', country: '', agentType: '', contract: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', agentType: '', contract: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 
@@ -134,6 +136,7 @@ export default function Agents() {
   const [editing,   setEditing]   = useState<AgentRecord | null>(null)
   const [form,      setForm]      = useState(EMPTY_FORM)
   const [saving,    setSaving]    = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
@@ -283,6 +286,7 @@ export default function Agents() {
     setContacts([])
     setAddingContact(false)
     setEditingContact(null)
+    setSaveError('')
     setSheetOpen(true)
   }
 
@@ -290,7 +294,9 @@ export default function Agents() {
     setEditing(a)
     setForm({
       name:          a.name,
-      commission:    String(a.commission),
+      commission:               String(a.commission),
+      commissionOpenTrip:       String(a.commissionOpenTrip),
+      commissionPrivateCharter: String(a.commissionPrivateCharter),
       salespersonId: a.salespersonId ?? '',
       country:       a.country    ?? '',
       agentType:     a.agentType  ?? '',
@@ -299,6 +305,7 @@ export default function Agents() {
     setAddingContact(false)
     setEditingContact(null)
     setContactForm(EMPTY_CONTACT)
+    setSaveError('')
     fetchContacts(a.id)
     setSheetOpen(true)
   }
@@ -306,6 +313,7 @@ export default function Agents() {
   const handleSave = async () => {
     if (!form.name.trim()) return
     setSaving(true)
+    setSaveError('')
     try {
       const url    = editing ? `/api/agents/${editing.id}` : '/api/agents'
       const method = editing ? 'PATCH' : 'POST'
@@ -314,7 +322,9 @@ export default function Agents() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name:          form.name.trim(),
-          commission:    parseFloat(form.commission) || 0,
+          commission:               parseFloat(form.commission) || 0,
+          commissionOpenTrip:       parseFloat(form.commissionOpenTrip) || 0,
+          commissionPrivateCharter: parseFloat(form.commissionPrivateCharter) || 0,
           salespersonId: form.salespersonId || null,
           country:       form.country   || null,
           agentType:     form.agentType || null,
@@ -322,7 +332,8 @@ export default function Agents() {
         }),
       })
       if (res.ok) { await fetchAgents(); setSheetOpen(false) }
-    } catch (e) { console.error(e) }
+      else { const d = await res.json(); setSaveError(d.error ?? 'Gagal menyimpan') }
+    } catch (e) { console.error(e); setSaveError('Terjadi kesalahan') }
     finally { setSaving(false) }
   }
 
@@ -628,7 +639,8 @@ export default function Agents() {
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
                     {canCalendar && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Commission</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Comm. OT</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Comm. PC</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Status</th>
                     {canManage && <th className="pb-3 font-medium text-muted-foreground text-right">Actions</th>}
@@ -750,10 +762,17 @@ export default function Agents() {
                         }
                       </td>
 
-                      {/* Commission */}
+                      {/* Commission Open Trip */}
                       <td className="py-3 pr-4 text-center">
                         {canActOnAgent(a)
-                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commission}%</span>
+                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionOpenTrip}%</span>
+                          : <span className="text-muted-foreground/40 text-xs">—</span>}
+                      </td>
+
+                      {/* Commission Private Charter */}
+                      <td className="py-3 pr-4 text-center">
+                        {canActOnAgent(a)
+                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionPrivateCharter}%</span>
                           : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
@@ -961,14 +980,26 @@ export default function Agents() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Commission (%)</Label>
+                  <Label>Commission Open Trip (%)</Label>
                   <div className="relative">
                     <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       type="number" min="0" max="100" step="0.5"
                       className="pl-9"
-                      value={form.commission}
-                      onChange={e => setForm(f => ({ ...f, commission: e.target.value }))}
+                      value={form.commissionOpenTrip}
+                      onChange={e => setForm(f => ({ ...f, commissionOpenTrip: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Commission Private Charter (%)</Label>
+                  <div className="relative">
+                    <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="number" min="0" max="100" step="0.5"
+                      className="pl-9"
+                      value={form.commissionPrivateCharter}
+                      onChange={e => setForm(f => ({ ...f, commissionPrivateCharter: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -1250,19 +1281,24 @@ export default function Agents() {
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t flex gap-2">
-              <Button variant="outline" onClick={() => setSheetOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button
-                disabled={!form.name.trim() || saving}
-                onClick={handleSave}
-                className="flex-1 hover:opacity-90"
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-              >
-                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                {editing ? 'Save Changes' : 'Add Agent'}
-              </Button>
+            <div className="p-6 border-t space-y-3">
+              {saveError && (
+                <p className="text-xs text-destructive bg-destructive/8 border border-destructive/20 rounded-lg px-3 py-2">{saveError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setSheetOpen(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button
+                  disabled={!form.name.trim() || saving}
+                  onClick={handleSave}
+                  className="flex-1 hover:opacity-90"
+                  style={{ backgroundColor: ACCENT, color: 'white' }}
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  {editing ? 'Save Changes' : 'Add Agent'}
+                </Button>
+              </div>
             </div>
           </SheetContent>
         </Sheet>

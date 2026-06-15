@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         tripType: true, startDate: true,
         source: true, salesperson: true, salespersonId: true,
         yachtId: true,
-        agent:   { select: { id: true, name: true, commission: true } },
+        agent:   { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
         services: { select: { price: true, quantity: true } },
       },
     })
@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
       const svcTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
       const basePrice = b.totalPrice - svcTotal
       const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
-      const commAmt   = b.source === 'AGENT' ? afterDisc * (b.agent?.commission ?? 0) / 100 : 0
+      const commPct   = b.source === 'AGENT'
+        ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
+        : 0
+      const commAmt   = afterDisc * commPct / 100
       return afterDisc + svcTotal - commAmt
     }
 

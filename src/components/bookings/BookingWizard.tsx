@@ -34,7 +34,7 @@ type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; extraBedTiers?: { nights: number; price: number }[] }
-interface AgentOpt        { id: string; name: string; commission: number }
+interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number }
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
@@ -958,7 +958,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                   <span className="font-medium truncate">{selectedAgent.name}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full shrink-0 font-medium"
                     style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
-                    {selectedAgent.commission}%
+                    {tripType === 'OPEN_TRIP' ? selectedAgent.commissionOpenTrip : selectedAgent.commissionPrivateCharter}%
                   </span>
                 </div>
               ) : (
@@ -987,7 +987,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       <span className="flex-1 truncate">{a.name}</span>
                       <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0"
                         style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
-                        {a.commission}%
+                        {tripType === 'OPEN_TRIP' ? a.commissionOpenTrip : a.commissionPrivateCharter}%
                       </span>
                     </CommandItem>
                   ))}
@@ -2360,7 +2360,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
     // Agent commission deduction — applied on base price only, not additional services
     const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
-    const commPct  = selectedAgent?.commission ?? 0
+    const commPct  = tripType === 'OPEN_TRIP' ? (selectedAgent?.commissionOpenTrip ?? 0) : (selectedAgent?.commissionPrivateCharter ?? 0)
     const commAmt  = commPct > 0 ? Math.max(0, b - da) * commPct / 100 : 0
     const netTot   = tot - commAmt
 

@@ -46,7 +46,7 @@ interface PaymentDetail {
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
     source?: string
-    agent?: { name: string; commission?: number }
+    agent?: { name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
     services: Array<{ name: string; price: number; quantity: number }>
     guests: Array<{
       isLead: boolean
@@ -126,7 +126,9 @@ export default function InvoicePage() {
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount  // stored as dollar amount
   const afterDiscount  = b.totalPrice - discountAmt
-  const commissionPct  = isAgentBooking ? (b.agent!.commission ?? 0) : 0
+  const commissionPct  = isAgentBooking
+    ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
+    : 0
   const commissionAmt  = afterDiscount * commissionPct / 100
   const netTotal       = afterDiscount - commissionAmt
   const remaining      = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)

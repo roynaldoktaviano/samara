@@ -41,16 +41,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const { id } = await params
     const body = await request.json()
-    const { name, commission, isActive, salespersonId, country, agentType, contract } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, isActive, salespersonId, country, agentType, contract } = body
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+
+    const duplicate = await db.agent.findFirst({
+      where: { name: { equals: name.trim(), mode: 'insensitive' }, NOT: { id } },
+      select: { id: true },
+    })
+    if (duplicate) {
+      return NextResponse.json({ error: `Agent dengan nama "${name.trim()}" sudah ada` }, { status: 409 })
+    }
 
     const agent = await db.agent.update({
       where: { id },
       data: {
         name,
-        commission:    commission    !== undefined ? parseFloat(String(commission)) || 0 : undefined,
-        isActive:      isActive      !== undefined ? Boolean(isActive)               : undefined,
+        commission:                  commission               !== undefined ? parseFloat(String(commission)) || 0               : undefined,
+        commissionOpenTrip:          commissionOpenTrip       !== undefined ? parseFloat(String(commissionOpenTrip)) || 0       : undefined,
+        commissionPrivateCharter:    commissionPrivateCharter !== undefined ? parseFloat(String(commissionPrivateCharter)) || 0 : undefined,
+        isActive:                    isActive                 !== undefined ? Boolean(isActive)                                : undefined,
         salespersonId: salespersonId !== undefined ? (salespersonId || null)          : undefined,
         country:       country       !== undefined ? (country   || null)              : undefined,
         agentType:     agentType     !== undefined ? (agentType || null)              : undefined,

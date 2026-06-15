@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const agents = await db.agent.findMany({
       where: all ? undefined : { isActive: true },
       select: {
-        id: true, name: true, commission: true, isActive: true, createdAt: true,
+        id: true, name: true, commission: true, commissionOpenTrip: true, commissionPrivateCharter: true, isActive: true, createdAt: true,
         country: true, agentType: true, contract: true,
         calendarToken: true, calendarActive: true,
         salespersonId: true,
@@ -40,16 +40,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, commission, salespersonId, country, agentType, contract } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, salespersonId, country, agentType, contract } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
+    const duplicate = await db.agent.findFirst({
+      where: { name: { equals: name.trim(), mode: 'insensitive' } },
+      select: { id: true },
+    })
+    if (duplicate) {
+      return NextResponse.json({ error: `Agent dengan nama "${name.trim()}" sudah ada` }, { status: 409 })
+    }
+
     const agent = await db.agent.create({
       data: {
         name,
-        commission:    commission ? parseFloat(commission) : 0,
+        commission:                   commission ? parseFloat(commission) : 0,
+        commissionOpenTrip:           commissionOpenTrip ? parseFloat(commissionOpenTrip) : 0,
+        commissionPrivateCharter:     commissionPrivateCharter ? parseFloat(commissionPrivateCharter) : 0,
         salespersonId: salespersonId || null,
         country:       country   || null,
         agentType:     agentType || null,

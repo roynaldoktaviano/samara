@@ -23,7 +23,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             customer: { select: { name: true, email: true, phone: true, address: true } },
             yacht:    { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent:    { select: { name: true, commission: true } },
+            agent:    { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
             services: true,
             guests: {
               select: {
@@ -215,8 +215,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           booking: {
             select: {
               id: true, bookingCode: true, totalPrice: true, depositPaid: true,
-              salespersonId: true, source: true,
-              agent: { select: { commission: true } },
+              salespersonId: true, source: true, tripType: true,
+              agent: { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
             },
           },
         },
@@ -231,9 +231,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       if (action === 'confirm') {
         const newDepositPaid = payment.booking.depositPaid + payment.amount
-        const effectiveTotal = payment.booking.source === 'AGENT' && payment.booking.agent?.commission
-          ? payment.booking.totalPrice * (1 - payment.booking.agent.commission / 100)
-          : payment.booking.totalPrice
+        const commPct = payment.booking.source === 'AGENT'
+          ? (payment.booking.tripType === 'OPEN_TRIP'
+              ? (payment.booking.agent?.commissionOpenTrip ?? 0)
+              : (payment.booking.agent?.commissionPrivateCharter ?? 0))
+          : 0
+        const effectiveTotal = payment.booking.totalPrice * (1 - commPct / 100)
         const newStatus = bookingStatus(newDepositPaid, effectiveTotal)
 
         await db.$transaction([
