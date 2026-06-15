@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { spawnSync } from 'child_process'
 import path from 'path'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const setting = await db.systemSetting.findUnique({ where: { key: 'tnc_pdf' } })
@@ -10,7 +11,10 @@ export async function GET() {
     return new NextResponse(null, { status: 404 })
   }
 
-  const scriptPath = path.resolve(process.cwd(), 'scripts/render-pdf-pages.js')
+  // Dynamic import prevents Turbopack from statically analyzing the spawn arguments
+  const { spawnSync } = await import('child_process')
+  const scriptParts = ['scripts', 'render-pdf-pages.js']
+  const scriptPath = path.resolve(process.cwd(), ...scriptParts)
   const b64 = Buffer.from(setting.blobValue).toString('base64')
 
   const result = spawnSync('node', [scriptPath, b64], {
