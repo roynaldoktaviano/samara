@@ -13,6 +13,7 @@ async function getGuest(token: string) {
       address: true, nationality: true, passportExpiry: true,
       emergencyContact: true, dietaryRequirements: true, allergies: true,
       drinkPreferences: true, equipmentSizes: true,
+      passportImage: true,
       guestFormExpiresAt: true,
       medicalData: true, foodData: true, drinksData: true, divingData: true,
     },
@@ -83,7 +84,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (section === 'profile') {
     const { firstName, lastName, gender, email, phone, passport,
-      dateOfBirth, address, nationality, passportExpiry } = data as any
+      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as any
     await prisma.customer.update({
       where: { id: customer.id },
       data: {
@@ -98,6 +99,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
         address: address || undefined,
         nationality: nationality || undefined,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : undefined,
+        ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })
   } else {

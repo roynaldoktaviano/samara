@@ -50,7 +50,7 @@ interface BookingRecord {
   exchangeRate?: number | null
   createdAt?: string
   hasDiving?: boolean
-  yacht?: { id: string; name: string; model?: string; canDiving?: boolean }
+  yacht?: { id: string; name: string; model?: string; canDiving?: boolean; capacity?: number }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
   agent?:        { id: string; name: string; commission?: number }
@@ -207,6 +207,20 @@ export default function Bookings() {
 
   const [cancelReasonText,    setCancelReasonText]    = useState('')
   const [cancelSaving,        setCancelSaving]        = useState(false)
+
+  // Diving toggle off confirmation (admin only)
+  const [divingOffDialog,     setDivingOffDialog]     = useState(false)
+  const [divingOffReason,     setDivingOffReason]     = useState('')
+  const [divingOffSaving,     setDivingOffSaving]     = useState(false)
+
+  // Add guest dialog
+  const [addGuestOpen,        setAddGuestOpen]        = useState(false)
+  const [addGuestSearch,      setAddGuestSearch]      = useState('')
+  const [addGuestAll,         setAddGuestAll]         = useState<Array<{ id: string; name: string; email?: string; phone?: string }>>([])
+  const [addGuestSelected,    setAddGuestSelected]    = useState<Set<string>>(new Set())
+  const [addGuestCabinId,     setAddGuestCabinId]     = useState('')
+  const [addGuestSaving,      setAddGuestSaving]      = useState(false)
+  const [addGuestLoading,     setAddGuestLoading]     = useState(false)
   /* reschedule inside edit dialog */
   const [rescheduleMode,      setRescheduleMode]      = useState(false)
   const [rescheduleStart,     setRescheduleStart]     = useState('')
@@ -224,6 +238,18 @@ export default function Bookings() {
   const [editCancelMode,   setEditCancelMode]   = useState(false)
   const [editCancelReason, setEditCancelReason] = useState('')
   const [editCancelSaving, setEditCancelSaving] = useState(false)
+
+  /* trip edit fields (pending + no invoice only) */
+  const [editStartDate,  setEditStartDate]  = useState('')
+  const [editEndDate,    setEditEndDate]    = useState('')
+  const [editYachtId,    setEditYachtId]    = useState('')
+  const [editYachts,     setEditYachts]     = useState<Array<{ id: string; name: string; dailyRate: number }>>([])
+  const [editCabinId,    setEditCabinId]    = useState('')
+  const [editCabinList,  setEditCabinList]  = useState<Array<{ id: string; name: string }>>([])
+
+  /* services edit */
+  const [editServices,  setEditServices]  = useState<Array<{ name: string; price: string; quantity: number }>>([])
+  const [editBasePrice, setEditBasePrice] = useState(0)
   const [editGuestId,      setEditGuestId]      = useState<string | null>(null)
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
@@ -234,6 +260,8 @@ export default function Bookings() {
   const [masterLinks,         setMasterLinks]         = useState<Record<string, string>>({})
   const [generatingMaster,    setGeneratingMaster]    = useState<string | null>(null)
   const [copiedMaster,        setCopiedMaster]        = useState<string | null>(null)
+  const [masterDisabledIds,   setMasterDisabledIds]   = useState<Set<string>>(new Set())
+  const [disablingMaster,     setDisablingMaster]     = useState<string | null>(null)
 
   /* waiting list */
   const [waitingListBooking, setWaitingListBooking] = useState<BookingRecord | null>(null)
@@ -286,19 +314,56 @@ export default function Bookings() {
     setRescheduleOTId(''); setRescheduleOpenTrips([]); setRescheduleNewCabinId('')
     setRescheduleYachtId(''); setRescheduleYachts([])
     setEditCancelMode(false); setEditCancelReason('')
+
+    // Services & base price
+    const currentSvcs = b.services ?? []
+    const svcTotal = currentSvcs.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+    setEditBasePrice(b.totalPrice - svcTotal)
+    setEditServices(currentSvcs.map(s => ({ name: s.name, price: String(s.price), quantity: s.quantity ?? 1 })))
+
+    // Trip edit fields (pending + no invoice)
+    const hasInvoice = payments.some(p => p.bookingId === b.id)
+    const canEdit = b.status === 'pending' && !hasInvoice
+    setEditStartDate(b.startDate ? b.startDate.split('T')[0] : '')
+    setEditEndDate(b.endDate ? b.endDate.split('T')[0] : '')
+    setEditYachtId(b.yacht?.id ?? '')
+    setEditCabinId(b.guests?.[0]?.cabin?.id ?? '')
+    setEditYachts([]); setEditCabinList([])
+
+    if (canEdit) {
+      if (b.tripType === 'PRIVATE_CHARTER') {
+        fetch('/api/yachts').then(r => r.json()).then(data => setEditYachts(data)).catch(() => {})
+      } else if (b.tripType === 'OPEN_TRIP' && b.yacht?.id) {
+        fetch(`/api/cabins?yachtId=${b.yacht.id}`).then(r => r.json()).then(data => setEditCabinList(data?.cabins ?? data ?? [])).catch(() => {})
+      }
+    }
   }
+
   const saveEdit = async () => {
     if (!editBooking) return
     setEditSaving(true)
+    const hasInvoice = payments.some(p => p.bookingId === editBooking.id)
+    const canEditTrip = editBooking.status === 'pending' && !hasInvoice
     try {
+      const svcTotal  = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
+      const autoTotal = editBasePrice + svcTotal
+
+      const body: Record<string, unknown> = {
+        status: editStatus, totalPrice: String(autoTotal), depositPaid: editDeposit,
+        discount: editDiscount, depositDueDate: editDepDue || null,
+        finalDueDate: editFinalDue || null, notes: editNotes,
+        services: editServices.filter(s => s.name.trim()),
+      }
+      if (canEditTrip) {
+        if (editStartDate) body.startDate = editStartDate
+        if (editEndDate)   body.endDate   = editEndDate
+        if (editBooking.tripType === 'PRIVATE_CHARTER' && editYachtId) body.yachtId = editYachtId
+        if (editBooking.tripType === 'OPEN_TRIP' && editCabinId) body.newCabinId = editCabinId
+      }
       const bookingRes = await fetch(`/api/bookings/${editBooking.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: editStatus, totalPrice: editTotal, depositPaid: editDeposit,
-          discount: editDiscount, depositDueDate: editDepDue || null,
-          finalDueDate: editFinalDue || null, notes: editNotes,
-        }),
+        body: JSON.stringify(body),
       })
       if (bookingRes.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
@@ -565,6 +630,21 @@ export default function Bookings() {
     setCopiedMaster(bookingId)
     toast.success('Master link copied!')
     setTimeout(() => setCopiedMaster(null), 2000)
+  }
+
+  const handleDisableMasterLink = async (bookingId: string) => {
+    setDisablingMaster(bookingId)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/generate-master-link`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setMasterLinks(prev => { const n = { ...prev }; delete n[bookingId]; return n })
+      setMasterDisabledIds(prev => new Set([...prev, bookingId]))
+      toast.success('Master form disabled')
+    } catch {
+      toast.error('Failed to disable master form')
+    } finally {
+      setDisablingMaster(null)
+    }
   }
 
   /* ── submit payment proof ── */
@@ -1202,35 +1282,102 @@ export default function Bookings() {
                   <span className="text-sm font-normal text-muted-foreground">— Edit Booking</span>
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-lg bg-muted/40 p-3">
-                  <div className="flex items-start justify-between gap-2 mb-0.5">
-                    <p className="text-muted-foreground">{editBooking.tripType === 'OPEN_TRIP' ? 'Trip' : 'Yacht'}</p>
+              {(() => {
+                const hasInvoice  = payments.some(p => p.bookingId === editBooking.id)
+                const canEditTrip = editBooking.status === 'pending' && !hasInvoice
+                const isOT = editBooking.tripType === 'OPEN_TRIP'
+
+                return canEditTrip ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Date range */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Start Date</Label>
+                      <Input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">End Date</Label>
+                      <Input type="date" value={editEndDate} min={editStartDate} onChange={e => setEditEndDate(e.target.value)} />
+                    </div>
+
+                    {/* Yacht selector (private charter only) */}
+                    {!isOT && (
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs">Yacht</Label>
+                        <Select value={editYachtId} onValueChange={yId => {
+                          setEditYachtId(yId)
+                          const yacht = editYachts.find(y => y.id === yId)
+                          if (yacht && editStartDate && editEndDate) {
+                            const nights = Math.max(1, Math.round(
+                              (new Date(editEndDate).getTime() - new Date(editStartDate).getTime()) / 86_400_000
+                            ))
+                            setEditBasePrice(yacht.dailyRate * nights)
+                          }
+                        }}>
+                          <SelectTrigger><SelectValue placeholder="Select yacht…" /></SelectTrigger>
+                          <SelectContent>
+                            {editYachts.map(y => (
+                              <SelectItem key={y.id} value={y.id}>{y.name} <span className="text-muted-foreground text-xs">(${y.dailyRate.toLocaleString()}/night)</span></SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Guests & Cabin (open trip: editable cabin) */}
+                    <div className={`${!isOT ? 'col-span-2' : 'col-span-2'} rounded-lg bg-muted/40 p-3`}>
+                      <p className="text-xs text-muted-foreground mb-2">Guests{isOT ? ' & Cabin' : ''}</p>
+                      <div className="space-y-1.5">
+                        {editBooking.guests.map(g => (
+                          <div key={g.id} className="flex items-center gap-2">
+                            {g.isLead
+                              ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
+                              : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
+                            }
+                            <button type="button" onClick={() => setEditGuestId(g.customerId)}
+                              className="font-medium text-xs truncate hover:opacity-70">{g.customer?.name ?? '—'}</button>
+                            {isOT && (
+                              <Select value={editCabinId} onValueChange={setEditCabinId}>
+                                <SelectTrigger className="h-7 text-xs ml-auto w-36">
+                                  <SelectValue placeholder="Cabin…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {editCabinList.map(c => (
+                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <p className="font-semibold">{editBooking.tripType === 'OPEN_TRIP' ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
-                  <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
-                </div>
-                <div className="rounded-lg bg-muted/40 p-3">
-                  <p className="text-muted-foreground mb-1">Guests & Cabins</p>
-                  <div className="space-y-1">
-                    {editBooking.guests.map(g => (
-                      <button
-                        key={g.id}
-                        type="button"
-                        onClick={() => setEditGuestId(g.customerId)}
-                        className="flex items-center gap-1.5 w-full text-left hover:opacity-70 transition-opacity"
-                      >
-                        {g.isLead
-                          ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
-                          : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
-                        }
-                        <span className="font-medium truncate">{g.customer?.name ?? '—'}</span>
-                        {g.cabin && <span className="text-muted-foreground flex items-center gap-0.5 shrink-0"><BedDouble className="w-2.5 h-2.5" />{g.cabin.name}</span>}
-                      </button>
-                    ))}
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-lg bg-muted/40 p-3">
+                      <p className="text-muted-foreground mb-0.5">{isOT ? 'Trip' : 'Yacht'}</p>
+                      <p className="font-semibold">{isOT ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
+                      <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 p-3">
+                      <p className="text-muted-foreground mb-1">Guests & Cabins</p>
+                      <div className="space-y-1">
+                        {editBooking.guests.map(g => (
+                          <button key={g.id} type="button" onClick={() => setEditGuestId(g.customerId)}
+                            className="flex items-center gap-1.5 w-full text-left hover:opacity-70 transition-opacity">
+                            {g.isLead
+                              ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
+                              : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
+                            }
+                            <span className="font-medium truncate">{g.customer?.name ?? '—'}</span>
+                            {g.cabin && <span className="text-muted-foreground flex items-center gap-0.5 shrink-0"><BedDouble className="w-2.5 h-2.5" />{g.cabin.name}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                )
+              })()}
 
 
               {/* ── Cancel section ── */}
@@ -1260,70 +1407,229 @@ export default function Bookings() {
                 </div>
               )}
 
-              <Separator />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>Status</Label>
-                  <Select value={editStatus} onValueChange={setEditStatus}
-                    disabled={editStatus !== 'completed' && editStatus !== 'cancelled'}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="partially_paid">Partially Paid</SelectItem>
-                      <SelectItem value="fully_paid">Fully Paid</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Auto-computed from payments. Only Completed & Cancelled are editable.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Discount ($)</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                    <Input type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+              {(() => {
+                const isFullyPaid    = editBooking.status === 'fully_paid'
+                const isPartiallyPaid = editBooking.status === 'partially_paid'
+                const svcTotal = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
+                const autoTotal = editBasePrice + svcTotal
+
+                /* ── Read-only value display helper ── */
+                const RoField = ({ label, value }: { label: string; value: string }) => (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+                    <p className="text-sm font-medium">{value || '—'}</p>
                   </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Total Price (USD)</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                    <Input type="number" min="0" value={editTotal} onChange={e => setEditTotal(e.target.value)} className="pl-7" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Amount Paid (USD)</Label>
-                  <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Payment Due Date</Label>
-                  <Input type="date" value={editDepDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditDepDue(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Final Balance Due Date</Label>
-                  <Input type="date" value={editFinalDue} min={editDepDue || new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Notes</Label>
-                  <Input placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter className="flex-row items-center justify-between gap-2">
-                {!editCancelMode && !rescheduleMode && (
-                  <Button variant="outline"
-                    onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
-                    className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
-                    <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
-                  </Button>
-                )}
-                <div className="flex gap-2 ml-auto">
-                  <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
-                  <Button disabled={editSaving || rescheduleMode || editCancelMode} onClick={saveEdit}
-                    style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-                    {editSaving ? 'Saving…' : 'Save Changes'}
-                  </Button>
-                </div>
-              </DialogFooter>
+                )
+
+                if (isFullyPaid) {
+                  /* ════ FULLY PAID: display only ════ */
+                  return (
+                    <>
+                      <Separator />
+                      <div className="rounded-lg bg-muted/30 border p-4 space-y-3">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payment Summary</p>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <RoField label="Total Price" value={`$ ${autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
+                          <RoField label="Amount Paid" value={`$ ${parseFloat(editDeposit).toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
+                          <RoField label="Discount" value={editDiscount ? `$ ${parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'} />
+                          <RoField label="Payment Due" value={editDepDue || '—'} />
+                          <RoField label="Final Balance Due" value={editFinalDue || '—'} />
+                          <RoField label="Notes" value={editNotes} />
+                        </div>
+                        {editServices.length > 0 && (
+                          <div className="pt-1 border-t space-y-1">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Additional Services</p>
+                            {editServices.map((s, i) => (
+                              <div key={i} className="flex justify-between text-xs">
+                                <span>{s.name}{s.quantity > 1 ? ` ×${s.quantity}` : ''}</span>
+                                <span className="font-medium">$ {((parseFloat(s.price) || 0) * s.quantity).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <DialogFooter className="flex-row items-center justify-between gap-2">
+                        {!editCancelMode && !rescheduleMode && (
+                          <Button variant="outline"
+                            onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
+                            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                            <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
+                          </Button>
+                        )}
+                        <div className="flex gap-2 ml-auto">
+                          <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
+                        </div>
+                      </DialogFooter>
+                    </>
+                  )
+                }
+
+                if (isPartiallyPaid) {
+                  /* ════ PARTIALLY PAID: services + finalDueDate editable ════ */
+                  return (
+                    <>
+                      <Separator />
+                      {/* ── Additional Services (editable) ── */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Additional Services</Label>
+                          <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1"
+                            onClick={() => setEditServices(prev => [...prev, { name: '', price: '0', quantity: 1 }])}>
+                            + Add Service
+                          </Button>
+                        </div>
+                        {editServices.length > 0 && (
+                          <div className="space-y-2">
+                            {editServices.map((svc, i) => (
+                              <div key={i} className="flex gap-2 items-center">
+                                <Input className="flex-1 h-8 text-xs" placeholder="Service name"
+                                  value={svc.name} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))} />
+                                <div className="relative w-24">
+                                  <span className="absolute left-2 top-1.5 text-xs text-muted-foreground">$</span>
+                                  <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0"
+                                    value={svc.price} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, price: e.target.value } : s))} />
+                                </div>
+                                <Input className="w-14 h-8 text-xs text-center" type="number" min="1" placeholder="Qty"
+                                  value={svc.quantity} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, quantity: parseInt(e.target.value) || 1 } : s))} />
+                                <button type="button" className="text-muted-foreground hover:text-destructive shrink-0"
+                                  onClick={() => setEditServices(prev => prev.filter((_, j) => j !== i))}>
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">$ {editDiscount ? parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}</p></div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Total Price (auto)</Label>
+                          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
+                            $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {editServices.length > 0 && (
+                              <span className="text-xs text-muted-foreground font-normal ml-1">(base ${editBasePrice.toLocaleString()} + services)</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Amount Paid</p><p className="text-sm font-medium">$ {parseFloat(editDeposit).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p></div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Payment Due Date</p><p className="text-sm font-medium">{editDepDue || '—'}</p></div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Final Balance Due Date</Label>
+                          <Input type="date" value={editFinalDue} onChange={e => setEditFinalDue(e.target.value)} />
+                        </div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Notes</p><p className="text-sm font-medium">{editNotes || '—'}</p></div>
+                      </div>
+                      <DialogFooter className="flex-row items-center justify-between gap-2">
+                        {!editCancelMode && !rescheduleMode && (
+                          <Button variant="outline"
+                            onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
+                            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                            <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
+                          </Button>
+                        )}
+                        <div className="flex gap-2 ml-auto">
+                          <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
+                          <Button disabled={editSaving || editCancelMode} onClick={saveEdit}
+                            style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                            {editSaving ? 'Saving…' : 'Save Changes'}
+                          </Button>
+                        </div>
+                      </DialogFooter>
+                    </>
+                  )
+                }
+
+                /* ════ DEFAULT: full edit (pending / on_hold / confirmed) ════ */
+                return (
+                  <>
+                    <Separator />
+                    {/* ── Additional Services ── */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Additional Services</Label>
+                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1"
+                          onClick={() => setEditServices(prev => [...prev, { name: '', price: '0', quantity: 1 }])}>
+                          + Add Service
+                        </Button>
+                      </div>
+                      {editServices.length > 0 && (
+                        <div className="space-y-2">
+                          {editServices.map((svc, i) => (
+                            <div key={i} className="flex gap-2 items-center">
+                              <Input className="flex-1 h-8 text-xs" placeholder="Service name"
+                                value={svc.name} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))} />
+                              <div className="relative w-24">
+                                <span className="absolute left-2 top-1.5 text-xs text-muted-foreground">$</span>
+                                <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0"
+                                  value={svc.price} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, price: e.target.value } : s))} />
+                              </div>
+                              <Input className="w-14 h-8 text-xs text-center" type="number" min="1" placeholder="Qty"
+                                value={svc.quantity} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, quantity: parseInt(e.target.value) || 1 } : s))} />
+                              <button type="button" className="text-muted-foreground hover:text-destructive shrink-0"
+                                onClick={() => setEditServices(prev => prev.filter((_, j) => j !== i))}>
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label>Discount ($)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                          <Input type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Total Price (auto)</Label>
+                        <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
+                          $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {editServices.length > 0 && (
+                            <span className="text-xs text-muted-foreground font-normal ml-1">
+                              (base ${editBasePrice.toLocaleString()} + services)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Amount Paid (USD)</Label>
+                        <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Payment Due Date</Label>
+                        <Input type="date" value={editDepDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditDepDue(e.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Final Balance Due Date</Label>
+                        <Input type="date" value={editFinalDue} min={editDepDue || new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label>Notes</Label>
+                        <Input placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+                      </div>
+                    </div>
+                    <DialogFooter className="flex-row items-center justify-between gap-2">
+                      {!editCancelMode && !rescheduleMode && (
+                        <Button variant="outline"
+                          onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
+                          className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                          <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
+                        </Button>
+                      )}
+                      <div className="flex gap-2 ml-auto">
+                        <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
+                        <Button disabled={editSaving || rescheduleMode || editCancelMode} onClick={saveEdit}
+                          style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                          {editSaving ? 'Saving…' : 'Save Changes'}
+                        </Button>
+                      </div>
+                    </DialogFooter>
+                  </>
+                )
+              })()}
             </>
           )}
         </DialogContent>
@@ -1655,15 +1961,26 @@ export default function Bookings() {
                         </div>
                         <Switch
                           checked={db_.hasDiving ?? false}
-                          onCheckedChange={async (val) => {
-                            await fetch(`/api/bookings/${db_.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ hasDiving: val }),
-                            })
-                            await fetchBookings()
-                            const updated = bookings.find(b => b.id === db_.id)
-                            if (updated) setDetailBooking({ ...updated, hasDiving: val })
+                          onCheckedChange={(val) => {
+                            if (val) {
+                              // Activate: anyone can turn on
+                              fetch(`/api/bookings/${db_.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ hasDiving: true }),
+                              }).then(() => fetchBookings()).then(() => {
+                                const updated = bookings.find(b => b.id === db_.id)
+                                if (updated) setDetailBooking({ ...updated, hasDiving: true })
+                              })
+                            } else {
+                              // Deactivate: only admin, via confirmation dialog
+                              if (userRole !== 'ADMIN') {
+                                alert('Hanya Admin yang dapat menonaktifkan Diving Trip.')
+                                return
+                              }
+                              setDivingOffReason('')
+                              setDivingOffDialog(true)
+                            }
                           }}
                         />
                       </div>
@@ -1675,9 +1992,34 @@ export default function Bookings() {
                   {/* Guests */}
                   <div className="px-5 py-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Guests ({db_.guests.length} pax)
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          Guests ({db_.guests.length} pax)
+                        </p>
+                        {/* capacity badge */}
+                        {db_.tripType === 'PRIVATE_CHARTER' && db_.yacht?.capacity && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${db_.guests.length >= db_.yacht.capacity ? 'bg-red-100 text-red-600' : 'bg-muted text-muted-foreground'}`}>
+                            {db_.guests.length}/{db_.yacht.capacity}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {canManageBookings && db_.status !== 'cancelled' && (() => {
+                          const atCapacity = db_.tripType === 'PRIVATE_CHARTER' && db_.yacht?.capacity != null && db_.guests.length >= db_.yacht.capacity
+                          return !atCapacity ? (
+                            <Button variant="outline" size="sm"
+                              onClick={async () => {
+                                setAddGuestSelected(new Set()); setAddGuestSearch(''); setAddGuestCabinId(''); setAddGuestOpen(true)
+                                setAddGuestLoading(true)
+                                const data = await fetch('/api/customers?limit=200').then(r => r.json()).catch(() => ({ customers: [] }))
+                                setAddGuestAll(data.customers ?? data ?? [])
+                                setAddGuestLoading(false)
+                              }}
+                              className="h-6 text-[10px] gap-1 px-2">
+                              <Plus className="h-2.5 w-2.5" /> Add Guest
+                            </Button>
+                          ) : null
+                        })()}
                       {canManageBookings && db_.status !== 'cancelled' && db_.guests.length > 1 && (
                         <div className="flex items-center gap-1.5">
                           {masterLinks[db_.id] ? (
@@ -1692,6 +2034,17 @@ export default function Bookings() {
                               <a href={masterLinks[db_.id]} target="_blank" rel="noopener noreferrer" className="p-1 rounded text-violet-700 hover:bg-violet-50 border border-violet-200" title="Open master form">
                                 <ExternalLink className="h-3 w-3" />
                               </a>
+                              <button onClick={() => handleDisableMasterLink(db_.id)} disabled={disablingMaster === db_.id} className="p-1 rounded text-red-400 hover:bg-red-50 border border-red-200" title="Disable master form">
+                                {disablingMaster === db_.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                              </button>
+                            </>
+                          ) : masterDisabledIds.has(db_.id) ? (
+                            <>
+                              <span className="text-[10px] text-gray-400 italic">Form disabled</span>
+                              <Button variant="outline" size="sm" onClick={() => { setMasterDisabledIds(prev => { const n = new Set(prev); n.delete(db_.id); return n }); handleGenerateMasterLink(db_.id) }} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 px-2 border-violet-300 text-violet-700 hover:bg-violet-50">
+                                {generatingMaster === db_.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Users className="h-2.5 w-2.5" />}
+                                Re-enable
+                              </Button>
                             </>
                           ) : (
                             <Button variant="outline" size="sm" onClick={() => handleGenerateMasterLink(db_.id)} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 border-dashed px-2 border-violet-300 text-violet-700 hover:bg-violet-50">
@@ -1701,6 +2054,7 @@ export default function Bookings() {
                           )}
                         </div>
                       )}
+                      </div>{/* end flex items-center gap-1.5 */}
                     </div>
 
                     {db_.guests.length === 0 && (
@@ -2029,6 +2383,180 @@ export default function Bookings() {
             <Button onClick={saveExtendHold} disabled={extendHoldSaving || !extendHoldDate}>
               {extendHoldSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Add Guest Dialog ════ */}
+      <Dialog open={addGuestOpen} onOpenChange={v => { if (!v) setAddGuestOpen(false) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4" /> Tambah Guest
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Cari nama / telepon / email…"
+                value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
+            </div>
+
+            {/* Customer list */}
+            <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+              {addGuestLoading ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">Memuat…</div>
+              ) : (() => {
+                const existingIds = new Set(detailBooking?.guests.map(g => g.customerId) ?? [])
+                const q = addGuestSearch.toLowerCase()
+                const filtered = addGuestAll.filter(c =>
+                  !existingIds.has(c.id) &&
+                  (!q || c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.email?.toLowerCase().includes(q))
+                )
+                if (filtered.length === 0) return (
+                  <div className="py-6 text-center text-xs text-muted-foreground">Tidak ditemukan</div>
+                )
+                return filtered.map(c => {
+                  const checked = addGuestSelected.has(c.id)
+                  return (
+                    <button key={c.id} type="button"
+                      className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
+                      onClick={() => setAddGuestSelected(prev => {
+                        const next = new Set(prev)
+                        next.has(c.id) ? next.delete(c.id) : next.add(c.id)
+                        return next
+                      })}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
+                        {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        {(c.phone || c.email) && <p className="text-xs text-muted-foreground truncate">{c.phone ?? c.email}</p>}
+                      </div>
+                    </button>
+                  )
+                })
+              })()}
+            </div>
+
+            {addGuestSelected.size > 0 && (
+              <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest dipilih</p>
+            )}
+
+            {/* Cabin picker for Open Trip */}
+            {detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cabin untuk semua guest yang dipilih <span className="text-red-500">*</span></Label>
+                <Select value={addGuestCabinId} onValueChange={setAddGuestCabinId}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Pilih cabin…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {detailCabins.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id} disabled={c.isFull}>
+                        {c.name}{c.deck ? ` · ${c.deck}` : ''}
+                        {c.isFull && <span className="ml-1.5 text-[10px] text-red-400">• Full</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAddGuestOpen(false)} disabled={addGuestSaving}>Batal</Button>
+            <Button
+              disabled={addGuestSelected.size === 0 || addGuestSaving || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId)}
+              onClick={async () => {
+                if (!detailBooking || addGuestSelected.size === 0) return
+                setAddGuestSaving(true)
+                const ids = Array.from(addGuestSelected)
+                const errors: string[] = []
+                for (const customerId of ids) {
+                  const res = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerId, cabinId: addGuestCabinId || undefined }),
+                  })
+                  if (!res.ok) {
+                    const d = await res.json().catch(() => ({}))
+                    const name = addGuestAll.find(c => c.id === customerId)?.name ?? customerId
+                    errors.push(`${name}: ${d.error ?? 'gagal'}`)
+                  }
+                }
+                if (errors.length) alert('Beberapa guest gagal ditambahkan:\n' + errors.join('\n'))
+                setAddGuestOpen(false)
+                // Fetch fresh booking data and update detail immediately without waiting for full list refresh
+                const fresh = await fetch(`/api/bookings/${detailBooking.id}`).then(r => r.json()).catch(() => null)
+                if (fresh) {
+                  setDetailBooking(fresh)
+                  if (fresh.tripType === 'OPEN_TRIP' && fresh.openTrip?.id) {
+                    const ot = await fetch(`/api/open-trips/${fresh.openTrip.id}`).then(r => r.json()).catch(() => null)
+                    if (ot) setDetailCabins(ot.cabins ?? [])
+                  }
+                }
+                fetchBookings() // update list in background
+                setAddGuestSaving(false)
+              }}
+              style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+              {addGuestSaving
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Menambah…</>
+                : `Tambah ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Diving Off Confirmation Dialog (Admin only) ════ */}
+      <Dialog open={divingOffDialog} onOpenChange={v => { if (!v) setDivingOffDialog(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <Waves className="h-5 w-5" /> Nonaktifkan Diving Trip?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Tamu sudah terdaftar sebagai diving trip. Mohon berikan alasan penonaktifan untuk dicatat.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Alasan <span className="text-red-500">*</span></Label>
+              <Textarea
+                rows={3}
+                placeholder="Contoh: Tamu membatalkan aktivitas diving…"
+                value={divingOffReason}
+                onChange={e => setDivingOffReason(e.target.value)}
+                disabled={divingOffSaving}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDivingOffDialog(false)} disabled={divingOffSaving}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!divingOffReason.trim() || divingOffSaving}
+              onClick={async () => {
+                if (!detailBooking) return
+                setDivingOffSaving(true)
+                await fetch(`/api/bookings/${detailBooking.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ hasDiving: false, notes: detailBooking.notes ? `${detailBooking.notes}\n[Diving off: ${divingOffReason}]` : `[Diving off: ${divingOffReason}]` }),
+                })
+                await fetchBookings()
+                const updated = bookings.find(b => b.id === detailBooking.id)
+                if (updated) setDetailBooking({ ...updated, hasDiving: false })
+                setDivingOffSaving(false)
+                setDivingOffDialog(false)
+              }}
+            >
+              {divingOffSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Ya, Nonaktifkan
             </Button>
           </DialogFooter>
         </DialogContent>

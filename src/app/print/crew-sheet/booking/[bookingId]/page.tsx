@@ -148,7 +148,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
   const td: React.CSSProperties = { padding: '8px 7px', fontSize: 11, borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }
 
   const page = (content: React.ReactNode, first = false, key?: string | number) => (
-    <div key={key} style={{ pageBreakBefore: first ? 'avoid' : 'always', breakBefore: first ? 'avoid' : 'page', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+    <div key={key} style={{ pageBreakBefore: first ? 'avoid' : 'always', breakBefore: first ? 'avoid' : 'page' }}>
       {content}
     </div>
   )
@@ -165,11 +165,14 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
         * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         p { margin: 0; }
         ul { margin: 0; }
-        .samara-page { display: flex; flex-direction: column; min-height: 277mm; }
+        .samara-page { display: flex; flex-direction: column; }
         .samara-page-body { flex: 1; }
         @media screen {
-          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; min-height: unset; }
+          .samara-page { border-bottom: 2px dashed #d0c89a; margin-bottom: 32px; padding-bottom: 24px; }
           .samara-page:last-child { border-bottom: none; margin-bottom: 0; }
+        }
+        @media print {
+          .samara-page { min-height: 0; }
         }
       `}</style>
 
@@ -257,8 +260,8 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES', ''].map((h, i) => (
-                    <th key={i} style={{ ...th, borderRight: i === 9 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}), ...(h === '' ? { width: 32, textAlign: 'center' } : {}) }}>{h}</th>
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES'].map((h, i, arr) => (
+                    <th key={i} style={{ ...th, borderRight: i === arr.length - 1 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}) }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -283,21 +286,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                     <td style={{ ...td, textAlign: 'center', fontWeight: 700, fontSize: 10, color: g.allergies ? '#c0392b' : '#27ae60' }}>
                       {g.allergies ? 'YES' : 'NO'}
                     </td>
-                    <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.salesperson}</td>
-                    <td style={{ ...td, borderRight: 'none', textAlign: 'center', padding: '4px' }}>
-                      {g.bgId && (
-                        <a
-                          href={`/print/guest-sheet/${g.bgId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="no-print"
-                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 4, background: `${GOLD}22`, border: `1px solid ${GOLD}`, color: DARK, textDecoration: 'none', fontSize: 11 }}
-                          title={`Print sheet for ${g.name}`}
-                        >
-                          ↗
-                        </a>
-                      )}
-                    </td>
+                    <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
                   </tr>
                 ))}
                 {Array.from({ length: BLANK }).map((_, i) => (

@@ -46,7 +46,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -92,6 +92,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         where: { bookingId: id },
         data:  { cabinId: newCabinId },
       })
+    }
+
+    // Replace services if provided (delete all then recreate)
+    if (Array.isArray(services)) {
+      await db.bookingService.deleteMany({ where: { bookingId: id } })
+      const validSvc = (services as { name?: string; price?: string | number; quantity?: number }[])
+        .filter(s => s.name?.trim())
+      if (validSvc.length) {
+        await db.bookingService.createMany({
+          data: validSvc.map(s => ({
+            bookingId: id,
+            name:      s.name!.trim(),
+            price:     parseFloat(String(s.price)) || 0,
+            quantity:  s.quantity ?? 1,
+          })),
+        })
+      }
     }
 
     const userId   = session?.user?.id   ?? ''

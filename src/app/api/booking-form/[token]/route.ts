@@ -29,6 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
               id: true, name: true, firstName: true, lastName: true,
               gender: true, email: true, phone: true, passport: true,
               dateOfBirth: true, address: true, nationality: true, passportExpiry: true,
+              passportImage: true,
               emergencyContact: true,
               medicalData: true, foodData: true, drinksData: true, divingData: true,
             },
@@ -95,7 +96,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (section === 'profile') {
     const { firstName, lastName, gender, email, phone, passport,
-      dateOfBirth, address, nationality, passportExpiry } = data as any
+      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as any
     await db.customer.update({
       where: { id: customerId },
       data: {
@@ -110,6 +111,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
         address: address || undefined,
         nationality: nationality || undefined,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : undefined,
+        ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })
   } else {

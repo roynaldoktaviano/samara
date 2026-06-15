@@ -262,8 +262,8 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES', ''].map((h, i) => (
-                    <th key={i} style={{ ...th, borderRight: i === 9 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}), ...(h === '' ? { width: 32, textAlign: 'center' } : {}) }}>{h}</th>
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES'].map((h, i, arr) => (
+                    <th key={i} style={{ ...th, borderRight: i === arr.length - 1 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}) }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -284,21 +284,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                     <td style={{ ...td, textAlign: 'center', fontWeight: 700, fontSize: 10, color: g.allergies ? '#c0392b' : '#27ae60' }}>
                       {g.allergies ? 'YES' : 'NO'}
                     </td>
-                    <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.salesperson}</td>
-                    <td style={{ ...td, borderRight: 'none', textAlign: 'center', padding: '4px' }}>
-                      {g.bgId && (
-                        <a
-                          href={`/print/guest-sheet/${g.bgId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="no-print"
-                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 4, background: `${GOLD}22`, border: `1px solid ${GOLD}`, color: DARK, textDecoration: 'none', fontSize: 11 }}
-                          title={`Print sheet for ${g.name}`}
-                        >
-                          ↗
-                        </a>
-                      )}
-                    </td>
+                    <td style={{ ...td, borderRight: 'none', fontSize: 10, color: '#555' }}>{g.salesperson}</td>
                   </tr>
                 ))}
                 {Array.from({ length: BLANK }).map((_, i) => (

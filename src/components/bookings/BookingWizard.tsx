@@ -746,7 +746,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     try {
       const resolvedAgentId      = source === 'AGENT' ? agentId        : undefined
       const resolvedContactId    = source === 'AGENT' && agentContactId && agentContactId !== 'none' ? agentContactId : undefined
-      const ot = openTrips.find(t => t.id === openTripId)
+      let ot = openTrips.find(t => t.id === openTripId)
+      // Fallback: fetch open trip directly if not in local state (e.g. race condition on load)
+      if (!ot && openTripId && tripType === 'OPEN_TRIP') {
+        ot = await fetch(`/api/open-trips/${openTripId}`).then(r => r.ok ? r.json() : null).catch(() => null)
+      }
 
       const extraNote = (() => {
         const lines = Object.entries(cabinExtraBeds)
@@ -821,17 +825,13 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         body: JSON.stringify(payload),
       })
 
-      if (res.status === 409) {
-        const data = await res.json()
-        if (data.conflict && data.openTrips?.length) {
-          setOpenTripConflicts(data.openTrips)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (res.status === 409 && err.conflict && err.openTrips?.length) {
+          setOpenTripConflicts(err.openTrips)
           setShowOpenTripConflictDialog(true)
           return
         }
-      }
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
         console.error('Booking failed:', err)
         alert(err.error ?? 'Failed to save booking. Please try again.')
         return

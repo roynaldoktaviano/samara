@@ -67,18 +67,22 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'R
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
-  const [payment,    setPayment]    = useState<PaymentDetail | null>(null)
-  const [loading,    setLoading]    = useState(true)
-  const [hasTncPdf,  setHasTncPdf]  = useState(false)
+  const [payment,   setPayment]   = useState<PaymentDetail | null>(null)
+  const [loading,   setLoading]   = useState(true)
+  const [hasTncPdf, setHasTncPdf] = useState(false)
+  const [tncPages,  setTncPages]  = useState<string[]>([])
   const printed = useRef(false)
 
   useEffect(() => {
     Promise.all([
       fetch(`/api/payments/${id}`).then(r => r.json()),
-      fetch('/api/public/tnc-pdf', { method: 'HEAD' }).then(r => r.ok).catch(() => false),
-    ]).then(([paymentData, tncExists]) => {
+      fetch('/api/public/tnc-pages').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([paymentData, tncData]) => {
       setPayment(paymentData)
-      setHasTncPdf(!!tncExists)
+      if (tncData?.images?.length) {
+        setHasTncPdf(true)
+        setTncPages(tncData.images)
+      }
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [id])
@@ -146,10 +150,12 @@ export default function InvoicePage() {
           html, body { background: white; }
           .so  { display: none !important; }
           .il  { display: none !important; }
-          .inv-bd { display: block !important; }
+          .inv-bd { display: block !important; height: auto !important; min-height: calc(297mm - 3cm) !important; }
           .nc  { break-inside: avoid; page-break-inside: avoid; }
           .pb  { page-break-before: always; break-before: page; }
           .sp  { display: block !important; }
+          .tnc-page { width: 210mm; height: 297mm; overflow: hidden; page-break-inside: avoid; }
+          .tnc-page img { width: 100%; height: 100%; object-fit: contain; display: block; }
         }
         @media screen {
           table.inv { display: block; max-width: 660px; margin: 0 auto; background: white; }
@@ -223,33 +229,8 @@ export default function InvoicePage() {
                 position: 'relative',
               }}>
 
-        {/* ── Page 1 wrapper (position: relative so PAID stamp stays on this page) ── */}
-        <div style={{ position: 'relative' }}>
-
-        {/* ── PAID stamp ── */}
-        {payment.status === 'confirmed' && (
-          <div style={{
-            position: 'absolute',
-            left: '50%',
-            top: '44%',
-            transform: 'translateX(-50%) rotate(-22deg)',
-            border: '4px solid #16a34a',
-            borderRadius: 8,
-            color: '#16a34a',
-            fontSize: 42,
-            fontWeight: 900,
-            letterSpacing: 6,
-            padding: '6px 18px',
-            opacity: 0.82,
-            pointerEvents: 'none',
-            userSelect: 'none',
-            textTransform: 'uppercase',
-            lineHeight: 1,
-            boxShadow: 'inset 0 0 0 2px #16a34a22',
-          }}>
-            PAID
-          </div>
-        )}
+        {/* ── Page 1 wrapper ── */}
+        <div>
 
         {/* ── Top accent bar (screen only — print uses fixed header) ── */}
         <div className="so" style={{ backgroundColor: ACCENT, height: 5, flexShrink: 0 }} />
@@ -265,13 +246,35 @@ export default function InvoicePage() {
             />
             <div style={{ color: '#9ca3af', fontSize: 8, letterSpacing: 1.5, marginTop: 4 }}>PREMIUM YACHT EXPERIENCES</div>
           </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '14px 22px' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 4 }}>INVOICE</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#374151', fontWeight: 700 }}>{payment.invoiceNumber}</div>
-            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>Issued: {fmtDate(payment.createdAt)}</div>
-            {invoiceCurrency !== 'USD' && (
-              <div style={{ fontSize: 9, color: ACCENT, marginTop: 3, fontWeight: 600 }}>
-                {invoiceCurrency} · 1 USD = {rate.toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 4 })} {invoiceCurrency}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px' }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 4 }}>INVOICE</div>
+              <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#374151', fontWeight: 700 }}>{payment.invoiceNumber}</div>
+              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>Issued: {fmtDate(payment.createdAt)}</div>
+              {invoiceCurrency !== 'USD' && (
+                <div style={{ fontSize: 9, color: ACCENT, marginTop: 3, fontWeight: 600 }}>
+                  {invoiceCurrency} · 1 USD = {rate.toLocaleString('en-US', { maximumFractionDigits: isIDR ? 0 : 4 })} {invoiceCurrency}
+                </div>
+              )}
+            </div>
+            {payment.status === 'confirmed' && (
+              <div style={{
+                transform: 'rotate(-15deg)',
+                border: '3px solid #16a34a',
+                borderRadius: 6,
+                color: '#16a34a',
+                fontSize: 28,
+                fontWeight: 900,
+                letterSpacing: 5,
+                padding: '4px 14px',
+                opacity: 0.85,
+                userSelect: 'none',
+                textTransform: 'uppercase',
+                lineHeight: 1,
+                boxShadow: 'inset 0 0 0 2px #16a34a18',
+                flexShrink: 0,
+              }}>
+                PAID
               </div>
             )}
           </div>
@@ -494,36 +497,16 @@ export default function InvoicePage() {
             TNC — screen: download bar | print: embedded PDF pages
             ══════════════════════════════════════════════════════════ */}
         {hasTncPdf ? (
-          <>
-            {/* Screen-only: info bar + download button */}
-            <div className="so" style={{ maxWidth: 660, margin: '0 auto', padding: '12px 22px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 18 }}>📎</span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Terms &amp; Conditions PDF attached</div>
-                    <div style={{ fontSize: 11, color: '#9ca3af' }}>Will be included when printing / saving as PDF</div>
-                  </div>
-                </div>
-                <a
-                  href="/api/public/tnc-pdf"
-                  download="Terms-and-Conditions.pdf"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#1a5f6e', backgroundColor: '#e0f2f7', borderRadius: 6, padding: '6px 12px', textDecoration: 'none', whiteSpace: 'nowrap' }}
-                >
-                  ⬇ Download T&amp;C PDF
-                </a>
+          /* Screen-only: info bar (TnC images are rendered outside <table> below) */
+          <div className="so" style={{ maxWidth: 660, margin: '0 auto', padding: '12px 22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 16px' }}>
+              <span style={{ fontSize: 18 }}>📎</span>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Terms &amp; Conditions included</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>T&amp;C pages will be appended when printing / saving as PDF</div>
               </div>
             </div>
-
-            {/* Print-only: embed PDF as full A4 pages (hidden on screen) */}
-            <div className="sp pb" style={{ width: '210mm', height: '297mm', background: 'white' }}>
-              <embed
-                src="/api/public/tnc-pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH"
-                type="application/pdf"
-                style={{ width: '100%', height: '100%', display: 'block', border: 'none' }}
-              />
-            </div>
-          </>
+          </div>
         ) : (
         <>
 
@@ -668,6 +651,13 @@ export default function InvoicePage() {
         </tbody>
 
       </table>
+
+      {/* TnC pages rendered as images — outside <table> so print header/footer don't repeat */}
+      {hasTncPdf && tncPages.map((src, i) => (
+        <div key={i} className="sp pb tnc-page">
+          <img src={src} alt="" />
+        </div>
+      ))}
     </>
   )
 }

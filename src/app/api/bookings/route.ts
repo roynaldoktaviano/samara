@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
         salespersonUser: { select: { name: true } },
-        yacht:     { select: { id: true, name: true, model: true, canDiving: true } },
+        yacht:     { select: { id: true, name: true, model: true, canDiving: true, capacity: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:        { select: { id: true, name: true, commission: true } },
         agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
@@ -176,31 +176,59 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Guest name is required for on-hold booking' }, { status: 400 })
       }
     } else if (!startDate || !endDate || !guests?.length) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      const missing = [!startDate && 'startDate', !endDate && 'endDate', !guests?.length && 'guests'].filter(Boolean)
+      console.error('POST /api/bookings 400 — missing:', missing, '| tripType:', tripType, '| openTripId:', openTripId)
+      return NextResponse.json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
     }
 
     const lead = isOnHold ? null : (guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0])
     const paid  = parseFloat(depositPaid) || 0
     const total = parseFloat(totalPrice)  || 0
 
-    // ── Conflict check: overlapping open trips on same yacht (private charter only) ──
-    if (tripType === 'PRIVATE_CHARTER' && yachtId) {
+    // ── Conflict check: only for Private Charter ──
+    // Open Trip bookings share the same yacht; capacity is managed by the open trip status (open/full/closed).
+    if (yachtId && tripType === 'PRIVATE_CHARTER') {
       const start = new Date(startDate)
       const end   = new Date(endDate)
-      const conflicting = await db.openTrip.findMany({
+
+      // Check PC vs existing bookings (PC or OT) on same yacht
+      const overlappingBooking = await db.booking.findFirst({
         where: {
           yachtId,
-          status: { in: ['open', 'full'] },
+          status: { not: 'cancelled' },
           startDate: { lt: end },
           endDate:   { gt: start },
         },
-        select: { id: true, title: true, startDate: true, endDate: true },
+        select: { bookingCode: true, startDate: true, endDate: true, tripType: true },
       })
-      if (conflicting.length > 0 && !confirmCloseOpenTrips) {
+      if (overlappingBooking) {
         return NextResponse.json(
-          { conflict: true, openTrips: conflicting },
+          {
+            error: 'Yacht sudah terbooking pada tanggal tersebut',
+            conflict: true,
+            existing: overlappingBooking,
+          },
           { status: 409 }
         )
+      }
+
+      // Check PC vs open trips on same yacht
+      if (tripType === 'PRIVATE_CHARTER') {
+        const conflictingOpenTrips = await db.openTrip.findMany({
+          where: {
+            yachtId,
+            status: { in: ['open', 'full'] },
+            startDate: { lt: end },
+            endDate:   { gt: start },
+          },
+          select: { id: true, title: true, startDate: true, endDate: true },
+        })
+        if (conflictingOpenTrips.length > 0 && !confirmCloseOpenTrips) {
+          return NextResponse.json(
+            { conflict: true, openTrips: conflictingOpenTrips },
+            { status: 409 }
+          )
+        }
       }
     }
 
@@ -222,8 +250,17 @@ export async function POST(request: NextRequest) {
     const prefix = `${yInit}-${tInit}-`
 
     const { nextVal } = await import('@/lib/counter')
-    const num         = await nextVal(`booking:${prefix}`)
-    const bookingCode = `${prefix}${String(num).padStart(4, '0')}`
+    // Retry up to 5 times in case counter is behind existing codes
+    const generateCode = async (): Promise<string> => {
+      for (let i = 0; i < 5; i++) {
+        const num  = await nextVal(`booking:${prefix}`)
+        const code = `${prefix}${String(num).padStart(4, '0')}`
+        const exists = await db.booking.findUnique({ where: { bookingCode: code }, select: { id: true } })
+        if (!exists) return code
+      }
+      throw new Error('Failed to generate unique booking code after retries')
+    }
+    const bookingCode = await generateCode()
 
     // For on-hold: use provided customer id, or find/create by phone+name
     let leadCustomerId: string

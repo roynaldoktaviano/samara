@@ -5,6 +5,49 @@ import { useParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, Save, Calendar, MapPin, Ship, Anchor, Lock, User, Users } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 
+function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (b64: string) => void }) {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const img = new window.Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const MAX = 1200
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width  = img.width  * scale
+      canvas.height = img.height * scale
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      onChange(canvas.toDataURL('image/jpeg', 0.82))
+      URL.revokeObjectURL(url)
+    }
+    img.src = url
+  }
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
+      {value ? (
+        <div className="relative group">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt={label} className="w-full max-h-52 object-contain rounded-xl border border-gray-200 bg-gray-50" />
+          <button type="button" onClick={() => onChange('')}
+            className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+            ✕
+          </button>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-all">
+          <span className="text-2xl mb-1">📷</span>
+          <span className="text-xs font-medium text-gray-500">Tap to upload photo</span>
+          <span className="text-[11px] text-gray-300 mt-0.5">JPG, PNG — max display 1200px</span>
+          <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFile} />
+        </label>
+      )}
+      {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
+    </div>
+  )
+}
+
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const TEAL = '#1a5f6e'
 const GOLD = '#bdac7e'
@@ -36,6 +79,7 @@ interface GuestRecord {
   address: string
   nationality: string
   passportExpiry: string
+  passportImage?: string
   medicalData: any
   foodData: any
   drinksData: any
@@ -76,24 +120,34 @@ function YesNo({ value, onChange }: { value: string; onChange: (v: string) => vo
 function ProfileSection({ data, onChange }: { data: any; onChange: (k: string, v: string) => void }) {
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => onChange(k, e.target.value)
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label="First Name *"><input value={data.firstName ?? ''} onChange={f('firstName')} placeholder="First name" className={inputCls} /></Field>
-      <Field label="Last Name"><input value={data.lastName ?? ''} onChange={f('lastName')} placeholder="Last name" className={inputCls} /></Field>
-      <Field label="Gender">
-        <select value={data.gender ?? ''} onChange={e => onChange('gender', e.target.value)} className={selectCls}>
-          <option value="">Select</option>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-          <option value="Other">Other</option>
-        </select>
-      </Field>
-      <Field label="Date of Birth"><input type="date" value={data.dateOfBirth ?? ''} onChange={f('dateOfBirth')} className={inputCls} /></Field>
-      <Field label="Nationality"><input value={data.nationality ?? ''} onChange={f('nationality')} placeholder="e.g. Indonesian, Australian" className={inputCls} /></Field>
-      <Field label="Email"><input type="email" value={data.email ?? ''} onChange={f('email')} placeholder="email@example.com" className={inputCls} /></Field>
-      <Field label="Phone"><input type="tel" value={data.phone ?? ''} onChange={f('phone')} placeholder="+62 812 3456 7890" className={inputCls} /></Field>
-      <Field label="Address"><input value={data.address ?? ''} onChange={f('address')} placeholder="City, Country" className={inputCls} /></Field>
-      <Field label="Passport / ID Number"><input value={data.passport ?? ''} onChange={f('passport')} placeholder="A1234567" className={inputCls} /></Field>
-      <Field label="Passport Expiry"><input type="date" value={data.passportExpiry ?? ''} onChange={f('passportExpiry')} className={inputCls} /></Field>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="First Name *"><input value={data.firstName ?? ''} onChange={f('firstName')} placeholder="First name" className={inputCls} /></Field>
+        <Field label="Last Name"><input value={data.lastName ?? ''} onChange={f('lastName')} placeholder="Last name" className={inputCls} /></Field>
+        <Field label="Gender">
+          <select value={data.gender ?? ''} onChange={e => onChange('gender', e.target.value)} className={selectCls}>
+            <option value="">Select</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </Field>
+        <Field label="Date of Birth"><input type="date" value={data.dateOfBirth ?? ''} onChange={f('dateOfBirth')} className={inputCls} /></Field>
+        <Field label="Nationality"><input value={data.nationality ?? ''} onChange={f('nationality')} placeholder="e.g. Indonesian, Australian" className={inputCls} /></Field>
+        <Field label="Email"><input type="email" value={data.email ?? ''} onChange={f('email')} placeholder="email@example.com" className={inputCls} /></Field>
+        <Field label="Phone"><input type="tel" value={data.phone ?? ''} onChange={f('phone')} placeholder="+62 812 3456 7890" className={inputCls} /></Field>
+        <Field label="Address"><input value={data.address ?? ''} onChange={f('address')} placeholder="City, Country" className={inputCls} /></Field>
+        <Field label="Passport / ID Number"><input value={data.passport ?? ''} onChange={f('passport')} placeholder="A1234567" className={inputCls} /></Field>
+        <Field label="Passport Expiry"><input type="date" value={data.passportExpiry ?? ''} onChange={f('passportExpiry')} className={inputCls} /></Field>
+      </div>
+      <div className="pt-2 border-t border-gray-100">
+        <ImageUpload
+          label="Passport / ID Photo"
+          hint="Take a photo of your passport data page or ID card. This helps us prepare your documents in advance."
+          value={data.passportImage ?? ''}
+          onChange={v => onChange('passportImage', v)}
+        />
+      </div>
     </div>
   )
 }
@@ -210,6 +264,14 @@ function DivingSection({ data, onChange }: { data: any; onChange: (k: string, v:
       <Field label="Fins Size"><input value={data.finsSize ?? ''} onChange={f('finsSize')} placeholder="e.g. 40-41, 42-43" className={inputCls} /></Field>
       <Field label="Mask Size"><input value={data.maskSize ?? ''} onChange={f('maskSize')} placeholder="e.g. Small, Medium" className={inputCls} /></Field>
       <Field label="Diving Notes" full><textarea rows={3} value={data.divingNotes ?? ''} onChange={f('divingNotes')} placeholder="Preferred dive conditions, interests…" className={textCls} /></Field>
+      <div className="col-span-1 sm:col-span-2 pt-2 border-t border-gray-100">
+        <ImageUpload
+          label="Diving Certificate / License"
+          hint="Upload a photo of your dive certification card (PADI, SSI, NAUI, etc.)"
+          value={data.certImage ?? ''}
+          onChange={v => onChange('certImage', v)}
+        />
+      </div>
     </div>
   )
 }
@@ -239,6 +301,7 @@ function initProfile(g: GuestRecord) {
     address:        g.address        ?? '',
     nationality:    g.nationality    ?? '',
     passportExpiry: g.passportExpiry ? g.passportExpiry.split('T')[0] : '',
+    passportImage:  g.passportImage  ?? '',
   }
 }
 
