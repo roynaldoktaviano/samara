@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       where: all ? undefined : { isActive: true },
       select: {
         id: true, name: true, commission: true, commissionOpenTrip: true, commissionPrivateCharter: true, isActive: true, createdAt: true,
-        country: true, agentType: true, contract: true,
+        country: true, note: true, contract: true, contractFileName: true,
         calendarToken: true, calendarActive: true,
         salespersonId: true,
         salesperson: { select: { id: true, name: true } },
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, commission, commissionOpenTrip, commissionPrivateCharter, salespersonId, country, agentType, contract } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, salespersonId, country, note, contract, contractFile, contractFileName } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -61,9 +61,11 @@ export async function POST(request: NextRequest) {
         commissionOpenTrip:           commissionOpenTrip ? parseFloat(commissionOpenTrip) : 0,
         commissionPrivateCharter:     commissionPrivateCharter ? parseFloat(commissionPrivateCharter) : 0,
         salespersonId: salespersonId || null,
-        country:       country   || null,
-        agentType:     agentType || null,
-        contract:      contract  || null,
+        country:          country          || null,
+        note:             note             || null,
+        contract:         contract         || null,
+        contractFile:     contractFile     || null,
+        contractFileName: contractFileName || null,
       },
     })
 

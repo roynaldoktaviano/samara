@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
   // First pass: collect unique agents from CSV (keyed by name, last non-empty value wins for optional fields)
   const agentMeta: Map<string, {
     name: string; commission: number; country: string | null
-    agentType: string | null; contract: string | null
+    note: string | null; contract: string | null
     isActive: boolean; salespersonId: string | null
   }> = new Map()
 
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     }
 
     const country      = col(row, 'country') || null
-    const agentType    = col(row, 'agentType', 'type') || null
+    const note         = col(row, 'note', 'notes') || null
     const isActiveRaw  = col(row, 'isActive', 'active') || 'true'
     const isActive     = isActiveRaw.toLowerCase() !== 'false'
     const salespersonRaw = col(row, 'salesperson', 'sales', 'pic')
@@ -142,12 +142,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!agentMeta.has(key)) {
-      agentMeta.set(key, { name, commission, country, agentType, contract, isActive, salespersonId })
+      agentMeta.set(key, { name, commission, country, note, contract, isActive, salespersonId })
     } else {
       // Update meta only if new row provides non-empty values
       const prev = agentMeta.get(key)!
       if (country)      prev.country      = country
-      if (agentType)    prev.agentType    = agentType
+      if (note)         prev.note         = note
       if (contract)     prev.contract     = contract
       if (commissionRaw) prev.commission  = commission
       if (salespersonId) prev.salespersonId = salespersonId
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
           data: {
             commission:    meta.commission,
             country:       meta.country,
-            agentType:     meta.agentType,
+            note:          meta.note,
             contract:      meta.contract,
             isActive:      meta.isActive,
             ...(meta.salespersonId ? { salespersonId: meta.salespersonId } : {}),
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
             name:           meta.name,
             commission:     meta.commission,
             country:        meta.country,
-            agentType:      meta.agentType,
+            note:           meta.note,
             contract:       meta.contract,
             isActive:       meta.isActive,
             salespersonId:  meta.salespersonId,

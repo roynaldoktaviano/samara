@@ -142,8 +142,10 @@ model Agent {
   commissionPrivateCharter  Float                @default(0)
   isActive                  Boolean              @default(true)
   country            String?
-  agentType          String?
+  note               String?
   contract           String?
+  contractFile       String?
+  contractFileName   String?
   calendarToken      String?              @unique
   calendarActive     Boolean              @default(false)
   salespersonId      String?

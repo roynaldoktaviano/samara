@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
 import {
-  User, Users, Ship, Map, Plus, Trash2,
+  User, Users, Ship, Map, Plus, Trash2, BookOpen,
   ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown, ChevronsUpDown,
 } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
@@ -881,40 +881,53 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      PHASE: SOURCE
   ════════════════════════════════════════════ */
   const phaseSource = () => (
-    <div className="space-y-6 py-2">
-      <div className="text-center">
-        <h3 className="text-xl font-semibold">New Booking</h3>
-        <p className="text-sm text-muted-foreground mt-1">How is this booking coming in?</p>
+    <div className="py-4 space-y-8">
+      {/* Header */}
+      <div className="text-center space-y-1">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: `${ACCENT}18` }}>
+          <BookOpen className="w-5 h-5" style={{ color: ACCENT }} />
+        </div>
+        <h3 className="text-lg font-semibold tracking-tight">New Booking</h3>
+        <p className="text-sm text-muted-foreground">How is this booking coming in?</p>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+
+      {/* Cards */}
+      <div className="grid grid-cols-2 gap-3">
         {([
-          { val: 'DIRECT' as Source, icon: User,  label: 'Direct',    desc: 'Customer books directly' },
-          { val: 'AGENT'  as Source, icon: Users, label: 'Via Agent', desc: 'Through a travel agent' },
+          {
+            val: 'DIRECT' as Source,
+            icon: User,
+            label: 'Direct',
+            desc: 'Customer books directly with us',
+          },
+          {
+            val: 'AGENT' as Source,
+            icon: Users,
+            label: 'Via Agent',
+            desc: 'Booking through a travel agent',
+          },
         ] as const).map(({ val, icon: Icon, label, desc }) => (
           <button
             key={val}
             onClick={() => {
               setSource(val)
               if (preselectedOpenTripId) {
-                // trip already pre-selected from calendar — skip tripType
                 setPhase(val === 'AGENT' ? 'agentInfo' : 'steps')
                 if (val !== 'AGENT') setStep(1)
               } else {
                 setPhase(val === 'AGENT' ? 'agentInfo' : 'tripType')
               }
             }}
-            className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-border bg-card hover:shadow-md text-center cursor-pointer transition-all"
-            style={{ borderColor: undefined }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = ACCENT)}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = '')}
+            className="flex flex-col items-center justify-center gap-3 p-6 rounded-xl border bg-card text-center cursor-pointer transition-all hover:shadow-sm"
+            onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.boxShadow = `0 0 0 1px ${ACCENT}` }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = '' }}
           >
-            <div className="w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: `${ACCENT}1a` }}>
-              <Icon className="w-8 h-8" style={{ color: ACCENT }} />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${ACCENT}18` }}>
+              <Icon className="w-6 h-6" style={{ color: ACCENT }} />
             </div>
             <div>
-              <div className="font-semibold text-base">{label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
+              <div className="font-semibold text-sm">{label}</div>
+              <div className="text-xs text-muted-foreground mt-1 leading-snug">{desc}</div>
             </div>
           </button>
         ))}
@@ -1134,7 +1147,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
      PHASE: TRIP TYPE
   ════════════════════════════════════════════ */
   const phaseTripType = () => (
-    <div className="space-y-5 py-2">
+    <div className="py-4 space-y-8">
       <button
         onClick={() => setPhase(source === 'AGENT' ? 'agentInfo' : 'source')}
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -1142,43 +1155,42 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         <ChevronLeft className="w-4 h-4" /> Back
       </button>
 
-      <div className="text-center">
-        <div className="flex justify-center gap-2 mb-3">
-          <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
+      <div className="text-center space-y-1">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: `${ACCENT}18` }}>
+          <Ship className="w-5 h-5" style={{ color: ACCENT }} />
         </div>
-        <h3 className="text-xl font-semibold">Select Trip Type</h3>
-        <p className="text-sm text-muted-foreground mt-1">Choose the type of booking</p>
+        <h3 className="text-lg font-semibold tracking-tight">Trip Type</h3>
+        <p className="text-sm text-muted-foreground">Choose the type of booking</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {([
           {
             val: 'PRIVATE_CHARTER' as TripType,
             icon: Ship,
             label: 'Private Charter',
-            desc: 'Exclusive use of the yacht. Choose your dates, destination, and guests.',
+            desc: 'Exclusive use of the yacht with custom dates & guests.',
           },
           {
             val: 'OPEN_TRIP' as TripType,
             icon: Map,
             label: 'Open Trip',
-            desc: 'Join a pre-scheduled trip. Dates and yacht are already set.',
+            desc: 'Join a pre-scheduled trip with fixed dates & yacht.',
           },
         ] as const).map(({ val, icon: Icon, label, desc }) => (
           <button
             key={val}
             onClick={() => { setTrip(val); setPhase('steps'); setStep(1) }}
-            className="flex flex-col items-start gap-3 p-5 rounded-xl border-2 border-border bg-card hover:shadow-md text-left cursor-pointer transition-all"
-            onMouseEnter={e => (e.currentTarget.style.borderColor = ACCENT)}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = '')}
+            className="flex flex-col items-center justify-center gap-3 p-6 rounded-xl border bg-card text-center cursor-pointer transition-all hover:shadow-sm"
+            onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.boxShadow = `0 0 0 1px ${ACCENT}` }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = '' }}
           >
-            <div className="w-12 h-12 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: `${ACCENT}1a` }}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${ACCENT}18` }}>
               <Icon className="w-6 h-6" style={{ color: ACCENT }} />
             </div>
             <div>
-              <div className="font-semibold">{label}</div>
-              <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{desc}</div>
+              <div className="font-semibold text-sm">{label}</div>
+              <div className="text-xs text-muted-foreground mt-1 leading-snug">{desc}</div>
             </div>
           </button>
         ))}
@@ -1193,16 +1205,27 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     <div className="space-y-4">
       <div className="space-y-1.5">
         <Label>Yacht <span className="text-destructive">*</span></Label>
-        <Select value={yachtId} onValueChange={setYachtId}>
-          <SelectTrigger><SelectValue placeholder="Select yacht" /></SelectTrigger>
-          <SelectContent>
-            {yachts.filter(y => y.status === 'available').map(y => (
-              <SelectItem key={y.id} value={y.id}>
-                {y.name}{y.model ? ` (${y.model})` : ''} — Cap. {y.capacity} | ${y.dailyRate.toLocaleString()}/day
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          {yachts.filter(y => y.status === 'available').map(y => (
+            <button
+              key={y.id}
+              type="button"
+              onClick={() => setYachtId(y.id)}
+              className={`flex-1 flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-all ${
+                yachtId === y.id
+                  ? 'border-[#bdac7e] bg-[#bdac7e]/8 ring-1 ring-[#bdac7e]'
+                  : 'border-border hover:border-[#bdac7e]/50 hover:bg-muted/40'
+              }`}
+            >
+              <span className="font-semibold text-sm">{y.name}</span>
+              {y.model && <span className="text-xs text-muted-foreground">{y.model}</span>}
+              <div className="flex gap-3 mt-0.5">
+                <span className="text-xs text-muted-foreground">Cap. {y.capacity}</span>
+                <span className="text-xs font-medium" style={{ color: '#bdac7e' }}>${y.dailyRate.toLocaleString()}/day</span>
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {(() => {

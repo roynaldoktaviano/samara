@@ -79,8 +79,9 @@ interface AgentRecord {
   commissionPrivateCharter: number
   isActive: boolean
   country: string | null
-  agentType: string | null
+  note: string | null
   contract: string | null
+  contractFileName: string | null
   calendarToken: string | null
   calendarActive: boolean
   salespersonId: string | null
@@ -112,7 +113,7 @@ interface AgentContact {
   dateOfBirth: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', agentType: '', contract: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', note: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 
@@ -135,8 +136,9 @@ export default function Agents() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editing,   setEditing]   = useState<AgentRecord | null>(null)
   const [form,      setForm]      = useState(EMPTY_FORM)
-  const [saving,    setSaving]    = useState(false)
-  const [saveError, setSaveError] = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [saveError,    setSaveError]    = useState('')
+  const [fileError,    setFileError]    = useState('')
 
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
@@ -158,13 +160,12 @@ export default function Agents() {
   // filters & pagination
   const [scope,             setScope]             = useState<'mine' | 'all'>('mine')
   const [filterCountry,     setFilterCountry]     = useState('')
-  const [filterType,        setFilterType]         = useState('')
   const [filterSalesperson, setFilterSalesperson]  = useState('')
   const [page,              setPage]               = useState(0)
   const [pageSize,          setPageSize]           = useState(10)
 
   // reset page when filters/search change
-  useEffect(() => { setPage(0) }, [search, filterCountry, filterType, filterSalesperson])
+  useEffect(() => { setPage(0) }, [search, filterCountry, filterSalesperson])
 
   // export / import
   const [exporting,       setExporting]       = useState(false)
@@ -287,6 +288,7 @@ export default function Agents() {
     setAddingContact(false)
     setEditingContact(null)
     setSaveError('')
+    setFileError('')
     setSheetOpen(true)
   }
 
@@ -299,13 +301,16 @@ export default function Agents() {
       commissionPrivateCharter: String(a.commissionPrivateCharter),
       salespersonId: a.salespersonId ?? '',
       country:       a.country    ?? '',
-      agentType:     a.agentType  ?? '',
-      contract:      a.contract   ?? '',
+      note:          a.note       ?? '',
+      contract:         a.contract         ?? '',
+      contractFile:     '',
+      contractFileName: a.contractFileName ?? '',
     })
     setAddingContact(false)
     setEditingContact(null)
     setContactForm(EMPTY_CONTACT)
     setSaveError('')
+    setFileError('')
     fetchContacts(a.id)
     setSheetOpen(true)
   }
@@ -325,10 +330,17 @@ export default function Agents() {
           commission:               parseFloat(form.commission) || 0,
           commissionOpenTrip:       parseFloat(form.commissionOpenTrip) || 0,
           commissionPrivateCharter: parseFloat(form.commissionPrivateCharter) || 0,
-          salespersonId: form.salespersonId || null,
-          country:       form.country   || null,
-          agentType:     form.agentType || null,
-          contract:      form.contract  || null,
+          salespersonId: isSales ? userId : (form.salespersonId || null),
+          country:          form.country          || null,
+          note:             form.note             || null,
+          contract:         form.contract         || null,
+          ...(form.contract !== 'Yes'
+            ? { contractFile: null, contractFileName: null }
+            : form.contractFile === 'REMOVE'
+              ? { contractFile: null, contractFileName: null }
+              : form.contractFile
+                ? { contractFile: form.contractFile, contractFileName: form.contractFileName }
+                : {}),
         }),
       })
       if (res.ok) { await fetchAgents(); setSheetOpen(false) }
@@ -446,7 +458,6 @@ export default function Agents() {
 
   // Filter options derived from loaded data
   const countryOptions     = useMemo(() => [...new Set(agents.map(a => a.country).filter(Boolean) as string[])].sort(), [agents])
-  const typeOptions        = useMemo(() => [...new Set(agents.map(a => a.agentType).filter(Boolean) as string[])].sort(), [agents])
   const salespersonOptions = useMemo(() => {
     const map = new Map<string, string>()
     agents.forEach(a => { if (a.salesperson?.id && a.salesperson.name) map.set(a.salesperson.id, a.salesperson.name) })
@@ -457,7 +468,6 @@ export default function Agents() {
     if (isSales && scope === 'mine' && a.salespersonId !== userId) return false
     if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !(a.salesperson?.name ?? '').toLowerCase().includes(search.toLowerCase())) return false
     if (filterCountry     && a.country              !== filterCountry)     return false
-    if (filterType        && a.agentType             !== filterType)        return false
     if (filterSalesperson && a.salesperson?.id       !== filterSalesperson) return false
     return true
   })
@@ -467,7 +477,7 @@ export default function Agents() {
   const paginated  = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
 
   const activeCount    = agents.filter(a => a.isActive).length
-  const hasActiveFilter = !!(filterCountry || filterType || filterSalesperson)
+  const hasActiveFilter = !!(filterCountry || filterSalesperson)
 
   return (
     <div className="space-y-6">
@@ -570,16 +580,6 @@ export default function Agents() {
           </SelectContent>
         </Select>
 
-        <Select value={filterType || 'all'} onValueChange={v => setFilterType(v === 'all' ? '' : v)}>
-          <SelectTrigger className="h-9 w-40 text-sm">
-            <SelectValue placeholder="All Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {typeOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
         <Select value={filterSalesperson || 'all'} onValueChange={v => setFilterSalesperson(v === 'all' ? '' : v)}>
           <SelectTrigger className="h-9 w-44 text-sm">
             <SelectValue placeholder="All Salespersons" />
@@ -592,7 +592,7 @@ export default function Agents() {
 
         {hasActiveFilter && (
           <button
-            onClick={() => { setFilterCountry(''); setFilterType(''); setFilterSalesperson('') }}
+            onClick={() => { setFilterCountry(''); setFilterSalesperson('') }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-3.5 w-3.5" /> Clear filters
@@ -635,7 +635,6 @@ export default function Agents() {
                     <th className="pb-3 w-8" />
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Agent</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Country</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Type</th>
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
                     {canCalendar && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
                     <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
@@ -680,23 +679,29 @@ export default function Agents() {
                         {a.country || <span className="text-muted-foreground/40">—</span>}
                       </td>
 
-                      {/* Agent Type */}
-                      <td className="py-3 pr-4">
-                        {a.agentType
-                          ? <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{a.agentType}</span>
-                          : <span className="text-muted-foreground/40 text-xs">—</span>}
-                      </td>
-
                       {/* Contract */}
                       <td className="py-3 pr-4">
                         {canActOnAgent(a) ? (
-                          a.contract
-                            ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
-                                a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
-                                'bg-red-50 text-red-600'
-                              }`}>{a.contract}</span>
-                            : <span className="text-muted-foreground/40 text-xs">—</span>
+                          <div className="flex items-center gap-1.5">
+                            {a.contract
+                              ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                  a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
+                                  a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
+                                  'bg-red-50 text-red-600'
+                                }`}>{a.contract}</span>
+                              : <span className="text-muted-foreground/40 text-xs">—</span>}
+                            {a.contract === 'Yes' && a.contractFileName && (
+                              <a
+                                href={`/api/agents/${a.id}/contract`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={a.contractFileName}
+                                className="text-muted-foreground hover:text-[#bdac7e] transition-colors"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
                         ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
@@ -963,13 +968,15 @@ export default function Agents() {
             </SheetHeader>
 
             {/* Form */}
-            <div className="flex-1 p-6 space-y-4 overflow-y-auto">
+            <div className="flex-1 p-6 space-y-5 overflow-y-auto">
+
+              {/* Name */}
               <div className="space-y-1.5">
-                <Label>Agency / Company Name <span className="text-destructive">*</span></Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agency / Company Name <span className="text-destructive">*</span></Label>
                 <div className="relative">
-                  <Building2 className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    className="pl-9"
+                    className="pl-9 h-10"
                     placeholder="e.g. ABC Tours, Raja Ampat Travel"
                     value={form.name}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -977,40 +984,46 @@ export default function Agents() {
                 </div>
               </div>
 
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Commission Open Trip (%)</Label>
-                  <div className="relative">
-                    <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="number" min="0" max="100" step="0.5"
-                      className="pl-9"
-                      value={form.commissionOpenTrip}
-                      onChange={e => setForm(f => ({ ...f, commissionOpenTrip: e.target.value }))}
-                    />
+              {/* Commission */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Commission</Label>
+                <div className="grid grid-cols-2 gap-2 p-3 rounded-lg bg-muted/40 border">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-muted-foreground">Open Trip</p>
+                    <div className="relative">
+                      <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        type="number" min="0" max="100" step="0.5"
+                        className="pl-8 h-9 text-sm"
+                        value={form.commissionOpenTrip}
+                        onChange={e => setForm(f => ({ ...f, commissionOpenTrip: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-muted-foreground">Private Charter</p>
+                    <div className="relative">
+                      <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        type="number" min="0" max="100" step="0.5"
+                        className="pl-8 h-9 text-sm"
+                        value={form.commissionPrivateCharter}
+                        onChange={e => setForm(f => ({ ...f, commissionPrivateCharter: e.target.value }))}
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Commission Private Charter (%)</Label>
-                  <div className="relative">
-                    <Percent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="number" min="0" max="100" step="0.5"
-                      className="pl-9"
-                      value={form.commissionPrivateCharter}
-                      onChange={e => setForm(f => ({ ...f, commissionPrivateCharter: e.target.value }))}
-                    />
-                  </div>
-                </div>
+              </div>
 
+              {/* Salesperson — admin only */}
+              {isAdmin && (
                 <div className="space-y-1.5">
-                  <Label>Salesperson</Label>
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Salesperson</Label>
                   <Select
                     value={form.salespersonId || 'none'}
                     onValueChange={v => setForm(f => ({ ...f, salespersonId: v === 'none' ? '' : v }))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10">
                       <SelectValue placeholder="— Select sales —" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1023,47 +1036,158 @@ export default function Agents() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
 
-              {/* Country, Agent Type, Contract */}
+              {/* Country */}
               <div className="space-y-1.5">
-                <Label>Country</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Country</Label>
                 <CountrySelect value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Agent Type</Label>
-                  <Select
-                    value={form.agentType || 'none'}
-                    onValueChange={v => setForm(f => ({ ...f, agentType: v === 'none' ? '' : v }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="— Select type —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— None —</SelectItem>
-                      <SelectItem value="Wholesale">Wholesale</SelectItem>
-                      <SelectItem value="Affiliator">Affiliator</SelectItem>
-                      <SelectItem value="Retail">Retail</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Contract</Label>
-                  <Select
-                    value={form.contract || 'none'}
-                    onValueChange={v => setForm(f => ({ ...f, contract: v === 'none' ? '' : v }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="— Select —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— None —</SelectItem>
-                      <SelectItem value="Yes">Yes</SelectItem>
-                      <SelectItem value="Not Yet">Not Yet</SelectItem>
-                      <SelectItem value="Not Qualified">Not Qualified</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Note</Label>
+                <textarea
+                  rows={3}
+                  placeholder="Catatan khusus tentang agent ini..."
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  value={form.note}
+                  onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+                />
               </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contract</Label>
+                <Select
+                  value={form.contract || 'none'}
+                  onValueChange={v => {
+                    setForm(f => ({ ...f, contract: v === 'none' ? '' : v, ...(v !== 'Yes' ? { contractFile: '', contractFileName: '' } : {}) }))
+                    setFileError('')
+                  }}
+                >
+                  <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="Not Yet">Not Yet</SelectItem>
+                    <SelectItem value="Not Qualified">Not Qualified</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* ── Contract PDF Upload (shown when contract = Yes) ── */}
+              {form.contract === 'Yes' && (
+                <div className="space-y-2 rounded-lg border border-dashed p-3 bg-muted/30">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contract PDF</Label>
+
+                  {/* existing file indicator */}
+                  {editing && editing.contractFileName && !form.contractFile && (
+                    <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                      <span className="text-xs text-muted-foreground flex-1 truncate">{editing.contractFileName}</span>
+                      <a
+                        href={`/api/agents/${editing.id}/contract`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs font-medium hover:underline"
+                        style={{ color: ACCENT }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> View
+                      </a>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setForm(f => ({ ...f, contractFile: 'REMOVE', contractFileName: '' }))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* new file selected */}
+                  {form.contractFile && form.contractFile !== 'REMOVE' && (
+                    <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-3 py-2">
+                      <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                      <span className="text-xs text-emerald-700 flex-1 truncate">{form.contractFileName}</span>
+                      <button
+                        type="button"
+                        className="text-emerald-600 hover:text-destructive"
+                        onClick={() => setForm(f => ({ ...f, contractFile: '', contractFileName: editing?.contractFileName ?? '' }))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* remove indicator */}
+                  {form.contractFile === 'REMOVE' && (
+                    <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-red-50 px-3 py-2">
+                      <span className="text-xs text-destructive flex-1">File akan dihapus saat disimpan</span>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:underline"
+                        onClick={() => setForm(f => ({ ...f, contractFile: '', contractFileName: editing?.contractFileName ?? '' }))}
+                      >Batal</button>
+                    </div>
+                  )}
+
+                  {/* upload button */}
+                  {(!form.contractFile || form.contractFile === '') && !(editing && editing.contractFileName) && (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 hover:bg-muted/50 transition-colors">
+                      <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Pilih file PDF (maks. 5 MB)</span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={e => {
+                          setFileError('')
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          if (file.size > 5 * 1024 * 1024) {
+                            setFileError('Ukuran file melebihi 5 MB. Kompres PDF terlebih dahulu lalu upload ulang.')
+                            e.target.value = ''
+                            return
+                          }
+                          const reader = new FileReader()
+                          reader.onload = ev => {
+                            setForm(f => ({ ...f, contractFile: ev.target?.result as string, contractFileName: file.name }))
+                          }
+                          reader.readAsDataURL(file)
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  {/* replace button when file exists */}
+                  {((editing && editing.contractFileName && !form.contractFile) || (form.contractFile && form.contractFile !== 'REMOVE')) && (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:underline w-fit">
+                      <Upload className="h-3 w-3" />
+                      <span>Ganti file</span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={e => {
+                          setFileError('')
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          if (file.size > 5 * 1024 * 1024) {
+                            setFileError('Ukuran file melebihi 5 MB. Kompres PDF terlebih dahulu lalu upload ulang.')
+                            e.target.value = ''
+                            return
+                          }
+                          const reader = new FileReader()
+                          reader.onload = ev => {
+                            setForm(f => ({ ...f, contractFile: ev.target?.result as string, contractFileName: file.name }))
+                          }
+                          reader.readAsDataURL(file)
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  {fileError && <p className="text-xs text-destructive">{fileError}</p>}
+                </div>
+              )}
 
               {/* ── Contact Persons (edit mode only) ── */}
               {editing && (

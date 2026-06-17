@@ -24,7 +24,7 @@ export async function GET(_: NextRequest) {
       name:       true,
       commission: true,
       country:    true,
-      agentType:  true,
+      note:       true,
       contract:   true,
       isActive:   true,
       salesperson: { select: { name: true } },
@@ -37,7 +37,7 @@ export async function GET(_: NextRequest) {
   })
 
   const header = [
-    'name', 'salesperson', 'country', 'agentType', 'commission',
+    'name', 'salesperson', 'country', 'note', 'commission',
     'contract', 'isActive',
     'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
   ]
@@ -48,7 +48,7 @@ export async function GET(_: NextRequest) {
       csvCell(a.name),
       csvCell(a.salesperson?.name ?? ''),
       csvCell(a.country),
-      csvCell(a.agentType),
+      csvCell(a.note),
       csvCell(a.commission),
       csvCell(a.contract),
       csvCell(a.isActive ? 'true' : 'false'),
