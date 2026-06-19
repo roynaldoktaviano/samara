@@ -224,6 +224,11 @@ export default function Bookings() {
   const [addGuestCabinId,     setAddGuestCabinId]     = useState('')
   const [addGuestSaving,      setAddGuestSaving]      = useState(false)
   const [addGuestLoading,     setAddGuestLoading]     = useState(false)
+  const [addGuestNewMode,     setAddGuestNewMode]     = useState(false)
+  const [addGuestNewName,     setAddGuestNewName]     = useState('')
+  const [addGuestNewPhone,    setAddGuestNewPhone]    = useState('')
+  const [addGuestNewEmail,    setAddGuestNewEmail]    = useState('')
+  const [deletingGuestId,     setDeletingGuestId]     = useState<string | null>(null)
   /* reschedule inside edit dialog */
   const [rescheduleMode,      setRescheduleMode]      = useState(false)
   const [rescheduleStart,     setRescheduleStart]     = useState('')
@@ -655,6 +660,25 @@ export default function Bookings() {
     setProofPayment(p)
     setProofPreview(null)
   }
+  const handleDeleteGuest = async (bookingId: string, bookingGuestId: string) => {
+    if (!confirm('Hapus guest ini dari booking?')) return
+    setDeletingGuestId(bookingGuestId)
+    const res = await fetch(`/api/bookings/${bookingId}/guests`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookingGuestId }),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      toast.error(d.error ?? 'Gagal menghapus guest')
+    } else {
+      const fresh = await fetch(`/api/bookings/${bookingId}`).then(r => r.json()).catch(() => null)
+      if (fresh) setDetailBooking(fresh)
+      fetchBookings()
+    }
+    setDeletingGuestId(null)
+  }
+
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -2089,6 +2113,18 @@ export default function Bookings() {
                               </div>
                               <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
                             </button>
+                            {canManageBookings && !g.isLead && db_.status !== 'cancelled' && (
+                              <button
+                                onClick={() => handleDeleteGuest(db_.id, g.id)}
+                                disabled={deletingGuestId === g.id}
+                                className="shrink-0 p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                                title="Hapus guest"
+                              >
+                                {deletingGuestId === g.id
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  : <Trash2 className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
 
                             {/* Cabin selector */}
                             {detailCabinsLoading ? (
@@ -2396,7 +2432,9 @@ export default function Bookings() {
       </Dialog>
 
       {/* ════ Add Guest Dialog ════ */}
-      <Dialog open={addGuestOpen} onOpenChange={v => { if (!v) setAddGuestOpen(false) }}>
+      <Dialog open={addGuestOpen} onOpenChange={v => {
+        if (!v) { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2404,58 +2442,96 @@ export default function Bookings() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Cari nama / telepon / email…"
-                value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
-            </div>
+            {!addGuestNewMode ? (
+              <>
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input className="pl-9" placeholder="Cari nama / telepon / email…"
+                    value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
+                </div>
 
-            {/* Customer list */}
-            <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-              {addGuestLoading ? (
-                <div className="py-6 text-center text-xs text-muted-foreground">Memuat…</div>
-              ) : (() => {
-                const existingIds = new Set(detailBooking?.guests.map(g => g.customerId) ?? [])
-                const q = addGuestSearch.toLowerCase()
-                const filtered = addGuestAll.filter(c =>
-                  !existingIds.has(c.id) &&
-                  (!q || c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.email?.toLowerCase().includes(q))
-                )
-                if (filtered.length === 0) return (
-                  <div className="py-6 text-center text-xs text-muted-foreground">Tidak ditemukan</div>
-                )
-                return filtered.map(c => {
-                  const checked = addGuestSelected.has(c.id)
-                  return (
-                    <button key={c.id} type="button"
-                      className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
-                      onClick={() => setAddGuestSelected(prev => {
-                        const next = new Set(prev)
-                        next.has(c.id) ? next.delete(c.id) : next.add(c.id)
-                        return next
-                      })}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
-                        {checked && <Check className="h-2.5 w-2.5 text-white" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{c.name}</p>
-                        {(c.phone || c.email) && <p className="text-xs text-muted-foreground truncate">{c.phone ?? c.email}</p>}
-                      </div>
-                    </button>
-                  )
-                })
-              })()}
-            </div>
+                {/* Customer list */}
+                <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                  {addGuestLoading ? (
+                    <div className="py-6 text-center text-xs text-muted-foreground">Memuat…</div>
+                  ) : (() => {
+                    const existingIds = new Set(detailBooking?.guests.map(g => g.customerId) ?? [])
+                    const q = addGuestSearch.toLowerCase()
+                    const filtered = addGuestAll.filter(c =>
+                      !existingIds.has(c.id) &&
+                      (!q || c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.email?.toLowerCase().includes(q))
+                    )
+                    if (filtered.length === 0) return (
+                      <div className="py-6 text-center text-xs text-muted-foreground">Tidak ditemukan</div>
+                    )
+                    return filtered.map(c => {
+                      const checked = addGuestSelected.has(c.id)
+                      return (
+                        <button key={c.id} type="button"
+                          className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
+                          onClick={() => setAddGuestSelected(prev => {
+                            const next = new Set(prev)
+                            next.has(c.id) ? next.delete(c.id) : next.add(c.id)
+                            return next
+                          })}>
+                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
+                            {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{c.name}</p>
+                            {(c.phone || c.email) && <p className="text-xs text-muted-foreground truncate">{c.phone ?? c.email}</p>}
+                          </div>
+                        </button>
+                      )
+                    })
+                  })()}
+                </div>
 
-            {addGuestSelected.size > 0 && (
-              <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest dipilih</p>
+                {addGuestSelected.size > 0 && (
+                  <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest dipilih</p>
+                )}
+
+                {/* New guest toggle */}
+                <button
+                  type="button"
+                  onClick={() => { setAddGuestNewMode(true); setAddGuestNewName(addGuestSearch) }}
+                  className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Buat guest baru
+                </button>
+              </>
+            ) : (
+              /* New guest form */
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => { setAddGuestNewMode(false) }}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-3 w-3" /> Kembali ke pencarian
+                </button>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Nama <span className="text-red-500">*</span></Label>
+                    <Input placeholder="Nama lengkap" value={addGuestNewName} onChange={e => setAddGuestNewName(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Telepon / WhatsApp</Label>
+                    <Input placeholder="+62…" value={addGuestNewPhone} onChange={e => setAddGuestNewPhone(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email</Label>
+                    <Input placeholder="email@example.com" value={addGuestNewEmail} onChange={e => setAddGuestNewEmail(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Cabin picker for Open Trip */}
             {detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Cabin untuk semua guest yang dipilih <span className="text-red-500">*</span></Label>
+                <Label className="text-xs">Cabin <span className="text-red-500">*</span></Label>
                 <Select value={addGuestCabinId} onValueChange={setAddGuestCabinId}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Pilih cabin…" />
@@ -2474,29 +2550,59 @@ export default function Bookings() {
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setAddGuestOpen(false)} disabled={addGuestSaving}>Batal</Button>
+            <Button variant="outline" onClick={() => { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} disabled={addGuestSaving}>Batal</Button>
             <Button
-              disabled={addGuestSelected.size === 0 || addGuestSaving || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId)}
+              disabled={addGuestSaving || (addGuestNewMode ? !addGuestNewName.trim() : addGuestSelected.size === 0) || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId)}
               onClick={async () => {
-                if (!detailBooking || addGuestSelected.size === 0) return
+                if (!detailBooking) return
                 setAddGuestSaving(true)
-                const ids = Array.from(addGuestSelected)
-                const errors: string[] = []
-                for (const customerId of ids) {
-                  const res = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
+
+                if (addGuestNewMode) {
+                  // Create new customer then add to booking
+                  const createRes = await fetch('/api/customers', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ customerId, cabinId: addGuestCabinId || undefined }),
+                    body: JSON.stringify({ name: addGuestNewName.trim(), phone: addGuestNewPhone.trim() || undefined, email: addGuestNewEmail.trim() || undefined }),
                   })
-                  if (!res.ok) {
-                    const d = await res.json().catch(() => ({}))
-                    const name = addGuestAll.find(c => c.id === customerId)?.name ?? customerId
-                    errors.push(`${name}: ${d.error ?? 'gagal'}`)
+                  if (!createRes.ok) {
+                    const d = await createRes.json().catch(() => ({}))
+                    toast.error(d.error ?? 'Gagal membuat guest baru')
+                    setAddGuestSaving(false)
+                    return
                   }
+                  const newCustomer = await createRes.json()
+                  const addRes = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerId: newCustomer.id, cabinId: addGuestCabinId || undefined }),
+                  })
+                  if (!addRes.ok) {
+                    const d = await addRes.json().catch(() => ({}))
+                    toast.error(d.error ?? 'Gagal menambah guest ke booking')
+                    setAddGuestSaving(false)
+                    return
+                  }
+                } else {
+                  // Add selected existing customers
+                  const ids = Array.from(addGuestSelected)
+                  const errors: string[] = []
+                  for (const customerId of ids) {
+                    const res = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ customerId, cabinId: addGuestCabinId || undefined }),
+                    })
+                    if (!res.ok) {
+                      const d = await res.json().catch(() => ({}))
+                      const name = addGuestAll.find(c => c.id === customerId)?.name ?? customerId
+                      errors.push(`${name}: ${d.error ?? 'gagal'}`)
+                    }
+                  }
+                  if (errors.length) alert('Beberapa guest gagal ditambahkan:\n' + errors.join('\n'))
                 }
-                if (errors.length) alert('Beberapa guest gagal ditambahkan:\n' + errors.join('\n'))
+
                 setAddGuestOpen(false)
-                // Fetch fresh booking data and update detail immediately without waiting for full list refresh
+                setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('')
                 const fresh = await fetch(`/api/bookings/${detailBooking.id}`).then(r => r.json()).catch(() => null)
                 if (fresh) {
                   setDetailBooking(fresh)
@@ -2505,13 +2611,15 @@ export default function Bookings() {
                     if (ot) setDetailCabins(ot.cabins ?? [])
                   }
                 }
-                fetchBookings() // update list in background
+                fetchBookings()
                 setAddGuestSaving(false)
               }}
               style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
               {addGuestSaving
                 ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Menambah…</>
-                : `Tambah ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest`}
+                : addGuestNewMode
+                  ? 'Buat & Tambahkan'
+                  : `Tambah ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest`}
             </Button>
           </DialogFooter>
         </DialogContent>
