@@ -142,6 +142,8 @@ model Agent {
   commissionPrivateCharter  Float                @default(0)
   isActive                  Boolean              @default(true)
   country            String?
+  address            String?
+  email              String?
   note               String?
   contract           String?
   contractFile       String?

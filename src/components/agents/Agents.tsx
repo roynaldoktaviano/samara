@@ -79,6 +79,8 @@ interface AgentRecord {
   commissionPrivateCharter: number
   isActive: boolean
   country: string | null
+  address: string | null
+  email: string | null
   note: string | null
   contract: string | null
   contractFileName: string | null
@@ -113,7 +115,7 @@ interface AgentContact {
   dateOfBirth: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', note: '', contract: '', contractFile: '', contractFileName: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', note: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 
@@ -301,6 +303,8 @@ export default function Agents() {
       commissionPrivateCharter: String(a.commissionPrivateCharter),
       salespersonId: a.salespersonId ?? '',
       country:       a.country    ?? '',
+      address:       a.address    ?? '',
+      email:         a.email      ?? '',
       note:          a.note       ?? '',
       contract:         a.contract         ?? '',
       contractFile:     '',
@@ -332,6 +336,8 @@ export default function Agents() {
           commissionPrivateCharter: parseFloat(form.commissionPrivateCharter) || 0,
           salespersonId: isSales ? userId : (form.salespersonId || null),
           country:          form.country          || null,
+          address:          form.address          || null,
+          email:            form.email            || null,
           note:             form.note             || null,
           contract:         form.contract         || null,
           ...(form.contract !== 'Yes'
@@ -805,6 +811,16 @@ export default function Agents() {
                               <Button
                                 variant="ghost" size="sm"
                                 className="h-7 px-2 text-xs"
+                                onClick={() => window.open(`/print/agent-agreement/${a.id}`, '_blank')}
+                                title="Generate Agent Agreement PDF"
+                              >
+                                <Download className="h-3 w-3 mr-1" /> Agreement
+                              </Button>
+                            )}
+                            {canActOnAgent(a) && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs"
                                 onClick={() => openEdit(a)}
                               >
                                 <Pencil className="h-3 w-3 mr-1" /> Edit
@@ -1045,10 +1061,32 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</Label>
+                <Input
+                  type="email"
+                  className="h-10"
+                  placeholder="agent@example.com"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Address</Label>
+                <textarea
+                  rows={2}
+                  placeholder="Company address..."
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  value={form.address}
+                  onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Note</Label>
                 <textarea
                   rows={3}
-                  placeholder="Catatan khusus tentang agent ini..."
+                  placeholder="Special notes about this agent..."
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                   value={form.note}
                   onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
