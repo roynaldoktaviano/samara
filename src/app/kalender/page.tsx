@@ -512,12 +512,12 @@ export default function PublicCalendarPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              Memuat...
+              Loading...
             </div>
           ) : agendaItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-24 gap-1">
               <span className="text-slate-300 text-2xl">—</span>
-              <span className="text-[12px] text-slate-400">Tidak ada jadwal</span>
+              <span className="text-[12px] text-slate-400">No schedule</span>
             </div>
           ) : agendaItems.map(item => {
             const isClosed = item.status === 'closed'
@@ -630,7 +630,7 @@ export default function PublicCalendarPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              Memuat jadwal...
+              Loading schedule...
             </div>
           ) : (
             <>

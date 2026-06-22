@@ -41,11 +41,11 @@ export async function POST() {
         daysUntil === 0 ? 'DEPOSIT_DUE_H0' :
         daysUntil === 1 ? 'DEPOSIT_DUE_H1' : 'DEPOSIT_DUE_H2'
       const dayLabel =
-        daysUntil === 0 ? 'hari ini!' :
-        daysUntil === 1 ? 'besok' : '2 hari lagi'
+        daysUntil === 0 ? 'today!' :
+        daysUntil === 1 ? 'tomorrow' : 'in 2 days'
 
-      const title = `Deposit jatuh tempo ${dayLabel}`
-      const body  = `${booking.bookingCode} — ${booking.customer.name}. Segera follow up ke customer untuk pembayaran deposit.`
+      const title = `Deposit due ${dayLabel}`
+      const body  = `${booking.bookingCode} — ${booking.customer.name}. Please follow up with the customer for deposit payment.`
 
       records.push({ userId: booking.salespersonId, type, title, body, bookingId: booking.id })
     }

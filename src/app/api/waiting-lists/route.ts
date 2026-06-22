@@ -55,13 +55,13 @@ export async function POST(request: NextRequest) {
     } = body
 
     if (!contactName?.trim()) {
-      return NextResponse.json({ error: 'Nama kontak diperlukan' }, { status: 400 })
+      return NextResponse.json({ error: 'Contact name is required' }, { status: 400 })
     }
     if (!startDate || !endDate) {
-      return NextResponse.json({ error: 'Tanggal trip diperlukan' }, { status: 400 })
+      return NextResponse.json({ error: 'Trip dates are required' }, { status: 400 })
     }
     if (!bookingId && !yachtId && !openTripId) {
-      return NextResponse.json({ error: 'bookingId, yachtId, atau openTripId diperlukan' }, { status: 400 })
+      return NextResponse.json({ error: 'bookingId, yachtId, or openTripId is required' }, { status: 400 })
     }
 
     // Resolve or create a Customer record so waitingList always has a customerId

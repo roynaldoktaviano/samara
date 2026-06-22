@@ -26,7 +26,7 @@ export default function LoginPage() {
 
     if (result?.error) {
       setLoading(false);
-      setError("Email atau password salah. Silakan coba lagi.");
+      setError("Incorrect email or password. Please try again.");
       return;
     }
 
@@ -127,7 +127,7 @@ export default function LoginPage() {
               <p className="mt-4 text-center text-[12px] text-[#8fa3ad]">
                 Forgot password?{" "}
                 <span className="text-[#8fa3ad] underline cursor-pointer hover:text-[#1a6070] transition-colors">
-                  Coba Ingat Lagi
+                  Try to Remember
                 </span>
               </p>
             </form>

@@ -45,7 +45,7 @@ export default function TncPdfSettings() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (file.type !== 'application/pdf') { showToast('error', 'File harus berformat PDF'); return }
+    if (file.type !== 'application/pdf') { showToast('error', 'File must be in PDF format'); return }
 
     setUploading(true)
     try {
@@ -53,11 +53,11 @@ export default function TncPdfSettings() {
       fd.append('file', file)
       const res = await fetch('/api/admin/settings/tnc-pdf', { method: 'POST', body: fd })
       if (res.ok) {
-        showToast('success', 'PDF berhasil diupload')
+        showToast('success', 'PDF uploaded successfully')
         await fetchInfo()
       } else {
         const d = await res.json()
-        showToast('error', d.error ?? 'Upload gagal')
+        showToast('error', d.error ?? 'Upload failed')
       }
     } finally { setUploading(false) }
   }
@@ -66,7 +66,7 @@ export default function TncPdfSettings() {
     setDeleting(true)
     try {
       const res = await fetch('/api/admin/settings/tnc-pdf', { method: 'DELETE' })
-      if (res.ok) { showToast('success', 'PDF dihapus'); await fetchInfo() }
+      if (res.ok) { showToast('success', 'PDF removed'); await fetchInfo() }
     } finally { setDeleting(false); setConfirmDel(false) }
   }
 
@@ -79,13 +79,13 @@ export default function TncPdfSettings() {
             Terms &amp; Conditions PDF
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            PDF ini otomatis dilampirkan di setiap invoice yang dicetak. Upload PDF baru untuk mengganti T&amp;C.
+            This PDF is automatically attached to every printed invoice. Upload a new PDF to replace the T&amp;C.
           </p>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Memuat…
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : info?.uploaded ? (
             <div className="space-y-3">
@@ -98,8 +98,8 @@ export default function TncPdfSettings() {
                   <p className="font-medium text-sm truncate">{info.fileName}</p>
                   {info.updatedAt && (
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Diupload {new Date(info.updatedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      {info.updatedBy && ` oleh ${info.updatedBy}`}
+                      Uploaded {new Date(info.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {info.updatedBy && ` by ${info.updatedBy}`}
                     </p>
                   )}
                 </div>
@@ -120,7 +120,7 @@ export default function TncPdfSettings() {
                   <input type="file" accept="application/pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
                   <span className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-md border border-input bg-background hover:bg-accent transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
                     {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                    Ganti PDF
+                    Replace PDF
                   </span>
                 </label>
                 <Button
@@ -129,7 +129,7 @@ export default function TncPdfSettings() {
                   onClick={() => setConfirmDel(true)}
                   disabled={deleting}
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Hapus
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
                 </Button>
               </div>
             </div>
@@ -137,8 +137,8 @@ export default function TncPdfSettings() {
             <div className="flex flex-col items-center justify-center py-8 border-2 border-dashed rounded-lg gap-3">
               <FileText className="h-8 w-8 text-muted-foreground/40" />
               <div className="text-center">
-                <p className="text-sm text-muted-foreground">Belum ada T&amp;C PDF</p>
-                <p className="text-xs text-muted-foreground/60 mt-0.5">Invoice akan menggunakan T&amp;C bawaan yang sudah ada</p>
+                <p className="text-sm text-muted-foreground">No T&amp;C PDF uploaded</p>
+                <p className="text-xs text-muted-foreground/60 mt-0.5">Invoices will use the default built-in T&amp;C</p>
               </div>
               <label className="cursor-pointer">
                 <input type="file" accept="application/pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
@@ -165,15 +165,15 @@ export default function TncPdfSettings() {
       <AlertDialog open={confirmDel} onOpenChange={v => !v && setConfirmDel(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus T&amp;C PDF?</AlertDialogTitle>
+            <AlertDialogTitle>Remove T&amp;C PDF?</AlertDialogTitle>
             <AlertDialogDescription>
-              Invoice akan kembali menggunakan T&amp;C bawaan yang hardcoded. Tindakan ini tidak bisa dibatalkan.
+              Invoices will revert to the default built-in T&amp;C. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 text-white">
-              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Ya, Hapus
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Yes, Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -79,7 +79,7 @@ const navigationItems: NavItem[] = [
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
-  { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES', 'FINANCE'],              group: 'marketing'  },
+  { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },

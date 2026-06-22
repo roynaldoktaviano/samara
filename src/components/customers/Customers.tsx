@@ -463,7 +463,7 @@ export default function Guests() {
                                 t.wlStatus === 'promoted'  ? 'bg-green-50 text-green-700 border-green-200' :
                                                              'bg-slate-100 text-slate-500 border-slate-200'
                               }`}>
-                                {t.wlStatus === 'waiting' ? 'Menunggu' : t.wlStatus === 'promoted' ? 'Dipromosi' : 'Dibatalkan'}
+                                {t.wlStatus === 'waiting' ? 'Waiting' : t.wlStatus === 'promoted' ? 'Promoted' : 'Cancelled'}
                               </Badge>
                             ) : (
                               <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">

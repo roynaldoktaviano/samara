@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // ── Capacity check ──
     if (booking.tripType === 'PRIVATE_CHARTER' && booking.yacht) {
       if (booking.guests.length >= booking.yacht.capacity) {
-        return NextResponse.json({ error: `Kapal sudah penuh (kapasitas ${booking.yacht.capacity} pax)` }, { status: 400 })
+        return NextResponse.json({ error: `Vessel is full (capacity: ${booking.yacht.capacity} pax)` }, { status: 400 })
       }
     }
 
@@ -42,14 +42,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         })
         if (cabinOccupancy >= cabin.capacity) {
-          return NextResponse.json({ error: `Cabin sudah penuh (kapasitas ${cabin.capacity} pax)` }, { status: 400 })
+          return NextResponse.json({ error: `Cabin is full (capacity: ${cabin.capacity} pax)` }, { status: 400 })
         }
       }
     }
 
     // ── Duplicate check ──
     const already = booking.guests.find(g => g.customerId === customerId)
-    if (already) return NextResponse.json({ error: 'Guest sudah ada di booking ini' }, { status: 400 })
+    if (already) return NextResponse.json({ error: 'Guest is already in this booking' }, { status: 400 })
 
     // ── Create guest ──
     await db.bookingGuest.create({
@@ -79,7 +79,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     const guest = await db.bookingGuest.findUnique({ where: { id: bookingGuestId }, select: { bookingId: true, isLead: true } })
     if (!guest || guest.bookingId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    if (guest.isLead) return NextResponse.json({ error: 'Tidak bisa hapus Group Leader' }, { status: 400 })
+    if (guest.isLead) return NextResponse.json({ error: 'Cannot remove the Group Leader' }, { status: 400 })
 
     await db.bookingGuest.delete({ where: { id: bookingGuestId } })
     await db.booking.update({ where: { id }, data: { guestCount: { decrement: 1 } } })

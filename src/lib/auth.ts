@@ -42,7 +42,7 @@ export const authOptions: NextAuthOptions = {
           userName: u.name || u.email || 'Unknown',
           userRole: u.role || 'UNKNOWN',
           action:   'LOGIN',
-          detail:   'Login berhasil',
+          detail:   'Login successful',
         }).catch(() => {})
       }
       return true

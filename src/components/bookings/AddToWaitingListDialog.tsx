@@ -110,7 +110,7 @@ export default function AddToWaitingListDialog({
 
   const handleSubmit = async () => {
     const contactName = selectedCustomer?.name || search.trim()
-    if (!contactName) { toast.error('Nama kontak wajib diisi'); return }
+    if (!contactName) { toast.error('Contact name is required'); return }
     setSaving(true)
     try {
       const res = await fetch('/api/waiting-lists', {
@@ -131,14 +131,14 @@ export default function AddToWaitingListDialog({
       })
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error || 'Gagal menambahkan')
+        throw new Error(err.error || 'Failed to add to waiting list')
       }
-      toast.success(`${contactName} ditambahkan ke waiting list`)
+      toast.success(`${contactName} added to waiting list`)
       reset()
       onOpenChange(false)
       onAdded()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Terjadi kesalahan')
+      toast.error(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setSaving(false)
     }
@@ -150,19 +150,19 @@ export default function AddToWaitingListDialog({
     <Dialog open={open} onOpenChange={v => { if (!v) reset(); onOpenChange(v) }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Tambah ke Waiting List</DialogTitle>
+          <DialogTitle>Add to Waiting List</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           {/* Customer search */}
           <div className="space-y-1.5">
-            <Label>Cari atau masukkan nama guest <span className="text-red-500">*</span></Label>
+            <Label>Search or enter guest name <span className="text-red-500">*</span></Label>
             <div ref={searchRef} className="relative">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
                   className="pl-8 pr-8"
-                  placeholder="Cari nama, telepon, email..."
+                  placeholder="Search by name, phone, email..."
                   value={search}
                   onChange={e => { setSearch(e.target.value); if (selectedCustomer) setSelectedCustomer(null) }}
                   disabled={saving}
@@ -185,11 +185,11 @@ export default function AddToWaitingListDialog({
                 <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg overflow-hidden">
                   {searching ? (
                     <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Mencari...
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching...
                     </div>
                   ) : results.length === 0 ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">
-                      Tidak ditemukan — akan dibuat sebagai guest baru
+                      Not found — will be added as a new guest
                     </div>
                   ) : (
                     results.map(c => (
@@ -215,7 +215,7 @@ export default function AddToWaitingListDialog({
 
             {selectedCustomer && (
               <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
-                <Check className="h-3 w-3" /> Guest terpilih: <span className="font-medium">{selectedCustomer.name}</span>
+                <Check className="h-3 w-3" /> Selected: <span className="font-medium">{selectedCustomer.name}</span>
               </p>
             )}
           </div>
@@ -245,9 +245,9 @@ export default function AddToWaitingListDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label>Catatan</Label>
+            <Label>Notes</Label>
             <Textarea
-              placeholder="Preferensi, catatan khusus..."
+              placeholder="Preferences, special requests..."
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
@@ -258,11 +258,11 @@ export default function AddToWaitingListDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>
-            Batal
+            Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={saving || !contactName}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Tambahkan
+            Add to List
           </Button>
         </DialogFooter>
       </DialogContent>

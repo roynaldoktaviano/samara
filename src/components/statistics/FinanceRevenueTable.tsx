@@ -256,7 +256,7 @@ export default function FinanceRevenueTable() {
       </div>
 
       {/* ── Charts ── */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1">
         {/* ALL REVENUE */}
         <div className="rounded-xl border shadow-sm p-4">
           <h4 className="text-sm font-bold mb-3" style={{ color: '#16a34a' }}>ALL REVENUE {year}</h4>
@@ -270,33 +270,31 @@ export default function FinanceRevenueTable() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Cabin year totals (bar chart per vessel) */}
-        {cabinTables.map(ct => {
-          const cabinChart = Object.entries(ct.yearByCabin)
-            .sort((a, b) => b[1] - a[1])
-            .map(([cabin, value]) => ({ cabin, value }))
-          return (
-            <div key={`chart-${ct.vesselId}`} className="rounded-xl border shadow-sm p-4">
-              <h4 className="text-sm font-bold mb-3" style={{ color: vesselColor(ct.vesselName) }}>
-                CABIN {ct.vesselName.toUpperCase()}
-              </h4>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={cabinChart}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="cabin" tick={{ fontSize: 10 }} />
-                  <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} width={58} />
-                  <Tooltip content={<ChartTip />} formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Revenue']} />
-                  <Bar dataKey="value" name="Revenue" fill={vesselColor(ct.vesselName)} radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )
-        })}
       </div>
 
+      {/* Cabin year totals (one full-width chart per vessel) */}
+      {cabinTables.map(ct => {
+        const cabinChart = ct.cabins.map(cabin => ({ cabin, value: ct.yearByCabin[cabin] ?? 0 }))
+        return (
+          <div key={`chart-${ct.vesselId}`} className="rounded-xl border shadow-sm p-4">
+            <h4 className="text-sm font-bold mb-3" style={{ color: vesselColor(ct.vesselName) }}>
+              CABIN {ct.vesselName.toUpperCase()}
+            </h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={cabinChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="cabin" tick={{ fontSize: 10 }} />
+                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} width={58} />
+                <Tooltip content={<ChartTip />} formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Revenue']} />
+                <Bar dataKey="value" name="Revenue" fill={vesselColor(ct.vesselName)} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )
+      })}
+
       {/* Per vessel monthly bar charts */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2">
         {vessels.map(v => (
           <div key={v.id} className="rounded-xl border shadow-sm p-4">
             <h4 className="text-sm font-bold mb-3" style={{ color: vesselColor(v.name) }}>

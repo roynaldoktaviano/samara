@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -20,7 +19,7 @@ import {
   Loader2, Mail, Building2, Percent, RotateCw,
   Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight, ChevronLeft,
   Link2, Copy, ShieldOff, ShieldCheck, BarChart2, AlertTriangle,
-  Download, Upload,
+  Download, Upload, FileDown,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -118,6 +117,7 @@ interface AgentContact {
 const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', note: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
+const TODAY = new Date().toISOString().split('T')[0]
 
 export default function Agents() {
   const { data: session } = useSession()
@@ -183,7 +183,6 @@ export default function Agents() {
   // calendar token management (admin only)
   const [calendarConfirm,   setCalendarConfirm]   = useState<{ agent: AgentRecord; action: 'generate' | 'reset' | 'deactivate' | 'activate' | 'revoke' } | null>(null)
   const [calendarActing,    setCalendarActing]    = useState(false)
-  const [calendarStats,     setCalendarStats]     = useState<Record<string, CalendarStats>>({})
   const [statsAgent,        setStatsAgent]        = useState<AgentRecord | null>(null)
   const [statsData,         setStatsData]         = useState<any>(null)
   const [statsLoading,      setStatsLoading]      = useState(false)
@@ -350,8 +349,8 @@ export default function Agents() {
         }),
       })
       if (res.ok) { await fetchAgents(); setSheetOpen(false) }
-      else { const d = await res.json(); setSaveError(d.error ?? 'Gagal menyimpan') }
-    } catch (e) { console.error(e); setSaveError('Terjadi kesalahan') }
+      else { const d = await res.json(); setSaveError(d.error ?? 'Failed to save') }
+    } catch (e) { console.error(e); setSaveError('Something went wrong') }
     finally { setSaving(false) }
   }
 
@@ -638,17 +637,16 @@ export default function Agents() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left">
-                    <th className="pb-3 w-8" />
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Agent</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Country</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Contract</th>
-                    {canCalendar && <th className="pb-3 pr-4 font-medium text-muted-foreground">Calendar Access</th>}
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Salesperson</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Comm. OT</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Comm. PC</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Bookings</th>
-                    <th className="pb-3 pr-4 font-medium text-muted-foreground text-center">Status</th>
-                    {canManage && <th className="pb-3 font-medium text-muted-foreground text-right">Actions</th>}
+                    <th className="pb-3 w-6" />
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Agent</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden lg:table-cell">Country</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Contract</th>
+                    {canCalendar && <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Calendar</th>}
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden md:table-cell">Salesperson</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center">Commission</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center hidden md:table-cell">Bookings</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center">Status</th>
+                    {canManage && <th className="pb-3 font-medium text-muted-foreground text-xs text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -657,40 +655,41 @@ export default function Agents() {
                     <tr className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
 
                       {/* Expand chevron */}
-                      <td className="py-3 pr-2 w-8">
+                      <td className="py-2.5 pr-1 w-6">
                         <span className="flex items-center justify-center text-muted-foreground">
                           {expandedId === a.id
-                            ? <ChevronDown className="h-4 w-4" />
-                            : <ChevronRight className="h-4 w-4" />}
+                            ? <ChevronDown className="h-3.5 w-3.5" />
+                            : <ChevronRight className="h-3.5 w-3.5" />}
                         </span>
                       </td>
 
                       {/* Avatar + name */}
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-3">
+                      <td className="py-2.5 pr-3">
+                        <div className="flex items-center gap-2.5">
                           <div
-                            className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-bold uppercase"
+                            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase"
                             style={{ backgroundColor: a.isActive ? ACCENT : '#9ca3af' }}
                           >
                             {a.name.charAt(0)}
                           </div>
                           <div>
-                            <div className="font-semibold">{a.name}</div>
+                            <div className="font-semibold text-sm leading-tight">{a.name}</div>
+                            {a.country && <div className="text-[11px] text-muted-foreground lg:hidden">{a.country}</div>}
                           </div>
                         </div>
                       </td>
 
-                      {/* Country */}
-                      <td className="py-3 pr-4 text-sm text-muted-foreground">
+                      {/* Country — hidden on small screens (shown under name instead) */}
+                      <td className="py-2.5 pr-3 text-xs text-muted-foreground hidden lg:table-cell">
                         {a.country || <span className="text-muted-foreground/40">—</span>}
                       </td>
 
                       {/* Contract */}
-                      <td className="py-3 pr-4">
+                      <td className="py-2.5 pr-3">
                         {canActOnAgent(a) ? (
                           <div className="flex items-center gap-1.5">
                             {a.contract
-                              ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                              ? <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
                                   a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
                                   a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
                                   'bg-red-50 text-red-600'
@@ -704,56 +703,56 @@ export default function Agents() {
                                 title={a.contractFileName}
                                 className="text-muted-foreground hover:text-[#bdac7e] transition-colors"
                               >
-                                <Download className="h-3.5 w-3.5" />
+                                <Download className="h-3 w-3" />
                               </a>
                             )}
                           </div>
                         ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
-                      {/* Calendar Access */}
+                      {/* Calendar */}
                       {canCalendar && (
-                        <td className="py-3 pr-4" onClick={e => e.stopPropagation()}>
+                        <td className="py-2.5 pr-3" onClick={e => e.stopPropagation()}>
                           {!canActOnAgent(a) ? (
                             <span className="text-muted-foreground/40 text-xs">—</span>
                           ) : (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1">
                               {!a.calendarToken ? (
                                 <button
                                   onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
-                                  className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                                  className="flex items-center gap-1 text-[11px] text-[#bdac7e] hover:underline font-medium"
                                 >
-                                  <Link2 className="h-3 w-3" /> Generate
+                                  <Link2 className="h-3 w-3" /> Gen
                                 </button>
                               ) : (
                                 <>
-                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                                    {a.calendarActive ? 'Active' : 'Off'}
+                                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {a.calendarActive ? 'On' : 'Off'}
                                   </span>
                                   <button
                                     onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                    title="Copy link"
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    title="Copy calendar link"
                                   >
                                     {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
                                   </button>
                                   <button
                                     onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                    title={a.calendarActive ? 'Deactivate' : 'Activate'}
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    title={a.calendarActive ? 'Deactivate calendar' : 'Activate calendar'}
                                   >
                                     {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
                                   </button>
                                   <button
                                     onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                    title="Reset token"
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    title="Reset calendar token"
                                   >
                                     <RotateCw className="h-3 w-3 text-amber-500" />
                                   </button>
                                   <button
                                     onClick={() => openStats(a)}
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
                                     title="View access stats"
                                   >
                                     <BarChart2 className="h-3 w-3" />
@@ -765,81 +764,79 @@ export default function Agents() {
                         </td>
                       )}
 
-                      {/* Salesperson */}
-                      <td className="py-3 pr-4">
+                      {/* Salesperson — hidden on small screens */}
+                      <td className="py-2.5 pr-3 hidden md:table-cell">
                         {a.salesperson
-                          ? <span className="text-sm">{a.salesperson.name ?? '—'}</span>
+                          ? <span className="text-xs">{a.salesperson.name ?? '—'}</span>
                           : <span className="text-xs text-muted-foreground/40">—</span>
                         }
                       </td>
 
-                      {/* Commission Open Trip */}
-                      <td className="py-3 pr-4 text-center">
-                        {canActOnAgent(a)
-                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionOpenTrip}%</span>
-                          : <span className="text-muted-foreground/40 text-xs">—</span>}
+                      {/* Commission OT + PC stacked */}
+                      <td className="py-2.5 pr-3 text-center">
+                        {canActOnAgent(a) ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="text-muted-foreground/60">OT</span>
+                              <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionOpenTrip}%</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="text-muted-foreground/60">PC</span>
+                              <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionPrivateCharter}%</span>
+                            </div>
+                          </div>
+                        ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
 
-                      {/* Commission Private Charter */}
-                      <td className="py-3 pr-4 text-center">
-                        {canActOnAgent(a)
-                          ? <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionPrivateCharter}%</span>
-                          : <span className="text-muted-foreground/40 text-xs">—</span>}
-                      </td>
-
-                      {/* Booking count */}
-                      <td className="py-3 pr-4 text-center text-muted-foreground">
+                      {/* Booking count — hidden on small screens */}
+                      <td className="py-2.5 pr-3 text-center text-xs text-muted-foreground hidden md:table-cell">
                         {a._count.bookings}
                       </td>
 
                       {/* Status badge */}
-                      <td className="py-3 pr-4 text-center">
-                        <Badge variant="outline" className={
+                      <td className="py-2.5 pr-3 text-center">
+                        <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${
                           a.isActive
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : 'bg-gray-50 text-gray-500 border-gray-200'
-                        }>
+                        }`}>
                           {a.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
 
-                      {/* Actions */}
+                      {/* Actions — icon-only */}
                       {canManage && (
-                        <td className="py-3 text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1 justify-end">
+                        <td className="py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5 justify-end">
                             {canActOnAgent(a) && (
-                              <Button
-                                variant="ghost" size="sm"
-                                className="h-7 px-2 text-xs"
+                              <button
+                                className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
                                 onClick={() => window.open(`/print/agent-agreement/${a.id}`, '_blank')}
-                                title="Generate Agent Agreement PDF"
+                                title="Download agent agreement PDF"
                               >
-                                <Download className="h-3 w-3 mr-1" /> Agreement
-                              </Button>
+                                <FileDown className="h-3.5 w-3.5" />
+                              </button>
                             )}
                             {canActOnAgent(a) && (
-                              <Button
-                                variant="ghost" size="sm"
-                                className="h-7 px-2 text-xs"
+                              <button
+                                className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
                                 onClick={() => openEdit(a)}
+                                title="Edit agent"
                               >
-                                <Pencil className="h-3 w-3 mr-1" /> Edit
-                              </Button>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
                             )}
                             {canActOnAgent(a) && (
-                              <Button
-                                variant="ghost" size="sm"
-                                className={`h-7 px-2 text-xs ${a.isActive
-                                  ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
-                                  : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                              <button
+                                className={`p-1.5 rounded transition-colors ${a.isActive
+                                  ? 'hover:bg-red-50 text-red-500'
+                                  : 'hover:bg-emerald-50 text-emerald-600'
                                 }`}
                                 onClick={() => setConfirmAgent(a)}
+                                title={a.isActive ? 'Deactivate agent' : 'Activate agent'}
                               >
-                                {a.isActive
-                                  ? <><UserX    className="h-3 w-3 mr-1" /> Deactivate</>
-                                  : <><UserCheck className="h-3 w-3 mr-1" /> Activate</>
-                                }
-                              </Button>
+                                {a.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
+                              </button>
                             )}
                           </div>
                         </td>
@@ -850,7 +847,7 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={isAdmin ? 9 : canCalendar ? 9 : canManage ? 8 : 7} className="py-2 pr-4">
+                        <td colSpan={isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7} className="py-2 pr-4">
                           <div className="pl-12 pr-2">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                               Contact Persons
@@ -1158,12 +1155,12 @@ export default function Agents() {
                   {/* remove indicator */}
                   {form.contractFile === 'REMOVE' && (
                     <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-red-50 px-3 py-2">
-                      <span className="text-xs text-destructive flex-1">File akan dihapus saat disimpan</span>
+                      <span className="text-xs text-destructive flex-1">File will be removed on save</span>
                       <button
                         type="button"
                         className="text-xs text-muted-foreground hover:underline"
                         onClick={() => setForm(f => ({ ...f, contractFile: '', contractFileName: editing?.contractFileName ?? '' }))}
-                      >Batal</button>
+                      >Undo</button>
                     </div>
                   )}
 
@@ -1171,7 +1168,7 @@ export default function Agents() {
                   {(!form.contractFile || form.contractFile === '') && !(editing && editing.contractFileName) && (
                     <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 hover:bg-muted/50 transition-colors">
                       <Upload className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Pilih file PDF (maks. 5 MB)</span>
+                      <span className="text-xs text-muted-foreground">Select PDF file (max 5 MB)</span>
                       <input
                         type="file"
                         accept="application/pdf"
@@ -1181,7 +1178,7 @@ export default function Agents() {
                           const file = e.target.files?.[0]
                           if (!file) return
                           if (file.size > 5 * 1024 * 1024) {
-                            setFileError('Ukuran file melebihi 5 MB. Kompres PDF terlebih dahulu lalu upload ulang.')
+                            setFileError('File exceeds 5 MB. Please compress the PDF before uploading.')
                             e.target.value = ''
                             return
                           }
@@ -1199,7 +1196,7 @@ export default function Agents() {
                   {((editing && editing.contractFileName && !form.contractFile) || (form.contractFile && form.contractFile !== 'REMOVE')) && (
                     <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:underline w-fit">
                       <Upload className="h-3 w-3" />
-                      <span>Ganti file</span>
+                      <span>Replace file</span>
                       <input
                         type="file"
                         accept="application/pdf"
@@ -1209,7 +1206,7 @@ export default function Agents() {
                           const file = e.target.files?.[0]
                           if (!file) return
                           if (file.size > 5 * 1024 * 1024) {
-                            setFileError('Ukuran file melebihi 5 MB. Kompres PDF terlebih dahulu lalu upload ulang.')
+                            setFileError('File exceeds 5 MB. Please compress the PDF before uploading.')
                             e.target.value = ''
                             return
                           }
@@ -1263,40 +1260,51 @@ export default function Agents() {
                             /* inline edit form */
                             <div className="space-y-2">
                               <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                  placeholder="Name *"
-                                  value={editContactForm.name}
-                                  onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
-                                  className="h-7 text-sm"
-                                />
-                                <Input
-                                  placeholder="Job Title"
-                                  value={editContactForm.jobTitle}
-                                  onChange={e => setEditContactForm(f => ({ ...f, jobTitle: e.target.value }))}
-                                  className="h-7 text-sm"
-                                />
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                                  <Input
+                                    value={editContactForm.name}
+                                    onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                                  <Input
+                                    value={editContactForm.jobTitle}
+                                    onChange={e => setEditContactForm(f => ({ ...f, jobTitle: e.target.value }))}
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                                  <Input
+                                    value={editContactForm.email}
+                                    onChange={e => setEditContactForm(f => ({ ...f, email: e.target.value }))}
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                                  <Input
+                                    value={editContactForm.whatsapp}
+                                    onChange={e => setEditContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-1 w-1/2 pr-1">
+                                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Date of Birth</label>
                                 <Input
-                                  placeholder="Email"
-                                  value={editContactForm.email}
-                                  onChange={e => setEditContactForm(f => ({ ...f, email: e.target.value }))}
-                                  className="h-7 text-sm"
-                                />
-                                <Input
-                                  placeholder="WhatsApp"
-                                  value={editContactForm.whatsapp}
-                                  onChange={e => setEditContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                                  type="date"
+                                  max={TODAY}
+                                  value={editContactForm.dateOfBirth}
+                                  onChange={e => setEditContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
                                   className="h-7 text-sm"
                                 />
                               </div>
-                              <Input
-                                type="date"
-                                placeholder="Date of Birth"
-                                value={editContactForm.dateOfBirth}
-                                onChange={e => setEditContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
-                                className="h-7 text-sm"
-                              />
                               <div className="flex gap-2 justify-end">
                                 <button
                                   type="button"
@@ -1372,41 +1380,52 @@ export default function Agents() {
                       {addingContact && (
                         <div className="rounded-lg border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
-                            <Input
-                              autoFocus
-                              placeholder="Name *"
-                              value={contactForm.name}
-                              onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                              className="h-7 text-sm"
-                            />
-                            <Input
-                              placeholder="Job Title"
-                              value={contactForm.jobTitle}
-                              onChange={e => setContactForm(f => ({ ...f, jobTitle: e.target.value }))}
-                              className="h-7 text-sm"
-                            />
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                              <Input
+                                autoFocus
+                                value={contactForm.name}
+                                onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                              <Input
+                                value={contactForm.jobTitle}
+                                onChange={e => setContactForm(f => ({ ...f, jobTitle: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
+                            </div>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                              <Input
+                                value={contactForm.email}
+                                onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                              <Input
+                                value={contactForm.whatsapp}
+                                onChange={e => setContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                                className="h-7 text-sm"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1 w-1/2 pr-1">
+                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Date of Birth</label>
                             <Input
-                              placeholder="Email"
-                              value={contactForm.email}
-                              onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
-                              className="h-7 text-sm"
-                            />
-                            <Input
-                              placeholder="WhatsApp"
-                              value={contactForm.whatsapp}
-                              onChange={e => setContactForm(f => ({ ...f, whatsapp: e.target.value }))}
+                              type="date"
+                              max={TODAY}
+                              value={contactForm.dateOfBirth}
+                              onChange={e => setContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
                               className="h-7 text-sm"
                             />
                           </div>
-                          <Input
-                            type="date"
-                            placeholder="Date of Birth"
-                            value={contactForm.dateOfBirth}
-                            onChange={e => setContactForm(f => ({ ...f, dateOfBirth: e.target.value }))}
-                            className="h-7 text-sm"
-                          />
                           <div className="flex gap-2 justify-end">
                             <button
                               type="button"

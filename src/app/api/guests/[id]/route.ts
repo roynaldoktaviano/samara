@@ -57,6 +57,31 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = await params
+    const { customerId } = await request.json()
+    if (!customerId) return NextResponse.json({ error: 'customerId required' }, { status: 400 })
+
+    const guest = await db.bookingGuest.findUnique({ where: { id }, select: { bookingId: true } })
+    if (!guest) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const dup = await db.bookingGuest.findFirst({
+      where: { bookingId: guest.bookingId, customerId, id: { not: id } },
+    })
+    if (dup) return NextResponse.json({ error: 'Guest is already in this booking' }, { status: 400 })
+
+    await db.bookingGuest.update({ where: { id }, data: { customerId } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Error replacing booking guest:', error)
+    return NextResponse.json({ error: 'Failed to replace guest' }, { status: 500 })
+  }
+}
+
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions)

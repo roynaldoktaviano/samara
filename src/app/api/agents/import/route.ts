@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     const salespersonRaw = col(row, 'salesperson', 'sales', 'pic')
     const salespersonId  = matchSalesperson(salespersonRaw)
     if (!salespersonId) {
-      errors.push(`Row ${rowNum} ("${name}"): salesperson "${salespersonRaw || '(empty)'}" tidak ditemukan — baris dilewati`)
+      errors.push(`Row ${rowNum} ("${name}"): salesperson "${salespersonRaw || '(empty)'}" not found — row skipped`)
       continue
     }
 
@@ -273,7 +273,7 @@ export async function POST(request: NextRequest) {
       userName: session!.user.name ?? session!.user.email ?? 'Unknown',
       userRole: role,
       action: 'CREATE', entity: 'Agent', entityId: 'bulk',
-      detail: `Import CSV: ${agentsCreated} agent baru, ${agentsUpdated} diupdate, ${contactsCreated} kontak baru`,
+      detail: `Import CSV: ${agentsCreated} new agent(s), ${agentsUpdated} updated, ${contactsCreated} new contact(s)`,
     }).catch(() => {})
   }
 

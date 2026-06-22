@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const startOfYear = new Date(year, 0, 1)
     const endOfYear   = new Date(year, 11, 31, 23, 59, 59)
 
-    const [allBookings, allYachts] = await withRetry(() => Promise.all([
+    const [allBookings, allYachts, allCabins] = await withRetry(() => Promise.all([
       db.booking.findMany({
         where: { status: { not: 'cancelled' }, startDate: { gte: startOfYear, lte: endOfYear } },
         select: {
@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
         },
       }),
       db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      db.cabin.findMany({ select: { id: true, name: true, yachtId: true }, orderBy: { name: 'asc' } }),
     ]))
 
     const vessels = [...allYachts].sort((a, b) => vesselSort(a.name) - vesselSort(b.name))
@@ -76,19 +77,35 @@ export async function GET(request: NextRequest) {
       byVessel[b.yachtId].push(b)
     }
 
+    // Build cabin name list per vessel from the Cabin model (not bookings)
+    const cabinsByVessel: Record<string, string[]> = {}
+    for (const c of allCabins) {
+      if (!cabinsByVessel[c.yachtId]) cabinsByVessel[c.yachtId] = []
+      cabinsByVessel[c.yachtId].push(c.name)
+    }
+
     for (const vessel of vessels) {
       const vBookings = byVessel[vessel.id] ?? []
-      if (vBookings.length === 0) continue
+      const vn = vessel.name.toLowerCase().replace(/\s+/g, '')
+      const isSamaraI = vn === 'samarai' || vn === 'samara1'
 
-      // Collect all unique cabin names for this vessel
-      const cabinSet = new Set<string>()
-      for (const b of vBookings) {
-        for (const g of b.guests) {
-          if (g.cabin?.name) cabinSet.add(g.cabin.name)
+      // For Samara I: use all DB-defined cabins so all columns always appear.
+      // For other vessels: only show if there are actual booking/cabin assignments.
+      let cabins: string[]
+      if (isSamaraI) {
+        cabins = (cabinsByVessel[vessel.id] ?? []).sort()
+        if (cabins.length === 0) continue
+      } else {
+        if (vBookings.length === 0) continue
+        const cabinSet = new Set<string>()
+        for (const b of vBookings) {
+          for (const g of b.guests) {
+            if (g.cabin?.name) cabinSet.add(g.cabin.name)
+          }
         }
+        if (cabinSet.size === 0) continue
+        cabins = [...cabinSet].sort()
       }
-      if (cabinSet.size === 0) continue
-      const cabins = [...cabinSet].sort()
 
       // Build monthly cabin grid
       const monthGrid: Record<number, Record<string, number>> = {}

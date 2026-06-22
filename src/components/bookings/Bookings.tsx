@@ -17,7 +17,7 @@ import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, Clock, Users,
-  Link2, Copy, Check, ExternalLink,
+  Link2, Copy, Check, ExternalLink, Crown,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -199,8 +199,9 @@ export default function Bookings() {
   const [paymentsLoading, setPaymentsLoading] = useState(false)
 
   /* guest travel dialog */
-  const [travelBooking, setTravelBooking] = useState<BookingRecord | null>(null)
-  const [travelSaving,  setTravelSaving]  = useState(false)
+  const [travelBooking,    setTravelBooking]    = useState<BookingRecord | null>(null)
+  const [travelSaving,     setTravelSaving]     = useState(false)
+  const [travelCustomers,  setTravelCustomers]  = useState<Record<string, any>>({})
 
   /* booking detail sheet */
   const [detailBooking,       setDetailBooking]       = useState<BookingRecord | null>(null)
@@ -228,7 +229,9 @@ export default function Bookings() {
   const [addGuestNewName,     setAddGuestNewName]     = useState('')
   const [addGuestNewPhone,    setAddGuestNewPhone]    = useState('')
   const [addGuestNewEmail,    setAddGuestNewEmail]    = useState('')
+  const [addGuestCreating,    setAddGuestCreating]    = useState(false)
   const [deletingGuestId,     setDeletingGuestId]     = useState<string | null>(null)
+  const [settingLeadId,       setSettingLeadId]       = useState<string | null>(null)
   /* reschedule inside edit dialog */
   const [rescheduleMode,      setRescheduleMode]      = useState(false)
   const [rescheduleStart,     setRescheduleStart]     = useState('')
@@ -470,12 +473,12 @@ export default function Bookings() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ holdUntil }),
       })
-      if (!res.ok) throw new Error('Gagal menyimpan')
-      toast.success('Hold diperpanjang')
+      if (!res.ok) throw new Error('Failed to save')
+      toast.success('Hold extended')
       setExtendHoldBooking(null)
       await fetchBookings()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Terjadi kesalahan')
+      toast.error(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setExtendHoldSaving(false)
     }
@@ -526,7 +529,7 @@ export default function Bookings() {
 
   const SHARED_KEY = '__shared__'
 
-  const openTravel = (b: BookingRecord) => {
+  const openTravel = async (b: BookingRecord) => {
     const first = b.guests[0]
     setGuestTravel({
       [SHARED_KEY]: {
@@ -538,7 +541,23 @@ export default function Bookings() {
         departureFlight:     first?.departureFlight     ?? '',
       },
     })
+    setTravelCustomers({})
     setTravelBooking(b)
+    const customerData: Record<string, any> = {}
+    await Promise.all(
+      b.guests.map(async g => {
+        if (g.customerId) {
+          const data = await fetch(`/api/customers/${g.customerId}`).then(r => r.json())
+          customerData[g.customerId] = data
+        }
+      })
+    )
+    setTravelCustomers(customerData)
+  }
+
+  const refreshTravelCustomer = async (customerId: string) => {
+    const updated = await fetch(`/api/customers/${customerId}`).then(r => r.json())
+    setTravelCustomers(prev => ({ ...prev, [customerId]: updated }))
   }
 
   const saveTravel = async () => {
@@ -661,7 +680,7 @@ export default function Bookings() {
     setProofPreview(null)
   }
   const handleDeleteGuest = async (bookingId: string, bookingGuestId: string) => {
-    if (!confirm('Hapus guest ini dari booking?')) return
+    if (!confirm('Remove this guest from the booking?')) return
     setDeletingGuestId(bookingGuestId)
     const res = await fetch(`/api/bookings/${bookingId}/guests`, {
       method: 'DELETE',
@@ -670,13 +689,30 @@ export default function Bookings() {
     })
     if (!res.ok) {
       const d = await res.json().catch(() => ({}))
-      toast.error(d.error ?? 'Gagal menghapus guest')
+      toast.error(d.error ?? 'Failed to remove guest')
     } else {
       const fresh = await fetch(`/api/bookings/${bookingId}`).then(r => r.json()).catch(() => null)
       if (fresh) setDetailBooking(fresh)
       fetchBookings()
     }
     setDeletingGuestId(null)
+  }
+
+  const handleSetLead = async (bookingId: string, bookingGuestId: string) => {
+    setSettingLeadId(bookingGuestId)
+    const res = await fetch(`/api/guests/${bookingGuestId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isLead: true }),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      toast.error(d.error ?? 'Failed to set lead')
+    } else {
+      const fresh = await fetch(`/api/bookings/${bookingId}`).then(r => r.json()).catch(() => null)
+      if (fresh) setDetailBooking(fresh)
+    }
+    setSettingLeadId(null)
   }
 
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1682,6 +1718,35 @@ export default function Bookings() {
                 const t = guestTravel[SHARED_KEY] ?? { arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '', departurePickupTime: '', departureHotel: '', departureFlight: '' }
                 const setT = (k: keyof typeof t) => (e: React.ChangeEvent<HTMLInputElement>) =>
                   setGuestTravel(prev => ({ ...prev, [SHARED_KEY]: { ...t, [k]: e.target.value } }))
+
+                // ── Validation ──
+                const travelMissing: string[] = []
+                if (!t.arrivalPickupTime) travelMissing.push('Arrival pick-up time')
+                if (!t.arrivalHotel)      travelMissing.push('Arrival hotel/airport')
+                if (!t.departurePickupTime) travelMissing.push('Departure pick-up time')
+                if (!t.departureHotel)    travelMissing.push('Departure hotel/airport')
+
+                const guestMissing: Record<string, string[]> = {}
+                const allLoaded = travelBooking.guests.every(g => travelCustomers[g.customerId])
+                travelBooking.guests.forEach(g => {
+                  const c = travelCustomers[g.customerId]
+                  if (!c) return
+                  const m: string[] = []
+                  if (!c.nationality)    m.push('Nationality')
+                  if (!c.dateOfBirth)    m.push('Date of birth')
+                  if (!c.gender)         m.push('Gender')
+                  if (!c.passport)       m.push('Passport no.')
+                  if (!c.passportExpiry) m.push('Passport expiry')
+                  if (m.length) guestMissing[g.id] = m
+                })
+
+                const travelOk = travelMissing.length === 0
+                const canDownloadAll = allLoaded && travelOk && Object.keys(guestMissing).length === 0
+                const canDownloadGuest = (gid: string) => travelOk && !guestMissing[gid]
+
+                const reqStyle = (filled: boolean) =>
+                  `h-8 text-xs bg-white${filled ? '' : ' border-red-300 focus-visible:ring-red-400'}`
+
                 return (
                   <div className="space-y-4">
                     <div className="rounded-xl border bg-sky-50/40 p-4">
@@ -1691,25 +1756,28 @@ export default function Bookings() {
                           Group Travel Details
                           <span className="text-muted-foreground font-normal">— applies to all guests</span>
                         </p>
-                        <Button
-                          variant="outline" size="sm"
-                          className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50"
-                          onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          Download All Guest Sheets
-                        </Button>
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            variant="outline" size="sm"
+                            disabled={!canDownloadAll}
+                            className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Download All Guest Sheets
+                          </Button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
                         <div className="space-y-2">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                            <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className="h-8 text-xs bg-white" />
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-red-500">*</span></Label>
+                            <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className={reqStyle(!!t.arrivalPickupTime)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                            <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-red-500">*</span></Label>
+                            <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.arrivalHotel)} />
                           </div>
                           <div className="space-y-1.5">
                             <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
@@ -1719,12 +1787,12 @@ export default function Bookings() {
                         <div className="space-y-2">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time</Label>
-                            <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className="h-8 text-xs bg-white" />
+                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-red-500">*</span></Label>
+                            <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className={reqStyle(!!t.departurePickupTime)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport</Label>
-                            <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className="h-8 text-xs bg-white" />
+                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-red-500">*</span></Label>
+                            <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.departureHotel)} />
                           </div>
                           <div className="space-y-1.5">
                             <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
@@ -1732,6 +1800,13 @@ export default function Bookings() {
                           </div>
                         </div>
                       </div>
+                      {/* Travel field warnings */}
+                      {travelMissing.length > 0 && (
+                        <p className="mt-2 text-[11px] text-red-500 flex items-start gap-1">
+                          <span className="shrink-0 mt-px">⚠</span>
+                          Required: {travelMissing.join(', ')}
+                        </p>
+                      )}
                     </div>
 
                     {/* Guest list — sheet only */}
@@ -1740,29 +1815,54 @@ export default function Bookings() {
                         Guests ({travelBooking.guests.length} pax)
                       </p>
                       <div className="space-y-1.5">
-                        {travelBooking.guests.map(g => (
-                          <div key={g.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                                <User className="w-3.5 h-3.5 text-muted-foreground" />
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium leading-tight">{g.customer?.name ?? '—'}</p>
-                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                  {g.isLead && <span className="text-amber-600 font-semibold">Group Leader</span>}
-                                  {g.cabin && <span className="flex items-center gap-0.5"><BedDouble className="w-3 h-3" /> {g.cabin.name}</span>}
+                        {travelBooking.guests.map(g => {
+                          const gOk     = canDownloadGuest(g.id)
+                          const missing = guestMissing[g.id] ?? []
+                          return (
+                            <div key={g.id} className="border-b last:border-0">
+                              <div className="flex items-center justify-between py-2">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${gOk ? 'bg-muted' : 'bg-red-50'}`}>
+                                    <User className={`w-3.5 h-3.5 ${gOk ? 'text-muted-foreground' : 'text-red-400'}`} />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium leading-tight">{g.customer?.name ?? '—'}</p>
+                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                      {g.isLead && <span className="text-amber-600 font-semibold">Group Leader</span>}
+                                      {g.cabin && <span className="flex items-center gap-0.5"><BedDouble className="w-3 h-3" /> {g.cabin.name}</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {allLoaded && (
+                                    <Button
+                                      variant="ghost" size="sm"
+                                      className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                                      onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id) }}
+                                    >
+                                      <Pencil className="h-3 w-3" /> Edit
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    disabled={!gOk || !allLoaded}
+                                    className="h-7 px-2 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                                    onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                                    title={!gOk ? 'Complete guest data first' : undefined}
+                                  >
+                                    <FileText className="h-3 w-3 mr-1" /> Guest Sheet
+                                  </Button>
                                 </div>
                               </div>
+                              {missing.length > 0 && (
+                                <p className="pb-1.5 ml-9 text-[10px] text-red-500">Missing: {missing.join(', ')}</p>
+                              )}
+                              {!allLoaded && !travelCustomers[g.customerId] && (
+                                <p className="pb-1.5 ml-9 text-[10px] text-muted-foreground animate-pulse">Loading…</p>
+                              )}
                             </div>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
-                              onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                            >
-                              <FileText className="h-3 w-3 mr-1" /> Guest Sheet
-                            </Button>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   </div>
@@ -2006,7 +2106,7 @@ export default function Bookings() {
                             } else {
                               // Deactivate: only admin, via confirmation dialog
                               if (userRole !== 'ADMIN') {
-                                alert('Hanya Admin yang dapat menonaktifkan Diving Trip.')
+                                alert('Only Admin can deactivate a Diving Trip.')
                                 return
                               }
                               setDivingOffReason('')
@@ -2092,12 +2192,13 @@ export default function Bookings() {
                       <p className="text-sm text-muted-foreground">No registered guests.</p>
                     )}
 
+                    <div className="grid grid-cols-2 gap-3">
                     {db_.guests.map(g => {
                       const isOwnCabin = (c: any) => c.guests?.some((cg: any) => cg.id === g.customerId)
                       const currentCabinId = g.cabin?.id ?? ''
 
                       return (
-                        <div key={g.id} className="rounded-xl border p-3 space-y-2.5">
+                        <div key={g.id} className={`rounded-xl border p-3 space-y-2.5 ${g.isLead ? 'border-amber-200 bg-amber-50/30' : ''}`}>
                           {/* Guest header */}
                           <div className="flex items-center justify-between gap-2">
                             <button
@@ -2108,61 +2209,88 @@ export default function Bookings() {
                                 <User className="w-3.5 h-3.5 text-muted-foreground" />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold leading-tight">{g.customer?.name ?? '—'}</p>
-                                {g.isLead && <p className="text-[10px] text-amber-600">Group Leader</p>}
+                                <p className="text-sm font-semibold leading-tight truncate">{g.customer?.name ?? '—'}</p>
+                                {g.isLead && <p className="text-[10px] text-amber-600 font-medium">Group Leader</p>}
                               </div>
                               <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
                             </button>
-                            {canManageBookings && !g.isLead && db_.status !== 'cancelled' && (
-                              <button
-                                onClick={() => handleDeleteGuest(db_.id, g.id)}
-                                disabled={deletingGuestId === g.id}
-                                className="shrink-0 p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
-                                title="Hapus guest"
-                              >
-                                {deletingGuestId === g.id
-                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  : <Trash2 className="w-3.5 h-3.5" />}
-                              </button>
-                            )}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {canManageBookings && !g.isLead && db_.status !== 'cancelled' && db_.guests.length > 1 && (
+                                <button
+                                  onClick={() => handleSetLead(db_.id, g.id)}
+                                  disabled={settingLeadId === g.id}
+                                  className="p-1 rounded text-amber-400 hover:bg-amber-50 hover:text-amber-600 transition-colors disabled:opacity-40"
+                                  title="Make Group Leader"
+                                >
+                                  {settingLeadId === g.id
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <Crown className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                              {canManageBookings && !g.isLead && db_.status !== 'cancelled' && db_.guests.length > 1 && (
+                                <button
+                                  onClick={() => handleDeleteGuest(db_.id, g.id)}
+                                  disabled={deletingGuestId === g.id}
+                                  className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                                  title="Remove guest"
+                                >
+                                  {deletingGuestId === g.id
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                            </div>
 
                             {/* Cabin selector */}
-                            {detailCabinsLoading ? (
-                              <Skeleton className="h-7 w-28" />
-                            ) : detailCabins.length > 0 ? (
-                              <Select
-                                value={currentCabinId}
-                                onValueChange={v => saveCabin(g.id, v)}
-                                disabled={cabinSaving === g.id}
-                              >
-                                <SelectTrigger className="h-7 text-xs w-36">
-                                  <BedDouble className="w-3 h-3 mr-1 shrink-0" />
-                                  <SelectValue placeholder="Select cabin…" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {detailCabins.map((c: any) => {
-                                    const isMine = isOwnCabin(c)
-                                    const isTaken = c.isFull && !isMine
-                                    return (
-                                      <SelectItem key={c.id} value={c.id} disabled={isTaken}>
-                                        <span className={isTaken ? 'text-muted-foreground' : ''}>
-                                          {c.name}{c.deck ? ` · ${c.deck}` : ''}
-                                        </span>
-                                        {isTaken && (
-                                          <span className="ml-1.5 text-[10px] text-red-400 font-medium">• Full</span>
-                                        )}
-                                      </SelectItem>
-                                    )
-                                  })}
-                                </SelectContent>
-                              </Select>
-                            ) : g.cabin ? (
-                              <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded px-2 py-1">
-                                <BedDouble className="w-3 h-3" /> {g.cabin.name}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">No cabin</span>
-                            )}
+                            {(() => {
+                              const cabinLocked = db_.tripType === 'OPEN_TRIP' &&
+                                ['partially_paid', 'fully_paid'].includes(db_.status)
+                              if (cabinLocked) {
+                                return g.cabin ? (
+                                  <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded px-2 py-1">
+                                    <BedDouble className="w-3 h-3" /> {g.cabin.name}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">No cabin</span>
+                                )
+                              }
+                              return detailCabinsLoading ? (
+                                <Skeleton className="h-7 w-28" />
+                              ) : detailCabins.length > 0 ? (
+                                <Select
+                                  value={currentCabinId}
+                                  onValueChange={v => saveCabin(g.id, v)}
+                                  disabled={cabinSaving === g.id}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-36">
+                                    <BedDouble className="w-3 h-3 mr-1 shrink-0" />
+                                    <SelectValue placeholder="Select cabin…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {detailCabins.map((c: any) => {
+                                      const isMine = isOwnCabin(c)
+                                      const isTaken = c.isFull && !isMine
+                                      return (
+                                        <SelectItem key={c.id} value={c.id} disabled={isTaken}>
+                                          <span className={isTaken ? 'text-muted-foreground' : ''}>
+                                            {c.name}{c.deck ? ` · ${c.deck}` : ''}
+                                          </span>
+                                          {isTaken && (
+                                            <span className="ml-1.5 text-[10px] text-red-400 font-medium">• Full</span>
+                                          )}
+                                        </SelectItem>
+                                      )
+                                    })}
+                                  </SelectContent>
+                                </Select>
+                              ) : g.cabin ? (
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded px-2 py-1">
+                                  <BedDouble className="w-3 h-3" /> {g.cabin.name}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">No cabin</span>
+                              )
+                            })()}
                           </div>
 
                           {/* Travel info */}
@@ -2210,6 +2338,7 @@ export default function Bookings() {
                         </div>
                       )
                     })}
+                    </div>
                   </div>
                 </div>
 
@@ -2360,7 +2489,11 @@ export default function Bookings() {
         bookingGuestId={editGuestBgId}
         hasDiving={editGuestHasDiving}
         onClose={() => { setEditGuestId(null); setEditGuestBgId(null); setEditGuestHasDiving(false) }}
-        onSaved={() => { fetchBookings(); if (detailBooking) openDetail(detailBooking) }}
+        onSaved={() => {
+          fetchBookings()
+          if (detailBooking) openDetail(detailBooking)
+          if (editGuestId) refreshTravelCustomer(editGuestId)
+        }}
       />
 
       <BookingWizard
@@ -2421,11 +2554,11 @@ export default function Bookings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setExtendHoldBooking(null)} disabled={extendHoldSaving}>
-              Batal
+              Cancel
             </Button>
             <Button onClick={saveExtendHold} disabled={extendHoldSaving || !extendHoldDate}>
               {extendHoldSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Simpan
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2438,86 +2571,82 @@ export default function Bookings() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Users className="h-4 w-4" /> Tambah Guest
+              <Users className="h-4 w-4" /> Add Guest
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Search by name / phone / email…"
+                value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
+            </div>
+
+            {/* Customer list */}
+            <div className="border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+              {addGuestLoading ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>
+              ) : (() => {
+                const existingIds = new Set(detailBooking?.guests.map(g => g.customerId) ?? [])
+                const q = addGuestSearch.toLowerCase()
+                const filtered = addGuestAll.filter(c =>
+                  !existingIds.has(c.id) &&
+                  (!q || c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.email?.toLowerCase().includes(q))
+                )
+                if (filtered.length === 0) return (
+                  <div className="py-6 text-center text-xs text-muted-foreground">No guests found</div>
+                )
+                return filtered.map(c => {
+                  const checked = addGuestSelected.has(c.id)
+                  return (
+                    <button key={c.id} type="button"
+                      className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
+                      onClick={() => setAddGuestSelected(prev => {
+                        const next = new Set(prev)
+                        next.has(c.id) ? next.delete(c.id) : next.add(c.id)
+                        return next
+                      })}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
+                        {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        {(c.phone || c.email) && <p className="text-xs text-muted-foreground truncate">{c.phone ?? c.email}</p>}
+                      </div>
+                    </button>
+                  )
+                })
+              })()}
+            </div>
+
+            {addGuestSelected.size > 0 && (
+              <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest{addGuestSelected.size !== 1 ? 's' : ''} selected</p>
+            )}
+
+            {/* Inline create panel */}
             {!addGuestNewMode ? (
-              <>
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input className="pl-9" placeholder="Cari nama / telepon / email…"
-                    value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
-                </div>
-
-                {/* Customer list */}
-                <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
-                  {addGuestLoading ? (
-                    <div className="py-6 text-center text-xs text-muted-foreground">Memuat…</div>
-                  ) : (() => {
-                    const existingIds = new Set(detailBooking?.guests.map(g => g.customerId) ?? [])
-                    const q = addGuestSearch.toLowerCase()
-                    const filtered = addGuestAll.filter(c =>
-                      !existingIds.has(c.id) &&
-                      (!q || c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.email?.toLowerCase().includes(q))
-                    )
-                    if (filtered.length === 0) return (
-                      <div className="py-6 text-center text-xs text-muted-foreground">Tidak ditemukan</div>
-                    )
-                    return filtered.map(c => {
-                      const checked = addGuestSelected.has(c.id)
-                      return (
-                        <button key={c.id} type="button"
-                          className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
-                          onClick={() => setAddGuestSelected(prev => {
-                            const next = new Set(prev)
-                            next.has(c.id) ? next.delete(c.id) : next.add(c.id)
-                            return next
-                          })}>
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
-                            {checked && <Check className="h-2.5 w-2.5 text-white" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{c.name}</p>
-                            {(c.phone || c.email) && <p className="text-xs text-muted-foreground truncate">{c.phone ?? c.email}</p>}
-                          </div>
-                        </button>
-                      )
-                    })
-                  })()}
-                </div>
-
-                {addGuestSelected.size > 0 && (
-                  <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest dipilih</p>
-                )}
-
-                {/* New guest toggle */}
-                <button
-                  type="button"
-                  onClick={() => { setAddGuestNewMode(true); setAddGuestNewName(addGuestSearch) }}
-                  className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Buat guest baru
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => { setAddGuestNewMode(true); setAddGuestNewName(addGuestSearch) }}
+                className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-dashed rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
+              >
+                <Plus className="h-3.5 w-3.5" /> Create new guest
+              </button>
             ) : (
-              /* New guest form */
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => { setAddGuestNewMode(false) }}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="h-3 w-3" /> Kembali ke pencarian
-                </button>
-                <div className="space-y-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Nama <span className="text-red-500">*</span></Label>
-                    <Input placeholder="Nama lengkap" value={addGuestNewName} onChange={e => setAddGuestNewName(e.target.value)} className="h-8 text-sm" />
+              <div className="border border-dashed rounded-lg p-3 space-y-2.5 bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New guest</p>
+                  <button type="button" onClick={() => { setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
+                    <Input placeholder="Full name" value={addGuestNewName} onChange={e => setAddGuestNewName(e.target.value)} className="h-8 text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Telepon / WhatsApp</Label>
+                    <Label className="text-xs">Phone / WhatsApp</Label>
                     <Input placeholder="+62…" value={addGuestNewPhone} onChange={e => setAddGuestNewPhone(e.target.value)} className="h-8 text-sm" />
                   </div>
                   <div className="space-y-1">
@@ -2525,80 +2654,101 @@ export default function Bookings() {
                     <Input placeholder="email@example.com" value={addGuestNewEmail} onChange={e => setAddGuestNewEmail(e.target.value)} className="h-8 text-sm" />
                   </div>
                 </div>
+                <Button
+                  size="sm"
+                  disabled={addGuestCreating || !addGuestNewName.trim()}
+                  onClick={async () => {
+                    setAddGuestCreating(true)
+                    const createRes = await fetch('/api/customers', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ name: addGuestNewName.trim(), phone: addGuestNewPhone.trim() || undefined, email: addGuestNewEmail.trim() || undefined }),
+                    })
+                    if (!createRes.ok) {
+                      const d = await createRes.json().catch(() => ({}))
+                      toast.error(d.error ?? 'Failed to create guest')
+                      setAddGuestCreating(false)
+                      return
+                    }
+                    const newCustomer = await createRes.json()
+                    setAddGuestAll(prev => [newCustomer, ...prev])
+                    setAddGuestSelected(prev => { const n = new Set(prev); n.add(newCustomer.id); return n })
+                    setAddGuestNewMode(false)
+                    setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('')
+                    setAddGuestCreating(false)
+                  }}
+                  className="h-7 text-xs gap-1.5 w-full"
+                  style={{ backgroundColor: ACCENT, color: 'white' }}
+                >
+                  {addGuestCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                  {addGuestCreating ? 'Creating…' : 'Add to list'}
+                </Button>
               </div>
             )}
 
             {/* Cabin picker for Open Trip */}
-            {detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Cabin <span className="text-red-500">*</span></Label>
-                <Select value={addGuestCabinId} onValueChange={setAddGuestCabinId}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Pilih cabin…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {detailCabins.map((c: any) => (
-                      <SelectItem key={c.id} value={c.id} disabled={c.isFull}>
-                        {c.name}{c.deck ? ` · ${c.deck}` : ''}
-                        {c.isFull && <span className="ml-1.5 text-[10px] text-red-400">• Full</span>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (() => {
+              const cabinLocked = ['partially_paid', 'fully_paid'].includes(detailBooking.status)
+              const lockedCabin = detailBooking.guests?.find((g: any) => g.cabin)?.cabin
+              if (cabinLocked && lockedCabin) {
+                return (
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                    <BedDouble className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs text-muted-foreground">Cabin locked:</span>
+                    <span className="text-xs font-medium">{lockedCabin.name}</span>
+                  </div>
+                )
+              }
+              return (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Cabin <span className="text-red-500">*</span></Label>
+                  <Select value={addGuestCabinId} onValueChange={setAddGuestCabinId}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select cabin…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {detailCabins.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id} disabled={c.isFull}>
+                          {c.name}{c.deck ? ` · ${c.deck}` : ''}
+                          {c.isFull && <span className="ml-1.5 text-[10px] text-red-400">• Full</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            })()}
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} disabled={addGuestSaving}>Batal</Button>
+            <Button variant="outline" onClick={() => { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} disabled={addGuestSaving}>Cancel</Button>
             <Button
-              disabled={addGuestSaving || (addGuestNewMode ? !addGuestNewName.trim() : addGuestSelected.size === 0) || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId)}
+              disabled={addGuestSaving || addGuestSelected.size === 0 || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId && !['partially_paid', 'fully_paid'].includes(detailBooking?.status ?? '') && !detailBooking?.guests?.find((g: any) => g.cabin))}
               onClick={async () => {
                 if (!detailBooking) return
                 setAddGuestSaving(true)
 
-                if (addGuestNewMode) {
-                  // Create new customer then add to booking
-                  const createRes = await fetch('/api/customers', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: addGuestNewName.trim(), phone: addGuestNewPhone.trim() || undefined, email: addGuestNewEmail.trim() || undefined }),
-                  })
-                  if (!createRes.ok) {
-                    const d = await createRes.json().catch(() => ({}))
-                    toast.error(d.error ?? 'Gagal membuat guest baru')
-                    setAddGuestSaving(false)
-                    return
-                  }
-                  const newCustomer = await createRes.json()
-                  const addRes = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ customerId: newCustomer.id, cabinId: addGuestCabinId || undefined }),
-                  })
-                  if (!addRes.ok) {
-                    const d = await addRes.json().catch(() => ({}))
-                    toast.error(d.error ?? 'Gagal menambah guest ke booking')
-                    setAddGuestSaving(false)
-                    return
-                  }
-                } else {
-                  // Add selected existing customers
+                const cabinLocked = detailBooking.tripType === 'OPEN_TRIP' && ['partially_paid', 'fully_paid'].includes(detailBooking.status)
+                const effectiveCabinId = cabinLocked
+                  ? (detailBooking.guests?.find((g: any) => g.cabin)?.cabin?.id ?? addGuestCabinId)
+                  : addGuestCabinId
+
+                {
                   const ids = Array.from(addGuestSelected)
                   const errors: string[] = []
                   for (const customerId of ids) {
                     const res = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ customerId, cabinId: addGuestCabinId || undefined }),
+                      body: JSON.stringify({ customerId, cabinId: effectiveCabinId || undefined }),
                     })
                     if (!res.ok) {
                       const d = await res.json().catch(() => ({}))
                       const name = addGuestAll.find(c => c.id === customerId)?.name ?? customerId
-                      errors.push(`${name}: ${d.error ?? 'gagal'}`)
+                      errors.push(`${name}: ${d.error ?? 'failed'}`)
                     }
                   }
-                  if (errors.length) alert('Beberapa guest gagal ditambahkan:\n' + errors.join('\n'))
+                  if (errors.length) alert('Some guests could not be added:\n' + errors.join('\n'))
                 }
 
                 setAddGuestOpen(false)
@@ -2616,10 +2766,8 @@ export default function Bookings() {
               }}
               style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
               {addGuestSaving
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Menambah…</>
-                : addGuestNewMode
-                  ? 'Buat & Tambahkan'
-                  : `Tambah ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest`}
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
+                : `Add ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest${addGuestSelected.size !== 1 ? 's' : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2630,18 +2778,18 @@ export default function Bookings() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600">
-              <Waves className="h-5 w-5" /> Nonaktifkan Diving Trip?
+              <Waves className="h-5 w-5" /> Disable Diving Trip?
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <p className="text-sm text-muted-foreground">
-              Tamu sudah terdaftar sebagai diving trip. Mohon berikan alasan penonaktifan untuk dicatat.
+              Guests are already registered for a diving trip. Please provide a reason for disabling diving to keep on record.
             </p>
             <div className="space-y-1.5">
-              <Label className="text-xs">Alasan <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">Reason <span className="text-red-500">*</span></Label>
               <Textarea
                 rows={3}
-                placeholder="Contoh: Tamu membatalkan aktivitas diving…"
+                placeholder="e.g. Guest cancelled diving activity…"
                 value={divingOffReason}
                 onChange={e => setDivingOffReason(e.target.value)}
                 disabled={divingOffSaving}
@@ -2650,7 +2798,7 @@ export default function Bookings() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDivingOffDialog(false)} disabled={divingOffSaving}>
-              Batal
+              Cancel
             </Button>
             <Button
               variant="destructive"

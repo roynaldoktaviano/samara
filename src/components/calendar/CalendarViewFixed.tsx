@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -686,6 +686,14 @@ export default function CalendarView() {
   const [otAddSearching,  setOtAddSearching]     = useState(false)
   const [otAddSaving,     setOtAddSaving]        = useState(false)
 
+  // Delete / replace guest
+  const [deletingGuestId,  setDeletingGuestId]  = useState<string | null>(null)
+  const [replacingGuestId, setReplacingGuestId] = useState<string | null>(null)
+  const [replaceQ,         setReplaceQ]         = useState('')
+  const [replaceResults,   setReplaceResults]   = useState<any[]>([])
+  const [replaceSearching, setReplaceSearching] = useState(false)
+  const [replaceSaving,    setReplaceSaving]    = useState(false)
+
   // Open trip edit state
   const [isOtEditing, setIsOtEditing]           = useState(false)
   const [otEditForm, setOtEditForm]             = useState({ title: '', description: '', destination: '', region: '', departurePort: '', arrivalPort: '', status: '', pricePerCabin: '' })
@@ -992,7 +1000,7 @@ export default function CalendarView() {
           dateStr <= t.endDate.slice(0, 10)
         )
       if (occupied) {
-        toast.error(`${yachtFilter} sudah ada jadwal pada tanggal ini.`)
+        toast.error(`${yachtFilter} already has a booking on this date.`)
         return
       }
     }
@@ -1087,6 +1095,41 @@ export default function CalendarView() {
       setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([])
     } finally { setOtAddSaving(false) }
   }, [otAddBookingId, otAddCabinId, otDetail])
+
+  const handleDeleteGuest = useCallback(async (guestId: string, bookingId: string) => {
+    setDeletingGuestId(guestId)
+    try {
+      await fetch(`/api/bookings/${bookingId}/guests`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingGuestId: guestId }),
+      })
+      const updated = await fetch(`/api/bookings/${bookingId}`).then(r => r.json())
+      setBookingFullDetail(updated)
+    } finally { setDeletingGuestId(null) }
+  }, [])
+
+  const searchReplaceGuest = useCallback(async (q: string) => {
+    setReplaceQ(q)
+    if (!q.trim()) { setReplaceResults([]); return }
+    setReplaceSearching(true)
+    try {
+      const res = await fetch(`/api/customers?search=${encodeURIComponent(q)}`).then(r => r.json())
+      setReplaceResults(Array.isArray(res) ? res.slice(0, 6) : [])
+    } finally { setReplaceSearching(false) }
+  }, [])
+
+  const handleReplaceGuest = useCallback(async (guestId: string, customerId: string, bookingId: string) => {
+    setReplaceSaving(true)
+    try {
+      await fetch(`/api/guests/${guestId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId }),
+      })
+      const updated = await fetch(`/api/bookings/${bookingId}`).then(r => r.json())
+      setBookingFullDetail(updated)
+      setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([])
+    } finally { setReplaceSaving(false) }
+  }, [])
 
   const upcomingBookings = useMemo(() => {
     const monthStart = new Date(leftYear, leftMonth, 1)
@@ -1692,7 +1735,7 @@ export default function CalendarView() {
       </Card>
 
       {/* ── Booking Detail Dialog ── */}
-      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null); setSelectedCabinCtx(null); setDetailAddingGuest(false); setOtAddQ(''); setOtAddResults([]) } }}>
+      <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null); setSelectedCabinCtx(null); setDetailAddingGuest(false); setOtAddQ(''); setOtAddResults([]); setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([]) } }}>
         <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
@@ -1792,45 +1835,112 @@ export default function CalendarView() {
                         {bookingFullDetail?.guests?.length > 0 ? (
                           <div className="divide-y">
                             {bookingFullDetail.guests.map((g: any) => (
-                              <div
-                                key={g.id}
-                                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group"
-                              >
-                                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
-                                  {g.customer?.name?.[0] ?? '?'}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
-                                    {g.isLead && (
-                                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
+                              <div key={g.id}>
+                                {/* Guest row */}
+                                <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group">
+                                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-bold text-muted-foreground">
+                                    {g.customer?.name?.[0] ?? '?'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
+                                      {g.isLead && (
+                                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
+                                      )}
+                                    </div>
+                                    {g.cabin && (
+                                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+                                        <BedDouble className="w-3 h-3" />
+                                        <span>{g.cabin.name}</span>
+                                      </div>
                                     )}
                                   </div>
-                                  {g.cabin && (
-                                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
-                                      <BedDouble className="w-3 h-3" />
-                                      <span>{g.cabin.name}</span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {g.id && (
+                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {g.id && (
+                                      <button
+                                        onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                                        className="p-1.5 rounded hover:bg-sky-50 text-sky-500"
+                                        title="Guest Sheet"
+                                      >
+                                        <BookOpen className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                     <button
-                                      onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                                      className="p-1.5 rounded hover:bg-sky-50 text-sky-500"
-                                      title="Guest Sheet"
+                                      onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
+                                      className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                                      title="Edit guest info"
                                     >
-                                      <BookOpen className="h-3.5 w-3.5" />
+                                      <Pencil className="h-3.5 w-3.5" />
                                     </button>
-                                  )}
-                                  <button
-                                    onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
-                                    className="p-1.5 rounded hover:bg-muted text-muted-foreground"
-                                    title="Edit guest"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
+                                    {selectedCabinCtx?.isOwnCabin && (
+                                      <button
+                                        onClick={() => {
+                                          if (replacingGuestId === g.id) {
+                                            setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([])
+                                          } else {
+                                            setReplacingGuestId(g.id); setReplaceQ(''); setReplaceResults([])
+                                          }
+                                        }}
+                                        className={`p-1.5 rounded transition-colors ${replacingGuestId === g.id ? 'bg-amber-50 text-amber-600' : 'hover:bg-amber-50 text-muted-foreground hover:text-amber-600'}`}
+                                        title="Replace guest"
+                                      >
+                                        <ArrowRightLeft className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {selectedCabinCtx?.isOwnCabin && !g.isLead && bookingFullDetail.guests.length > 1 && (
+                                      <button
+                                        disabled={deletingGuestId === g.id}
+                                        onClick={() => handleDeleteGuest(g.id, selectedCabinCtx.bookingId)}
+                                        className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
+                                        title="Remove guest"
+                                      >
+                                        {deletingGuestId === g.id
+                                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          : <Trash2 className="h-3.5 w-3.5" />}
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
+                                {/* Inline replace search */}
+                                {replacingGuestId === g.id && selectedCabinCtx && (
+                                  <div className="bg-amber-50/60 border-t px-4 py-2.5 space-y-1.5">
+                                    <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Replace "{g.customer?.name}"</p>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        autoFocus
+                                        className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-amber-400"
+                                        placeholder="Search new guest by name..."
+                                        value={replaceQ}
+                                        onChange={e => searchReplaceGuest(e.target.value)}
+                                      />
+                                      {replaceSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                                      <button
+                                        onClick={() => { setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([]) }}
+                                        className="text-muted-foreground hover:text-foreground p-0.5"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                    {replaceResults.length > 0 && (
+                                      <div className="border rounded-md bg-background divide-y max-h-40 overflow-y-auto">
+                                        {replaceResults.map((r: any) => (
+                                          <button
+                                            key={r.id}
+                                            disabled={replaceSaving}
+                                            onClick={() => handleReplaceGuest(g.id, r.id, selectedCabinCtx.bookingId)}
+                                            className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors"
+                                          >
+                                            <span className="text-xs font-medium">{r.name}</span>
+                                            {replaceSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRightLeft className="h-3 w-3 text-muted-foreground" />}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {replaceQ.length > 0 && !replaceSearching && replaceResults.length === 0 && (
+                                      <p className="text-[10px] text-muted-foreground px-1">No guests found.</p>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -2270,7 +2380,7 @@ export default function CalendarView() {
                       {otDetail.status === 'closed' && (
                         <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b">
                           <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <p className="text-xs text-slate-500">{otDetail.closedReason ?? 'Trip ini sudah ditutup'}</p>
+                          <p className="text-xs text-slate-500">{otDetail.closedReason ?? 'This trip has been closed'}</p>
                         </div>
                       )}
                       {otDetail.cabins?.map((c: any) => {

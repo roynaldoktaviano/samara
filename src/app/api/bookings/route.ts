@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
       if (overlappingBooking) {
         return NextResponse.json(
           {
-            error: 'Yacht sudah terbooking pada tanggal tersebut',
+            error: 'Yacht is already booked on these dates',
             conflict: true,
             existing: overlappingBooking,
           },
@@ -370,7 +370,7 @@ export async function POST(request: NextRequest) {
     logActivity({
       userId, userName, userRole,
       action: 'CREATE', entity: 'Booking', entityId: booking.id,
-      detail: `Booking baru ${booking.bookingCode}`,
+      detail: `New booking ${booking.bookingCode}`,
     }).catch(() => {})
 
     return NextResponse.json(booking, { status: 201 })

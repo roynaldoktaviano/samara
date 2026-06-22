@@ -45,9 +45,9 @@ export function SessionWatcher() {
             </svg>
           </div>
 
-          <h2 className="text-lg font-bold text-gray-800 mb-1">Sesi Telah Berakhir</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-1">Session Expired</h2>
           <p className="text-sm text-gray-500 leading-relaxed">
-            Sesi Anda sudah habis karena tidak aktif. Silakan login kembali untuk melanjutkan.
+            Your session has expired due to inactivity. Please log in again to continue.
           </p>
 
           <button
@@ -55,7 +55,7 @@ export function SessionWatcher() {
             className="mt-5 w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: '#1a5f6e' }}
           >
-            Login Kembali
+            Log In Again
           </button>
         </div>
       </div>

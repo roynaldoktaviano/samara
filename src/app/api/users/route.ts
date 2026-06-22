@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     userName: session!.user.name ?? session!.user.email ?? 'Unknown',
     userRole: session!.user.role ?? '',
     action: 'CREATE', entity: 'User', entityId: user.id,
-    detail: `Tambah user: ${user.name ?? user.email} (${user.role})`,
+    detail: `Add user: ${user.name ?? user.email} (${user.role})`,
   }).catch(() => {})
 
   return NextResponse.json(user, { status: 201 })

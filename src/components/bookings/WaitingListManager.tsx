@@ -66,7 +66,7 @@ export default function WaitingListManager({
                 onClick={() => setAddOpen(true)}
               >
                 <UserPlus className="h-4 w-4" />
-                Tambah
+                Add
               </Button>
             </div>
           </DialogHeader>

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       userName: session!.user.name ?? session!.user.email ?? 'Unknown',
       userRole: session!.user.role ?? '',
       action: 'CREATE', entity: 'Voucher', entityId: voucher.id,
-      detail: `Tambah voucher: ${voucher.code}`,
+      detail: `Add voucher: ${voucher.code}`,
     }).catch(() => {})
 
     return NextResponse.json(voucher, { status: 201 })

@@ -17,7 +17,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
     })
     if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (entry.status !== 'waiting') {
-      return NextResponse.json({ error: 'Entry ini sudah dipromosikan atau dibatalkan' }, { status: 400 })
+      return NextResponse.json({ error: 'This entry has already been promoted or cancelled' }, { status: 400 })
     }
 
     if (entry.bookingId) {
@@ -137,8 +137,8 @@ async function promoteDirect(entry: {
       data: {
         userId:    entry.salespersonId,
         type:      'WAITING_LIST_PROMOTED',
-        title:     'Waiting List — Dipromosikan!',
-        body:      `${entry.contactName} telah dipindahkan ke On Hold (${newBooking.bookingCode}).`,
+        title:     'Waiting List — Promoted!',
+        body:      `${entry.contactName} has been moved to On Hold (${newBooking.bookingCode}).`,
         bookingId: newBooking.id,
       },
     }).catch(() => {})
