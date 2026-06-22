@@ -89,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
           ...(notes         !== undefined && { notes:         notes         || null }),
           ...(billToType    !== undefined && { billToType:    billToType    || existing.billToType }),
+          ...(body.showNetAmount !== undefined && { showNetAmount: !!body.showNetAmount }),
           ...(bankId        !== undefined && { bankId:        bankId        || null }),
           ...(paymentLink   !== undefined && { paymentLink:   paymentLink   || null }),
           invoiceGeneratedBy: actorName,

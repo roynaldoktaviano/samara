@@ -39,6 +39,7 @@ export async function GET(_: NextRequest) {
           select: {
             bookingCode: true,
             totalPrice: true,
+            discount: true,
             depositPaid: true,
             startDate: true,
             endDate: true,

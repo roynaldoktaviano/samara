@@ -57,6 +57,7 @@ interface Payment {
   booking: {
     bookingCode: string
     totalPrice: number
+    discount: number
     depositPaid: number
     startDate: string
     endDate: string
@@ -112,6 +113,7 @@ export default function Payments() {
   const [genInvBankId,       setGenInvBankId]      = useState<string | null>(null)
   const [genInvUsePayLink,   setGenInvUsePayLink]  = useState(false)
   const [genInvPayLink,      setGenInvPayLink]     = useState('')
+  const [genInvShowNet,      setGenInvShowNet]     = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
 
   const fetchPayments = useCallback(async () => {
@@ -173,6 +175,7 @@ export default function Payments() {
           paymentMethod: genInvMethod || null,
           notes: genInvNotes || null,
           billToType: genInvBillTo,
+          showNetAmount: genInvShowNet,
           bankId: genInvUsePayLink ? null : (genInvBankId || null),
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
         }),
@@ -233,9 +236,10 @@ export default function Payments() {
     setGenInvBankId(p.bankId ?? null)
     setGenInvUsePayLink(false)
     setGenInvPayLink('')
+    setGenInvShowNet((p as any).showNetAmount ?? false)
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
-    if (p.status === 'pending_confirmation' || p.status === 'invoice_ready') {
+    if (p.status === 'pending_confirmation' || p.status === 'invoice_ready' || p.status === 'confirmed') {
       setProofLoading(true)
       try {
         const res = await fetch(`/api/payments/${p.id}`)
@@ -707,6 +711,45 @@ export default function Payments() {
                       </div>
                     )}
 
+                    {/* Gross / Net toggle — always interactive, AGENT bookings only */}
+                    {selected.booking.source === 'AGENT' && (() => {
+                      const commPct   = selected.booking.tripType === 'OPEN_TRIP'
+                        ? (selected.booking.agent?.commissionOpenTrip ?? 0)
+                        : (selected.booking.agent?.commissionPrivateCharter ?? 0)
+                      const grossAmt  = selected.booking.totalPrice - (selected.booking.discount ?? 0)
+                      const commAmt   = grossAmt * commPct / 100
+                      const netAmt    = grossAmt - commAmt
+                      const fmtN = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      return (
+                        <div className="rounded-lg border overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-2.5">
+                            <p className="text-xs font-medium">Nominal Invoice</p>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-medium ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>Gross</span>
+                              <button
+                                type="button"
+                                onClick={() => setGenInvShowNet(v => !v)}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNet ? 'bg-amber-500' : 'bg-[#1a5f6e]'}`}
+                              >
+                                <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${genInvShowNet ? 'translate-x-4' : 'translate-x-0'}`} />
+                              </button>
+                              <span className={`text-xs font-medium ${genInvShowNet ? 'text-amber-600' : 'text-muted-foreground'}`}>Net</span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 border-t text-xs">
+                            <div className={`px-3 py-2 border-r ${!genInvShowNet ? 'bg-muted/40' : ''}`}>
+                              <p className="text-muted-foreground mb-0.5">Gross</p>
+                              <p className={`font-semibold ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>{fmtN(grossAmt)}</p>
+                            </div>
+                            <div className={`px-3 py-2 ${genInvShowNet ? 'bg-amber-50' : ''}`}>
+                              <p className="text-muted-foreground mb-0.5">Net ({commPct}% off)</p>
+                              <p className={`font-semibold ${genInvShowNet ? 'text-amber-600' : 'text-muted-foreground'}`}>{fmtN(netAmt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
                     <div className="space-y-1.5">
                       <Label className="text-xs">Payment Method</Label>
                       <Select value={genInvMethod} onValueChange={v => { setGenInvMethod(v); if (!v.toLowerCase().includes('transfer bank') && !v.toLowerCase().includes('wire')) setGenInvBankId(null) }} disabled={!genInvEditing}>
@@ -807,8 +850,8 @@ export default function Payments() {
                 </>
               )}
 
-              {/* Proof of transfer (pending_confirmation) */}
-              {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready') && (
+              {/* Proof of transfer */}
+              {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready' || selected.status === 'confirmed') && (
                 <>
                   <Separator />
                   <div>

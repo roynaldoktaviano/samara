@@ -444,6 +444,7 @@ model Payment {
   notes             String?
   proofOfTransfer     String?
   billToType          String?
+  showNetAmount       Boolean   @default(false)
   bankId              String?
   paymentLink         String?
   submittedByUserId   String?

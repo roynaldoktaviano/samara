@@ -19,6 +19,7 @@ interface PaymentDetail {
   paymentType: string
   paymentMethod?: string | null
   billToType?: string | null
+  showNetAmount?: boolean
   previouslyPaid: number
   amount: number
   currency: string
@@ -153,13 +154,16 @@ export default function InvoicePage() {
   }
 
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const discountAmt    = b.discount  // stored as dollar amount
-  const afterDiscount  = b.totalPrice - discountAmt
-  const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
-
-  // Always show gross base price (commission is internal only, not shown to customer)
+  const discountAmt    = b.discount
+  const commissionPct  = isAgentBooking && payment.showNetAmount
+    ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
+    : 0
   const baseRaw        = b.totalPrice - servicesTotal
-  const displayBase    = baseRaw - discountAmt
+  const baseAfterDisc  = baseRaw - discountAmt
+  const commissionAmt  = baseAfterDisc * commissionPct / 100
+  const afterDiscount  = b.totalPrice - discountAmt - commissionAmt
+  const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
+  const displayBase    = baseAfterDisc - commissionAmt
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = !isAgentBooking && guestsWithCabin.length > 0
