@@ -6,9 +6,16 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Turbopack (Next.js 16 default): alias canvas/encoding to empty module
+  // so pdfjs-dist doesn't pull in Node-only native addons into the browser bundle.
+  turbopack: {
+    resolveAlias: {
+      canvas:   { browser: './src/lib/empty-module.ts' },
+      encoding: { browser: './src/lib/empty-module.ts' },
+    },
+  },
+  // Webpack fallback (when building with --webpack flag)
   webpack: (config, { isServer }) => {
-    // pdfjs-dist bundles a Node.js canvas shim that crashes in browser builds.
-    // Aliasing to false tells webpack to ignore those requires.
     if (!isServer) {
       config.resolve.alias = {
         ...config.resolve.alias,
