@@ -63,8 +63,7 @@ async function renderPdfPages(url: string): Promise<string[]> {
     const buf = await resp.arrayBuffer()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pdfjsLib = (await import('pdfjs-dist')) as any
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
     const images: string[] = []
     for (let p = 1; p <= pdf.numPages; p++) {
