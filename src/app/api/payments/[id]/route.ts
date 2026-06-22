@@ -20,7 +20,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         bank: true,
         booking: {
           include: {
-            customer: { select: { name: true, email: true, phone: true, address: true } },
+            customer: { select: { name: true, email: true, phone: true, address: true, gender: true } },
             yacht:    { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
             agent:    { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },

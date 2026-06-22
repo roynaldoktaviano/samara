@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { guestFormToken: token, guestFormExpiresAt: expiresAt },
   })
 
-  const baseUrl = process.env.NEXTAUTH_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
   const link = `${baseUrl}/guest-form/${token}`
 
   return NextResponse.json({ link, expiresAt })

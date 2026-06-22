@@ -42,7 +42,7 @@ interface PaymentDetail {
     exchangeRate?: number
     depositDueDate?: string
     finalDueDate?: string
-    customer: { name: string; email?: string; phone?: string; address?: string }
+    customer: { name: string; email?: string; phone?: string; address?: string; gender?: string | null }
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
     source?: string
@@ -86,6 +86,8 @@ const fmtDateShort = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const ACCENT = '#bdac7e'
+const salutation = (gender?: string | null) =>
+  gender === 'FEMALE' ? 'Mrs.' : gender === 'MALE' ? 'Mr.' : ''
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
 
 export default function InvoicePage() {
@@ -317,13 +319,13 @@ export default function InvoicePage() {
                 <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent!.name}</div>
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Guest</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{b.customer.name}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
                   {b.customer.phone && <div style={{ fontSize: 10, color: '#9ca3af' }}>{b.customer.phone}</div>}
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.customer.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
                 {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{b.customer.email}</div>}
                 {b.customer.phone   && <div style={{ color: '#6b7280', fontSize: 11 }}>{b.customer.phone}</div>}
                 {b.customer.address && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{b.customer.address}</div>}
