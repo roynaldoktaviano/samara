@@ -63,10 +63,8 @@ export async function GET(request: NextRequest) {
       (!b.salespersonId && salesUsers.some(u => u.name?.toLowerCase() === b.salesperson?.toLowerCase().trim()))
     )
 
-    // Collect unique salesperson names from SALES users only
-    const salesSet = new Set<string>()
-    for (const b of salesBookings) salesSet.add(salesLabel(b))
-    const salespeople = [...salesSet]
+    // All SALES users are always shown, even with zero revenue
+    const salespeople = salesUsers.map(u => u.name ?? u.id)
 
     // Build monthly grid: [month][salesperson] = revenue
     const grid: Record<number, Record<string, number>> = {}

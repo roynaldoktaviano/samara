@@ -31,20 +31,30 @@ import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
+import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
+
+const FINANCE_TABS = [
+  { key: 'summary',           label: 'Revenue Summary'   },
+  { key: 'overview',          label: 'Finance Overview'  },
+  { key: 'sales-performance', label: 'Sales Performance' },
+] as const
+type FinanceTab = typeof FINANCE_TABS[number]['key']
 
 function FinanceTabView() {
-  const [tab, setTab] = useState<'overview' | 'summary'>('summary')
+  const [tab, setTab] = useState<FinanceTab>('summary')
   return (
     <div className="space-y-4">
       <div className="flex gap-1 border-b">
-        {(['summary', 'overview'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${tab === t ? 'border-[#1a5f6e] text-[#1a5f6e]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-            {t === 'summary' ? 'Revenue Summary' : 'Finance Overview'}
+        {FINANCE_TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.key ? 'border-[#1a5f6e] text-[#1a5f6e]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            {t.label}
           </button>
         ))}
       </div>
-      {tab === 'summary' ? <FinanceRevenueTable /> : <FinanceStats />}
+      {tab === 'summary'           && <FinanceRevenueTable />}
+      {tab === 'overview'          && <FinanceStats />}
+      {tab === 'sales-performance' && <SalesPerformanceTable />}
     </div>
   )
 }

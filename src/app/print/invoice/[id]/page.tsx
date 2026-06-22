@@ -56,6 +56,30 @@ interface PaymentDetail {
   }
 }
 
+async function renderPdfPages(url: string): Promise<string[]> {
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const buf = await resp.arrayBuffer()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdfjsLib = (await import('pdfjs-dist')) as any
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
+    const images: string[] = []
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page     = await pdf.getPage(p)
+      const viewport = page.getViewport({ scale: 2 })
+      const canvas   = document.createElement('canvas')
+      canvas.width   = viewport.width
+      canvas.height  = viewport.height
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+      images.push(canvas.toDataURL('image/jpeg', 0.92))
+    }
+    return images
+  } catch { return [] }
+}
+
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
 
@@ -74,17 +98,19 @@ export default function InvoicePage() {
   const printed = useRef(false)
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/payments/${id}`).then(r => r.json()),
-      fetch('/api/public/tnc-pages').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([paymentData, tncData]) => {
+    async function load() {
+      const [paymentData, tncImages] = await Promise.all([
+        fetch(`/api/payments/${id}`).then(r => r.json()),
+        renderPdfPages('/api/public/tnc-pdf'),
+      ])
       setPayment(paymentData)
-      if (tncData?.images?.length) {
+      if (tncImages.length) {
         setHasTncPdf(true)
-        setTncPages(tncData.images)
+        setTncPages(tncImages)
       }
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }
+    load().catch(() => setLoading(false))
   }, [id])
 
   useEffect(() => {

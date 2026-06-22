@@ -13,6 +13,30 @@ interface AgentData {
   commissionPrivateCharter: number
 }
 
+async function renderPdfPages(url: string): Promise<string[]> {
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const buf = await resp.arrayBuffer()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdfjsLib = (await import('pdfjs-dist')) as any
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise
+    const images: string[] = []
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page     = await pdf.getPage(p)
+      const viewport = page.getViewport({ scale: 2 })
+      const canvas   = document.createElement('canvas')
+      canvas.width   = viewport.width
+      canvas.height  = viewport.height
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+      images.push(canvas.toDataURL('image/jpeg', 0.92))
+    }
+    return images
+  } catch { return [] }
+}
+
 function formatDate(d: Date) {
   const day = d.getDate()
   const suffix = [11,12,13].includes(day) ? 'th'
@@ -345,12 +369,13 @@ export default function AgentAgreementPrint() {
   const [tncPages, setTncPages] = useState<string[]>([])
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/agents/${id}`).then(r => r.json()),
-      fetch('/api/public/tnc-pages').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([d, tncData]) => {
+    async function load() {
+      const [d, tncImages] = await Promise.all([
+        fetch(`/api/agents/${id}`).then(r => r.json()),
+        renderPdfPages('/api/public/tnc-pdf'),
+      ])
       setAgent(d)
-      if (tncData?.images?.length) setTncPages(tncData.images)
+      if (tncImages.length) setTncPages(tncImages)
       setLoading(false)
       const today = new Date()
       const dd = String(today.getDate()).padStart(2,'0')
@@ -358,7 +383,8 @@ export default function AgentAgreementPrint() {
       const yyyy = today.getFullYear()
       const safeName = (d.name as string).replace(/[^a-zA-Z0-9]/g, '_')
       document.title = `${safeName}_Contract_${dd}-${mm}-${yyyy}`
-    }).catch(() => setLoading(false))
+    }
+    load().catch(() => setLoading(false))
   }, [id])
 
   useEffect(() => {
