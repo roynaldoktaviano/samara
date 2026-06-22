@@ -1048,11 +1048,7 @@ export default function Bookings() {
             const basePrice = paymentBooking.totalPrice - svcTotal
             const discount  = paymentBooking.discount ?? 0
             const afterDisc = Math.max(0, basePrice - discount)
-            const commPct   = paymentBooking.source === 'AGENT'
-              ? (paymentBooking.tripType === 'OPEN_TRIP' ? (paymentBooking.agent?.commissionOpenTrip ?? 0) : (paymentBooking.agent?.commissionPrivateCharter ?? 0))
-              : 0
-            const commAmt   = afterDisc * commPct / 100
-            const net       = afterDisc + svcTotal - commAmt
+            const net       = afterDisc + svcTotal
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
             const pct       = parseFloat(payPctValue) || 0
             const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
@@ -1088,13 +1084,7 @@ export default function Bookings() {
                       <span className="text-emerald-600 font-medium">−{fmtD(paymentBooking.discount)}</span>
                     </div>
                   )}
-                  {commAmt > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Commission ({commPct}%)</span>
-                      <span className="text-muted-foreground font-medium">−{fmtD(commAmt)}</span>
-                    </div>
-                  )}
-                  {((paymentBooking.discount ?? 0) > 0 || (paymentBooking.source === 'AGENT' && commPct > 0)) && (
+                  {(paymentBooking.discount ?? 0) > 0 && (
                     <div className="flex justify-between border-t pt-1">
                       <span className="text-muted-foreground">Net Total</span>
                       <span className="font-semibold">{fmtD(net)}</span>
