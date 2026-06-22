@@ -29,6 +29,7 @@ import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
+import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
 import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
@@ -426,6 +427,7 @@ export default function Home() {
             <p className="text-muted-foreground text-sm">Konfigurasi sistem</p>
           </div>
           <TncPdfSettings />
+          <ResetBookingCounter />
         </div>
       )
       default:              return <CalendarView />

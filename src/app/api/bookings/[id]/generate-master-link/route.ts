@@ -20,7 +20,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { masterFormToken: token, masterFormExpiresAt: expiresAt },
   })
 
-  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const fwdProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const fwdHost  = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const baseUrl  = fwdProto && fwdHost
+    ? `${fwdProto}://${fwdHost}`
+    : (process.env.NEXTAUTH_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`)
   const link = `${baseUrl}/guest-form/booking/${token}`
 
   return NextResponse.json({ link, expiresAt })

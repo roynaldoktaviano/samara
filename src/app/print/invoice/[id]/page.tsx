@@ -86,8 +86,10 @@ const fmtDateShort = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const ACCENT = '#bdac7e'
-const salutation = (gender?: string | null) =>
-  gender === 'FEMALE' ? 'Mrs.' : gender === 'MALE' ? 'Mr.' : ''
+const salutation = (gender?: string | null) => {
+  const g = gender?.toLowerCase()
+  return g === 'female' ? 'Mrs.' : g === 'male' ? 'Mr.' : ''
+}
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
 
 export default function InvoicePage() {
@@ -153,18 +155,11 @@ export default function InvoicePage() {
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount  // stored as dollar amount
   const afterDiscount  = b.totalPrice - discountAmt
-  const commissionPct  = isAgentBooking
-    ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
-    : 0
-  const commissionAmt  = afterDiscount * commissionPct / 100
-  const netTotal       = afterDiscount - commissionAmt
-  const remaining      = Math.max(0, netTotal - payment.previouslyPaid - payment.amount)
+  const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
 
-  // For agent bookings: show net base price (commission + discount already absorbed)
+  // Always show gross base price (commission is internal only, not shown to customer)
   const baseRaw        = b.totalPrice - servicesTotal
-  const displayBase    = isAgentBooking
-    ? baseRaw - discountAmt - commissionAmt
-    : baseRaw
+  const displayBase    = baseRaw - discountAmt
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = !isAgentBooking && guestsWithCabin.length > 0
@@ -424,7 +419,7 @@ export default function InvoicePage() {
           <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 5px 5px', padding: '10px', marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid #e5e7eb', marginBottom: 6 }}>
               <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
-              <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(netTotal)}</span>
+              <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 
             {payment.previouslyPaid > 0 && (
