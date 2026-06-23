@@ -545,11 +545,16 @@ export default function InvoicePage() {
           background: '#1b3d5c',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'space-between',
-          minHeight: 900, padding: '60px 48px',
+          minHeight: 'calc(297mm - 80px)', padding: '80px 0 60px',
+          width: '100%',
         }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: 9, color: 'white', textTransform: 'uppercase', marginBottom: 5 }}>SAMARA</div>
-            <div style={{ fontSize: 9, fontWeight: 400, letterSpacing: 6, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>YACHTING</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+              alt="Samara Yachting"
+              style={{ height: 56, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+            />
           </div>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 26, fontWeight: 300, letterSpacing: 7, color: 'white', textTransform: 'uppercase', marginBottom: 14 }}>TERMS &amp; CONDITIONS</div>
@@ -560,12 +565,6 @@ export default function InvoicePage() {
         </div>
 
         {(() => {
-          const TncHeader = () => (
-            <div style={{ padding: '18px 42px 14px', borderBottom: '1.5px solid #1b3d5c', display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 300, letterSpacing: 6, color: '#1b3d5c', textTransform: 'uppercase' }}>SAMARA</span>
-              <span style={{ fontSize: 7.5, fontWeight: 400, letterSpacing: 4, color: '#7a9db5', textTransform: 'uppercase' }}>YACHTING</span>
-            </div>
-          )
           const TncFooter = () => (
             <div style={{ padding: '10px 42px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto' }}>
               <div>
@@ -603,14 +602,13 @@ export default function InvoicePage() {
               <span style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.7 }}>{text}</span>
             </div>
           )
-          const bodyStyle: React.CSSProperties = { flex: 1, padding: '20px 42px 24px' }
+          const bodyStyle: React.CSSProperties = { flex: 1, padding: '28px 42px 32px' }
 
           return (
             <>
 
             {/* ══ PAGE 2 — Preamble · §1–4 ══ */}
-            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
-              <TncHeader />
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column' }}>
               <div style={bodyStyle}>
 
                 <div style={{ marginBottom: 4 }}>
@@ -654,8 +652,7 @@ export default function InvoicePage() {
             </div>
 
             {/* ══ PAGE 3 — §5–10 ══ */}
-            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
-              <TncHeader />
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column' }}>
               <div style={bodyStyle}>
 
                 <SH n="5" title="Bookings and Payments" />
@@ -734,8 +731,7 @@ export default function InvoicePage() {
             </div>
 
             {/* ══ PAGE 4 — §11–19 ══ */}
-            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
-              <TncHeader />
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column' }}>
               <div style={bodyStyle}>
 
                 <SH n="11" title="Guest Responsibilities" />

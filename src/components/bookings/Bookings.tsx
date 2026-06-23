@@ -88,6 +88,8 @@ interface PaymentRecord {
     startDate: string
     endDate: string
     destination?: string
+    currency?: string
+    exchangeRate?: number | null
     customer: { name: string; email?: string; phone?: string }
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string }
@@ -1301,20 +1303,32 @@ export default function Bookings() {
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Invoice</span>
-                  <span className="font-mono font-semibold">{proofPayment.invoiceNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-semibold">{fmtAmt(proofPayment.amount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customer</span>
-                  <span>{proofPayment.booking.customer.name}</span>
-                </div>
-              </div>
+              {(() => {
+                const pRate = proofPayment.booking.exchangeRate ?? 1
+                const pHasIDR = proofPayment.booking.currency === 'IDR' && pRate > 1
+                const pIDR = pHasIDR ? Math.round(proofPayment.amount * pRate) : 0
+                return (
+                  <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Invoice</span>
+                      <span className="font-mono font-semibold">{proofPayment.invoiceNumber}</span>
+                    </div>
+                    <div className="flex justify-between items-end">
+                      <span className="text-muted-foreground">Amount</span>
+                      <div className="text-right">
+                        <div className="font-semibold">{fmtAmt(proofPayment.amount)}</div>
+                        {pHasIDR && (
+                          <div className="text-amber-600 font-medium">Rp {pIDR.toLocaleString('id-ID')}</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Customer</span>
+                      <span>{proofPayment.booking.customer.name}</span>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="space-y-1.5">
                 <Label>Transfer Proof <span className="text-red-500">*</span></Label>
