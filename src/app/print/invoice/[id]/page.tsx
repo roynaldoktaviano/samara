@@ -422,7 +422,14 @@ export default function InvoicePage() {
           {/* Payment summary */}
           <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 5px 5px', padding: '10px', marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid #e5e7eb', marginBottom: 6 }}>
-              <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
+                {isAgentBooking && payment.showNetAmount && (
+                  <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.5, color: '#92400e', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: 3, padding: '1px 4px', textTransform: 'uppercase' }}>
+                    Net
+                  </span>
+                )}
+              </div>
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 

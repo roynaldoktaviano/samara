@@ -500,13 +500,21 @@ export default function Payments() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground mb-0.5">Total Booking</p>
+                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                      <p className="text-xs text-muted-foreground">Total Booking</p>
+                      {selected.booking.source === 'AGENT' && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${(selected as any).showNetAmount ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                          {(selected as any).showNetAmount ? 'Net' : 'Gross'}
+                        </span>
+                      )}
+                    </div>
                     <p className="font-semibold text-sm">${fmt(
                       (() => {
-                        const pct = selected.booking.source === 'AGENT'
+                        const isNet = selected.booking.source === 'AGENT' && (selected as any).showNetAmount
+                        const commPct = isNet
                           ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
                           : 0
-                        return selected.booking.totalPrice * (1 - pct / 100)
+                        return (selected.booking.totalPrice - selected.booking.discount) * (1 - commPct / 100)
                       })()
                     )}</p>
                   </div>
