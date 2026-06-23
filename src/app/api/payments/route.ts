@@ -46,6 +46,8 @@ export async function GET(_: NextRequest) {
             destination: true,
             tripType: true,
             source: true,
+            currency: true,
+            exchangeRate: true,
             salesperson: true,
             salespersonUser: { select: { name: true } },
             customer: { select: { name: true, email: true, phone: true } },

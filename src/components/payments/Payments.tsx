@@ -65,6 +65,8 @@ interface Payment {
     tripType: string
     source: string | null
     salesperson: string | null
+    currency: string
+    exchangeRate: number | null
     customer: { name: string; email: string | null; phone: string | null }
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
@@ -476,14 +478,24 @@ export default function Payments() {
                     </div>
                   )
                 })()}
-                <Button
-                  size="sm" variant="outline"
-                  className="h-8 text-xs gap-1.5"
-                  onClick={() => window.open(`/print/invoice/${selected.id}`, '_blank')}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Download Invoice
-                </Button>
+                {selected.booking.currency === 'IDR' && selected.booking.exchangeRate ? (
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
+                      onClick={() => window.open(`/print/invoice/${selected.id}?currency=USD`, '_blank')}>
+                      <Download className="h-3.5 w-3.5" /> USD
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                      onClick={() => window.open(`/print/invoice/${selected.id}?currency=IDR`, '_blank')}>
+                      <Download className="h-3.5 w-3.5" /> IDR
+                    </Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
+                    onClick={() => window.open(`/print/invoice/${selected.id}`, '_blank')}>
+                    <Download className="h-3.5 w-3.5" />
+                    Download Invoice
+                  </Button>
+                )}
               </div>
 
               {/* Amount summary */}
@@ -665,33 +677,48 @@ export default function Payments() {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Amount (USD) <span className="text-red-500">*</span></Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">$</span>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            className="pl-6 h-9 text-sm"
-                            placeholder="0.00"
-                            value={genInvAmount}
-                            disabled={!genInvEditing}
-                            onChange={e => setGenInvAmount(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
-                          />
+                    {(() => {
+                      const bRate  = selected.booking.exchangeRate ?? 1
+                      const hasIDR = selected.booking.currency === 'IDR' && bRate > 1
+                      const rawNum = parseFloat(genInvAmount.replace(/,/g, '')) || 0
+                      return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Amount (USD) <span className="text-red-500">*</span></Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">$</span>
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              className="pl-6 h-9 text-sm"
+                              placeholder="0.00"
+                              value={genInvAmount}
+                              disabled={!genInvEditing}
+                              onChange={e => setGenInvAmount(e.target.value.replace(/,/g, '').replace(/[^0-9.]/g, ''))}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Type</Label>
+                          <Select value={genInvType} onValueChange={setGenInvType} disabled={!genInvEditing}>
+                            <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="DP">DP</SelectItem>
+                              <SelectItem value="PELUNASAN">Pelunasan</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Type</Label>
-                        <Select value={genInvType} onValueChange={setGenInvType} disabled={!genInvEditing}>
-                          <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="DP">DP</SelectItem>
-                            <SelectItem value="PELUNASAN">Pelunasan</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {hasIDR && rawNum > 0 && (
+                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-2 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">Equivalent (IDR @ {bRate.toLocaleString('id-ID')})</span>
+                          <span className="font-semibold text-amber-700">Rp {Math.round(rawNum * bRate).toLocaleString('id-ID')}</span>
+                        </div>
+                      )}
                     </div>
+                      )
+                    })()}
 
                     {/* Bill To — only for AGENT bookings */}
                     {selected.booking.source === 'AGENT' && selected.booking.agent && (

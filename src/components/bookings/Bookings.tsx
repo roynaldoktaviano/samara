@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -205,6 +205,7 @@ export default function Bookings() {
 
   /* booking detail sheet */
   const [detailBooking,       setDetailBooking]       = useState<BookingRecord | null>(null)
+  const [detailShowIDR,       setDetailShowIDR]       = useState(false)
   const [detailCabins,        setDetailCabins]        = useState<any[]>([])
   const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
   const [cancelDialogBooking, setCancelDialogBooking] = useState<BookingRecord | null>(null)
@@ -497,10 +498,13 @@ export default function Bookings() {
   const submitPayment = async () => {
     if (!paymentBooking) return
     setPaymentSaving(true)
+    const rate = paymentBooking.exchangeRate ?? 1
+    const hasIDR = paymentBooking.currency === 'IDR' && rate > 1
     const remaining = Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid)
     let amount = 0
     if (payAmtMode === 'amount') {
-      amount = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+      const raw = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+      amount = raw
     } else {
       const pct = Math.min(100, Math.max(0, parseFloat(payPctValue) || 0))
       amount = Math.round(remaining * pct / 100 * 100) / 100
@@ -584,6 +588,7 @@ export default function Bookings() {
 
   const openDetail = async (b: BookingRecord) => {
     setDetailBooking(b)
+    setDetailShowIDR(false)
     setDetailCabins([])
     if (b.tripType === 'OPEN_TRIP' && b.openTrip?.id) {
       setDetailCabinsLoading(true)
@@ -1044,6 +1049,8 @@ export default function Bookings() {
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
         <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
           {paymentBooking && (() => {
+            const rate      = paymentBooking.exchangeRate ?? 1
+            const hasIDR    = paymentBooking.currency === 'IDR' && rate > 1
             const svcTotal  = paymentBooking.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
             const basePrice = paymentBooking.totalPrice - svcTotal
             const discount  = paymentBooking.discount ?? 0
@@ -1052,9 +1059,11 @@ export default function Bookings() {
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
             const pct       = parseFloat(payPctValue) || 0
             const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
-            const amtDirect  = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+            const rawInput   = parseFloat(payAmtValue.replace(/,/g, '')) || 0
+            const amtDirect  = rawInput
             const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
-            const fmtD = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const fmtD  = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const fmtIDR = (n: number) => `Rp ${Math.round(n * rate).toLocaleString('id-ID')}`
             return (
               <>
                 <DialogHeader>
@@ -1076,7 +1085,10 @@ export default function Bookings() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total</span>
-                    <span className="font-medium">{fmtD(paymentBooking.totalPrice)}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{fmtD(paymentBooking.totalPrice)}</div>
+                      {hasIDR && <div className="text-muted-foreground">{fmtIDR(paymentBooking.totalPrice)}</div>}
+                    </div>
                   </div>
                   {(paymentBooking.discount ?? 0) > 0 && (
                     <div className="flex justify-between">
@@ -1099,7 +1111,10 @@ export default function Bookings() {
                   <Separator className="my-1" />
                   <div className="flex justify-between font-semibold">
                     <span>Remaining</span>
-                    <span className="text-amber-600">{fmtD(remaining)}</span>
+                    <div className="text-right">
+                      <div className="text-amber-600">{fmtD(remaining)}</div>
+                      {hasIDR && <div className="text-amber-500 font-normal">{fmtIDR(remaining)}</div>}
+                    </div>
                   </div>
                 </div>
 
@@ -1123,20 +1138,28 @@ export default function Bookings() {
                   </div>
 
                   {payAmtMode === 'amount' ? (
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={payAmtValue}
-                        onChange={e => {
-                          const raw = e.target.value.replace(/[^0-9.]/g, '')
-                          const val = parseFloat(raw) || 0
-                          setPayAmtValue(val > remaining ? String(remaining) : raw)
-                        }}
-                        className="pl-7"
-                      />
+                    <div className="space-y-1.5">
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={payAmtValue}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/[^0-9.]/g, '')
+                            const val = parseFloat(raw) || 0
+                            setPayAmtValue(val > remaining ? String(remaining) : raw)
+                          }}
+                          className="pl-7"
+                        />
+                      </div>
+                      {hasIDR && rawInput > 0 && (
+                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">Equivalent (IDR)</span>
+                          <span className="font-semibold text-amber-700">{fmtIDR(rawInput)}</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -1173,12 +1196,20 @@ export default function Bookings() {
                   )}
 
                   {previewAmt > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {payAmtMode === 'percent' && pct > 0 && (
-                        <span>= {fmtD(previewAmt)} · </span>
+                    <div className="space-y-1">
+                      {payAmtMode === 'percent' && pct > 0 && hasIDR && (
+                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">= {fmtD(previewAmt)} equivalent IDR</span>
+                          <span className="font-semibold text-amber-700">{fmtIDR(previewAmt)}</span>
+                        </div>
                       )}
-                      Remaining after this: <span className={remaining - previewAmt <= 0 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>{fmtD(Math.max(0, remaining - previewAmt))}</span>
-                    </p>
+                      <p className="text-xs text-muted-foreground">
+                        {payAmtMode === 'percent' && pct > 0 && !hasIDR && (
+                          <span>= {fmtD(previewAmt)} · </span>
+                        )}
+                        Remaining after this: <span className={remaining - previewAmt <= 0 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>{fmtD(Math.max(0, remaining - previewAmt))}{hasIDR ? ` (${fmtIDR(Math.max(0, remaining - previewAmt))})` : ''}</span>
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -1884,7 +1915,12 @@ export default function Bookings() {
             const commAmt    = commPct > 0 ? Math.max(0, basePrice - db_.discount) * commPct / 100 : 0
             const net        = Math.max(0, basePrice - db_.discount) + svcTotal - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)
-            const fmtAmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const bdrRate    = (db_.currency === 'IDR' && db_.exchangeRate && db_.exchangeRate > 1) ? db_.exchangeRate : 0
+            const hasDetailIDR = bdrRate > 0
+            const showIDR    = hasDetailIDR && detailShowIDR
+            const fmtAmt = (v: number) => showIDR
+              ? `Rp ${Math.round(v * bdrRate).toLocaleString('id-ID')}`
+              : `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             const detailPmts      = payments.filter(p => p.bookingId === db_.id)
             const detailActivePmt = detailPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation'].includes(p.status))
             const detailConfirmed = detailPmts.filter(p => p.status === 'confirmed')
@@ -1960,9 +1996,20 @@ export default function Bookings() {
 
                     {/* Price breakdown */}
                     <div className="rounded-lg border overflow-hidden text-xs">
-                      <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/40 border-b">
-                        Price Breakdown
-                      </p>
+                      <div className="px-3 py-2 flex items-center justify-between bg-muted/40 border-b">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Price Breakdown</p>
+                        {hasDetailIDR && (
+                          <div className="flex rounded-md border overflow-hidden text-[10px]">
+                            {(['USD', 'IDR'] as const).map(c => (
+                              <button key={c} type="button"
+                                onClick={() => setDetailShowIDR(c === 'IDR')}
+                                className={`px-2 py-0.5 font-semibold transition-colors ${(c === 'IDR') === detailShowIDR ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                                style={(c === 'IDR') === detailShowIDR ? { backgroundColor: '#bdac7e' } : {}}
+                              >{c}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="px-3 py-2 space-y-1.5">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Base Price</span>
@@ -2345,11 +2392,24 @@ export default function Bookings() {
                     {/* Confirmed invoice badges */}
                     {detailConfirmed.length > 0 && (
                       <div className="flex gap-1.5 flex-wrap">
-                        {detailConfirmed.map(p => (
-                          <button key={p.id} onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
-                            <Receipt className="h-3 w-3" /> {p.paymentType === 'PELUNASAN' ? 'Full Payment ✓' : 'Deposit ✓'}
-                          </button>
-                        ))}
+                        {detailConfirmed.map(p => {
+                          const hasIDR = db_.currency === 'IDR' && !!db_.exchangeRate
+                          const label = p.paymentType === 'PELUNASAN' ? 'Full Payment ✓' : 'Deposit ✓'
+                          return hasIDR ? (
+                            <React.Fragment key={p.id}>
+                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=USD`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                                <Receipt className="h-3 w-3" /> {label} (USD)
+                              </button>
+                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=IDR`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 hover:bg-amber-100 transition-colors">
+                                <Receipt className="h-3 w-3" /> {label} (IDR)
+                              </button>
+                            </React.Fragment>
+                          ) : (
+                            <button key={p.id} onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                              <Receipt className="h-3 w-3" /> {label}
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                     {/* Compact action chips */}
@@ -2381,11 +2441,26 @@ export default function Bookings() {
                           <CreditCard className="h-3.5 w-3.5" /> Request Invoice
                         </button>
                       )}
-                      {detailActivePmt?.status === 'invoice_ready' && (
-                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors" onClick={() => window.open(`/print/invoice/${detailActivePmt.id}`, '_blank')}>
-                          <Receipt className="h-3.5 w-3.5" /> Download Invoice
-                        </button>
-                      )}
+                      {detailActivePmt?.status === 'invoice_ready' && (() => {
+                        const hasIDR = db_.currency === 'IDR' && !!db_.exchangeRate
+                        return hasIDR ? (
+                          <>
+                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors"
+                              onClick={() => window.open(`/print/invoice/${detailActivePmt.id}?currency=USD`, '_blank')}>
+                              <Receipt className="h-3.5 w-3.5" /> Invoice (USD)
+                            </button>
+                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:bg-amber-100 transition-colors"
+                              onClick={() => window.open(`/print/invoice/${detailActivePmt.id}?currency=IDR`, '_blank')}>
+                              <Receipt className="h-3.5 w-3.5" /> Invoice (IDR)
+                            </button>
+                          </>
+                        ) : (
+                          <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors"
+                            onClick={() => window.open(`/print/invoice/${detailActivePmt.id}`, '_blank')}>
+                            <Receipt className="h-3.5 w-3.5" /> Download Invoice
+                          </button>
+                        )
+                      })()}
                       {detailActivePmt?.status === 'invoice_ready' && (
                         <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors" onClick={() => { setDetailBooking(null); openProofUpload(detailActivePmt) }}>
                           <Upload className="h-3.5 w-3.5" /> Submit Proof

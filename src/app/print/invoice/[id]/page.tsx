@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 
 interface BankDetail {
   name: string
@@ -95,6 +95,8 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'R
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
+  const currencyOverride = searchParams.get('currency')?.toUpperCase() ?? null
   const [payment,   setPayment]   = useState<PaymentDetail | null>(null)
   const [loading,   setLoading]   = useState(true)
   const [hasTncPdf, setHasTncPdf] = useState(false)
@@ -141,7 +143,7 @@ export default function InvoicePage() {
   const isAgentBooking = b.source === 'AGENT' && !!b.agent
   const billToAgent    = isAgentBooking && (payment.billToType !== 'CUSTOMER')
 
-  const invoiceCurrency = b.currency || 'USD'
+  const invoiceCurrency = currencyOverride ?? b.currency ?? 'USD'
   const rate            = (invoiceCurrency !== 'USD' && b.exchangeRate) ? b.exchangeRate : 1
   const currSymbol      = CURRENCY_SYMBOLS[invoiceCurrency] || '$'
   const isIDR           = invoiceCurrency === 'IDR'
@@ -422,14 +424,7 @@ export default function InvoicePage() {
           {/* Payment summary */}
           <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 5px 5px', padding: '10px', marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid #e5e7eb', marginBottom: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
-                {isAgentBooking && payment.showNetAmount && (
-                  <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.5, color: '#92400e', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: 3, padding: '1px 4px', textTransform: 'uppercase' }}>
-                    Net
-                  </span>
-                )}
-              </div>
+              <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 
@@ -545,326 +540,299 @@ export default function InvoicePage() {
         ) : (
         <>
 
-        {/* ══════════════════════════════════════════════════════════
-            PAGE 2 — T&C V2.2 — PREAMBLE + §1–4
-            ══════════════════════════════════════════════════════════ */}
-        <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
-
-          {/* ── Header ── */}
-          <div style={{ textAlign: 'center', marginBottom: 22 }}>
-            <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: 1.5, color: '#111827', textTransform: 'uppercase', marginBottom: 3 }}>Samara Yachting</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT, letterSpacing: 0.5, marginBottom: 12 }}>Terms &amp; Conditions — V 2.2</div>
-            <div style={{ height: 3, width: 52, backgroundColor: ACCENT, borderRadius: 2, margin: '0 auto' }} />
+        {/* ══ COVER PAGE ══ */}
+        <div className="pb" style={{
+          background: '#1b3d5c',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'space-between',
+          minHeight: 900, padding: '60px 48px',
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: 9, color: 'white', textTransform: 'uppercase', marginBottom: 5 }}>SAMARA</div>
+            <div style={{ fontSize: 9, fontWeight: 400, letterSpacing: 6, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>YACHTING</div>
           </div>
-
-          {/* ── Preamble ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>Preamble</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>
-              These Terms and Conditions ("T&amp;C") govern all bookings and services provided to or by PT Samara Yacht Agency and all its subsidiaries or partners (the "Principal") for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency ("Agency"). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
-            </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 26, fontWeight: 300, letterSpacing: 7, color: 'white', textTransform: 'uppercase', marginBottom: 14 }}>TERMS &amp; CONDITIONS</div>
           </div>
-
-          {/* ── §1 Roles and Responsibilities ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>1. Roles and Responsibilities</div>
-            <div style={{ marginBottom: 7 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 2 }}>1.1. Principal and Operator</div>
-              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>PT Samara Yacht Agency acts as the commercial principal and/or chartering entity. The operational management of the vessel is carried out by PT Samara Yacht Management (the "Operator").</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 2 }}>1.2. Travel Agent</div>
-              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>Where a booking is made through a Travel Agent, the Agency acts solely as an intermediary between the Guest and the Principal. The Travel Agent does not own, operate, manage, or control the vessel, crew, or maritime operations and shall not be considered a contractual carrier or service provider.</div>
-            </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>www.samarayachting.com</div>
           </div>
-
-          {/* ── §2 Hierarchy of Documents ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>2. Hierarchy of Documents</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 5 }}>In the event of any inconsistency, the order of precedence is:</div>
-            {[
-              'a) The signed Charter Contract',
-              'b) These Terms & Conditions',
-              'c) Any marketing material, brochure, website content, or Agency communication',
-            ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', gap: 7, marginBottom: 3 }}>
-                <span style={{ color: ACCENT, fontWeight: 700, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>•</span>
-                <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.6 }}>{item}</span>
-              </div>
-            ))}
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginTop: 5 }}>The provisions of the signed Charter Contract shall prevail, followed by these Terms &amp; Conditions.</div>
-          </div>
-
-          {/* ── §3 Cruise Type ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>3. Cruise Type</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 5 }}>The Principal offers two charter models:</div>
-            <div style={{ marginBottom: 7 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>3.1. Private Charter: </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>The entire vessel is chartered exclusively by one group. Guests enjoy full use of all cabins, crew, and a custom itinerary. Activities include island hopping, snorkeling, and leisure cruising.</span>
-            </div>
-            <div>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>3.2. Open Trip (FIT): </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>Guests book individual cabins for 2 guests (extra beds available) and share the vessel and program with other travelers on a fixed schedule. Open Trips operate once a minimum of three (3) cabins is booked. If the minimum is not reached, the booking may be moved to the next available schedule; guests will be informed in advance.</span>
-            </div>
-          </div>
-
-          {/* ── §4 Check-In and Check-Out ── */}
-          <div>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>4. Check-In and Check-Out Times</div>
-            {[
-              { num: '4.1.', label: 'Check-In', text: 'Boarding begins at 10:00 AM on the first day of the trip. Guests are strongly encouraged to arrive one day in advance to avoid delays.' },
-              { num: '4.2.', label: 'Check-Out', text: 'Disembarkation is scheduled around 2:00 PM on the final day of the cruise.' },
-              { num: '4.3.', label: 'Private Charters', text: 'Check-in and check-out times may vary depending on the customized itinerary and flight schedules, as agreed upon in advance with the Principal.' },
-            ].map(({ num, label, text }) => (
-              <div key={num} style={{ marginBottom: 5 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>{num} {label}: </span>
-                <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>{text}</span>
-              </div>
-            ))}
-          </div>
-
         </div>
 
-        {/* ══════════════════════════════════════════════════════════
-            PAGE 3 — T&C V2.2 — §5–10
-            ══════════════════════════════════════════════════════════ */}
-        <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
-
-          {/* ── §5 Bookings and Payments ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>5. Bookings and Payments</div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>Charters and FIT below USD 5,000 per night:</div>
-              {[
-                '5.1. Deposit: A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation.',
-                '5.2. Balance Payment: The remaining 70% must be paid at least 30 days before the departure date.',
-                '5.3. Short-Notice Bookings: For bookings made within 30 days of departure, full payment is required at the time of booking.',
-              ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>{t}</div>)}
+        {(() => {
+          const TncHeader = () => (
+            <div style={{ padding: '18px 42px 14px', borderBottom: '1.5px solid #1b3d5c', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 300, letterSpacing: 6, color: '#1b3d5c', textTransform: 'uppercase' }}>SAMARA</span>
+              <span style={{ fontSize: 7.5, fontWeight: 400, letterSpacing: 4, color: '#7a9db5', textTransform: 'uppercase' }}>YACHTING</span>
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>Charters and FIT above USD 5,000 per night:</div>
-              {[
-                '5.4. Deposit: A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation.',
-                '5.5. Balance Payment: The remaining 70% must be paid at least 90 days before the departure date.',
-                '5.6. Short-Notice Bookings: For bookings made within 90 days of departure, full payment is required at the time of booking.',
-              ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>{t}</div>)}
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>General Payment Rules:</div>
-              {[
-                '5.7. Failure to Pay: If payment deadlines are not met, the booking may be canceled without refund of previous payments.',
-                '5.8. Payment Methods: Payment may be made by bank transfer or credit card. Credit card payments incur a 3% processing fee. All bank charges are the responsibility of the guest or agent.',
-                '5.9. Payment Instructions: All payments must be made to the official bank account in the currency specified in the invoice issued by the Principal.',
-              ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>{t}</div>)}
-            </div>
-          </div>
-
-          {/* ── §6 Cancellations and Refunds ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>6. Cancellations and Refunds</div>
-            <div style={{ display: 'flex', gap: 20 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>FIT (Open Trips)</div>
-                <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>6.1. More than 30 days before departure: Payments are refundable minus the 30% deposit.</div>
-                <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>6.2. 30 days or less before departure: No refund.</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>Charters (Private)</div>
-                <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>6.3. More than 90 days before departure: Payments are refundable minus the 30% deposit.</div>
-                <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>6.4. 90 days or less before departure: No refund.</div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── §7 General Policies ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>7. General Policies</div>
-            {[
-              '7.1. Refund Policy: Payments are generally non-refundable. However, the Principal may, acting in good faith, assist with rescheduling or offering alternative solutions where possible. No obligation or precedent is created.',
-              '7.2. Force Majeure: In cases of force majeure — including natural disasters, adverse sea conditions, port closures, government restrictions, or safety-related decisions — the Principal may offer rescheduling or alternative arrangements at its discretion.',
-              '7.3. Weather conditions at sea are unpredictable. Rain, swell, or cloudiness may occur and are not grounds for refund or cancellation.',
-            ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 4 }}>{t}</div>)}
-          </div>
-
-          {/* ── §8 Rescheduling ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>8. Rescheduling</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>8.1. While our policies are firm to ensure fairness and operational consistency, the Principal may, at its sole discretion, offer alternative solutions in extraordinary cases. Any exception granted is made without obligation and does not set a precedent.</div>
-          </div>
-
-          {/* ── §9 Illness ── */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>9. Illness Before or During the Trip</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 3 }}>9.1. Prior to Trip: The cancellation policy remains in effect. No refunds are granted unless covered by travel insurance.</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>9.2. During Trip: If a guest falls ill and cannot participate in activities, no refund will be granted. A formal letter may be issued to support a travel insurance claim.</div>
-          </div>
-
-          {/* ── §10 General Inclusions and Exclusions ── */}
-          <div>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>10. General Inclusions and Exclusions</div>
-            <div style={{ display: 'flex', gap: 20, marginBottom: 6 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>10.1. Included in the Cruise</div>
-                {[
-                  'Transfers to/from local airport or local hotel',
-                  'Accommodation onboard the Vessel',
-                  'All meals, snacks, coffee/tea, mineral water and local beers',
-                  'Scuba Diving for certified divers and use of water sports equipment (where available)',
-                  'Guided excursions and scheduled activities',
-                ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-                    <span style={{ color: ACCENT, fontWeight: 700, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>•</span>
-                    <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.6 }}>{item}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>10.2. Not Included</div>
-                {[
-                  'Alcoholic beverages',
-                  'Domestic flights and hotel accommodations before or after the trip',
-                  'Travel insurance',
-                  'Crew gratuities (suggested at 10% of the trip value)',
-                  'Optional activities not listed in the itinerary',
-                ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-                    <span style={{ color: '#374151', fontWeight: 700, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>•</span>
-                    <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.6 }}>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ fontSize: 10.5, color: '#9ca3af', lineHeight: 1.7 }}>10.3. Specific inclusions vary depending on the vessel and/or trip type. Details may be defined in the Charter Contract.</div>
-          </div>
-
-        </div>
-
-        {/* ══════════════════════════════════════════════════════════
-            PAGE 4 — T&C V2.2 — §11–19
-            ══════════════════════════════════════════════════════════ */}
-        <div className="pb" style={{ background: 'white', padding: '28px 36px 32px' }}>
-
-          {/* ── §11 Guest Responsibilities ── */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>11. Guest Responsibilities</div>
-            {[
-              '11.1. Guests must follow all safety instructions provided by the crew.',
-              '11.2. Respectful and cooperative behavior toward staff and fellow guests is expected at all times.',
-              '11.3. Guests are financially responsible for any damage to the vessel or its equipment caused by negligence or misconduct.',
-              '11.4. Failure to comply with safety or ecological rules may result in exclusion from activities without refund.',
-            ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>{t}</div>)}
-          </div>
-
-          {/* ── §12 Onboard Payments ── */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>12. Onboard Payments</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>12.1. Onboard purchases such as alcoholic drinks or merchandise can be paid in cash or by credit card (subject to a 3% surcharge).</div>
-          </div>
-
-          {/* ── §13 Diving Activities ── */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>13. Diving Activities (if offered)</div>
-            {[
-              '13.1. Guests must hold a valid dive certification (e.g., PADI Open Water or equivalent).',
-              '13.2. Dive insurance is mandatory and must be presented before the first dive.',
-              '13.3. A signed liability waiver is required before participating.',
-              '13.4. Missed dives for personal or medical reasons are non-refundable.',
-            ].map((t, i) => <div key={i} style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>{t}</div>)}
-          </div>
-
-          {/* ── §14 Liability and Indemnity ── */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>14. Liability and Indemnity</div>
-            <div style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>14.1. Assumption of Risk: </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>Guests participate in all onboard and offboard activities at their own risk. While the Principal takes reasonable precautions, the nature of sea travel and adventure activities involves inherent risks.</span>
-            </div>
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>14.2. Limitation of Liability</div>
-              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 3 }}>To the maximum extent permitted by law, the Principal, its subsidiaries, partners, Agents, employees, and crew shall not be liable for any injury, illness, death, loss, damage, delay, or expense arising from:</div>
-              {[
-                'Slips, trips, or falls onboard (including staircases, decks, or wet areas)',
-                'Participation in snorkeling, diving, swimming, trekking, or other activities',
-                'Shore excursions organised by the Principal or any third-party service providers',
-                'Guest negligence, disregard of safety instructions, or inappropriate behavior',
-                'Loss, theft, or damage to personal belongings',
-                'Delays, missed flights, or travel disruptions',
-                'Incomplete or inaccurate travel documentation or insurance coverage',
-              ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', gap: 7, marginBottom: 2 }}>
-                  <span style={{ color: '#9ca3af', fontSize: 10.5, lineHeight: 1.4, flexShrink: 0 }}>14.2.{i + 1}.</span>
-                  <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.6 }}>{item}</span>
+          )
+          const TncFooter = () => (
+            <div style={{ padding: '10px 42px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto' }}>
+              <div>
+                <div style={{ fontSize: 7.5, fontWeight: 600, color: '#6b7280', marginBottom: 2 }}>Office Address</div>
+                <div style={{ fontSize: 7.5, color: '#9ca3af', lineHeight: 1.65 }}>
+                  Jalan Tukad Badung IXB No.9, Renon,<br/>
+                  Denpasar Selatan, Kota Denpasar, Bali 80234<br/>
+                  Phone/WhatsApp: +62 859-5495-1085
                 </div>
-              ))}
-            </div>
-            <div style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>14.3. Gross Negligence: </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>The Principal shall only be liable where gross negligence or intentional misconduct can be clearly demonstrated. General sea conditions, weather-related movement, or vessel motion do not constitute grounds for liability.</span>
-            </div>
-            <div style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>14.4. Travel Insurance: </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>Guests are strongly advised to obtain comprehensive travel and medical insurance, including coverage for accidents, evacuation, missed connections, and activity-related injuries.</span>
-            </div>
-            <div style={{ marginBottom: 6 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151' }}>14.5. Indemnification: </span>
-              <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>By participating in the cruise, all Guests agree to fully indemnify and hold harmless the Principal, its subsidiaries, partners, Agents, employees, and crew from any claims, damages, losses, or expenses arising from the Guest&apos;s actions or omissions during the trip.</span>
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', marginBottom: 2 }}>14.6. Weather and Itinerary Changes</div>
-              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>14.6.1. The Principal shall comply with all directives from port authorities or the Indonesian Coast Guard. Resulting itinerary changes, delays, or cancellations do not entitle the Guest to compensation.</div>
-              <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>14.6.2. The Captain and crew may adjust the route, activities, or schedule at their discretion to ensure safety and optimize the guest experience.</div>
-            </div>
-          </div>
-
-          {/* ── §15 Changes and Price Adjustments ── */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>15. Changes and Price Adjustments</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>15.1. The Principal reserves the right to update service descriptions and pricing at any time before a booking is confirmed.</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 2 }}>15.2. In rare cases, post-booking price adjustments may occur due to significant increases in fuel or operational costs, new government fees or taxes, or major exchange rate fluctuations.</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>15.3. Guests will be informed of any such changes and may choose to accept or cancel under applicable terms.</div>
-          </div>
-
-          {/* ── §16 Cancellation by Principal for Guest Misconduct ── */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>16. Cancellation by the Principal for Guest Misconduct</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7, marginBottom: 4 }}>The Principal reserves the right to cancel a guest&apos;s participation without refund if the guest:</div>
-            {[
-              'Provides false personal information',
-              'Fails to follow crew instructions or safety procedures',
-              'Damages the vessel',
-              'Endangers themselves, other guests, or marine life',
-            ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', gap: 7, marginBottom: 3 }}>
-                <span style={{ color: ACCENT, fontWeight: 700, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>•</span>
-                <span style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.6 }}>{item}</span>
               </div>
-            ))}
-          </div>
-
-          {/* ── §17 Governing Law ── */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>17. Governing Law</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>17.1. These Terms &amp; Conditions are governed by the laws of the Republic of Indonesia. Any disputes shall be resolved through mediation or arbitration in Bali.</div>
-          </div>
-
-          {/* ── §18 Acknowledgment and Acceptance ── */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5, paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>18. Acknowledgment and Acceptance</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.7 }}>By confirming a booking, the guest acknowledges that they have read, understood, and agreed to these Terms and Conditions.</div>
-          </div>
-
-          {/* ── §19 Contact ── */}
-          <div style={{ marginTop: 24, paddingTop: 18, borderTop: `1px solid #e5e7eb`, textAlign: 'center' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9ca3af', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>19. Contact</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#111827', marginBottom: 2 }}>PT Samara Yacht Agency</div>
-            <div style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.8 }}>info@samarayachting.com · www.samarayachting.com</div>
-            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
-              <div style={{ height: 2, width: 40, backgroundColor: ACCENT, borderRadius: 2 }} />
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 7.5, color: '#9ca3af', lineHeight: 1.85 }}>
+                  www.samarayachting.com<br/>
+                  inquiry@samarayachting.com<br/>
+                  @samara.liveaboard · @otiumyacht · @mischief.voyage
+                </div>
+              </div>
             </div>
-          </div>
+          )
+          const SH = ({ n, title }: { n: string; title: string }) => (
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#1b3d5c', marginBottom: 6, marginTop: 16, paddingBottom: 4, borderBottom: '1px solid #e5e7eb' }}>
+              {n}.&nbsp;&nbsp;{title}
+            </div>
+          )
+          const Sub = ({ n, bold, text }: { n: string; bold?: string; text: string }) => (
+            <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 4 }}>
+              <span style={{ color: '#6b7280', marginRight: 5 }}>{n}</span>
+              {bold && <span style={{ fontWeight: 600 }}>{bold}: </span>}
+              {text}
+            </div>
+          )
+          const Bullet = ({ text, accent }: { text: string; accent?: boolean }) => (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              <span style={{ color: accent ? '#1b3d5c' : '#6b7280', fontWeight: 700, fontSize: 11, lineHeight: 1.3, flexShrink: 0 }}>•</span>
+              <span style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.7 }}>{text}</span>
+            </div>
+          )
+          const bodyStyle: React.CSSProperties = { flex: 1, padding: '20px 42px 24px' }
 
-        </div>
+          return (
+            <>
+
+            {/* ══ PAGE 2 — Preamble · §1–4 ══ */}
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
+              <TncHeader />
+              <div style={bodyStyle}>
+
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1b3d5c', marginBottom: 6, textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase' }}>Preamble</div>
+                  <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75 }}>
+                    These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>PT Samara Yacht Agency</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
+                  </div>
+                </div>
+
+                <SH n="1" title="Roles and Responsibilities" />
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>1.1.&nbsp;&nbsp;Principal and Operator</div>
+                  <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 8 }}>
+                    <strong>PT Samara Yacht Agency</strong> acts as the commercial principal and/or chartering entity. The operational management of the vessel is carried out by <strong>PT Samara Yacht Management</strong> (the &quot;Operator&quot;).
+                  </div>
+                  <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3 }}>1.2.&nbsp;&nbsp;Travel Agent</div>
+                  <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75 }}>
+                    Where a booking is made through a Travel Agent, the Agency acts solely as an intermediary between the Guest and the Principal. The Travel Agent does not own, operate, manage, or control the vessel, crew, or maritime operations and shall not be considered a contractual carrier or service provider.
+                  </div>
+                </div>
+
+                <SH n="2" title="Hierarchy of Documents" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 5 }}>In the event of any inconsistency between:</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14, marginBottom: 1 }}>a) the signed Charter Contract,</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14, marginBottom: 1 }}>b) these Terms &amp; Conditions, and</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14, marginBottom: 5 }}>c) any marketing material, brochure, website content, or Agency communication,</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75 }}>the provisions of the signed Charter Contract shall prevail, followed by these Terms &amp; Conditions.</div>
+
+                <SH n="3" title="Cruise Type" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 6 }}>The Principal offers two charter models:</div>
+                <Sub n="3.1." bold="Private Charter" text="The entire vessel is chartered exclusively by one group. Guests enjoy full use of all cabins, crew, and a custom itinerary. Activities include island hopping, snorkeling, and leisure cruising." />
+                <Sub n="3.2." bold="Open Trip (FIT)" text="Guests book individual cabins for 2 guests (extra beds available) and share the vessel and program with other travelers on a fixed schedule. Open Trips will operate as scheduled once a minimum booking of three (3) cabins is reached. If the minimum booking is not reached, the booking may be moved to the next available schedule, and guests will be informed in advance." />
+
+                <SH n="4" title="Check-In and Check-Out Times" />
+                <Sub n="4.1." bold="Check-In" text="Boarding begins at 10:00 AM on the first day of the trip. Guests are strongly encouraged to arrive at the destination one day in advance to avoid delays." />
+                <Sub n="4.2." bold="Check-Out" text="Disembarkation is scheduled around 2:00 PM on the final day of the cruise." />
+                <Sub n="4.3." text="For Private Charters, check-in and check-out times may vary depending on the customized itinerary and flight schedules, as agreed upon in advance with the Principal." />
+
+              </div>
+              <TncFooter />
+            </div>
+
+            {/* ══ PAGE 3 — §5–10 ══ */}
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
+              <TncHeader />
+              <div style={bodyStyle}>
+
+                <SH n="5" title="Bookings and Payments" />
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 4 }}>Charters and FIT below USD 5,000.- per night:</div>
+                <Sub n="5.1." bold="Deposit" text="A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation." />
+                <Sub n="5.2." bold="Balance Payment" text="The remaining 70% must be paid at least 30 days before the departure date." />
+                <Sub n="5.3." bold="Short-Notice Bookings" text="For bookings made within 30 days of departure, full payment is required at the time of booking." />
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginTop: 8, marginBottom: 4 }}>Charters and FIT above USD 5,000.- per night:</div>
+                <Sub n="5.4." bold="Deposit" text="A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation." />
+                <Sub n="5.5." bold="Balance Payment" text="The remaining 70% must be paid at least 90 days before the departure date." />
+                <Sub n="5.6." bold="Short-Notice Bookings" text="For bookings made within 90 days of departure, full payment is required at the time of booking." />
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginTop: 8, marginBottom: 4 }}>General Payment Rules:</div>
+                <Sub n="5.7." bold="Failure to Pay" text="If payment deadlines are not met, the booking may be canceled without refund of previous payments." />
+                <Sub n="5.8." bold="Payment Methods" text="Payment may be made by bank transfer or credit card. Credit card payments incur a 3% processing fee. All bank charges are the responsibility of the guest or agent." />
+                <Sub n="5.9." bold="Payment Instructions" text="All payments must be made to the official bank account in the currency specified in the invoice issued by the Principal." />
+
+                <SH n="6" title="Cancellations and Refunds" />
+                <div style={{ display: 'flex', gap: 24 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>FIT</div>
+                    <Sub n="6.1." bold="More than 30 days before departure" text="Payments are refundable minus the 30% deposit." />
+                    <Sub n="6.2." bold="30 days or less before departure" text="No refund." />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Charters</div>
+                    <Sub n="6.3." bold="More than 90 days before departure" text="Payments are refundable minus the 30% deposit." />
+                    <Sub n="6.4." bold="90 days or less before departure" text="No refund." />
+                  </div>
+                </div>
+
+                <SH n="7" title="General Policies" />
+                <Sub n="7.1." bold="General Refund Policy" text="Payments are generally non-refundable. However, the Principal may, acting reasonably and in good faith, assist with rescheduling or offering alternative solutions where possible. No obligation or precedent is created." />
+                <Sub n="7.2." bold="Force Majeure" text="In cases of force majeure, including but not limited to natural disasters, or similar uncontrollable events, adverse sea conditions, port closures, government restrictions, or safety-related decisions, the Principal may offer rescheduling or alternative arrangements at its discretion." />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 4, paddingLeft: 2 }}>
+                  <span style={{ color: '#6b7280', marginRight: 5 }}>7.3.</span>
+                  Weather conditions at sea are unpredictable. Rain, swell, or cloudiness may occur and are not grounds for refund or cancellation.
+                </div>
+
+                <SH n="8" title="Rescheduling" />
+                <Sub n="8.1." bold="Discretionary Rescheduling" text="While our policies are firm to ensure fairness and operational consistency, the Principal may, at its sole discretion, choose to offer alternative solutions in extraordinary cases. Any exception granted is made without obligation and does not set a precedent." />
+
+                <SH n="9" title="Illness Before or During the Trip" />
+                <Sub n="9.1." bold="Prior to Trip" text="The cancellation policy remains in effect. No refunds are granted unless covered by travel insurance." />
+                <Sub n="9.2." bold="During Trip" text="If a guest falls ill and cannot participate in activities, no refund will be granted. A formal letter may be issued to support a travel insurance claim." />
+
+                <SH n="10" title="General Inclusions and Exclusions" />
+                <div style={{ display: 'flex', gap: 24 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 6 }}>10.1.&nbsp;&nbsp;Included in the Cruise</div>
+                    {[
+                      'Transfers to/from local airport or local hotel',
+                      'Accommodation onboard the Vessel',
+                      'All meals, snacks, coffee/tea, and mineral water and local beers',
+                      'Scuba Diving for certified divers and the use of water sports equipment (where available)',
+                      'Guided excursions and scheduled activities',
+                    ].map((t, i) => <Bullet key={i} text={t} accent />)}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 6 }}>10.2.&nbsp;&nbsp;Not Included</div>
+                    {[
+                      'Alcoholic beverages',
+                      'Domestic flights and hotel accommodations before or after the trip',
+                      'Travel insurance',
+                      'Crew gratuities (suggested at 10% of the trip value)',
+                      'Optional activities not listed in the itinerary',
+                    ].map((t, i) => <Bullet key={i} text={t} />)}
+                  </div>
+                </div>
+                <div style={{ fontSize: 9.5, color: '#6b7280', lineHeight: 1.75, marginTop: 6 }}>
+                  <span style={{ marginRight: 5 }}>10.3.</span>
+                  Specific inclusions vary depending on the vessel and/or trip type. Details might be defined in the Charter Contract in writing.
+                </div>
+
+              </div>
+              <TncFooter />
+            </div>
+
+            {/* ══ PAGE 4 — §11–19 ══ */}
+            <div className="pb" style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: 900 }}>
+              <TncHeader />
+              <div style={bodyStyle}>
+
+                <SH n="11" title="Guest Responsibilities" />
+                <Sub n="11.1." text="Guests must follow all safety instructions provided by the crew." />
+                <Sub n="11.2." text="Respectful and cooperative behavior toward staff and fellow guests is expected at all times." />
+                <Sub n="11.3." text="Guests are financially responsible for any damage to the vessel or its equipment caused by negligence or misconduct." />
+                <Sub n="11.4." text="Failure to comply with safety or ecological rules may result in exclusion from activities without refund." />
+
+                <SH n="12" title="Onboard Payments" />
+                <Sub n="12.1." text="Onboard purchases, such as alcoholic drinks or merchandise, can be paid in cash or by credit card (3% surcharge)." />
+
+                <SH n="13" title="Diving Activities (if offered)" />
+                <Sub n="13.1." text="Guests must hold a valid dive certification (e.g., PADI Open Water)." />
+                <Sub n="13.2." bold="Dive insurance is mandatory" text="and must be presented before the first dive." />
+                <Sub n="13.3." text="A signed liability waiver is required before participating." />
+                <Sub n="13.4." text="Missed dives for personal or medical reasons are non-refundable." />
+
+                <SH n="14" title="Liability and Indemnity" />
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3, paddingLeft: 2 }}>14.1.&nbsp;&nbsp;Assumption of Risk</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 8, paddingLeft: 14 }}>
+                  Guests participate in all onboard and offboard activities at their own risk. While the Principal takes reasonable precautions to ensure guest safety, the nature of sea travel and adventure activities involves inherent risks.
+                </div>
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3, paddingLeft: 2 }}>14.2.&nbsp;&nbsp;Limitation of Liability</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 5, paddingLeft: 14 }}>
+                  To the maximum extent permitted by applicable law, neither the Principal, its subsidiaries, partners, Agents, employees, nor crew shall be liable for any injury, illness, death, loss, damage, delay, or expense arising from, including but not limited to, the following:
+                </div>
+                {[
+                  'Slips, trips, or falls onboard (including staircases, decks, or wet areas)',
+                  'Participation in snorkeling, diving, swimming, trekking, or other activities',
+                  'Shore excursions or organised by the principal or any third-party service providers',
+                  'Guest negligence, disregard of safety instructions, or inappropriate behavior',
+                  'Loss, theft, or damage to personal belongings',
+                  'Delays, missed flights, or travel disruptions',
+                  'Incomplete or inaccurate travel documentation or insurance coverage',
+                ].map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 3, paddingLeft: 14 }}>
+                    <span style={{ color: '#9ca3af', fontSize: 9.5, lineHeight: 1.4, flexShrink: 0, minWidth: 38 }}>14.2.{i + 1}.</span>
+                    <span style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.7 }}>{t}</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginTop: 7, marginBottom: 3, paddingLeft: 2 }}>14.3.&nbsp;&nbsp;Gross Negligence</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 7, paddingLeft: 14 }}>
+                  The Principal, its subsidiaries, partners, Agents, employees, and crew shall only be liable where gross negligence or intentional misconduct can be clearly demonstrated. General sea conditions, weather-related movement, vessel motion, or incidental onboard hazards do not constitute grounds for liability.
+                </div>
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3, paddingLeft: 2 }}>14.4.&nbsp;&nbsp;Travel Insurance</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 7, paddingLeft: 14 }}>
+                  Guests are strongly advised to obtain comprehensive travel and medical insurance, including coverage for accidents, evacuation, missed connections, and activity-related injuries (such as diving or trekking).
+                </div>
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3, paddingLeft: 2 }}>14.5.&nbsp;&nbsp;Indemnification</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 7, paddingLeft: 14 }}>
+                  By participating in the cruise, all Guests agree to fully indemnify, defend, and hold harmless the Principal, its subsidiaries, partners, Agents, employees, and crew from and against any claims, damages, losses, liabilities, or expenses (including legal fees) arising from the Guest&apos;s actions or omissions during the trip. This indemnity shall survive the end of the voyage and apply to any post-trip claims.
+                </div>
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: '#374151', marginBottom: 3, paddingLeft: 2 }}>14.6.&nbsp;&nbsp;Weather and Itinerary Changes</div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 3, paddingLeft: 14 }}>
+                  14.6.1.&nbsp;&nbsp;The Principal shall comply with all directives issued by port authorities or the Indonesian Coast Guard. Any resulting itinerary changes, delays, or cancellations do not entitle the Guest to compensation.
+                </div>
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14 }}>
+                  14.6.2.&nbsp;&nbsp;The Captain and crew may adjust the route, activities, or schedule at their discretion at any time to ensure safety and optimize the guest experience.
+                </div>
+
+                <SH n="15" title="Changes and Price Adjustments" />
+                <Sub n="15.1." text="The Principal reserves the right to update brochures, service descriptions, and pricing at any time before a booking is confirmed." />
+                <Sub n="15.2." text="In very rare cases, price adjustments after booking may occur due to: significant increases in fuel or operational costs; new government fees, taxes, or port charges; or major exchange rate fluctuations. Guests will be informed of such changes and may choose to accept or cancel under applicable terms." />
+
+                <SH n="16" title="Cancellation by the Principal for Guest Misconduct" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, marginBottom: 6, paddingLeft: 14 }}>
+                  16.1.&nbsp;&nbsp;The Principal reserves the right to cancel a guest&apos;s participation <strong>without refund</strong> if the guest:
+                </div>
+                <Bullet text="16.2.  Provides false personal information" />
+                <Bullet text="16.3.  Fails to follow crew instructions or safety procedures" />
+                <Bullet text="16.4.  Damages the vessel" />
+                <Bullet text="16.5.  Endangers themselves, other guests, or marine life" />
+
+                <SH n="17" title="Governing Law" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14 }}>
+                  17.1.&nbsp;&nbsp;These Terms &amp; Conditions are governed by the laws of the <strong>Republic of Indonesia</strong>. Any disputes shall be resolved through <strong>mediation or arbitration in Bali</strong>.
+                </div>
+
+                <SH n="18" title="Acknowledgment and Acceptance" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14 }}>
+                  By confirming a booking, the guest acknowledges that they have <strong>read, understood, and agreed</strong> to these Terms and Conditions.
+                </div>
+
+                <SH n="19" title="Contact" />
+                <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.75, paddingLeft: 14 }}>
+                  For assistance or inquiries, please contact:<br/>
+                  <strong>PT Samara Yacht Agency</strong><br/>
+                  info@samarayachting.com&nbsp;&nbsp;·&nbsp;&nbsp;www.samarayachting.com
+                </div>
+
+              </div>
+              <TncFooter />
+            </div>
+
+            </>
+          )
+        })()}
 
         </> /* end hasTncPdf else */
         )}
