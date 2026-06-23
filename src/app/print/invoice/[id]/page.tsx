@@ -543,8 +543,8 @@ export default function InvoicePage() {
             </div>
             <div className="ft-num">{n}</div>
             <div className="ft-contact">
-              www.samarayachting.com<br/>
-              inquiry@samarayachting.com<br/>
+              www.samaraliveaboard.com<br/>
+              inquiry@samaraliveaboard.com<br/>
               @samara.liveaboard<br/>
               @otiumyacht<br/>
               @mischief.voyage
@@ -569,7 +569,7 @@ export default function InvoicePage() {
               <div style={{ fontSize: 26, fontWeight: 300, letterSpacing: 7, color: 'white', textTransform: 'uppercase', marginBottom: 14 }}>TERMS &amp; CONDITIONS</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>www.samarayachting.com</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>www.samaraliveaboard.com</div>
             </div>
           </div>
         </div>
@@ -796,7 +796,7 @@ export default function InvoicePage() {
             <p className="body-p" style={{paddingLeft:14}}>
               For assistance or inquiries, please contact:<br/>
               <strong>PT Samara Yacht Agency</strong><br/>
-              info@samarayachting.com&nbsp;&nbsp;·&nbsp;&nbsp;www.samarayachting.com
+              info@samarayachting.com&nbsp;&nbsp;·&nbsp;&nbsp;www.samaraliveaboard.com
             </p>
           </div>
           <TncFtr n={5} />

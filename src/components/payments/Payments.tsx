@@ -516,7 +516,7 @@ export default function Payments() {
                       <p className="text-xs text-muted-foreground">Total Booking</p>
                       {selected.booking.source === 'AGENT' && (
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${(selected as any).showNetAmount ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
-                          {(selected as any).showNetAmount ? 'Net' : 'Gross'}
+                          {(selected as any).showNetAmount ? 'Net' : 'Published'}
                         </span>
                       )}
                     </div>
@@ -746,7 +746,7 @@ export default function Payments() {
                       </div>
                     )}
 
-                    {/* Gross / Net toggle — always interactive, AGENT bookings only */}
+                    {/* Published / Net toggle — always interactive, AGENT bookings only */}
                     {selected.booking.source === 'AGENT' && (() => {
                       const commPct   = selected.booking.tripType === 'OPEN_TRIP'
                         ? (selected.booking.agent?.commissionOpenTrip ?? 0)
@@ -760,7 +760,7 @@ export default function Payments() {
                           <div className="flex items-center justify-between px-3 py-2.5">
                             <p className="text-xs font-medium">Nominal Invoice</p>
                             <div className="flex items-center gap-2">
-                              <span className={`text-xs font-medium ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>Gross</span>
+                              <span className={`text-xs font-medium ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>Published</span>
                               <button
                                 type="button"
                                 onClick={() => setGenInvShowNet(v => !v)}
@@ -773,7 +773,7 @@ export default function Payments() {
                           </div>
                           <div className="grid grid-cols-2 border-t text-xs">
                             <div className={`px-3 py-2 border-r ${!genInvShowNet ? 'bg-muted/40' : ''}`}>
-                              <p className="text-muted-foreground mb-0.5">Gross</p>
+                              <p className="text-muted-foreground mb-0.5">Published</p>
                               <p className={`font-semibold ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>{fmtN(grossAmt)}</p>
                             </div>
                             <div className={`px-3 py-2 ${genInvShowNet ? 'bg-amber-50' : ''}`}>

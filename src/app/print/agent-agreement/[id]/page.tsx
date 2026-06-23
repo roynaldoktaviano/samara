@@ -325,8 +325,8 @@ function Footer({ n }: { n: number }) {
       </div>
       <div className="ft-num">{n}</div>
       <div className="ft-contact">
-        www.samarayachting.com<br />
-        inquiry@samarayachting.com<br />
+        www.samaraliveaboard.com<br />
+        inquiry@samaraliveaboard.com<br />
         @samara.liveaboard<br />
         @otiumyacht<br />
         @mischief.voyage
@@ -382,14 +382,16 @@ export default function AgentAgreementPrint() {
         <div className="page">
           <div className="cover">
             <div className="cover-top">
-              <div className="cover-brand">SAMARA</div>
-              <div className="cover-rule" />
-              <div className="cover-sub">YACHTING</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+                alt="Samara Yachting"
+                style={{ height: 64, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+              />
             </div>
             <div className="cover-title">
               <h1>AGENT AGREEMENT<br />SAMARA YACHTING</h1>
             </div>
-            <div className="cover-url">www.samarayachting.com</div>
+            <div className="cover-url">www.samaraliveaboard.com</div>
           </div>
         </div>
 
@@ -537,7 +539,10 @@ export default function AgentAgreementPrint() {
               </div>
 
               {/* Row 3 — signature lines (always same height) */}
-              <div className="sg-sig-left" />
+              <div className="sg-sig-left" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/signature-marc.png" alt="Signature" style={{ height: 60, objectFit: 'contain', marginBottom: 4 }} />
+              </div>
               <div className="sg-sig-right">
                 <span className="sfl">Signature&nbsp;:</span>
                 <span className="sfv">&nbsp;</span>
@@ -555,16 +560,18 @@ export default function AgentAgreementPrint() {
         <div className="page">
           <div className="cover">
             <div className="cover-top">
-              <div className="cover-brand">SAMARA</div>
-              <div className="cover-rule" />
-              <div className="cover-sub">YACHTING</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+                alt="Samara Yachting"
+                style={{ height: 64, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+              />
             </div>
             <div className="cover-title">
               <h1>COMMISSION AND<br />PAYMENT TERMS (C&amp;P)<br />
                 <span style={{fontSize:'22pt',letterSpacing:'0.18em'}}>2026</span>
               </h1>
             </div>
-            <div className="cover-url">www.samarayachting.com</div>
+            <div className="cover-url">www.samaraliveaboard.com</div>
           </div>
         </div>
 
@@ -714,7 +721,9 @@ export default function AgentAgreementPrint() {
             <div style={{textAlign:'center', maxWidth:180}}>
               <div style={{fontWeight:700, fontSize:'10pt', marginBottom:10}}>Principal:</div>
               <div style={{fontSize:'9.5pt', lineHeight:1.6}}>Samara Yachting<br />and its appointed Subsidiaries</div>
-              <div style={{borderBottom:'0.5pt solid #222', marginTop:52, height:1}} />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/signature-marc.png" alt="Signature" style={{ height: 60, objectFit: 'contain', marginTop: 8, marginBottom: 4 }} />
+              <div style={{borderBottom:'0.5pt solid #222', height:1}} />
             </div>
           </div>
           <Footer n={3} />
@@ -729,14 +738,16 @@ export default function AgentAgreementPrint() {
         <div className="page">
           <div className="cover">
             <div className="cover-top">
-              <div className="cover-brand">SAMARA</div>
-              <div className="cover-rule" />
-              <div className="cover-sub">YACHTING</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+                alt="Samara Yachting"
+                style={{ height: 64, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+              />
             </div>
             <div className="cover-title">
               <h1>TERMS &amp; CONDITIONS</h1>
             </div>
-            <div className="cover-url">www.samarayachting.com</div>
+            <div className="cover-url">www.samaraliveaboard.com</div>
           </div>
         </div>
 
@@ -973,7 +984,7 @@ export default function AgentAgreementPrint() {
             <p className="body-p">
               For assistance or inquiries, please contact:<br />
               <strong>PT Samara Yacht Agency</strong><br />
-              info@samarayachting.com &nbsp;·&nbsp; www.samarayachting.com
+              info@samarayachting.com &nbsp;·&nbsp; www.samaraliveaboard.com
             </p>
           </div>
           <Footer n={5} />
