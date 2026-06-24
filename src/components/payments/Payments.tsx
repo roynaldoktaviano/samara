@@ -99,6 +99,9 @@ export default function Payments() {
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState<'all' | 'requested' | 'invoice_ready' | 'pending_confirmation' | 'confirmed' | 'rejected' | 'cancelled' | 'refunded'>('all')
+  const [vesselFilter, setVesselFilter] = useState<string>('all')
+  const [dateFrom,     setDateFrom]     = useState<string>('')
+  const [dateTo,       setDateTo]       = useState<string>('')
   const [selected, setSelected] = useState<Payment | null>(null)
   const [acting, setActing]     = useState(false)
   const [rejectNotes, setRejectNotes]   = useState('')
@@ -183,8 +186,18 @@ export default function Payments() {
     fetch('/api/banks').then(r => r.json()).then(d => setBanks(Array.isArray(d) ? d.filter((b: Bank) => b.isActive) : [])).catch(() => {})
   }, [])
 
+  const vessels = Array.from(new Set(
+    payments.map(p => p.booking.yacht?.name).filter(Boolean) as string[]
+  )).sort()
+
   const filtered = payments.filter(p => {
     if (filter !== 'all' && p.status !== filter) return false
+    if (vesselFilter !== 'all') {
+      const v = p.booking.yacht?.name ?? null
+      if (v !== vesselFilter) return false
+    }
+    if (dateFrom && p.createdAt < dateFrom) return false
+    if (dateTo   && p.createdAt > dateTo + 'T23:59:59') return false
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -441,9 +454,10 @@ export default function Payments() {
 
       {/* Table card */}
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
+        <CardHeader className="pb-3 space-y-3">
+          {/* Row 1: title + view toggle + search */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
               <div>
                 <CardTitle>{tableView === 'payments' ? 'All Payments' : 'Refund Records'}</CardTitle>
                 <CardDescription>
@@ -451,53 +465,100 @@ export default function Payments() {
                 </CardDescription>
               </div>
               {isFinance && (
-                <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/40">
+                <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0">
                   <button
                     onClick={() => setTableView('payments')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     Payments
                   </button>
                   <button
                     onClick={() => setTableView('refunds')}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     Refund Records
                   </button>
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search invoice, booking, name..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="max-w-xs h-8 text-sm"
-              />
-              {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search invoice, booking, name..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 w-64 h-8 text-sm"
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Status filter tabs — payments view only */}
+          {/* Row 2: status + vessel filters — payments view only */}
           {tableView === 'payments' && (
-            <div className="flex gap-1 pt-1 flex-wrap">
-              {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'refunded'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={[
-                    'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
-                    filter === f
-                      ? 'bg-[#1a5f6e] text-white border-[#1a5f6e]'
-                      : 'text-muted-foreground border-border hover:bg-muted',
-                  ].join(' ')}
-                >
-                  {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label}
-                  {' '}
-                  <span className="opacity-70">({counts[f]})</span>
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-3">
+              {/* Status tabs */}
+              <div className="flex gap-1 flex-wrap">
+                {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'refunded'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={[
+                      'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+                      filter === f
+                        ? 'bg-[#1a5f6e] text-white border-[#1a5f6e]'
+                        : 'text-muted-foreground border-border hover:bg-muted',
+                    ].join(' ')}
+                  >
+                    {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label}
+                    {' '}<span className="opacity-70">({counts[f]})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Right-side filters */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Date range */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={e => setDateFrom(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring w-34"
+                  />
+                  <span className="text-xs text-muted-foreground">–</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    min={dateFrom}
+                    onChange={e => setDateTo(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring w-34"
+                  />
+                  {(dateFrom || dateTo) && (
+                    <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Vessel dropdown */}
+                {vessels.length > 0 && (
+                  <Select value={vesselFilter} onValueChange={setVesselFilter}>
+                    <SelectTrigger className="h-8 text-xs w-36">
+                      <SelectValue placeholder="All Vessels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Vessels</SelectItem>
+                      {vessels.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
           )}
         </CardHeader>

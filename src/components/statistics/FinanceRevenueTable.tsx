@@ -14,12 +14,18 @@ interface CabinMonthRow { month: string; byCabin: Record<string, number>; total:
 interface CabinTable {
   vesselId: string; vesselName: string; cabins: string[]
   months: CabinMonthRow[]; yearByCabin: Record<string, number>; grandTotal: number
+  refundMonths: { byCabin: Record<string, number>; total: number }[]
+  refundByCabin: Record<string, number>; refundTotal: number
 }
 interface VesselMonthRow { month: string; perVessel: Record<string, number>; total: number }
 interface TableData {
   year: number; vessels: Vessel[]
   cabinTables: CabinTable[]
-  vesselTable: { months: VesselMonthRow[]; yearTotals: Record<string, number>; grandTotal: number }
+  vesselTable: {
+    months: VesselMonthRow[]; yearTotals: Record<string, number>; grandTotal: number
+    refundMonths: { perVessel: Record<string, number>; total: number }[]
+    refundYearTotals: Record<string, number>; refundGrandTotal: number
+  }
   charts: { allRevenue: { month: string; total: number }[]; perVessel: Record<string, any>[] }
 }
 
@@ -194,14 +200,35 @@ export default function FinanceRevenueTable() {
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
-                <td className={tfootTd + ' text-left'}></td>
+                <td className={tfootTd + ' text-left text-[10px] opacity-70'}>PUBLISHED</td>
                 {ct.cabins.map(c => (
-                  <td key={c} className={tfootTd}>
-                    $ {(ct.yearByCabin[c] ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  <td key={c} className={tfootTd}>$ {(ct.yearByCabin[c] ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                ))}
+                <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>$ {ct.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr className="bg-red-50 text-red-600">
+                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap">REFUNDED</td>
+                {ct.cabins.map(c => (
+                  <td key={c} className="px-3 py-1.5 text-right text-xs border border-gray-200 whitespace-nowrap">
+                    {(ct.refundByCabin[c] ?? 0) > 0
+                      ? <span className="text-red-500">- $ {(ct.refundByCabin[c]).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      : <span className="text-gray-300">—</span>}
                   </td>
                 ))}
-                <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>
-                  $ {ct.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-red-100">
+                  {ct.refundTotal > 0
+                    ? <span className="text-red-600">- $ {ct.refundTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    : <span className="text-gray-300">—</span>}
+                </td>
+              </tr>
+              <tr className="bg-emerald-50">
+                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-emerald-700">NET</td>
+                {ct.cabins.map(c => {
+                  const net = (ct.yearByCabin[c] ?? 0) - (ct.refundByCabin[c] ?? 0)
+                  return <td key={c} className="px-3 py-1.5 text-right text-xs font-semibold border border-gray-200 whitespace-nowrap text-emerald-700">$ {net.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                })}
+                <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-emerald-100 text-emerald-800">
+                  $ {(ct.grandTotal - ct.refundTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </td>
               </tr>
             </tfoot>
@@ -241,7 +268,7 @@ export default function FinanceRevenueTable() {
           </tbody>
           <tfoot>
             <tr style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
-              <td className={tfootTd + ' text-left'}></td>
+              <td className={tfootTd + ' text-left text-[10px] opacity-70'}>PUBLISHED</td>
               {vessels.map(v => (
                 <td key={v.id} className={tfootTd} style={{ backgroundColor: '#1a4e6e' }}>
                   $ {(vesselTable.yearTotals[v.id] ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -249,6 +276,38 @@ export default function FinanceRevenueTable() {
               ))}
               <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>
                 $ {vesselTable.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+            <tr className="bg-red-50">
+              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-red-600">REFUNDED</td>
+              {vessels.map(v => {
+                const ref = vesselTable.refundYearTotals[v.id] ?? 0
+                return (
+                  <td key={v.id} className="px-3 py-1.5 text-right text-xs border border-gray-200 whitespace-nowrap">
+                    {ref > 0
+                      ? <span className="text-red-500">- $ {ref.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                )
+              })}
+              <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-red-100">
+                {vesselTable.refundGrandTotal > 0
+                  ? <span className="text-red-600">- $ {vesselTable.refundGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  : <span className="text-gray-300">—</span>}
+              </td>
+            </tr>
+            <tr className="bg-emerald-50">
+              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-emerald-700">NET</td>
+              {vessels.map(v => {
+                const net = (vesselTable.yearTotals[v.id] ?? 0) - (vesselTable.refundYearTotals[v.id] ?? 0)
+                return (
+                  <td key={v.id} className="px-3 py-1.5 text-right text-xs font-semibold border border-gray-200 whitespace-nowrap text-emerald-700">
+                    $ {net.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </td>
+                )
+              })}
+              <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-emerald-100 text-emerald-800">
+                $ {(vesselTable.grandTotal - vesselTable.refundGrandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </td>
             </tr>
           </tfoot>
@@ -274,7 +333,7 @@ export default function FinanceRevenueTable() {
 
       {/* Cabin year totals (one full-width chart per vessel) */}
       {cabinTables.map(ct => {
-        const cabinChart = ct.cabins.map(cabin => ({ cabin, value: ct.yearByCabin[cabin] ?? 0 }))
+        const cabinChart = ct.cabins.map(cabin => ({ cabin, value: (ct.yearByCabin[cabin] ?? 0) - (ct.refundByCabin[cabin] ?? 0) }))
         return (
           <div key={`chart-${ct.vesselId}`} className="rounded-xl border shadow-sm p-4">
             <h4 className="text-sm font-bold mb-3" style={{ color: vesselColor(ct.vesselName) }}>

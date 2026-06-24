@@ -13,17 +13,14 @@ function vesselSort(name: string) {
 }
 
 function netBooking(b: {
-  totalPrice: number; discount: number; source: string; tripType: string;
+  source: string; tripType: string;
   agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
-  services: { price: number; quantity: number }[]
+  confirmedAmount: number; // sum of confirmed payments
 }) {
-  const svc     = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const base    = b.totalPrice - svc
-  const disc    = Math.max(0, base - (b.discount ?? 0))
   const commPct = b.source === 'AGENT'
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
     : 0
-  return disc + svc - disc * commPct / 100
+  return b.confirmedAmount - (b.confirmedAmount * commPct / 100)
 }
 
 export async function GET(request: NextRequest) {
@@ -37,14 +34,19 @@ export async function GET(request: NextRequest) {
     const startOfYear = new Date(year, 0, 1)
     const endOfYear   = new Date(year, 11, 31, 23, 59, 59)
 
-    const [allBookings, allYachts, allCabins] = await withRetry(() => Promise.all([
+    const [allBookings, allYachts, allCabins, refundedPayments] = await withRetry(() => Promise.all([
       db.booking.findMany({
-        where: { status: { not: 'cancelled' }, startDate: { gte: startOfYear, lte: endOfYear } },
+        where: {
+          startDate: { gte: startOfYear, lte: endOfYear },
+          OR: [
+            { status: { not: 'cancelled' } },
+            { status: 'cancelled', refundStatus: 'refund_confirmed' }, // include refunded — shown separately
+          ],
+        },
         select: {
-          id: true, tripType: true, totalPrice: true, depositPaid: true,
-          discount: true, source: true, startDate: true, yachtId: true,
+          id: true, tripType: true, source: true, startDate: true, yachtId: true,
           agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
-          services: { select: { price: true, quantity: true } },
+          payments: { where: { status: { in: ['confirmed', 'refunded'] } }, select: { amount: true } },
           guests: {
             where:  { cabinId: { not: null } },
             select: { cabinId: true, cabin: { select: { name: true } } },
@@ -53,6 +55,21 @@ export async function GET(request: NextRequest) {
       }),
       db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       db.cabin.findMany({ select: { id: true, name: true, yachtId: true }, orderBy: { name: 'asc' } }),
+      // Refunded payments: bookings that were cancelled with refund confirmed
+      db.booking.findMany({
+        where: {
+          refundStatus: 'refund_confirmed',
+          startDate: { gte: startOfYear, lte: endOfYear },
+        },
+        select: {
+          id: true, yachtId: true, startDate: true, tripType: true,
+          payments: { where: { status: 'refunded' }, select: { amount: true } },
+          guests: {
+            where:  { cabinId: { not: null } },
+            select: { cabinId: true, cabin: { select: { name: true } } },
+          },
+        },
+      }),
     ]))
 
     const vessels = [...allYachts].sort((a, b) => vesselSort(a.name) - vesselSort(b.name))
@@ -113,7 +130,8 @@ export async function GET(request: NextRequest) {
 
       for (const b of vBookings) {
         const month = new Date(b.startDate).getMonth()
-        const rev   = netBooking(b)
+        const confirmedAmount = b.payments.reduce((s, p) => s + p.amount, 0)
+        const rev   = netBooking({ ...b, confirmedAmount })
 
         // Get unique cabins for this booking
         const uniqueCabins = [...new Map(
@@ -152,7 +170,8 @@ export async function GET(request: NextRequest) {
     for (const b of allBookings) {
       if (!b.yachtId) continue
       const m   = new Date(b.startDate).getMonth()
-      const rev = netBooking(b)
+      const confirmedAmount = b.payments.reduce((s, p) => s + p.amount, 0)
+      const rev = netBooking({ ...b, confirmedAmount })
       vesselMonthGrid[m][b.yachtId] = (vesselMonthGrid[m][b.yachtId] ?? 0) + rev
     }
 
@@ -172,18 +191,86 @@ export async function GET(request: NextRequest) {
     }
     const grandTotal = Object.values(vesselYearTotals).reduce((s, v) => s + v, 0)
 
-    // Chart data
-    const allRevenueByMonth = vesselMonths.map(m => ({ month: m.month.slice(0, 3), total: m.total }))
-    const vesselByMonth = vesselMonths.map(m => {
+    // ── Refund aggregation ────────────────────────────────────────────────
+    // Per-vessel per-month refund totals
+    const refundVesselMonthGrid: Record<number, Record<string, number>> = {}
+    for (let m = 0; m < 12; m++) refundVesselMonthGrid[m] = {}
+
+    // Per-vessel per-month per-cabin refund totals (open trips)
+    const refundCabinMonthGrid: Record<string, Record<number, Record<string, number>>> = {}
+
+    for (const b of refundedPayments) {
+      if (!b.yachtId) continue
+      const m = new Date(b.startDate).getMonth()
+      const total = b.payments.reduce((s, p) => s + p.amount, 0)
+      refundVesselMonthGrid[m][b.yachtId] = (refundVesselMonthGrid[m][b.yachtId] ?? 0) + total
+
+      if (b.tripType === 'OPEN_TRIP') {
+        if (!refundCabinMonthGrid[b.yachtId]) refundCabinMonthGrid[b.yachtId] = {}
+        const uniqueCabins = [...new Map(
+          b.guests.filter(g => g.cabin).map(g => [g.cabinId, g.cabin!.name])
+        ).values()]
+        const perCabin = uniqueCabins.length > 0 ? total / uniqueCabins.length : 0
+        for (const cabinName of uniqueCabins) {
+          if (!refundCabinMonthGrid[b.yachtId][m]) refundCabinMonthGrid[b.yachtId][m] = {}
+          refundCabinMonthGrid[b.yachtId][m][cabinName] = (refundCabinMonthGrid[b.yachtId][m][cabinName] ?? 0) + perCabin
+        }
+      }
+    }
+
+    // Attach refund data to cabinTables
+    const cabinTablesWithRefund = cabinTables.map(ct => {
+      const refundMonths = MONTH_LABELS.map((_, m) => {
+        const byCabin = refundCabinMonthGrid[ct.vesselId]?.[m] ?? {}
+        const total = Object.values(byCabin).reduce((s, v) => s + v, 0)
+        return { byCabin, total }
+      })
+      const refundByCabin: Record<string, number> = {}
+      for (const row of refundMonths) {
+        for (const [c, v] of Object.entries(row.byCabin)) {
+          refundByCabin[c] = (refundByCabin[c] ?? 0) + v
+        }
+      }
+      const refundTotal = Object.values(refundByCabin).reduce((s, v) => s + v, 0)
+      return { ...ct, refundMonths, refundByCabin, refundTotal }
+    })
+
+    // Vessel table refund rows
+    const refundVesselMonths = MONTH_LABELS.map((_, m) => {
+      const perVessel: Record<string, number> = {}
+      let total = 0
+      for (const v of vessels) {
+        perVessel[v.id] = refundVesselMonthGrid[m][v.id] ?? 0
+        total += perVessel[v.id]
+      }
+      return { perVessel, total }
+    })
+    const refundVesselYearTotals: Record<string, number> = {}
+    for (const v of vessels) {
+      refundVesselYearTotals[v.id] = refundVesselMonths.reduce((s, m) => s + (m.perVessel[v.id] ?? 0), 0)
+    }
+    const refundGrandTotal = Object.values(refundVesselYearTotals).reduce((s, v) => s + v, 0)
+
+    // Chart data — use NET (published minus refunds)
+    const allRevenueByMonth = vesselMonths.map((m, i) => ({
+      month: m.month.slice(0, 3),
+      total: m.total - (refundVesselMonths[i]?.total ?? 0),
+    }))
+    const vesselByMonth = vesselMonths.map((m, i) => {
       const obj: Record<string, any> = { month: m.month.slice(0, 3) }
-      for (const v of vessels) obj[v.name] = m.perVessel[v.id] ?? 0
+      for (const v of vessels) {
+        obj[v.name] = (m.perVessel[v.id] ?? 0) - (refundVesselMonths[i]?.perVessel[v.id] ?? 0)
+      }
       return obj
     })
 
     return NextResponse.json({
       year, vessels,
-      cabinTables,
-      vesselTable: { months: vesselMonths, yearTotals: vesselYearTotals, grandTotal },
+      cabinTables: cabinTablesWithRefund,
+      vesselTable: {
+        months: vesselMonths, yearTotals: vesselYearTotals, grandTotal,
+        refundMonths: refundVesselMonths, refundYearTotals: refundVesselYearTotals, refundGrandTotal,
+      },
       charts: { allRevenue: allRevenueByMonth, perVessel: vesselByMonth },
     })
   } catch (e) {
