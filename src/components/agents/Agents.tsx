@@ -80,6 +80,7 @@ interface AgentRecord {
   country: string | null
   address: string | null
   email: string | null
+  whatsapp: string | null
   note: string | null
   contract: string | null
   contractFileName: string | null
@@ -112,9 +113,10 @@ interface AgentContact {
   whatsapp: string | null
   jobTitle: string | null
   dateOfBirth: string | null
+  addedByName: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', note: '', contract: '', contractFile: '', contractFileName: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
@@ -155,9 +157,19 @@ export default function Agents() {
   const [editContactForm, setEditContactForm] = useState(EMPTY_CONTACT)
 
   // inline expand/collapse contacts in table
-  const [expandedId,        setExpandedId]        = useState<string | null>(null)
-  const [contactsCache,     setContactsCache]     = useState<Record<string, AgentContact[]>>({})
-  const [contactsLoadingId, setContactsLoadingId] = useState<string | null>(null)
+  const [expandedId,            setExpandedId]            = useState<string | null>(null)
+  const [contactsCache,         setContactsCache]         = useState<Record<string, AgentContact[]>>({})
+  const [contactsLoadingId,     setContactsLoadingId]     = useState<string | null>(null)
+  // expanded row contact actions (all sales can manage for any agent)
+  const [expandedAddingId,      setExpandedAddingId]      = useState<string | null>(null)
+  const [expandedContactForm,   setExpandedContactForm]   = useState(EMPTY_CONTACT)
+  const [expandedSaving,        setExpandedSaving]        = useState(false)
+  const [expandedEditingId,     setExpandedEditingId]     = useState<string | null>(null)
+  const [expandedEditForm,      setExpandedEditForm]      = useState(EMPTY_CONTACT)
+  // void contract
+  const [voidingId,             setVoidingId]             = useState<string | null>(null)
+  // validation modal
+  const [validationModal,       setValidationModal]       = useState<{ agentName: string; missing: string[] } | null>(null)
 
   // filters & pagination
   const [scope,             setScope]             = useState<'mine' | 'all'>('mine')
@@ -304,6 +316,7 @@ export default function Agents() {
       country:       a.country    ?? '',
       address:       a.address    ?? '',
       email:         a.email      ?? '',
+      whatsapp:      a.whatsapp   ?? '',
       note:          a.note       ?? '',
       contract:         a.contract         ?? '',
       contractFile:     '',
@@ -337,6 +350,7 @@ export default function Agents() {
           country:          form.country          || null,
           address:          form.address          || null,
           email:            form.email            || null,
+          whatsapp:         form.whatsapp         || null,
           note:             form.note             || null,
           contract:         form.contract         || null,
           ...(form.contract !== 'Yes'
@@ -415,6 +429,81 @@ export default function Agents() {
         })
       }
     } catch (e) { console.error(e) }
+  }
+
+  // ── Expanded row contact handlers (all sales, any agent) ──────────────────
+  const handleExpandedAdd = async (agentId: string) => {
+    if (!expandedContactForm.name.trim()) return
+    setExpandedSaving(true)
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...expandedContactForm, dateOfBirth: expandedContactForm.dateOfBirth || null }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        setContactsCache(c => ({ ...c, [agentId]: [...(c[agentId] ?? []), created] }))
+        setExpandedAddingId(null)
+        setExpandedContactForm(EMPTY_CONTACT)
+      }
+    } catch (e) { console.error(e) }
+    finally { setExpandedSaving(false) }
+  }
+
+  const handleExpandedUpdate = async (agentId: string, contactId: string) => {
+    if (!expandedEditForm.name.trim()) return
+    setExpandedSaving(true)
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts/${contactId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...expandedEditForm, dateOfBirth: expandedEditForm.dateOfBirth || null }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setContactsCache(c => ({ ...c, [agentId]: (c[agentId] ?? []).map(x => x.id === contactId ? updated : x) }))
+        setExpandedEditingId(null)
+      }
+    } catch (e) { console.error(e) }
+    finally { setExpandedSaving(false) }
+  }
+
+  const handleExpandedDelete = async (agentId: string, contactId: string) => {
+    try {
+      const res = await fetch(`/api/agents/${agentId}/contacts/${contactId}`, { method: 'DELETE' })
+      if (res.ok) setContactsCache(c => ({ ...c, [agentId]: (c[agentId] ?? []).filter(x => x.id !== contactId) }))
+    } catch (e) { console.error(e) }
+  }
+
+  // ── Void contract ───────────────────────────────────────────────────────────
+  const handleVoidContract = async (agentId: string) => {
+    setVoidingId(agentId)
+    try {
+      const res = await fetch(`/api/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'void_contract' }),
+      })
+      if (res.ok) await fetchAgents()
+    } catch (e) { console.error(e) }
+    finally { setVoidingId(null) }
+  }
+
+  // ── Generate contract with validation ──────────────────────────────────────
+  const handleGenerateContract = (a: AgentRecord) => {
+    const missing: string[] = []
+    if (!a.address?.trim()) missing.push('Address')
+    if (!a.email?.trim())   missing.push('Email')
+    if (missing.length) {
+      setValidationModal({ agentName: a.name, missing })
+      return
+    }
+    if (a.contract === 'Yes' && a.contractFileName) {
+      setValidationModal({ agentName: a.name, missing: ['__contract_uploaded__'] })
+      return
+    }
+    window.open(`/print/agent-agreement/${a.id}`, '_blank')
   }
 
   const handleToggleActive = async () => {
@@ -809,13 +898,24 @@ export default function Agents() {
                         <td className="py-2.5 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 justify-end">
                             {canActOnAgent(a) && (
-                              <button
-                                className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
-                                onClick={() => window.open(`/print/agent-agreement/${a.id}`, '_blank')}
-                                title="Download agent agreement PDF"
-                              >
-                                <FileDown className="h-3.5 w-3.5" />
-                              </button>
+                              a.contract === 'Yes' && a.contractFileName ? (
+                                <button
+                                  className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                                  onClick={() => { if (confirm('Void contract? The uploaded contract will be removed and a new one can be generated.')) handleVoidContract(a.id) }}
+                                  title="Void contract"
+                                  disabled={voidingId === a.id}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
+                                  onClick={() => handleGenerateContract(a)}
+                                  title="Generate agent contract"
+                                >
+                                  <FileDown className="h-3.5 w-3.5" />
+                                </button>
+                              )
                             )}
                             {canActOnAgent(a) && (
                               <button
@@ -847,48 +947,120 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7} className="py-2 pr-4">
+                        <td colSpan={isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7} className="py-3 pr-4">
                           <div className="pl-12 pr-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                              Contact Persons
-                            </p>
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Contact Persons {contactsCache[a.id]?.length ? `(${contactsCache[a.id].length})` : ''}
+                              </p>
+                              {canManage && expandedAddingId !== a.id && (
+                                <button
+                                  onClick={() => { setExpandedAddingId(a.id); setExpandedContactForm(EMPTY_CONTACT); setExpandedEditingId(null) }}
+                                  className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                                >
+                                  <Plus className="h-3 w-3" /> Add
+                                </button>
+                              )}
+                            </div>
+
                             {contactsLoadingId === a.id ? (
                               <div className="space-y-1.5">
                                 {[...Array(2)].map((_, i) => <div key={i} className="h-8 w-full rounded bg-muted animate-pulse" />)}
                               </div>
-                            ) : !contactsCache[a.id]?.length ? (
-                              <p className="text-xs text-muted-foreground py-1">No contact persons added yet.</p>
                             ) : (
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-muted">
-                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Name</th>
-                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Job Title</th>
-                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">Email</th>
-                                    <th className="pb-1.5 pr-4 text-left font-medium text-muted-foreground">WhatsApp</th>
-                                    <th className="pb-1.5 text-left font-medium text-muted-foreground">Birthday</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-muted/60">
-                                  {contactsCache[a.id].map(c => (
-                                    <tr key={c.id} className="hover:bg-muted/30">
-                                      <td className="py-1.5 pr-4 font-medium text-foreground">{c.name}</td>
-                                      <td className="py-1.5 pr-4 text-muted-foreground">{c.jobTitle || <span className="opacity-30">—</span>}</td>
-                                      <td className="py-1.5 pr-4 text-muted-foreground">
-                                        {c.email
-                                          ? <a href={`mailto:${c.email}`} className="hover:underline">{c.email}</a>
-                                          : <span className="opacity-30">—</span>}
-                                      </td>
-                                      <td className="py-1.5 pr-4 text-muted-foreground">{c.whatsapp || <span className="opacity-30">—</span>}</td>
-                                      <td className="py-1.5 text-muted-foreground">
-                                        {c.dateOfBirth
-                                          ? new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                                          : <span className="opacity-30">—</span>}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                              <div className="space-y-1.5">
+                                {(contactsCache[a.id] ?? []).map(c => (
+                                  <div key={c.id} className="rounded-md border bg-background px-3 py-2">
+                                    {expandedEditingId === c.id ? (
+                                      <div className="space-y-2">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.name} onChange={e => setExpandedEditForm(f => ({ ...f, name: e.target.value }))} />
+                                          </div>
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.jobTitle} onChange={e => setExpandedEditForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.email} onChange={e => setExpandedEditForm(f => ({ ...f, email: e.target.value }))} />
+                                          </div>
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.whatsapp} onChange={e => setExpandedEditForm(f => ({ ...f, whatsapp: e.target.value }))} />
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-2 justify-end">
+                                          <button type="button" onClick={() => setExpandedEditingId(null)} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                                          <button type="button" disabled={expandedSaving || !expandedEditForm.name.trim()} onClick={() => handleExpandedUpdate(a.id, c.id)} className="text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50">
+                                            {expandedSaving ? 'Saving…' : 'Save'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-medium">{c.name}</span>
+                                            {c.jobTitle && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{c.jobTitle}</span>}
+                                          </div>
+                                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                            {c.email && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" />{c.email}</span>}
+                                            {c.whatsapp && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><MessageCircle className="h-3 w-3" />{c.whatsapp}</span>}
+                                            {c.dateOfBirth && <span className="text-[11px] text-muted-foreground">🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
+                                            {c.addedByName && <span className="text-[10px] text-muted-foreground/60">added by {c.addedByName}</span>}
+                                          </div>
+                                        </div>
+                                        {canManage && (
+                                          <div className="flex items-center gap-0.5 shrink-0">
+                                            <button onClick={() => { setExpandedEditingId(c.id); setExpandedEditForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '', jobTitle: c.jobTitle ?? '', dateOfBirth: c.dateOfBirth ? c.dateOfBirth.split('T')[0] : '' }) }} className="p-1 rounded hover:bg-muted text-muted-foreground"><Pencil className="h-3 w-3" /></button>
+                                            <button onClick={() => handleExpandedDelete(a.id, c.id)} className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+
+                                {!contactsCache[a.id]?.length && expandedAddingId !== a.id && (
+                                  <p className="text-xs text-muted-foreground py-1">No contact persons yet.</p>
+                                )}
+
+                                {/* Add form */}
+                                {expandedAddingId === a.id && (
+                                  <div className="rounded-md border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                                        <input autoFocus className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.name} onChange={e => setExpandedContactForm(f => ({ ...f, name: e.target.value }))} />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.jobTitle} onChange={e => setExpandedContactForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.email} onChange={e => setExpandedContactForm(f => ({ ...f, email: e.target.value }))} />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.whatsapp} onChange={e => setExpandedContactForm(f => ({ ...f, whatsapp: e.target.value }))} />
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2 justify-end">
+                                      <button type="button" onClick={() => { setExpandedAddingId(null); setExpandedContactForm(EMPTY_CONTACT) }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /> Cancel</button>
+                                      <button type="button" disabled={expandedSaving || !expandedContactForm.name.trim()} onClick={() => handleExpandedAdd(a.id)} className="flex items-center gap-1 text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50">
+                                        {expandedSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>
@@ -1065,6 +1237,16 @@ export default function Agents() {
                   placeholder="agent@example.com"
                   value={form.email}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">WhatsApp</Label>
+                <Input
+                  className="h-10"
+                  placeholder="+62 812 3456 7890"
+                  value={form.whatsapp}
+                  onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
                 />
               </div>
 
@@ -1703,6 +1885,51 @@ export default function Agents() {
           </div>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => { setImportResult(null); setShowSkipDetails(false) }}>Done</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Contract validation modal ── */}
+      <AlertDialog open={!!validationModal} onOpenChange={v => { if (!v) setValidationModal(null) }}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            {validationModal?.missing[0] === '__contract_uploaded__' ? (
+              <>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 shrink-0">
+                    <FileDown className="h-4 w-4" />
+                  </span>
+                  Contract Already Uploaded
+                </AlertDialogTitle>
+                <p className="text-sm text-muted-foreground pt-1">
+                  <strong>{validationModal?.agentName}</strong> already has a signed contract uploaded.
+                  Please void the existing contract first before generating a new one.
+                </p>
+              </>
+            ) : (
+              <>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 shrink-0">
+                    <X className="h-4 w-4" />
+                  </span>
+                  Incomplete Agent Data
+                </AlertDialogTitle>
+                <p className="text-sm text-muted-foreground pt-1">
+                  Please complete the following fields for <strong>{validationModal?.agentName}</strong> before generating the contract:
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {validationModal?.missing.map(f => (
+                    <li key={f} className="flex items-center gap-2 text-sm text-foreground">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setValidationModal(null)}>OK</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

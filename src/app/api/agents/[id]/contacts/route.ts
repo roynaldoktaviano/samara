@@ -33,6 +33,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { name, email, whatsapp, jobTitle, dateOfBirth } = await request.json()
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
+    const addedById   = session.user?.id ?? null
+    const addedByName = session.user?.name ?? (session.user as { email?: string })?.email ?? null
+
     const contact = await db.agentContact.create({
       data: {
         agentId:     id,
@@ -41,6 +44,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         whatsapp:    whatsapp?.trim() || null,
         jobTitle:    jobTitle?.trim() || null,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        addedById,
+        addedByName,
       },
     })
     return NextResponse.json(contact, { status: 201 })

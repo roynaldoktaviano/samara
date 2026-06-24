@@ -144,6 +144,7 @@ model Agent {
   country            String?
   address            String?
   email              String?
+  whatsapp           String?
   note               String?
   contract           String?
   contractFile       String?
@@ -176,17 +177,19 @@ model CalendarAccessLog {
 }
 
 model AgentContact {
-  id          String    @id @default(cuid())
-  agentId     String
-  name        String
-  email       String?
-  whatsapp    String?
-  jobTitle    String?
-  dateOfBirth DateTime?
-  agent       Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  bookings    Booking[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
+  id           String    @id @default(cuid())
+  agentId      String
+  name         String
+  email        String?
+  whatsapp     String?
+  jobTitle     String?
+  dateOfBirth  DateTime?
+  addedById    String?
+  addedByName  String?
+  agent        Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
 
   @@index([agentId])
 }
