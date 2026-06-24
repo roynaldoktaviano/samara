@@ -82,6 +82,8 @@ interface AgentRecord {
   email: string | null
   whatsapp: string | null
   note: string | null
+  website: string | null
+  instagram: string | null
   source: string | null
   currentCondition: string | null
   contract: string | null
@@ -118,7 +120,7 @@ interface AgentContact {
   addedByName: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', website: '', instagram: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
@@ -320,6 +322,8 @@ export default function Agents() {
       email:         a.email      ?? '',
       whatsapp:      a.whatsapp   ?? '',
       note:             a.note             ?? '',
+      website:          a.website          ?? '',
+      instagram:        a.instagram        ?? '',
       source:           a.source           ?? '',
       currentCondition: a.currentCondition ?? '',
       contract:         a.contract         ?? '',
@@ -356,6 +360,8 @@ export default function Agents() {
           email:            form.email            || null,
           whatsapp:         form.whatsapp         || null,
           note:             form.note             || null,
+          website:          form.website          || null,
+          instagram:        form.instagram        || null,
           source:           form.source           || null,
           currentCondition: form.currentCondition || null,
           contract:         form.contract         || null,
@@ -1268,6 +1274,26 @@ export default function Agents() {
                   placeholder="+62 812 3456 7890"
                   value={form.whatsapp}
                   onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</Label>
+                <Input
+                  className="h-10"
+                  placeholder="https://example.com"
+                  value={form.website}
+                  onChange={e => setForm(f => ({ ...f, website: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instagram</Label>
+                <Input
+                  className="h-10"
+                  placeholder="@username"
+                  value={form.instagram}
+                  onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))}
                 />
               </div>
 
