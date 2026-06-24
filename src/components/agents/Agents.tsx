@@ -82,6 +82,8 @@ interface AgentRecord {
   email: string | null
   whatsapp: string | null
   note: string | null
+  source: string | null
+  currentCondition: string | null
   contract: string | null
   contractFileName: string | null
   calendarToken: string | null
@@ -116,7 +118,7 @@ interface AgentContact {
   addedByName: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', contract: '', contractFile: '', contractFileName: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
@@ -168,8 +170,8 @@ export default function Agents() {
   const [expandedEditForm,      setExpandedEditForm]      = useState(EMPTY_CONTACT)
   // void contract
   const [voidingId,             setVoidingId]             = useState<string | null>(null)
-  // validation modal
-  const [validationModal,       setValidationModal]       = useState<{ agentName: string; missing: string[] } | null>(null)
+  // contract confirm modal
+  const [contractConfirmModal,  setContractConfirmModal]  = useState<{ agent: AgentRecord; missing: string[] } | null>(null)
 
   // filters & pagination
   const [scope,             setScope]             = useState<'mine' | 'all'>('mine')
@@ -317,7 +319,9 @@ export default function Agents() {
       address:       a.address    ?? '',
       email:         a.email      ?? '',
       whatsapp:      a.whatsapp   ?? '',
-      note:          a.note       ?? '',
+      note:             a.note             ?? '',
+      source:           a.source           ?? '',
+      currentCondition: a.currentCondition ?? '',
       contract:         a.contract         ?? '',
       contractFile:     '',
       contractFileName: a.contractFileName ?? '',
@@ -352,6 +356,8 @@ export default function Agents() {
           email:            form.email            || null,
           whatsapp:         form.whatsapp         || null,
           note:             form.note             || null,
+          source:           form.source           || null,
+          currentCondition: form.currentCondition || null,
           contract:         form.contract         || null,
           ...(form.contract !== 'Yes'
             ? { contractFile: null, contractFileName: null }
@@ -490,20 +496,26 @@ export default function Agents() {
     finally { setVoidingId(null) }
   }
 
+  const BLOCKED_CONDITIONS = ['No Response', 'Not Qualified', 'Inactive']
+
   // ── Generate contract with validation ──────────────────────────────────────
   const handleGenerateContract = (a: AgentRecord) => {
-    const missing: string[] = []
-    if (!a.address?.trim()) missing.push('Address')
-    if (!a.email?.trim())   missing.push('Email')
-    if (missing.length) {
-      setValidationModal({ agentName: a.name, missing })
+    if (!a.currentCondition || BLOCKED_CONDITIONS.includes(a.currentCondition)) {
+      setContractConfirmModal({ agent: a, missing: [`__blocked_condition__:${a.currentCondition ?? 'Not Set'}`] })
       return
     }
     if (a.contract === 'Yes' && a.contractFileName) {
-      setValidationModal({ agentName: a.name, missing: ['__contract_uploaded__'] })
+      setContractConfirmModal({ agent: a, missing: ['__contract_uploaded__'] })
       return
     }
-    window.open(`/print/agent-agreement/${a.id}`, '_blank')
+    const missing: string[] = []
+    if (!a.address?.trim()) missing.push('Address')
+    if (!a.country?.trim()) missing.push('Country')
+    if (!a.email?.trim())   missing.push('Email')
+    const hasCommission = (a.commission ?? 0) > 0 || (a.commissionOpenTrip ?? 0) > 0 || (a.commissionPrivateCharter ?? 0) > 0
+    if (!hasCommission)     missing.push('Commission')
+    // always show confirmation modal (with or without missing fields)
+    setContractConfirmModal({ agent: a, missing })
   }
 
   const handleToggleActive = async () => {
@@ -779,9 +791,7 @@ export default function Agents() {
                           <div className="flex items-center gap-1.5">
                             {a.contract
                               ? <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                                  a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' :
-                                  a.contract === 'Not Yet' ? 'bg-amber-50 text-amber-700' :
-                                  'bg-red-50 text-red-600'
+                                  a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
                                 }`}>{a.contract}</span>
                               : <span className="text-muted-foreground/40 text-xs">—</span>}
                             {a.contract === 'Yes' && a.contractFileName && (
@@ -882,15 +892,26 @@ export default function Agents() {
                         {a._count.bookings}
                       </td>
 
-                      {/* Status badge */}
+                      {/* Status badge — currentCondition */}
                       <td className="py-2.5 pr-3 text-center">
-                        <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${
-                          a.isActive
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-gray-50 text-gray-500 border-gray-200'
-                        }`}>
-                          {a.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
+                        {(() => {
+                          const cond = a.currentCondition
+                          const cfg: Record<string, string> = {
+                            'Active':           'bg-emerald-50 text-emerald-700 border-emerald-200',
+                            'In Conversation':  'bg-blue-50 text-blue-700 border-blue-200',
+                            'Follow Up':        'bg-violet-50 text-violet-700 border-violet-200',
+                            'Contract Sent':    'bg-amber-50 text-amber-700 border-amber-200',
+                            'No Response':      'bg-orange-50 text-orange-600 border-orange-200',
+                            'Not Qualified':    'bg-red-50 text-red-600 border-red-200',
+                            'Inactive':         'bg-gray-50 text-gray-400 border-gray-200',
+                          }
+                          const cls = cond && cfg[cond] ? cfg[cond] : 'bg-gray-50 text-gray-400 border-gray-200'
+                          return (
+                            <Badge variant="outline" className={`text-[11px] px-1.5 py-0 whitespace-nowrap ${cls}`}>
+                              {cond ?? '—'}
+                            </Badge>
+                          )
+                        })()}
                       </td>
 
                       {/* Actions — icon-only */}
@@ -1262,6 +1283,55 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Source</Label>
+                {(() => {
+                  const SOURCES = ['Referral','Cold Outreach','Exhibition / Event','Social Media','Website','WhatsApp Blast','Walk In','Other']
+                  const isOther = form.source !== '' && !SOURCES.slice(0, -1).includes(form.source)
+                  const selectVal = isOther ? 'Other' : (form.source || 'none')
+                  return (
+                    <>
+                      <Select
+                        value={selectVal}
+                        onValueChange={v => setForm(f => ({ ...f, source: v === 'none' ? '' : v === 'Other' ? 'Other' : v }))}
+                      >
+                        <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">— None —</SelectItem>
+                          {SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      {(form.source === 'Other' || isOther) && (
+                        <Input
+                          autoFocus
+                          className="h-9"
+                          placeholder="Please specify source..."
+                          value={isOther ? form.source : ''}
+                          onChange={e => setForm(f => ({ ...f, source: e.target.value || 'Other' }))}
+                        />
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Condition</Label>
+                <Select value={form.currentCondition || 'none'} onValueChange={v => setForm(f => ({ ...f, currentCondition: v === 'none' ? '' : v }))}>
+                  <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    <SelectItem value="In Conversation">In Conversation</SelectItem>
+                    <SelectItem value="Follow Up">Follow Up</SelectItem>
+                    <SelectItem value="Contract Sent">Contract Sent</SelectItem>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="No Response">No Response</SelectItem>
+                    <SelectItem value="Not Qualified">Not Qualified</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Note</Label>
                 <textarea
                   rows={3}
@@ -1285,8 +1355,7 @@ export default function Agents() {
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
                     <SelectItem value="Yes">Yes</SelectItem>
-                    <SelectItem value="Not Yet">Not Yet</SelectItem>
-                    <SelectItem value="Not Qualified">Not Qualified</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1889,11 +1958,27 @@ export default function Agents() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Contract validation modal ── */}
-      <AlertDialog open={!!validationModal} onOpenChange={v => { if (!v) setValidationModal(null) }}>
-        <AlertDialogContent className="max-w-sm">
+      {/* ── Contract confirm modal ── */}
+      <AlertDialog open={!!contractConfirmModal} onOpenChange={v => { if (!v) setContractConfirmModal(null) }}>
+        <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
-            {validationModal?.missing[0] === '__contract_uploaded__' ? (
+            {contractConfirmModal?.missing[0]?.startsWith('__blocked_condition__') ? (
+              <>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 shrink-0">
+                    <X className="h-4 w-4" />
+                  </span>
+                  Cannot Generate Contract
+                </AlertDialogTitle>
+                <p className="text-sm text-muted-foreground pt-1">
+                  Contract cannot be generated for <strong>{contractConfirmModal?.agent.name}</strong> because their current condition is{' '}
+                  <span className="font-semibold text-red-600">
+                    {contractConfirmModal?.missing[0]?.split(':')[1]}
+                  </span>.
+                  Please update the agent&apos;s condition before proceeding.
+                </p>
+              </>
+            ) : contractConfirmModal?.missing[0] === '__contract_uploaded__' ? (
               <>
                 <AlertDialogTitle className="flex items-center gap-2">
                   <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 shrink-0">
@@ -1902,34 +1987,78 @@ export default function Agents() {
                   Contract Already Uploaded
                 </AlertDialogTitle>
                 <p className="text-sm text-muted-foreground pt-1">
-                  <strong>{validationModal?.agentName}</strong> already has a signed contract uploaded.
+                  <strong>{contractConfirmModal?.agent.name}</strong> already has a signed contract uploaded.
                   Please void the existing contract first before generating a new one.
                 </p>
               </>
             ) : (
               <>
                 <AlertDialogTitle className="flex items-center gap-2">
-                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 shrink-0">
-                    <X className="h-4 w-4" />
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[#1a3050]/10 text-[#1a3050] shrink-0">
+                    <FileDown className="h-4 w-4" />
                   </span>
-                  Incomplete Agent Data
+                  Confirm Agent Data
                 </AlertDialogTitle>
                 <p className="text-sm text-muted-foreground pt-1">
-                  Please complete the following fields for <strong>{validationModal?.agentName}</strong> before generating the contract:
+                  Please review the following data for <strong>{contractConfirmModal?.agent.name}</strong> before generating the contract. Make sure all information is correct and accurate — double-check before proceeding.
                 </p>
-                <ul className="mt-2 space-y-1">
-                  {validationModal?.missing.map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-foreground">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
+                {contractConfirmModal && (() => {
+                  const a = contractConfirmModal.agent
+                  const rows: { label: string; value: string | null; missing: boolean }[] = [
+                    { label: 'Name',     value: a.name,     missing: !a.name?.trim() },
+                    { label: 'Address',  value: a.address,  missing: !a.address?.trim() },
+                    { label: 'Country',  value: a.country,  missing: !a.country?.trim() },
+                    { label: 'Email',    value: a.email,    missing: !a.email?.trim() },
+                    { label: 'WhatsApp', value: a.whatsapp, missing: false },
+                    {
+                      label: 'Commission',
+                      value: [
+                        a.commission           ? `General ${a.commission}%`              : null,
+                        a.commissionOpenTrip   ? `Open Trip ${a.commissionOpenTrip}%`    : null,
+                        a.commissionPrivateCharter ? `Charter ${a.commissionPrivateCharter}%` : null,
+                      ].filter(Boolean).join(' · ') || null,
+                      missing: (a.commission ?? 0) === 0 && (a.commissionOpenTrip ?? 0) === 0 && (a.commissionPrivateCharter ?? 0) === 0,
+                    },
+                  ]
+                  return (
+                    <div className="mt-3 rounded-lg border overflow-hidden text-sm">
+                      {rows.map(r => (
+                        <div key={r.label} className={`grid grid-cols-[90px_1fr] gap-2 px-3 py-2.5 border-b last:border-b-0 ${r.missing ? 'bg-red-50' : ''}`}>
+                          <span className="text-muted-foreground text-xs pt-0.5 shrink-0">{r.label}</span>
+                          {r.missing ? (
+                            <span className="flex items-center gap-1 text-red-500 font-medium text-xs">
+                              <X className="h-3 w-3 shrink-0" /> Not filled
+                            </span>
+                          ) : (
+                            <span className="text-foreground font-medium text-xs break-words leading-relaxed">
+                              {r.value || <span className="text-muted-foreground/40">—</span>}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+                {contractConfirmModal?.missing.length ? (
+                  <p className="text-xs text-red-500 mt-2 font-medium">
+                    ⚠ Some required fields are missing. Please fill them in before generating.
+                  </p>
+                ) : null}
               </>
             )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setValidationModal(null)}>OK</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setContractConfirmModal(null)}>Cancel</AlertDialogCancel>
+            {!contractConfirmModal?.missing[0] && !contractConfirmModal?.missing.length && (
+              <AlertDialogAction
+                onClick={() => {
+                  window.open(`/print/agent-agreement/${contractConfirmModal!.agent.id}`, '_blank')
+                  setContractConfirmModal(null)
+                }}
+              >
+                Generate Contract
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

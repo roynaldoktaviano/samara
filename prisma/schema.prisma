@@ -146,6 +146,8 @@ model Agent {
   email              String?
   whatsapp           String?
   note               String?
+  source             String?
+  currentCondition   String?
   contract           String?
   contractFile       String?
   contractFileName   String?

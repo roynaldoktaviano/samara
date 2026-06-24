@@ -58,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json(agent)
     }
 
-    const { name, commission, commissionOpenTrip, commissionPrivateCharter, isActive, salespersonId, country, address, email, whatsapp, note, contract, contractFile, contractFileName } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, isActive, salespersonId, country, address, email, whatsapp, note, source, currentCondition, contract, contractFile, contractFileName } = body
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
@@ -84,6 +84,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         email:            email            !== undefined ? (email            || null) : undefined,
         whatsapp:         whatsapp         !== undefined ? (whatsapp         || null) : undefined,
         note:             note             !== undefined ? (note             || null) : undefined,
+        source:           source           !== undefined ? (source           || null) : undefined,
+        currentCondition: currentCondition !== undefined ? (currentCondition || null) : undefined,
         contract:         contract         !== undefined ? (contract         || null) : undefined,
         contractFile:     contractFile     !== undefined ? (contractFile     || null) : undefined,
         contractFileName: contractFileName !== undefined ? (contractFileName || null) : undefined,

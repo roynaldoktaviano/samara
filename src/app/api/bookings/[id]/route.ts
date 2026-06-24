@@ -232,8 +232,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       select: { id: true, bookingCode: true, status: true },
     })
 
-    // When booking is cancelled, promote waiting list entries (awaited so fetchBookings sees the new on_hold booking)
+    // When booking is cancelled, cancel all non-confirmed payments and promote waiting list
     if (computedStatus === 'cancelled') {
+      await db.payment.updateMany({
+        where: { bookingId: id, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
+        data: { status: 'rejected' },
+      }).catch(e => console.error('cancel payments failed:', e))
       await promoteWaitingListForBooking(id).catch(e => console.error('promote waiting list failed:', e))
     }
 

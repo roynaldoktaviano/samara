@@ -1022,6 +1022,7 @@ export default function Payments() {
           </DialogContent>
         </Dialog>
       )}
+
     </div>
   )
 }
