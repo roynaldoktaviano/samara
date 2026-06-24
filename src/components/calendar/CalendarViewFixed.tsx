@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft } from 'lucide-react'
+import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -660,6 +660,12 @@ export default function CalendarView() {
   const [selectedCabinCtx, setSelectedCabinCtx] = useState<{ cabinId: string; bookingId: string; isFull: boolean; isOwnCabin: boolean } | null>(null)
   const [detailAddingGuest, setDetailAddingGuest] = useState(false)
 
+  /* ── Print ── */
+  const [printModalOpen,  setPrintModalOpen]  = useState(false)
+  const [printYacht,      setPrintYacht]      = useState<string>('')
+  const [printFromMonth,  setPrintFromMonth]  = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` })
+  const [printToMonth,    setPrintToMonth]    = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` })
+
   // Booking edit state
   const [isBookingEditing, setIsBookingEditing] = useState(false)
   const [bookingEditForm, setBookingEditForm]   = useState({
@@ -934,6 +940,104 @@ export default function CalendarView() {
 
   const jumpYear = (dir: 'prev' | 'next') =>
     setCurrentDate(prev => new Date(prev.getFullYear() + (dir === 'next' ? 1 : -1), prev.getMonth(), 1))
+
+  const handlePrint = () => {
+    const [fy, fm] = printFromMonth.split('-').map(Number)
+    const [ty, tm] = printToMonth.split('-').map(Number)
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+    // Build list of months to print
+    const months: { year: number; month: number }[] = []
+    let cy = fy, cm = fm - 1
+    const endY = ty, endM = tm - 1
+    while (cy < endY || (cy === endY && cm <= endM)) {
+      months.push({ year: cy, month: cm })
+      cm++; if (cm > 11) { cm = 0; cy++ }
+    }
+
+    if (!printYacht) { toast.error('Please select a vessel'); return }
+    const filteredBookings = bookings.filter(b => b.yachtName === printYacht)
+    const filteredTrips    = openTrips.filter(t => t.yacht.name === printYacht)
+
+    const calendarHtml = months.map(({ year, month }) => {
+      const firstDay = new Date(year, month, 1).getDay()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+      const offset = (firstDay + 6) % 7 // Mon-start
+      const cells: (number | null)[] = [...Array(offset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+      while (cells.length % 7 !== 0) cells.push(null)
+
+      const weeks: (number | null)[][] = []
+      for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
+
+      const rows = weeks.map(week => {
+        const tds = week.map(day => {
+          if (!day) return '<td style="background:#f9fafb;"></td>'
+          const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+          const evts  = filteredBookings.filter(b => b.startDate <= dateStr && b.endDate > dateStr)
+          const trips = filteredTrips.filter(t => t.startDate <= dateStr && t.endDate > dateStr)
+          const badges = [
+            ...evts.map(b => {
+              const color = yachtColorMap[b.yachtName] ?? '#64748b'
+              const sales = b.salespersonUser?.name || b.salesperson
+              const label = `${b.customerName || b.bookingCode || b.yachtName}${sales ? ` <span style="opacity:0.65;">by ${sales}</span>` : ''}`
+              return `<div class="evt" style="background:${color}22;border-left:3px solid ${color};color:${color};">${label}</div>`
+            }),
+            ...trips.map(t => {
+              const color = yachtColorMap[t.yacht.name] ?? '#8b5cf6'
+              return `<div class="evt" style="background:${color}22;border-left:3px dashed ${color};color:${color};">[OT] ${t.title}</div>`
+            }),
+          ].join('')
+          return `<td><div class="day-num">${day}</div>${badges}</td>`
+        }).join('')
+        return `<tr>${tds}</tr>`
+      }).join('')
+
+      return `
+        <div class="month-page">
+          <div class="page-header">
+            <div class="page-header-left">
+              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png" alt="Samara" />
+              <div>
+                <div class="sub">Schedule</div>
+                <h2>${MONTH_NAMES[month]} ${year} &mdash; ${printYacht}</h2>
+              </div>
+            </div>
+            <div style="font-size:10px;color:#9ca3af;">Printed ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div>
+          </div>
+          <table>
+            <thead><tr>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<th>${d}</th>`).join('')}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`
+    }).join('')
+
+    const w = window.open('', '_blank', 'width=1100,height=800')
+    if (!w) { toast.error('Popup blocked — allow popups and try again'); return }
+    w.document.write(`<!DOCTYPE html><html><head><title>Calendar Print</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; background: #fff; }
+        .month-page { break-before: page; break-inside: avoid; display: flex; flex-direction: column; min-height: 100vh; padding: 10mm 14mm 8mm; }
+        .month-page:first-child { break-before: avoid; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8mm; padding-bottom: 4mm; border-bottom: 2px solid #bdac7e; }
+        .page-header-left { display: flex; align-items: center; gap: 12px; }
+        .page-header img { height: 44px; object-fit: contain; }
+        .page-header h2 { font-size: 17px; font-weight: 700; color: #1f2937; }
+        .page-header .sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; flex: 1; }
+        th { border: 1px solid #e5e7eb; padding: 7px 4px; text-align: center; font-size: 11px; font-weight: 600; color: #6b7280; background: #f9fafb; }
+        td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; height: 80px; }
+        .day-num { font-weight: 700; font-size: 12px; color: #374151; margin-bottom: 3px; }
+        .evt { font-size: 9px; padding: 2px 5px; margin-top: 2px; border-radius: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        @page { size: A4 landscape; margin: 0; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      </style></head><body>
+      ${calendarHtml}
+      <script>window.onload = function(){ window.print(); }<\/script>
+    </body></html>`)
+    w.document.close()
+    setPrintModalOpen(false)
+  }
 
   const yachtColorMap = useMemo(() => buildYachtColorMap(yachts), [yachts])
 
@@ -1424,6 +1528,10 @@ export default function CalendarView() {
             <button onClick={() => setIsFullscreen(true)} title="Full screen"
               className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
               <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setPrintModalOpen(true)} title="Print calendar"
+              className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
+              <Printer className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -2566,6 +2674,56 @@ export default function CalendarView() {
           yachtId={wlBooking.yachtId}
           openTripId={wlBooking.openTripId}
         />
+      )}
+
+      {/* ── Print Modal ── */}
+      {printModalOpen && (
+        <Dialog open onOpenChange={v => !v && setPrintModalOpen(false)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Printer className="w-4 h-4" /> Print Calendar</DialogTitle>
+              <DialogDescription>Choose vessel and date range to print.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel</Label>
+                <Select value={printYacht} onValueChange={setPrintYacht}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select vessel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yachts.map(y => <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</Label>
+                  <input
+                    type="month"
+                    value={printFromMonth}
+                    onChange={e => setPrintFromMonth(e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</Label>
+                  <input
+                    type="month"
+                    value={printToMonth}
+                    min={printFromMonth}
+                    onChange={e => setPrintToMonth(e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPrintModalOpen(false)}>Cancel</Button>
+              <Button onClick={handlePrint} className="gap-1.5"><Printer className="w-3.5 h-3.5" /> Print</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
     </div>

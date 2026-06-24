@@ -24,6 +24,7 @@ import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from './WaitingListManager'
 import { toast } from 'sonner'
+import { compressImage } from '@/lib/compressImage'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
@@ -44,6 +45,12 @@ interface BookingRecord {
   destination?: string
   notes?: string
   cancelReason?: string | null
+  refundStatus?: string | null
+  refundDecision?: string | null
+  refundReason?: string | null
+  refundProof?: string | null
+  refundConfirmedAt?: string | null
+  refundConfirmedBy?: string | null
   salesperson?: string | null
   salespersonUser?: { name: string | null } | null
   currency?: string
@@ -215,6 +222,17 @@ export default function Bookings() {
   const [cancelReasonText,    setCancelReasonText]    = useState('')
   const [cancelSaving,        setCancelSaving]        = useState(false)
 
+  /* refund confirmations (sales) */
+  interface RefundPendingBooking {
+    id: string; bookingCode: string; refundStatus: string | null; refundReason: string | null
+    refundProof: string | null; cancelReason: string | null
+    payments: { id: string; invoiceNumber: string; amount: number; paymentType: string }[]
+  }
+  const [refundPending,       setRefundPending]       = useState<RefundPendingBooking[]>([])
+  const [refundPendingLoading, setRefundPendingLoading] = useState(false)
+  const [refundConfirmItem,   setRefundConfirmItem]   = useState<RefundPendingBooking | null>(null)
+  const [refundConfirmSaving, setRefundConfirmSaving] = useState(false)
+
   // Diving toggle off confirmation (admin only)
   const [divingOffDialog,     setDivingOffDialog]     = useState(false)
   const [divingOffReason,     setDivingOffReason]     = useState('')
@@ -305,8 +323,17 @@ export default function Bookings() {
     finally { setPaymentsLoading(false) }
   }, [])
 
+  const fetchRefundPending = useCallback(async () => {
+    setRefundPendingLoading(true)
+    try {
+      const res = await fetch('/api/bookings/pending-refund?view=sales')
+      if (res.ok) setRefundPending(await res.json())
+    } finally { setRefundPendingLoading(false) }
+  }, [])
+
   useEffect(() => { fetchBookings() }, [fetchBookings])
   useEffect(() => { if (canManageBookings) fetchPayments() }, [canManageBookings, fetchPayments])
+  useEffect(() => { if (canManageBookings) fetchRefundPending() }, [canManageBookings, fetchRefundPending])
 
   useEffect(() => {
     const handler = () => { fetchPayments(); fetchBookings() }
@@ -446,16 +473,36 @@ export default function Bookings() {
     if (!cancelDialogBooking) return
     setCancelSaving(true)
     try {
-      await fetch(`/api/bookings/${cancelDialogBooking.id}`, {
+      const res = await fetch(`/api/bookings/${cancelDialogBooking.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled', cancelReason: cancelReasonText.trim() || null }),
       })
+      const data = await res.json()
       await fetchBookings()
+      if (data.requiresRefundDecision) {
+        await fetchRefundPending()
+      }
       setCancelDialogBooking(null)
       setDetailBooking(null)
     } catch (e) { console.error(e) }
     finally { setCancelSaving(false) }
+  }
+
+  const handleConfirmRefund = async (bookingId: string) => {
+    setRefundConfirmSaving(true)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/refund`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm_refund' }),
+      })
+      if (!res.ok) throw new Error()
+      setRefundConfirmItem(null)
+      await fetchRefundPending()
+      await fetchBookings()
+    } catch { console.error('Failed to confirm refund') }
+    finally { setRefundConfirmSaving(false) }
   }
 
   /* ── extend hold ── */
@@ -731,24 +778,7 @@ export default function Bookings() {
       e.target.value = ''
       return
     }
-    const img = new Image()
-    const objectUrl = URL.createObjectURL(file)
-    img.onload = () => {
-      const MAX = 1200
-      let { width, height } = img
-      if (width > MAX || height > MAX) {
-        const ratio = Math.min(MAX / width, MAX / height)
-        width  = Math.round(width  * ratio)
-        height = Math.round(height * ratio)
-      }
-      const canvas = document.createElement('canvas')
-      canvas.width  = width
-      canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-      setProofPreview(canvas.toDataURL('image/jpeg', 0.75))
-      URL.revokeObjectURL(objectUrl)
-    }
-    img.src = objectUrl
+    compressImage(file).then(setProofPreview).catch(() => toast.error('Failed to process image'))
   }
   const saveProof = async () => {
     if (!proofPayment || !proofPreview) return
@@ -819,6 +849,49 @@ export default function Bookings() {
           </Button>
         )}
       </div>
+
+      {/* ── Pending Refund Confirmations (Sales) ── */}
+      {canManageBookings && (refundPendingLoading || refundPending.length > 0) && (
+        <Card className="border-violet-200 bg-violet-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-violet-700">
+              <AlertCircle className="h-4 w-4" />
+              Refund Confirmation Needed
+              {refundPending.length > 0 && (
+                <span className="ml-1 text-xs font-bold bg-violet-100 text-violet-700 border border-violet-200 rounded-full px-2 py-0.5">{refundPending.length}</span>
+              )}
+            </CardTitle>
+            <CardDescription>Finance has uploaded refund proof — please confirm with the guest and mark as received</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {refundPendingLoading ? (
+              <div className="space-y-2">{[...Array(2)].map((_, i) => <div key={i} className="h-12 rounded bg-muted animate-pulse" />)}</div>
+            ) : (
+              <div className="space-y-2">
+                {refundPending.map(b => (
+                  <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{b.bookingCode}</span>
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
+                          Refund Proof Uploaded
+                        </span>
+                      </div>
+                      {b.refundReason && <p className="text-xs text-muted-foreground mt-0.5">Refund reason: {b.refundReason}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        Total refund: ${b.payments.reduce((s, p) => s + p.amount, 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" className="shrink-0 border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => setRefundConfirmItem(b)}>
+                      View & Confirm
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Bookings Table ── */}
       <Card>
@@ -1970,16 +2043,66 @@ export default function Bookings() {
                   </div>
                 </div>
 
-                {/* Cancelled reason banner */}
-                {db_.status === 'cancelled' && (
-                  <div className="px-5 py-3 bg-slate-50 border-b flex items-start gap-2.5">
-                    <X className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-600 mb-0.5">Booking Cancelled</p>
-                      <p className="text-xs text-slate-500">
-                        {db_.cancelReason ? db_.cancelReason : 'No cancellation reason provided.'}
-                      </p>
+                {/* Cancelled / pending_refund banner */}
+                {(db_.status === 'cancelled' || db_.status === 'pending_refund') && (
+                  <div className="px-5 py-3 bg-slate-50 border-b space-y-2">
+                    <div className="flex items-start gap-2.5">
+                      <X className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-600 mb-0.5">
+                          {db_.status === 'pending_refund' ? 'Booking Pending Refund' : 'Booking Cancelled'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {db_.cancelReason ?? 'No cancellation reason provided.'}
+                        </p>
+                      </div>
                     </div>
+
+                    {/* Refund decision detail */}
+                    {db_.refundDecision && (() => {
+                      const isRefund = db_.refundDecision === 'refund'
+                      const statusLabel: Record<string, string> = {
+                        no_refund:        'No Refund',
+                        refund_pending:   'Awaiting Proof',
+                        refund_uploaded:  'Proof Uploaded — Awaiting Confirmation',
+                        refund_confirmed: 'Refund Confirmed',
+                      }
+                      const statusColor: Record<string, string> = {
+                        no_refund:        'bg-red-50 text-red-700 border-red-200',
+                        refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
+                        refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
+                        refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      }
+                      return (
+                        <div className="ml-6.5 pl-2 border-l-2 border-slate-200 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${isRefund ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                              {isRefund ? 'Refund' : 'No Refund'}
+                            </span>
+                            {db_.refundStatus && (
+                              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusColor[db_.refundStatus] ?? 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                                {statusLabel[db_.refundStatus] ?? db_.refundStatus}
+                              </span>
+                            )}
+                          </div>
+                          {db_.refundReason && (
+                            <p className="text-xs text-slate-500">Reason: {db_.refundReason}</p>
+                          )}
+                          {db_.refundConfirmedBy && (
+                            <p className="text-xs text-slate-400">Confirmed by {db_.refundConfirmedBy}{db_.refundConfirmedAt ? ` · ${new Date(db_.refundConfirmedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</p>
+                          )}
+                          {db_.refundProof && (
+                            <button
+                              onClick={() => window.open(db_.refundProof!, '_blank')}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1a5f6e] hover:underline"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                              View Refund Proof
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
 
@@ -2903,6 +3026,59 @@ export default function Bookings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Refund Confirm Dialog (Sales) ── */}
+      {refundConfirmItem && (
+        <Dialog open onOpenChange={v => { if (!v) setRefundConfirmItem(null) }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Confirm Refund — {refundConfirmItem.bookingCode}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Refund Amount</p>
+                {refundConfirmItem.payments.map(p => (
+                  <div key={p.id} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{p.invoiceNumber} ({p.paymentType})</span>
+                    <span className="font-semibold">${p.amount.toLocaleString()}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
+                  <span>Total</span>
+                  <span>${refundConfirmItem.payments.reduce((s, p) => s + p.amount, 0).toLocaleString()}</span>
+                </div>
+              </div>
+              {refundConfirmItem.refundReason && (
+                <div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  <strong>Refund reason:</strong> {refundConfirmItem.refundReason}
+                </div>
+              )}
+              {refundConfirmItem.refundProof && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Refund Proof (from Finance)</Label>
+                  <img src={refundConfirmItem.refundProof} alt="Refund proof" className="rounded border w-full max-h-60 object-contain" />
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">
+                After confirming with the guest that they received the refund, click <strong>Confirm Received</strong> to complete the cancellation.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRefundConfirmItem(null)}>Close</Button>
+              <Button
+                disabled={refundConfirmSaving}
+                onClick={() => handleConfirmRefund(refundConfirmItem!.id)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {refundConfirmSaving ? <><span className="mr-1">⏳</span>Confirming…</> : '✓ Confirm Received'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
     </div>
   )
 }

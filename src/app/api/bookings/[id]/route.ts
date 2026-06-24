@@ -223,6 +223,56 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ? (status as 'completed' | 'cancelled' | 'pending')
       : paymentStatus(existing.depositPaid, existing.totalPrice)
 
+    const userId   = session?.user?.id   ?? ''
+    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
+    const userRole = (session?.user as { role?: string })?.role ?? ''
+
+    // ── If cancelling, check for confirmed payments → route to refund flow ──
+    if (computedStatus === 'cancelled') {
+      const confirmedPayments = await db.payment.findMany({
+        where: { bookingId: id, status: 'confirmed' },
+        select: { id: true },
+      })
+
+      if (confirmedPayments.length > 0) {
+        // Has confirmed payments → set pending_refund, notify Finance
+        const booking = await db.booking.update({
+          where: { id },
+          data: {
+            status: 'pending_refund',
+            cancelReason: cancelReason || null,
+            refundStatus: 'pending_decision',
+          },
+          select: { id: true, bookingCode: true, status: true },
+        })
+
+        // Cancel non-confirmed payments
+        await db.payment.updateMany({
+          where: { bookingId: id, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
+          data: { status: 'cancelled' },
+        }).catch(() => {})
+
+        // Notify Finance + Admin
+        db.user.findMany({ where: { role: { in: ['FINANCE', 'ADMIN', 'SUPER_ADMIN'] } }, select: { id: true } })
+          .then(financeUsers => db.notification.createMany({
+            data: financeUsers.map(u => ({
+              userId:    u.id,
+              type:      'REFUND_DECISION_NEEDED',
+              title:     'Refund decision needed',
+              body:      `Booking ${booking.bookingCode} was cancelled with confirmed payment. Please decide: refund or no refund.`,
+              bookingId: id,
+            })),
+            skipDuplicates: true,
+          })).catch(() => {})
+
+        logActivity({ userId, userName, userRole, action: 'UPDATE', entity: 'Booking', entityId: id,
+          detail: `Cancel booking ${booking.bookingCode} with confirmed payment → pending refund decision`,
+        }).catch(() => {})
+
+        return NextResponse.json({ ...booking, requiresRefundDecision: true })
+      }
+    }
+
     const booking = await db.booking.update({
       where: { id },
       data: {
@@ -232,18 +282,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       select: { id: true, bookingCode: true, status: true },
     })
 
-    // When booking is cancelled, cancel all non-confirmed payments and promote waiting list
+    // When booking is cancelled (no confirmed payments), cancel pending payments and promote waiting list
     if (computedStatus === 'cancelled') {
       await db.payment.updateMany({
         where: { bookingId: id, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
-        data: { status: 'rejected' },
+        data: { status: 'cancelled' },
       }).catch(e => console.error('cancel payments failed:', e))
       await promoteWaitingListForBooking(id).catch(e => console.error('promote waiting list failed:', e))
     }
 
-    const userId   = session?.user?.id   ?? ''
-    const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
-    const userRole = (session?.user as { role?: string })?.role ?? ''
     logActivity({
       userId, userName, userRole,
       action: 'UPDATE', entity: 'Booking', entityId: id,

@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
+import { compressImage } from '@/lib/compressImage'
 
 /* ── Types ── */
 export interface GuestFormState {
@@ -158,9 +159,7 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => onChange(reader.result as string)
-    reader.readAsDataURL(file)
+    compressImage(file).then(onChange).catch(() => {})
   }
   return (
     <div>

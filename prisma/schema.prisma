@@ -36,6 +36,7 @@ enum BookingStatus {
   completed
   cancelled
   confirmed
+  pending_refund
 }
 
 enum OpenTripStatus {
@@ -76,6 +77,8 @@ enum PaymentStatus {
   pending_confirmation
   confirmed
   rejected
+  cancelled
+  refunded
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -307,6 +310,12 @@ model Booking {
   salespersonId   String?
   notes           String?
   cancelReason    String?
+  refundStatus    String?
+  refundDecision  String?
+  refundReason    String?
+  refundProof     String?
+  refundConfirmedAt DateTime?
+  refundConfirmedBy String?
   voucherCode     String?
   currency        String          @default("USD")
   exchangeRate    Float?

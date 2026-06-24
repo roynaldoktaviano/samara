@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
         totalPrice: true, depositPaid: true, discount: true,
         depositDueDate: true, finalDueDate: true, holdUntil: true,
         guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
+        refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
         salespersonUser: { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true, capacity: true } },

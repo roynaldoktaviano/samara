@@ -248,6 +248,8 @@ export default function Home() {
     } catch { /* silent */ }
   }, [])
 
+  const [pendingRefunds, setPendingRefunds] = useState(0)
+
   const fetchPendingPayments = useCallback(async () => {
     try {
       const res = await fetch('/api/payments')
@@ -258,13 +260,26 @@ export default function Home() {
     } catch { /* silent */ }
   }, [])
 
+  const fetchPendingRefunds = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      const financeRoles = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
+      const view = financeRoles.includes(role) ? 'finance' : 'sales'
+      const res = await fetch(`/api/bookings/pending-refund?view=${view}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPendingRefunds(Array.isArray(data) ? data.length : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds() }
     const interval = setInterval(refresh, 30000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -450,11 +465,11 @@ export default function Home() {
               const renderItems = (items: NavItem[]) => items.map((item) => {
                 const Icon = item.icon
                 const showDot =
-                  (item.id === 'payments' && isFinance && pendingPayments > 0) ||
-                  (item.id === 'bookings' && !isFinance && invoiceReadyCount > 0)
+                  (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
+                  (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0)
                 const dotCount =
-                  item.id === 'payments' && isFinance ? pendingPayments :
-                  item.id === 'bookings' && !isFinance ? invoiceReadyCount :
+                  item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
+                  item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
                   0
                 return (
                   <SidebarMenuItem key={item.id}>
@@ -475,7 +490,7 @@ export default function Home() {
                               animate={{ scale: 1, opacity: 1 }}
                               exit={{ scale: 0, opacity: 0 }}
                               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                              className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none"
+                              className="absolute -top-1.5 -right-1.5 min-w-3.5 h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none"
                             >
                               {dotCount > 9 ? '9+' : dotCount}
                             </motion.span>
@@ -546,7 +561,7 @@ export default function Home() {
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                      className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none pointer-events-none"
+                      className="absolute top-1 right-1 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none pointer-events-none"
                     >
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </motion.span>

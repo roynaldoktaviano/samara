@@ -22,6 +22,7 @@ import {
   FilePlus, Eye, CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { compressImage } from '@/lib/compressImage'
 
 interface Bank {
   id: string
@@ -80,6 +81,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   pending_confirmation: { label: 'Proof Submitted',  color: 'bg-amber-100 text-amber-700 border-amber-200',   icon: Clock },
   confirmed:            { label: 'Confirmed',        color: 'bg-green-100 text-green-700 border-green-200',   icon: CheckCircle2 },
   rejected:             { label: 'Rejected',         color: 'bg-red-100 text-red-700 border-red-200',         icon: XCircle },
+  cancelled:            { label: 'Cancelled',        color: 'bg-slate-100 text-slate-600 border-slate-200',    icon: XCircle },
+  refunded:             { label: 'Refunded',         color: 'bg-blue-100 text-blue-700 border-blue-200',       icon: XCircle },
 }
 
 
@@ -95,13 +98,14 @@ export default function Payments() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
-  const [filter, setFilter]     = useState<'all' | 'requested' | 'invoice_ready' | 'pending_confirmation' | 'confirmed' | 'rejected'>('all')
+  const [filter, setFilter]     = useState<'all' | 'requested' | 'invoice_ready' | 'pending_confirmation' | 'confirmed' | 'rejected' | 'cancelled' | 'refunded'>('all')
   const [selected, setSelected] = useState<Payment | null>(null)
   const [acting, setActing]     = useState(false)
   const [rejectNotes, setRejectNotes]   = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [proofPreview, setProofPreview] = useState<string | null>(null)
   const [proofLoading, setProofLoading] = useState(false)
+  const [tableView,    setTableView]    = useState<'payments' | 'refunds'>('payments')
 
   /* generate invoice */
   const [genInvSaving,       setGenInvSaving]      = useState(false)
@@ -118,6 +122,50 @@ export default function Payments() {
   const [genInvShowNet,      setGenInvShowNet]     = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
 
+  /* refund decisions */
+  interface RefundBooking {
+    id: string; bookingCode: string; status: string; cancelReason: string | null
+    refundStatus: string | null; refundDecision: string | null; refundReason: string | null
+    refundProof: string | null; refundConfirmedAt: string | null; refundConfirmedBy: string | null
+    payments: { id: string; invoiceNumber: string; amount: number; paymentType: string }[]
+  }
+  const [refundBookings,  setRefundBookings]  = useState<RefundBooking[]>([])
+  const [refundLoading,   setRefundLoading]   = useState(false)
+  const [refundSelected,  setRefundSelected]  = useState<RefundBooking | null>(null)
+  const [refundDecision,  setRefundDecision]  = useState<'no_refund' | 'refund' | null>(null)
+  const [refundReason,    setRefundReason]    = useState('')
+  const [refundProof,     setRefundProof]     = useState('')
+  const [refundSaving,    setRefundSaving]    = useState(false)
+
+  interface RefundHistoryItem {
+    id: string; bookingCode: string; status: string; cancelReason: string | null; updatedAt: string
+    refundStatus: string | null; refundDecision: string | null; refundReason: string | null
+    refundProof: string | null
+    refundConfirmedAt: string | null; refundConfirmedBy: string | null
+    customer: { name: string }
+    salespersonUser: { name: string | null } | null
+    payments: { id: string; invoiceNumber: string; amount: number; paymentType: string }[]
+  }
+  const [refundHistory,        setRefundHistory]        = useState<RefundHistoryItem[]>([])
+  const [refundHistoryLoading, setRefundHistoryLoading] = useState(false)
+  const [refundHistorySelected,setRefundHistorySelected]= useState<RefundHistoryItem | null>(null)
+
+  const fetchRefundBookings = useCallback(async () => {
+    setRefundLoading(true)
+    try {
+      const res = await fetch('/api/bookings/pending-refund?view=finance')
+      if (res.ok) setRefundBookings(await res.json())
+    } finally { setRefundLoading(false) }
+  }, [])
+
+  const fetchRefundHistory = useCallback(async () => {
+    setRefundHistoryLoading(true)
+    try {
+      const res = await fetch('/api/bookings/refund-history')
+      if (res.ok) setRefundHistory(await res.json())
+    } finally { setRefundHistoryLoading(false) }
+  }, [])
+
   const fetchPayments = useCallback(async () => {
     setLoading(true)
     try {
@@ -129,6 +177,7 @@ export default function Payments() {
   }, [])
 
   useEffect(() => { fetchPayments() }, [fetchPayments])
+  useEffect(() => { if (isFinance) { fetchRefundBookings(); fetchRefundHistory() } }, [fetchRefundBookings, fetchRefundHistory, isFinance])
 
   useEffect(() => {
     fetch('/api/banks').then(r => r.json()).then(d => setBanks(Array.isArray(d) ? d.filter((b: Bank) => b.isActive) : [])).catch(() => {})
@@ -155,6 +204,8 @@ export default function Payments() {
     pending_confirmation: payments.filter(p => p.status === 'pending_confirmation').length,
     confirmed:            payments.filter(p => p.status === 'confirmed').length,
     rejected:             payments.filter(p => p.status === 'rejected').length,
+    cancelled:            payments.filter(p => p.status === 'cancelled').length,
+    refunded:             payments.filter(p => p.status === 'refunded').length,
   }
 
   const totalConfirmed = payments
@@ -217,6 +268,50 @@ export default function Payments() {
     } finally {
       setActing(false)
     }
+  }
+
+  const handleRefundDecision = async () => {
+    if (!refundSelected || !refundDecision || !refundReason.trim()) return
+    setRefundSaving(true)
+    try {
+      const res = await fetch(`/api/bookings/${refundSelected.id}/refund`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: refundDecision, reason: refundReason }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(refundDecision === 'no_refund' ? 'No refund decision saved' : 'Refund approved — please upload proof')
+      if (refundDecision === 'no_refund') {
+        setRefundSelected(null)
+      } else {
+        setRefundBookings(prev => prev.map(b => b.id === refundSelected.id ? { ...b, refundStatus: 'refund_pending', refundDecision, refundReason } : b))
+        setRefundSelected(prev => prev ? { ...prev, refundStatus: 'refund_pending', refundDecision, refundReason } : null)
+      }
+      setRefundDecision(null)
+      setRefundReason('')
+      fetchRefundBookings()
+      fetchRefundHistory()
+    } catch { toast.error('Failed to save decision') }
+    finally { setRefundSaving(false) }
+  }
+
+  const handleUploadRefundProof = async () => {
+    if (!refundSelected || !refundProof) return
+    setRefundSaving(true)
+    try {
+      const res = await fetch(`/api/bookings/${refundSelected.id}/refund`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload_proof', proofFile: refundProof }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Refund proof uploaded — waiting for sales confirmation')
+      setRefundSelected(null)
+      setRefundProof('')
+      fetchRefundBookings()
+      fetchRefundHistory()
+    } catch { toast.error('Failed to upload proof') }
+    finally { setRefundSaving(false) }
   }
 
   const openDetail = async (p: Payment) => {
@@ -293,13 +388,84 @@ export default function Payments() {
         ))}
       </div>
 
+      {/* ── Pending Refund Decisions (Finance only) ── */}
+      {isFinance && (refundLoading || refundBookings.length > 0) && (
+        <Card className="border-orange-200 bg-orange-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-orange-700">
+              <AlertCircle className="h-4 w-4" />
+              Pending Refund Decisions
+              {refundBookings.length > 0 && (
+                <span className="ml-1 text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200 rounded-full px-2 py-0.5">{refundBookings.length}</span>
+              )}
+            </CardTitle>
+            <CardDescription>Cancelled bookings with confirmed payments awaiting refund decision</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {refundLoading ? (
+              <div className="space-y-2">{[...Array(2)].map((_, i) => <div key={i} className="h-12 rounded bg-muted animate-pulse" />)}</div>
+            ) : (
+              <div className="space-y-2">
+                {refundBookings.map(b => (
+                  <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{b.bookingCode}</span>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+                          b.refundStatus === 'pending_decision'  ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                          b.refundStatus === 'refund_pending'    ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          b.refundStatus === 'refund_uploaded'   ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                          'bg-gray-50 text-gray-500 border-gray-200'
+                        }`}>
+                          {b.refundStatus === 'pending_decision' ? 'Decision Needed' :
+                           b.refundStatus === 'refund_pending'   ? 'Refund Approved — Awaiting Proof' :
+                           b.refundStatus === 'refund_uploaded'  ? 'Proof Uploaded — Awaiting Sales Confirm' :
+                           b.refundStatus}
+                        </span>
+                      </div>
+                      {b.cancelReason && <p className="text-xs text-muted-foreground mt-0.5">Cancel reason: {b.cancelReason}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        Confirmed payments: {b.payments.map(p => `${p.invoiceNumber} ($${p.amount.toLocaleString()})`).join(', ')}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setRefundSelected(b); setRefundDecision(b.refundDecision as 'no_refund' | 'refund' | null ?? null); setRefundReason(b.refundReason ?? ''); setRefundProof('') }}>
+                      {b.refundStatus === 'pending_decision' ? 'Decide' : b.refundStatus === 'refund_pending' ? 'Upload Proof' : 'View'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Table card */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <CardTitle>All Payments</CardTitle>
-              <CardDescription>{filtered.length} record(s) found</CardDescription>
+            <div className="flex items-center gap-3">
+              <div>
+                <CardTitle>{tableView === 'payments' ? 'All Payments' : 'Refund Records'}</CardTitle>
+                <CardDescription>
+                  {tableView === 'payments' ? `${filtered.length} record(s) found` : `${refundHistory.length} record(s)`}
+                </CardDescription>
+              </div>
+              {isFinance && (
+                <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/40">
+                  <button
+                    onClick={() => setTableView('payments')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Payments
+                  </button>
+                  <button
+                    onClick={() => setTableView('refunds')}
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Refund Records
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4 text-muted-foreground" />
@@ -313,28 +479,98 @@ export default function Payments() {
             </div>
           </div>
 
-          {/* Status filter tabs */}
-          <div className="flex gap-1 pt-1 flex-wrap">
-            {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={[
-                  'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
-                  filter === f
-                    ? 'bg-[#1a5f6e] text-white border-[#1a5f6e]'
-                    : 'text-muted-foreground border-border hover:bg-muted',
-                ].join(' ')}
-              >
-                {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label}
-                {' '}
-                <span className="opacity-70">({counts[f]})</span>
-              </button>
-            ))}
-          </div>
+          {/* Status filter tabs — payments view only */}
+          {tableView === 'payments' && (
+            <div className="flex gap-1 pt-1 flex-wrap">
+              {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'refunded'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={[
+                    'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+                    filter === f
+                      ? 'bg-[#1a5f6e] text-white border-[#1a5f6e]'
+                      : 'text-muted-foreground border-border hover:bg-muted',
+                  ].join(' ')}
+                >
+                  {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label}
+                  {' '}
+                  <span className="opacity-70">({counts[f]})</span>
+                </button>
+              ))}
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="p-0">
+          {tableView === 'refunds' ? (
+            /* ── Refund Records Table ── */
+            refundHistoryLoading ? (
+              <div className="p-4 space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-10 rounded bg-muted animate-pulse" />)}</div>
+            ) : refundHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12">No refund records yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-b-md border-t">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="text-xs">
+                      <TableHead>Booking</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Sales</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Cancel Reason</TableHead>
+                      <TableHead>Decision</TableHead>
+                      <TableHead>Refund Reason</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Confirmed By</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {refundHistory.map(r => {
+                      const totalAmount = r.payments.reduce((s, p) => s + p.amount, 0)
+                      const statusCfg: Record<string, string> = {
+                        no_refund:        'bg-red-50 text-red-600 border-red-200',
+                        refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
+                        refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
+                        refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      }
+                      const statusLabel: Record<string, string> = {
+                        no_refund:        'No Refund',
+                        refund_pending:   'Pending Proof',
+                        refund_uploaded:  'Awaiting Confirm',
+                        refund_confirmed: 'Refund Confirmed',
+                      }
+                      return (
+                        <TableRow key={r.id} className="text-sm cursor-pointer hover:bg-muted/50" onClick={() => setRefundHistorySelected(r)}>
+                          <TableCell><span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{r.bookingCode}</span></TableCell>
+                          <TableCell className="font-medium">{r.customer.name}</TableCell>
+                          <TableCell className="text-muted-foreground text-xs">{r.salespersonUser?.name ?? '—'}</TableCell>
+                          <TableCell className="font-semibold">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={r.cancelReason ?? ''}>{r.cancelReason ?? '—'}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full border ${r.refundDecision === 'refund' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.refundDecision === 'no_refund' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                              {r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No Refund' : '—'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate" title={r.refundReason ?? ''}>{r.refundReason ?? '—'}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusCfg[r.refundStatus ?? ''] ?? 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                              {statusLabel[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{r.refundConfirmedBy ?? '—'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(r.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )
+          ) : (
           <div className="rounded-b-md border-t">
             <Table>
               <TableHeader>
@@ -452,6 +688,7 @@ export default function Payments() {
               </TableBody>
             </Table>
           </div>
+          )}
         </CardContent>
       </Card>
 
@@ -943,16 +1180,25 @@ export default function Payments() {
               {selected.confirmedBy && (
                 <>
                   <Separator />
-                  <div className={`rounded-md p-3 text-sm ${selected.status === 'confirmed' ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <p className={`font-medium ${selected.status === 'confirmed' ? 'text-green-700' : 'text-red-700'}`}>
-                      {selected.status === 'confirmed' ? '✓ Confirmed' : '✗ Rejected'} by {selected.confirmedBy}
-                    </p>
-                    {selected.confirmedAt && (
-                      <p className={`text-xs mt-0.5 ${selected.status === 'confirmed' ? 'text-green-600' : 'text-red-600'}`}>
-                        {fmtDateTime(selected.confirmedAt)}
-                      </p>
-                    )}
-                  </div>
+                  {(() => {
+                    const s = selected.status
+                    const isGood = s === 'confirmed' || s === 'refunded'
+                    const label = s === 'confirmed' ? '✓ Confirmed'
+                               : s === 'refunded'  ? '↩ Refunded'
+                               : s === 'cancelled' ? '✕ Cancelled'
+                               : '✕ Rejected'
+                    const bg    = isGood ? 'bg-green-50'  : s === 'cancelled' ? 'bg-slate-50' : 'bg-red-50'
+                    const text  = isGood ? 'text-green-700' : s === 'cancelled' ? 'text-slate-600' : 'text-red-700'
+                    const sub   = isGood ? 'text-green-600' : s === 'cancelled' ? 'text-slate-400' : 'text-red-600'
+                    return (
+                      <div className={`rounded-md p-3 text-sm ${bg}`}>
+                        <p className={`font-medium ${text}`}>{label} by {selected.confirmedBy}</p>
+                        {selected.confirmedAt && (
+                          <p className={`text-xs mt-0.5 ${sub}`}>{fmtDateTime(selected.confirmedAt)}</p>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </>
               )}
 
@@ -1022,6 +1268,192 @@ export default function Payments() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* ── Refund Decision Dialog (Finance) ── */}
+      {refundSelected && (
+        <Dialog open onOpenChange={v => { if (!v) { setRefundSelected(null); setRefundDecision(null); setRefundReason(''); setRefundProof('') } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+                Refund Decision — {refundSelected.bookingCode}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Confirmed payments summary */}
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Confirmed Payments</p>
+                {refundSelected.payments.map(p => (
+                  <div key={p.id} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{p.invoiceNumber} ({p.paymentType})</span>
+                    <span className="font-semibold">${p.amount.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Phase 1: Choose decision */}
+              {refundSelected.refundStatus === 'pending_decision' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Decision</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['no_refund', 'refund'] as const).map(d => (
+                        <button key={d} type="button" onClick={() => setRefundDecision(d)}
+                          className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-colors ${refundDecision === d ? d === 'no_refund' ? 'bg-red-600 text-white border-red-600' : 'bg-emerald-600 text-white border-emerald-600' : 'hover:bg-muted'}`}>
+                          {d === 'no_refund' ? '✕ No Refund' : '✓ Refund'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Reason <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea rows={3} placeholder={refundDecision === 'no_refund' ? 'Reason for no refund...' : 'Reason for refund...'} value={refundReason} onChange={e => setRefundReason(e.target.value)} />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setRefundSelected(null)}>Cancel</Button>
+                    <Button disabled={!refundDecision || !refundReason.trim() || refundSaving} onClick={handleRefundDecision}>
+                      {refundSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                      Confirm Decision
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
+
+              {/* Phase 2: Upload refund proof */}
+              {(refundSelected.refundStatus === 'refund_pending' || refundSelected.refundStatus === 'refund_uploaded') && (
+                <>
+                  <div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                    <strong>Refund approved.</strong> Reason: {refundSelected.refundReason}
+                  </div>
+                  {refundSelected.refundStatus === 'refund_uploaded' ? (
+                    <div className="rounded-md border bg-violet-50 px-3 py-2 text-sm text-violet-700">
+                      Proof uploaded. Waiting for sales team to confirm with guest.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload Refund Proof (image/base64)</Label>
+                        <input type="file" accept="image/*" className="w-full text-sm"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            compressImage(file).then(setRefundProof).catch(() => {})
+                          }}
+                        />
+                        {refundProof && <img src={refundProof} alt="Refund proof preview" className="mt-2 rounded border max-h-40 object-contain" />}
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setRefundSelected(null)}>Close</Button>
+                        <Button disabled={!refundProof || refundSaving} onClick={handleUploadRefundProof}>
+                          {refundSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                          Upload Proof
+                        </Button>
+                      </DialogFooter>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── Refund History Detail Dialog ── */}
+      {refundHistorySelected && (() => {
+        const r = refundHistorySelected
+        const total = r.payments.reduce((s, p) => s + p.amount, 0)
+        const statusLabel: Record<string, string> = {
+          no_refund:        'No Refund',
+          refund_pending:   'Awaiting Proof',
+          refund_uploaded:  'Proof Uploaded — Awaiting Confirmation',
+          refund_confirmed: 'Refund Confirmed',
+        }
+        const statusColor: Record<string, string> = {
+          no_refund:        'bg-red-50 text-red-700 border-red-200',
+          refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
+          refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
+          refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        }
+        return (
+          <Dialog open onOpenChange={v => { if (!v) setRefundHistorySelected(null) }}>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  Refund Detail
+                  <span className="font-mono text-sm bg-muted px-1.5 py-0.5 rounded">{r.bookingCode}</span>
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex gap-4 py-1">
+                {/* Left: info */}
+                <div className="flex-1 min-w-0 space-y-3">
+                  <div className="rounded-lg border divide-y text-sm">
+                    {[
+                      { label: 'Customer',      value: <span className="font-medium">{r.customer.name}</span> },
+                      { label: 'Sales',         value: r.salespersonUser?.name ?? '—' },
+                      { label: 'Total Paid',    value: <span className="font-semibold">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> },
+                      { label: 'Cancel Reason', value: r.cancelReason ?? '—' },
+                      { label: 'Decision',      value: (
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${r.refundDecision === 'refund' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.refundDecision === 'no_refund' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                          {r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No Refund' : '—'}
+                        </span>
+                      )},
+                      { label: 'Refund Reason', value: r.refundReason ?? '—' },
+                      { label: 'Status',        value: (
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusColor[r.refundStatus ?? ''] ?? 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                          {statusLabel[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'}
+                        </span>
+                      )},
+                      ...(r.refundConfirmedBy ? [{ label: 'Confirmed By', value: `${r.refundConfirmedBy}${r.refundConfirmedAt ? ` · ${new Date(r.refundConfirmedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}` }] : []),
+                    ].map(row => (
+                      <div key={row.label} className="flex justify-between items-center px-3 py-2">
+                        <span className="text-muted-foreground text-xs shrink-0">{row.label}</span>
+                        <span className="text-right text-xs ml-2">{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {r.payments.length > 0 && (
+                    <div className="rounded-lg border divide-y text-xs">
+                      {r.payments.map(p => (
+                        <div key={p.id} className="flex justify-between px-3 py-2">
+                          <span className="font-mono text-muted-foreground">{p.invoiceNumber}</span>
+                          <span className="font-semibold">${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: proof image */}
+                {r.refundProof ? (
+                  <div className="w-48 shrink-0 flex flex-col gap-1">
+                    <p className="text-xs font-semibold text-muted-foreground">Refund Proof</p>
+                    <img
+                      src={r.refundProof}
+                      alt="Refund proof"
+                      className="rounded-lg border w-full object-cover bg-muted"
+                      style={{ aspectRatio: '3/4', maxHeight: '260px' }}
+                    />
+                    <a
+                      href={r.refundProof}
+                      download="refund-proof"
+                      className="inline-flex items-center justify-center gap-1.5 w-full text-xs font-medium text-[#1a5f6e] border border-[#1a5f6e]/30 rounded-md py-1.5 hover:bg-[#1a5f6e]/5 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                      Download
+                    </a>
+                  </div>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRefundHistorySelected(null)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
     </div>
   )
