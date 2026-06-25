@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getSessionDb } from '@/lib/session-db'
+import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
+
+const STAFF_ROLES = ['SALES', 'FINANCE', 'MARKETING']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -11,7 +14,8 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const users = await db.user.findMany({
+  const tenantDb = getSessionDb(session)
+  const users = await tenantDb.user.findMany({
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   })
@@ -29,16 +33,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const existing = await db.user.findUnique({ where: { email } })
+  // Admin can only create staff, not other admins
+  if (!STAFF_ROLES.includes(role)) {
+    return NextResponse.json({ error: 'Admin can only create SALES, FINANCE, or MARKETING users' }, { status: 403 })
+  }
+
+  const tenantDb = getSessionDb(session)
+
+  const existing = await tenantDb.user.findUnique({ where: { email } })
   if (existing) {
     return NextResponse.json({ error: 'Email already in use' }, { status: 409 })
   }
 
   const hashed = await bcrypt.hash(password, 10)
-  const user = await db.user.create({
+  const user = await tenantDb.user.create({
     data: { name: name || null, email, password: hashed, role },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
   })
+
+  // Auto-register staff in central DB under same tenant as the admin
+  const tenantId = (session!.user as { tenantId?: string })?.tenantId
+  if (tenantId) {
+    const cu = await centralDb.centralUser.upsert({
+      where: { email },
+      update: { name: name || null, isActive: true },
+      create: { email, name: name || null, isSuperAdmin: false },
+    })
+    await centralDb.userTenant.upsert({
+      where: { userId_tenantId: { userId: cu.id, tenantId } },
+      update: {},
+      create: { userId: cu.id, tenantId },
+    })
+  }
+
   logActivity({
     userId:   session!.user.id,
     userName: session!.user.name ?? session!.user.email ?? 'Unknown',

@@ -1,28 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { usePageTransition } from "@/components/PageTransitionOverlay";
 
+const SAMARA_LOGO = "https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp";
+
+interface TenantInfo {
+  tenantName: string;
+  logoUrl: string | null;
+  slug: string;
+}
+
 export default function LoginPage() {
-  const router = useRouter();
   const { trigger } = usePageTransition();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [tenant, setTenant]     = useState<TenantInfo | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Lookup tenant info when email changes (debounced 600ms)
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!email || !email.includes("@")) { setTenant(null); return; }
+    debounceRef.current = setTimeout(async () => {
+      const res = await fetch(`/api/auth/tenant-info?email=${encodeURIComponent(email)}`);
+      if (res.ok) setTenant(await res.json());
+      else setTenant(null);
+    }, 600);
+  }, [email]);
+
+  const logoUrl = tenant?.logoUrl ?? SAMARA_LOGO;
+  const logoAlt = tenant?.tenantName ?? "Samara";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    const result = await signIn("credentials", { email, password, redirect: false });
 
     if (result?.error) {
       setLoading(false);
@@ -40,33 +58,37 @@ export default function LoginPage() {
       <div
         className="relative flex max-h-screen w-full overflow-hidden"
         style={{
-          backgroundImage:
-            "url('https://samaraliveaboard.com/wp-content/uploads/2025/07/samara-1-main-deck-4.webp')",
+          backgroundImage: "url('https://samaraliveaboard.com/wp-content/uploads/2025/07/samara-1-main-deck-4.webp')",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
       >
-        {/* White overlay */}
         <div className="absolute inset-0 bg-white/98 z-0" />
 
-        {/* Main content */}
         <div className="relative z-10 flex w-full max-h-screen h-screen">
 
           {/* ── LEFT PANEL ── */}
-          <div className="flex flex-col w-full md:w-[52%] h-auto md:h-screen px-6 sm:px-10 md:px-12 pt-6 sm:pt-8 pb-6 sm:pb-7">
+          <div className="flex flex-col w-full md:w-[52%] h-full md:h-screen px-0 md:px-12 pt-0 md:pt-8 pb-0 md:pb-7">
 
-            {/* Logo */}
+            {/* Logo — desktop */}
             <img
-              src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp"
-              alt="Samara Logo"
-              className="h-9 sm:h-11 w-auto object-contain object-left mx-auto md:mx-0"
+              src={logoUrl}
+              alt={logoAlt}
+              className="hidden md:block h-11 w-auto object-contain object-left transition-all duration-300"
             />
 
             {/* Form */}
             <form
               onSubmit={handleLogin}
-              className="flex flex-col justify-center flex-1 w-full max-w-sm mx-auto py-8 sm:py-10"
+              className="flex flex-col justify-center flex-1 w-full max-w-sm mx-auto px-8 py-10 md:px-0 md:py-8"
             >
+              {/* Logo — mobile */}
+              <img
+                src={logoUrl}
+                alt={logoAlt}
+                className="md:hidden h-10 w-auto object-contain mx-auto mb-8 transition-all duration-300"
+              />
+
               <h1
                 className="text-2xl sm:text-3xl font-bold tracking-[0.07em] text-center text-[#1b3a4b] mb-2"
                 style={{ fontFamily: "'Merriweather', serif" }}
@@ -74,21 +96,17 @@ export default function LoginPage() {
                 WELCOME BACK!
               </h1>
               <p className="text-xs sm:text-[13px] text-center text-[#7e9099] font-light mb-7 leading-relaxed">
-                Sign in to manage itineraries and client bookings.
+                {tenant ? `Sign in to ${tenant.tenantName}` : "Sign in to manage itineraries and client bookings."}
               </p>
 
-              {/* Error message */}
               {error && (
                 <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-[13px] text-red-600">
                   {error}
                 </div>
               )}
 
-              {/* Email */}
               <div className="mb-4">
-                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">
-                  Email
-                </label>
+                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Email</label>
                 <input
                   type="email"
                   placeholder="Input your Email..."
@@ -99,11 +117,8 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Password */}
               <div className="mb-1">
-                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">
-                  Password
-                </label>
+                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Password</label>
                 <input
                   type="password"
                   placeholder="Input your Password"
@@ -114,7 +129,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Button */}
               <button
                 type="submit"
                 disabled={loading}
@@ -123,7 +137,6 @@ export default function LoginPage() {
                 {loading ? "Logging in..." : "Log In to Dashboard"}
               </button>
 
-              {/* Forgot */}
               <p className="mt-4 text-center text-[12px] text-[#8fa3ad]">
                 Forgot password?{" "}
                 <span className="text-[#8fa3ad] underline cursor-pointer hover:text-[#1a6070] transition-colors">
@@ -132,13 +145,12 @@ export default function LoginPage() {
               </p>
             </form>
 
-            {/* Footer */}
-            <p className="text-[10.5px] text-[#aabbc4] font-light text-center md:text-left">
+            <p className="text-[10.5px] text-[#aabbc4] font-light text-center md:text-left px-8 pb-5 md:px-0 md:pb-0">
               © 2026 Samara Liveaboard. All rights reserved.
             </p>
           </div>
 
-          {/* ── RIGHT PANEL — hidden on mobile, visible md+ ── */}
+          {/* ── RIGHT PANEL ── */}
           <div className="hidden md:flex flex-1 p-5">
             <div className="w-[90%] ml-auto h-full rounded-2xl overflow-hidden shadow-xl">
               <img

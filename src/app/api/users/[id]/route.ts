@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getSessionDb } from '@/lib/session-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
@@ -24,6 +24,7 @@ export async function PUT(
   if (password)               data.password = await bcrypt.hash(password, 10)
 
   try {
+    const db = getSessionDb(session)
     const user = await db.user.update({
       where: { id },
       data,
@@ -61,6 +62,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
   }
 
+  const db = getSessionDb(session)
   const target = await db.user.findUnique({ where: { id }, select: { name: true, email: true } })
   await db.user.delete({ where: { id } })
 

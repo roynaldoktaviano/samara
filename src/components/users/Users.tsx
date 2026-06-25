@@ -24,13 +24,6 @@ interface UserRecord {
 
 const ROLES: { value: Role; label: string; desc: string; color: string; modules: string }[] = [
   {
-    value: 'ADMIN',
-    label: 'Admin',
-    desc: 'Full access to all modules',
-    color: 'bg-purple-100 text-purple-700',
-    modules: 'Dashboard, Yachts, Bookings, Open Trips, Guests, Statistics, Expenses, Maintenance, Team',
-  },
-  {
     value: 'SALES',
     label: 'Sales',
     desc: 'Manage bookings & guests',

@@ -13,7 +13,7 @@ model CentralUser {
   id           String       @id @default(cuid())
   name         String?
   email        String       @unique
-  password     String
+  password     String?      // only for super admins; tenant users auth via tenant DB
   isSuperAdmin Boolean      @default(false)
   isActive     Boolean      @default(true)
   tenants      UserTenant[]
@@ -29,6 +29,8 @@ model Tenant {
   slug        String       @unique
   domain      String?
   databaseUrl String
+  directUrl   String?
+  logoUrl     String?
   isActive    Boolean      @default(true)
   users       UserTenant[]
   createdAt   DateTime     @default(now())
