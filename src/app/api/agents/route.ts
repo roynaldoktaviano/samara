@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
     const all = searchParams.get('all') === 'true'
@@ -32,13 +33,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
+  if (!isSuperAdmin && userRole !== 'ADMIN') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    const userRole = (session?.user as { role?: string })?.role ?? ''
-    if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
     const body = await request.json()
     const { name, commission, commissionOpenTrip, commissionPrivateCharter, salespersonId, country, address, email, whatsapp, note, website, instagram, source, currentCondition, contract, contractFile, contractFileName } = body
 

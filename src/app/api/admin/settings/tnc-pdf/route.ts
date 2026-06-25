@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 const KEY = 'tnc_pdf'
 
@@ -14,6 +14,7 @@ async function requireAdmin() {
 
 // GET — info only (no binary)
 export async function GET() {
+  const db = await getDb()
   if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const setting = await db.systemSetting.findUnique({
@@ -33,6 +34,7 @@ export async function GET() {
 
 // POST — upload new PDF
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE — remove PDF
 export async function DELETE() {
+  const db = await getDb()
   if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   await db.systemSetting.deleteMany({ where: { key: KEY } })

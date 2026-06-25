@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const customer = await db.customer.findUnique({
@@ -104,11 +107,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if ((session?.user as { role?: string })?.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if ((session?.user as { role?: string })?.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
     const { id } = await params
     const bookingCount = await db.booking.count({ where: { customerId: id } })
     if (bookingCount > 0) {
@@ -136,8 +140,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
     const {
@@ -145,7 +151,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       passport, dateOfBirth, address,
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
-      medicalData, foodData, drinksData, housekeepingData, serviceData, divingData, surfingData,
+      medicalData, foodData, drinksData, divingData,
       passportImage,
     } = body
 
@@ -157,7 +163,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ? (new Date(Date.now() - parsedDob.getTime()).getUTCFullYear() - 1970) < 12
       : undefined
 
-    const customer = await (db.customer as any).update({
+    const customer = await db.customer.update({
       where: { id },
       data: {
         name, firstName, lastName, gender, email, phone,
@@ -167,14 +173,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         dateOfBirth: parsedDob,
         passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
         ...(isChild !== undefined && { isChild }),
-        ...(medicalData      !== undefined && { medicalData }),
-        ...(foodData         !== undefined && { foodData }),
-        ...(drinksData       !== undefined && { drinksData }),
-        ...(housekeepingData !== undefined && { housekeepingData }),
-        ...(serviceData      !== undefined && { serviceData }),
-        ...(divingData       !== undefined && { divingData }),
-        ...(surfingData      !== undefined && { surfingData }),
-        ...(passportImage    !== undefined && { passportImage: passportImage || null }),
+        ...(medicalData   !== undefined && { medicalData }),
+        ...(foodData      !== undefined && { foodData }),
+        ...(drinksData    !== undefined && { drinksData }),
+        ...(divingData    !== undefined && { divingData }),
+        ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })
 

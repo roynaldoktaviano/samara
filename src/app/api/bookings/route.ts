@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 
@@ -27,10 +27,11 @@ function yachtInitial(name: string | null | undefined): string {
 
 /* ── GET ─────────────────────────────────────────────────────────────── */
 export async function GET(request: NextRequest) {
+  const session  = await getServerSession(authOptions)
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const userId   = session?.user?.id ?? ''
+  const db = await getDb(session)
   try {
-    const session  = await getServerSession(authOptions)
-    const userRole = (session?.user as { role?: string })?.role ?? ''
-    const userId   = session?.user?.id ?? ''
 
     const { searchParams } = new URL(request.url)
     const status      = searchParams.get('status')
@@ -41,16 +42,16 @@ export async function GET(request: NextRequest) {
     const openTripId  = searchParams.get('openTripId')
     const view        = searchParams.get('view')  // 'calendar' = show all + isOwnBooking flag
 
-    // Auto-cancel pending bookings whose deposit deadline was before today (H+1)
+    // Background: auto-cancel pending bookings past deposit deadline & expired holds
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
-    db.booking.updateMany({
-      where: { status: 'pending', depositDueDate: { lt: todayStart } },
-      data: { status: 'cancelled' },
-    }).catch(e => console.error('auto-cancel failed:', e))
-
-    // Auto-cancel expired on_hold bookings and promote waiting list entries
-    processExpiredHoldsAndPromote().catch(e => console.error('processExpiredHolds failed:', e))
+    Promise.all([
+      db.booking.updateMany({
+        where: { status: 'pending', depositDueDate: { lt: todayStart } },
+        data: { status: 'cancelled' },
+      }),
+      processExpiredHoldsAndPromote(),
+    ]).catch(e => console.error('[bookings] background housekeeping failed:', e))
 
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
@@ -148,8 +149,10 @@ export async function GET(request: NextRequest) {
 
 /* ── POST ────────────────────────────────────────────────────────────── */
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const body = await request.json()
     const {
       tripType, source, agentId, agentContactId, yachtId, openTripId,
@@ -254,7 +257,7 @@ export async function POST(request: NextRequest) {
     // Retry up to 5 times in case counter is behind existing codes
     const generateCode = async (): Promise<string> => {
       for (let i = 0; i < 5; i++) {
-        const num  = await nextVal(`booking:${prefix}`)
+        const num  = await nextVal(`booking:${prefix}`, db)
         const code = `${prefix}${String(num).padStart(4, '0')}`
         const exists = await db.booking.findUnique({ where: { bookingCode: code }, select: { id: true } })
         if (!exists) return code
@@ -343,7 +346,7 @@ export async function POST(request: NextRequest) {
     if (tripType === 'PRIVATE_CHARTER' && yachtId && confirmCloseOpenTrips) {
       const start = new Date(startDate)
       const end   = new Date(endDate)
-      await (db.openTrip as any).updateMany({
+      await db.openTrip.updateMany({
         where: {
           yachtId,
           status: { in: ['open', 'full'] },
@@ -357,12 +360,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Increment voucher usage count if one was applied
+    // Increment voucher usage atomically — only if still under maxUses
     if (voucherCode) {
-      db.voucher.update({
-        where: { code: String(voucherCode).toUpperCase().trim() },
-        data: { usedCount: { increment: 1 } },
-      }).catch(e => console.error('voucher increment failed:', e))
+      const code = String(voucherCode).toUpperCase().trim()
+      await db.$executeRaw`
+        UPDATE vouchers
+        SET "usedCount" = "usedCount" + 1
+        WHERE code = ${code}
+          AND ("maxUses" IS NULL OR "usedCount" < "maxUses")
+      `.catch(e => console.error('voucher increment failed:', e))
     }
 
     const userId   = session?.user?.id   ?? ''

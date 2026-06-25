@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { getDb } from '@/lib/get-db'
 
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { searchParams } = new URL(request.url)
     const yachtId = searchParams.get('yachtId')
@@ -50,6 +55,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(session?.user?.role ?? '')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
     const body = await request.json()
     const { yachtId, name, capacity, price, deck, bedType, extraBeds } = body

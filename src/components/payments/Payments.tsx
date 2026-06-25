@@ -1032,7 +1032,7 @@ export default function Payments() {
                               disabled={!genInvEditing}
                               onClick={() => setGenInvBillTo(opt)}
                               className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${genInvBillTo === opt ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
-                              style={genInvBillTo === opt ? { backgroundColor: '#1a5f6e' } : {}}
+                              style={genInvBillTo === opt ? { backgroundColor: 'var(--brand-primary)' } : {}}
                             >
                               {opt === 'AGENT'
                                 ? <><Building2 className="h-3.5 w-3.5" />{selected.booking.agent!.name}</>

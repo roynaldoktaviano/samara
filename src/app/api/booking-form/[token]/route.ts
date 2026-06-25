@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'profile'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
   const { token } = await params
 
-  const booking = await (db.booking as any).findUnique({
+  const booking = await db.booking.findUnique({
     where: { masterFormToken: token },
     select: {
       id: true,
@@ -68,9 +69,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
   const { token } = await params
 
-  const booking = await (db.booking as any).findUnique({
+  const booking = await db.booking.findUnique({
     where: { masterFormToken: token },
     select: {
       id: true,
@@ -96,7 +98,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (section === 'profile') {
     const { firstName, lastName, gender, email, phone, passport,
-      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as any
+      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as Record<string, string | null | undefined>
     await db.customer.update({
       where: { id: customerId },
       data: {
@@ -121,7 +123,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
       drinks:  'drinksData',
       diving:  'divingData',
     }
-    await (db.customer as any).update({
+    await db.customer.update({
       where: { id: customerId },
       data: { [fieldMap[section]]: data },
     })

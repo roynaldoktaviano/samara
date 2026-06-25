@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const yacht = await db.yacht.findUnique({
@@ -20,8 +23,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if ((session?.user as { role?: string })?.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
     const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, description, status, rooms } = body
@@ -123,6 +128,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     const { id } = await params

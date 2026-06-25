@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 
@@ -12,6 +12,9 @@ function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'pa
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const booking = await db.booking.findUnique({
@@ -42,8 +45,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const { id } = await params
     const body   = await request.json()
     const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
@@ -128,6 +133,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     const { id }  = await params
@@ -305,6 +311,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session  = await getServerSession(authOptions)
     if ((session?.user as { role?: string })?.role !== 'ADMIN') {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { TENANT_FEATURE_DEFINITIONS, type TenantFeatures } from '@/lib/tenant-features'
 
 interface Tenant {
   id: string
@@ -12,6 +13,7 @@ interface Tenant {
   databaseUrl: string
   logoUrl: string | null
   isActive: boolean
+  features: TenantFeatures | null
   createdAt: string
   _count?: { users: number }
 }
@@ -21,6 +23,7 @@ interface TenantUser {
   email: string
   name: string | null
   isActive: boolean
+  role: string | null
 }
 
 // Super admin can only assign ADMIN role to tenant; admins manage their own staff
@@ -62,6 +65,46 @@ function LogoUrlEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => v
         {saving ? '...' : 'Save'}
       </button>
       <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+    </div>
+  )
+}
+
+function TenantFeaturesEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => void }) {
+  const features: TenantFeatures = tenant.features ?? {}
+  const [saving, setSaving] = useState<string | null>(null)
+
+  async function toggle(key: keyof TenantFeatures) {
+    setSaving(key)
+    await fetch('/api/super-admin/tenants', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: tenant.id, features: { ...features, [key]: !features[key] } }),
+    })
+    setSaving(null)
+    onUpdate()
+  }
+
+  return (
+    <div className="space-y-2">
+      {TENANT_FEATURE_DEFINITIONS.map(f => (
+        <div key={f.key} className="flex items-center justify-between py-2">
+          <div>
+            <div className="text-sm font-medium text-gray-700">{f.label}</div>
+            <div className="text-xs text-gray-400">{f.description}</div>
+          </div>
+          <button
+            onClick={() => toggle(f.key)}
+            disabled={saving === f.key}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+              features[f.key] ? 'bg-[#1e3a5f]' : 'bg-gray-200'
+            } ${saving === f.key ? 'opacity-50' : ''}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              features[f.key] ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
+        </div>
+      ))}
     </div>
   )
 }
@@ -170,11 +213,6 @@ export default function SuperAdminPage() {
       {/* Header */}
       <header className="bg-[#1e3a5f] text-white px-6 py-4 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
-          <img
-            src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp"
-            alt="Samara"
-            className="h-8 w-auto"
-          />
           <div>
             <div className="text-xs text-white/60 uppercase tracking-wider">System Administration</div>
             <div className="text-sm font-bold tracking-wide">Super Admin Dashboard</div>
@@ -266,6 +304,12 @@ export default function SuperAdminPage() {
                 </div>
               </div>
 
+              {/* Features */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-5 p-5">
+                <h2 className="text-sm font-bold text-[#1e3a5f] mb-3">Feature Flags</h2>
+                <TenantFeaturesEditor tenant={selectedTenant} onUpdate={fetchTenants} />
+              </div>
+
               {/* Users table */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
                 <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -288,6 +332,7 @@ export default function SuperAdminPage() {
                       <tr className="bg-gray-50 text-left">
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Name</th>
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Email</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Role</th>
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase"></th>
                       </tr>
@@ -297,6 +342,17 @@ export default function SuperAdminPage() {
                         <tr key={u.id} className="hover:bg-gray-50">
                           <td className="px-5 py-3.5 text-sm font-medium text-gray-800">{u.name || '—'}</td>
                           <td className="px-5 py-3.5 text-sm text-gray-600">{u.email}</td>
+                          <td className="px-5 py-3.5">
+                            {u.role && (
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                                u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
+                                u.role === 'FINANCE' ? 'bg-emerald-100 text-emerald-700' :
+                                u.role === 'SALES' ? 'bg-blue-100 text-blue-700' :
+                                u.role === 'MARKETING' ? 'bg-orange-100 text-orange-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>{u.role}</span>
+                            )}
+                          </td>
                           <td className="px-5 py-3.5">
                             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                               u.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'

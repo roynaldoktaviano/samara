@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
     const yachtId   = searchParams.get('yachtId') || undefined
@@ -41,76 +42,82 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Net total per booking (after discount + commission)
-    function netBooking(b: typeof bookings[0]) {
+    // Pre-compute net per booking once (avoids recomputing commission/discount 4× per booking)
+    function calcNet(b: typeof bookings[0]) {
       const svcTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
       const basePrice = b.totalPrice - svcTotal
       const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
       const commPct   = b.source === 'AGENT'
         ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
         : 0
-      const commAmt   = afterDisc * commPct / 100
-      return afterDisc + svcTotal - commAmt
+      return afterDisc + svcTotal - (afterDisc * commPct / 100)
     }
 
-    const contracted = bookings.reduce((s, b) => s + netBooking(b), 0)
-    const collected  = bookings.reduce((s, b) => s + b.depositPaid, 0)
+    type BookingRow = typeof bookings[0]
+    const enriched = bookings.map((b: BookingRow) => ({ b, net: calcNet(b) }))
+
+    const contracted  = enriched.reduce((s, { net }) => s + net, 0)
+    const collected   = enriched.reduce((s, { b }) => s + b.depositPaid, 0)
     const outstanding = Math.max(0, contracted - collected)
 
     // ── Revenue per vessel ───────────────────────────────────────────────
-    const allYachts = await db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
-    const yachtMap  = Object.fromEntries(allYachts.map(y => [y.id, y.name]))
+    const [allYachts] = await Promise.all([
+      db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    ])
+    const yachtMap = Object.fromEntries(allYachts.map(y => [y.id, y.name]))
 
     const perVessel: Record<string, { contracted: number; collected: number; bookings: number }> = {}
-    for (const b of bookings) {
-      if (!b.yachtId) continue
-      if (!perVessel[b.yachtId]) perVessel[b.yachtId] = { contracted: 0, collected: 0, bookings: 0 }
-      perVessel[b.yachtId].contracted += netBooking(b)
-      perVessel[b.yachtId].collected  += b.depositPaid
-      perVessel[b.yachtId].bookings++
-    }
-    const revenuePerVessel = Object.entries(perVessel)
-      .map(([yachtId, v]) => ({ yachtId, name: yachtMap[yachtId] ?? 'Unknown', ...v }))
-      .sort((a, b) => b.contracted - a.contracted)
+    const monthMap:  Record<string, { contracted: number; collected: number; bookings: number }> = {}
+    const agentMap2: Record<string, { name: string; contracted: number; collected: number; bookings: number }> = {}
+    const salesMap:  Record<string, { contracted: number; collected: number; bookings: number }> = {}
 
-    // ── Monthly revenue (by startDate month) ─────────────────────────────
-    const monthMap: Record<string, { contracted: number; collected: number; bookings: number }> = {}
-    for (const b of bookings) {
+    // Single pass over enriched data for all aggregations
+    for (const { b, net } of enriched) {
+      // Per vessel
+      if (b.yachtId) {
+        if (!perVessel[b.yachtId]) perVessel[b.yachtId] = { contracted: 0, collected: 0, bookings: 0 }
+        perVessel[b.yachtId].contracted += net
+        perVessel[b.yachtId].collected  += b.depositPaid
+        perVessel[b.yachtId].bookings++
+      }
+
+      // Monthly
       const d   = new Date(b.startDate)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (!monthMap[key]) monthMap[key] = { contracted: 0, collected: 0, bookings: 0 }
-      monthMap[key].contracted += netBooking(b)
+      monthMap[key].contracted += net
       monthMap[key].collected  += b.depositPaid
       monthMap[key].bookings++
+
+      // Agents
+      if (b.agent) {
+        if (!agentMap2[b.agent.id]) agentMap2[b.agent.id] = { name: b.agent.name, contracted: 0, collected: 0, bookings: 0 }
+        agentMap2[b.agent.id].contracted += net
+        agentMap2[b.agent.id].collected  += b.depositPaid
+        agentMap2[b.agent.id].bookings++
+      }
+
+      // Sales
+      const salesName = b.salesperson ?? 'Unassigned'
+      if (!salesMap[salesName]) salesMap[salesName] = { contracted: 0, collected: 0, bookings: 0 }
+      salesMap[salesName].contracted += net
+      salesMap[salesName].collected  += b.depositPaid
+      salesMap[salesName].bookings++
     }
+
+    const revenuePerVessel = Object.entries(perVessel)
+      .map(([yId, v]) => ({ yachtId: yId, name: yachtMap[yId] ?? 'Unknown', ...v }))
+      .sort((a, b) => b.contracted - a.contracted)
+
     const monthlyRevenue = Object.entries(monthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, v]) => ({ month, ...v }))
 
-    // ── Top agents ───────────────────────────────────────────────────────
-    const agentMap2: Record<string, { name: string; contracted: number; collected: number; bookings: number }> = {}
-    for (const b of bookings) {
-      if (!b.agent) continue
-      const key = b.agent.id
-      if (!agentMap2[key]) agentMap2[key] = { name: b.agent.name, contracted: 0, collected: 0, bookings: 0 }
-      agentMap2[key].contracted += netBooking(b)
-      agentMap2[key].collected  += b.depositPaid
-      agentMap2[key].bookings++
-    }
     const topAgents = Object.entries(agentMap2)
       .map(([agentId, v]) => ({ agentId, ...v }))
       .sort((a, b) => b.contracted - a.contracted)
       .slice(0, 10)
 
-    // ── Sales performance ────────────────────────────────────────────────
-    const salesMap: Record<string, { contracted: number; collected: number; bookings: number }> = {}
-    for (const b of bookings) {
-      const name = b.salesperson ?? 'Unassigned'
-      if (!salesMap[name]) salesMap[name] = { contracted: 0, collected: 0, bookings: 0 }
-      salesMap[name].contracted += netBooking(b)
-      salesMap[name].collected  += b.depositPaid
-      salesMap[name].bookings++
-    }
     const salesPerformance = Object.entries(salesMap)
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.contracted - a.contracted)

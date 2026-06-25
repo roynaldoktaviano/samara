@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { randomBytes } from 'crypto'
 
@@ -16,6 +16,7 @@ async function requireAccess() {
 
 // GET — token status + stats
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     if (!await requireAccess()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = await params
@@ -42,6 +43,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 // POST — generate / reset token
 export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await requireAccess()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -64,6 +66,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
 
 // PATCH — toggle active/inactive
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await requireAccess()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -86,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 // DELETE — revoke token
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await requireAccess()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

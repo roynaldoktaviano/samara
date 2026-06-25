@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 export async function POST(request: Request) {
+  const db = await getDb()
   const body = await request.json()
   const { code, bookingAmount } = body
 

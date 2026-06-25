@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { SignJWT, jwtVerify } from 'jose'
 
 const SECRET = new TextEncoder().encode(
@@ -8,7 +8,7 @@ const SECRET = new TextEncoder().encode(
 const COOKIE = 'cal-access'
 const SUSPICIOUS_BOTS = /bot|crawler|spider|scrape|python|curl|wget|axios|fetch|java|ruby|go-http/i
 
-async function logAccess(agentId: string, ip: string, userAgent: string, isSuspicious: boolean) {
+async function logAccess(db: Awaited<ReturnType<typeof getDb>>, agentId: string, ip: string, userAgent: string, isSuspicious: boolean) {
   db.calendarAccessLog.create({
     data: { agentId, ip, userAgent, isSuspicious },
   }).catch(() => {})
@@ -22,6 +22,7 @@ function getIp(req: NextRequest) {
 
 // POST — verify token, issue cookie, return agent info
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   try {
     const { token } = await request.json()
     if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 })
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     const ip        = getIp(request)
     const userAgent = request.headers.get('user-agent') ?? ''
     const isSuspicious = SUSPICIOUS_BOTS.test(userAgent)
-    logAccess(agent.id, ip, userAgent, isSuspicious)
+    logAccess(db, agent.id, ip, userAgent, isSuspicious)
 
     // Issue signed JWT cookie (no expiry)
     const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name })
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
 
 // GET — verify existing cookie, log access
 export async function GET(request: NextRequest) {
+  const db = await getDb()
   try {
     const cookie = request.cookies.get('cal-access')?.value
     if (!cookie) return NextResponse.json({ valid: false })
@@ -86,7 +88,7 @@ export async function GET(request: NextRequest) {
       where: { agentId, ip, createdAt: { gte: oneMinAgo } },
     })
     const isSuspicious = recentCount > 20 || SUSPICIOUS_BOTS.test(userAgent)
-    logAccess(agentId, ip, userAgent, isSuspicious)
+    logAccess(db, agentId, ip, userAgent, isSuspicious)
 
     return NextResponse.json({ valid: true, agentName: agent.name ?? agentName })
   } catch {

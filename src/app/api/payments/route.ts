@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db, withRetry } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
+import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 
 export async function GET(_: NextRequest) {
+  const session  = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const userId   = session?.user?.id ?? ''
+  const db = await getDb(session)
   try {
-    const session  = await getServerSession(authOptions)
-    const userRole = (session?.user as { role?: string })?.role ?? ''
-    const userId   = session?.user?.id ?? ''
 
     // SALES: only their own payments (matched via booking.salespersonId)
     const where = userRole === 'SALES' && userId
@@ -73,8 +76,10 @@ export async function GET(_: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const body = await request.json()
     const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod } = body
 

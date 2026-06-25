@@ -44,6 +44,8 @@
 }
 
 :root {
+  --brand-primary: #1a5f6e;
+  --brand-primary-hover: #145260;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

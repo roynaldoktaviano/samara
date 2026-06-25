@@ -9,6 +9,8 @@ declare module 'next-auth' {
       tenantId?: string
       tenantSlug?: string
       tenantDbUrl?: string
+      tenantLogoUrl?: string
+      tenantFeatures?: Record<string, boolean>
     } & DefaultSession['user']
   }
 
@@ -18,6 +20,8 @@ declare module 'next-auth' {
     tenantId?: string
     tenantSlug?: string
     tenantDbUrl?: string
+    tenantLogoUrl?: string
+    tenantFeatures?: Record<string, boolean>
   }
 }
 
@@ -29,5 +33,7 @@ declare module 'next-auth/jwt' {
     tenantId?: string
     tenantSlug?: string
     tenantDbUrl?: string
+    tenantLogoUrl?: string
+    tenantFeatures?: Record<string, boolean>
   }
 }

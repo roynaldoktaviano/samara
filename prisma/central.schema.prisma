@@ -32,6 +32,7 @@ model Tenant {
   directUrl   String?
   logoUrl     String?
   isActive    Boolean      @default(true)
+  features    Json?        // e.g. { "sharingCabin": true }
   users       UserTenant[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -48,5 +49,20 @@ model UserTenant {
   createdAt DateTime    @default(now())
 
   @@unique([userId, tenantId])
+  @@index([userId])
   @@map("user_tenants")
+}
+
+model SuperAdminLog {
+  id         String   @id @default(cuid())
+  adminEmail String
+  action     String   // CREATE_TENANT, UPDATE_TENANT, DELETE_USER, CREATE_USER, TOGGLE_FEATURE, etc.
+  targetType String   // tenant, user
+  targetId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminEmail])
+  @@index([createdAt])
+  @@map("super_admin_logs")
 }

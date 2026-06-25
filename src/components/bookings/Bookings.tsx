@@ -2020,7 +2020,7 @@ export default function Bookings() {
             return (
               <>
                 {/* Header */}
-                <div style={{ backgroundColor: '#1a5f6e' }} className="px-5 pt-5 pb-4 text-white shrink-0 rounded-t-lg">
+                <div style={{ backgroundColor: 'var(--brand-primary)' }} className="px-5 pt-5 pb-4 text-white shrink-0 rounded-t-lg">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[10px] font-mono tracking-widest text-white/50 mb-0.5">{db_.bookingCode}</p>

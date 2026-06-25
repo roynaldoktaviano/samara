@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
 
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
         yacht: {
           select: {
             id: true, name: true, model: true, cabinCount: true,
-            cabins: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
+            cabins: { select: { id: true, name: true, capacity: true }, orderBy: { name: 'asc' } },
           },
         },
         bookings: {
@@ -45,12 +46,19 @@ export async function GET(request: NextRequest) {
       select: { yachtId: true, startDate: true, endDate: true, bookingCode: true },
     })
 
+    const sharingCabin = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.sharingCabin
+
     const tripsWithAvailability = trips.map((t) => {
       const totalCabins = t.yacht.cabins.length || t.yacht.cabinCount
 
       const cabinStatuses = t.yacht.cabins.map(c => {
+        const guestsInCabin = t.bookings.flatMap(b => b.guests.filter(g => g.cabinId === c.id)).length
         const booking = t.bookings.find(b => b.guests.some(g => g.cabinId === c.id))
-        return { id: c.id, name: c.name, bookingStatus: booking?.status ?? null }
+        // Sharing: cabin is full only when guest count >= capacity; otherwise: any guest blocks the cabin
+        const isCabinFull = sharingCabin
+          ? guestsInCabin >= (c.capacity ?? 2)
+          : guestsInCabin > 0
+        return { id: c.id, name: c.name, bookingStatus: isCabinFull ? (booking?.status ?? 'booked') : null }
       })
 
       const occupiedCabins = cabinStatuses.filter(c => c.bookingStatus !== null).length
@@ -64,7 +72,7 @@ export async function GET(request: NextRequest) {
       )
 
       let effectiveStatus = t.status
-      let closedReason    = (t as any).closedReason ?? null
+      let closedReason    = (t as { closedReason?: string | null }).closedReason ?? null
       if (blockingPC && t.status !== 'cancelled') {
         effectiveStatus = 'closed'
         closedReason    = `Closed — Private Charter ${blockingPC.bookingCode}`
@@ -73,7 +81,7 @@ export async function GET(request: NextRequest) {
           db.openTrip.update({
             where: { id: t.id },
             data:  { status: 'closed', closedReason },
-          }).catch(() => {})
+          }).catch(e => console.error('[open-trips] status sync failed:', e))
         }
       } else if (t.status === 'closed' && !blockingPC && now < new Date(t.startDate)) {
         // Orphaned close: trip is closed in DB but no PC blocks it and date hasn't passed → recover
@@ -82,7 +90,7 @@ export async function GET(request: NextRequest) {
         db.openTrip.update({
           where: { id: t.id },
           data:  { status: 'open', closedReason: null },
-        }).catch(() => {})
+        }).catch(e => console.error('[open-trips] status sync failed:', e))
       } else if (t.status !== 'cancelled' && t.status !== 'closed') {
         if (now >= new Date(t.startDate)) effectiveStatus = 'closed'
         else if (spotsAvailable === 0)   effectiveStatus = 'full'
@@ -112,11 +120,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
+  if (!isSuperAdmin && !['ADMIN'].includes(role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    const role = (session?.user as { role?: string })?.role ?? ''
-    if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
     const body = await request.json()
     const { title, description, yachtId, startDate, endDate, destination, region, departurePort, arrivalPort, pricePerCabin } = body
 

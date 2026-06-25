@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { centralDb } from '@/lib/central-db'
+import { parseTenantFeatures } from '@/lib/tenant-features'
+import { logSuperAdmin } from '@/lib/super-admin-log'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isSuperAdmin(session: any) {
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
   const tenant = await centralDb.tenant.create({
     data: { name, slug, databaseUrl, directUrl, domain },
   })
+  logSuperAdmin({ adminEmail: session.user!.email!, action: 'CREATE_TENANT', targetType: 'tenant', targetId: tenant.id, detail: `Created tenant: ${name} (${slug})` })
   return NextResponse.json(tenant)
 }
 
@@ -37,7 +40,13 @@ export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session || !isSuperAdmin(session)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id, ...data } = await req.json()
+  const { id, features, ...rest } = await req.json()
+  const data = {
+    ...rest,
+    ...(features !== undefined ? { features: parseTenantFeatures(features) } : {}),
+  }
   const tenant = await centralDb.tenant.update({ where: { id }, data })
+  const actionLabel = features !== undefined ? 'TOGGLE_FEATURE' : 'UPDATE_TENANT'
+  logSuperAdmin({ adminEmail: session.user!.email!, action: actionLabel, targetType: 'tenant', targetId: id, detail: JSON.stringify(features ?? rest) })
   return NextResponse.json(tenant)
 }

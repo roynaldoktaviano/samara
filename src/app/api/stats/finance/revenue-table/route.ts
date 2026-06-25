@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db, withRetry } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
+import { withRetry } from '@/lib/db'
 
 const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const VESSEL_ORDER = ['samara i','samara 1','samara ii','samara 2','otium','mischief']
@@ -24,6 +25,7 @@ function netBooking(b: {
 }
 
 export async function GET(request: NextRequest) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 const NATIONALITY_TO_COUNTRY: Record<string, string> = {
   'Afghan': 'Afghanistan',
@@ -183,6 +183,7 @@ const NATIONALITY_TO_COUNTRY: Record<string, string> = {
 }
 
 export async function POST() {
+  const db = await getDb()
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (role !== 'SUPER_ADMIN') {

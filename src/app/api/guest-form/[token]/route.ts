@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db as prisma } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
+import type { PrismaClient } from '@prisma/client'
 
 const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'profile'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
-async function getGuest(token: string) {
-  const customer = await (prisma.customer as any).findUnique({
+async function getGuest(db: PrismaClient, token: string) {
+  const customer = await db.customer.findUnique({
     where: { guestFormToken: token },
     select: {
       id: true, name: true, firstName: true, lastName: true, gender: true,
@@ -22,8 +23,9 @@ async function getGuest(token: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
   const { token } = await params
-  const customer = await getGuest(token)
+  const customer = await getGuest(db, token)
   if (!customer) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
   if (customer.guestFormExpiresAt && new Date(customer.guestFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
@@ -35,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   let tripInfo: Record<string, unknown> | null = null
 
   if (bgId) {
-    const bg = await prisma.bookingGuest.findUnique({
+    const bg = await db.bookingGuest.findUnique({
       where: { id: bgId },
       select: {
         booking: {
@@ -49,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       },
     })
     if (bg?.booking) {
-      const b = bg.booking as any
+      const b = bg.booking
       hasDiving  = (b.hasDiving ?? false) && (b.yacht?.canDiving ?? false)
       isOpenTrip = b.tripType === 'OPEN_TRIP'
       tripInfo = {
@@ -68,8 +70,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
   const { token } = await params
-  const customer = await getGuest(token)
+  const customer = await getGuest(db, token)
   if (!customer) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
   if (customer.guestFormExpiresAt && new Date(customer.guestFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
@@ -84,8 +87,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (section === 'profile') {
     const { firstName, lastName, gender, email, phone, passport,
-      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as any
-    await prisma.customer.update({
+      dateOfBirth, address, nationality, passportExpiry, passportImage } = data as Record<string, string | null | undefined>
+    await db.customer.update({
       where: { id: customer.id },
       data: {
         firstName: firstName || undefined,
@@ -109,7 +112,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
       drinks:  'drinksData',
       diving:  'divingData',
     }
-    await (prisma.customer as any).update({
+    await db.customer.update({
       where: { id: customer.id },
       data: { [fieldMap[section]]: data },
     })

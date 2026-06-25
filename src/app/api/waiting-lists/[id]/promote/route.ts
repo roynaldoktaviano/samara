@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
+import type { PrismaClient } from '@prisma/client'
 
 // Manually promote a specific waiting list entry to on_hold
 export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -24,7 +26,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
       await promoteWaitingListForBooking(entry.bookingId)
     } else {
       // No linked booking — promote directly using yacht/open trip + date info
-      await promoteDirect(entry)
+      await promoteDirect(db, entry)
     }
 
     return NextResponse.json({ ok: true })
@@ -34,7 +36,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
   }
 }
 
-async function promoteDirect(entry: {
+async function promoteDirect(db: PrismaClient, entry: {
   id: string
   yachtId: string | null
   openTripId: string | null

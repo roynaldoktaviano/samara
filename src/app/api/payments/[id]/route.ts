@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { BookingStatus } from '@prisma/client'
 
@@ -12,6 +12,9 @@ function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const payment = await db.payment.findUnique({
@@ -45,15 +48,17 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const { id } = await params
     const body = await request.json()
     const { action } = body
 
-    const actorId   = session?.user?.id   ?? ''
-    const actorName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
-    const actorRole = (session?.user as { role?: string })?.role ?? ''
+    const actorId   = session.user!.id   ?? ''
+    const actorName = session.user!.name ?? session.user!.email ?? 'Unknown'
+    const actorRole = (session.user as { role?: string })?.role ?? ''
 
     if (!action) return NextResponse.json({ error: 'Missing action' }, { status: 400 })
 
@@ -77,7 +82,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
 
       const { nextVal } = await import('@/lib/counter')
-      const invNum      = await nextVal(`payment_inv:${existing.booking.bookingCode}`)
+      const invNum      = await nextVal(`payment_inv:${existing.booking.bookingCode}`, db)
       const invoiceNumber = `INV-${existing.booking.bookingCode}-${String(invNum).padStart(2, '0')}`
 
       await db.payment.update({
@@ -231,24 +236,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const recipientUserId = payment.submittedByUserId ?? payment.booking.salespersonId ?? null
 
       if (action === 'confirm') {
-        const newDepositPaid = payment.booking.depositPaid + payment.amount
         const commPct = payment.booking.source === 'AGENT'
           ? (payment.booking.tripType === 'OPEN_TRIP'
               ? (payment.booking.agent?.commissionOpenTrip ?? 0)
               : (payment.booking.agent?.commissionPrivateCharter ?? 0))
           : 0
-        const effectiveTotal = payment.booking.totalPrice * (1 - commPct / 100)
-        const newStatus = bookingStatus(newDepositPaid, effectiveTotal)
+        const commPctSafe = Math.max(0, Math.min(commPct, 100))
+        const effectiveTotal = payment.booking.totalPrice * (1 - commPctSafe / 100)
+        const paymentAmount  = payment.amount
 
+        // Atomic increment: depositPaid += amount inside the same transaction
+        // to prevent double-counting under concurrent confirmations
         await db.$transaction([
           db.payment.update({
             where: { id },
             data: { status: 'confirmed', confirmedBy: actorName, confirmedAt: new Date() },
           }),
-          db.booking.update({
-            where: { id: payment.bookingId },
-            data: { depositPaid: newDepositPaid, status: newStatus },
-          }),
+          db.$executeRaw`
+            UPDATE "Booking"
+            SET
+              "depositPaid" = "depositPaid" + ${paymentAmount},
+              "status" = CASE
+                WHEN "depositPaid" + ${paymentAmount} >= ${effectiveTotal} THEN 'fully_paid'
+                WHEN "depositPaid" + ${paymentAmount} > 0               THEN 'partially_paid'
+                ELSE 'pending'
+              END
+            WHERE id = ${payment.bookingId}
+          `,
         ])
 
         logActivity({

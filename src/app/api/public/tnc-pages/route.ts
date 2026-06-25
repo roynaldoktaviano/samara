@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import path from 'path'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const db = await getDb()
   const setting = await db.systemSetting.findUnique({ where: { key: 'tnc_pdf' } })
 
   if (!setting?.blobValue) {

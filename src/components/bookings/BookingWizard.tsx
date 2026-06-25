@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -103,6 +104,9 @@ const fmtAmt   = (n: number, c: CurrencyCode) =>
 const TODAY = new Date().toISOString().split('T')[0]
 
 export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId }: Props) {
+  const { data: session } = useSession()
+  const sharingCabin = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.sharingCabin
+
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
   const [source,  setSource]  = useState<Source | null>(null)
@@ -1608,14 +1612,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       const adjustedExtOccDrop = completeBookingId
         ? Math.max(0, extOccDrop - (originalHoldCabins[targetId] ?? 0))
         : extOccDrop
-      if (!already && adjustedExtOccDrop > 0) {
+      if (!already && adjustedExtOccDrop > 0 && !sharingCabin) {
         setDropError(`${cabin?.name} is already reserved by ${cabinSalesperson[targetId] || 'another booking'}`)
         return
       }
       const droppingGuest = guests.find(g => g.customerId === gId)
       const effectiveCapDrop = (cabin?.capacity ?? 0) + (cabin ? (cabinExtraBeds[cabin.id] ?? 0) : 0)
       // Infants don't count toward capacity — skip the full check for them
-      if (!already && !droppingGuest?.isInfant && myOccDrop >= effectiveCapDrop) {
+      if (!already && !droppingGuest?.isInfant && (myOccDrop + adjustedExtOccDrop) >= effectiveCapDrop) {
         setDropError(`${cabin?.name} is full (capacity ${effectiveCapDrop})`)
         return
       }
@@ -2182,10 +2186,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                     ? Math.max(0, extOcc - (originalHoldCabins[c.id] ?? 0))
                     : extOcc
                   const totalOcc   = myOcc + adjustedExtOcc
-
-                  // For open trips: external booking blocks the whole cabin; local occupancy respects cabin capacity
-                  const isBlockedByOther = tripType === 'OPEN_TRIP' && adjustedExtOcc > 0
                   const effectiveCap = c.capacity + (cabinExtraBeds[c.id] ?? 0)
+
+                  // For open trips: external booking blocks the whole cabin unless sharing cabin is enabled
+                  const isBlockedByOther = tripType === 'OPEN_TRIP' && adjustedExtOcc > 0 && (!sharingCabin || totalOcc >= effectiveCap)
                   const isFull = isBlockedByOther || totalOcc >= effectiveCap
                   const isOver      = dropTarget === c.id
                   const cabinGuests = guests.filter(g => g.cabinId === c.id)
@@ -2236,7 +2240,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                             : isFull         ? 'text-orange-600 bg-orange-100'
                             :                  'text-muted-foreground bg-muted',
                           )}>
-                            {isBlockedByOther ? 'Booked' : isFull ? 'Full' : `${available} left`}
+                            {isBlockedByOther ? 'Full' : isFull ? 'Full' : sharingCabin && adjustedExtOcc > 0 ? `${available} left (shared)` : `${available} left`}
                           </span>
                         </div>
                       </div>
@@ -2553,7 +2557,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
                       type="button"
                       onClick={() => { setDiscMode(m); setDisc('0'); setDiscFixed('') }}
                       className="px-3 py-1 font-medium transition-colors"
-                      style={discMode === m ? { backgroundColor: '#1a5f6e', color: 'white' } : { color: 'var(--muted-foreground)' }}
+                      style={discMode === m ? { backgroundColor: 'var(--brand-primary)', color: 'white' } : { color: 'var(--muted-foreground)' }}
                     >
                       {m === 'percent' ? '%' : '$'}
                     </button>

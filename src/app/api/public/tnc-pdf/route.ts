@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 // Serves the TnC PDF — accessible from invoice print page (no auth needed since invoice is already gated)
 export async function GET() {
+  const db = await getDb()
   const setting = await db.systemSetting.findUnique({ where: { key: 'tnc_pdf' } })
 
   if (!setting?.blobValue) {

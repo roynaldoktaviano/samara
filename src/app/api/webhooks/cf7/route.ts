@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
@@ -11,6 +11,7 @@ function pick(data: Record<string, unknown>, ...keys: string[]): string {
 }
 
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   try {
     // ── Verify secret token ──────────────────────────────────────────────────
     const secret   = request.nextUrl.searchParams.get('secret')

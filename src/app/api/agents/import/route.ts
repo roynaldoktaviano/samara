@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 function parseCSV(text: string): Record<string, string>[] {
@@ -49,6 +49,7 @@ function col(row: Record<string, string>, ...keys: string[]) {
 }
 
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) {

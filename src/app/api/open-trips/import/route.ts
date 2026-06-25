@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { getDb } from '@/lib/get-db'
 
 const HEADERS = ['title', 'yachtName', 'startDate', 'endDate', 'destination', 'region', 'departurePort', 'arrivalPort', 'description']
 
 /* ── GET /api/open-trips/import — download dynamic CSV template ── */
 export async function GET() {
+  const session = await getServerSession(authOptions)
+  if ((session?.user as { role?: string })?.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
   const yachts = await db.yacht.findMany({
     select: { name: true },
     orderBy: { name: 'asc' },
@@ -50,6 +55,9 @@ export async function GET() {
 
 /* ── POST /api/open-trips/import — bulk create from CSV body ── */
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if ((session?.user as { role?: string })?.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
   try {
     const text = await req.text()
     const lines = text.split(/\r?\n/).filter(l => l.trim())

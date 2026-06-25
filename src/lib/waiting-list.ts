@@ -82,23 +82,23 @@ export async function promoteWaitingListForBooking(cancelledBookingId: string) {
     db.bookingGuest.create({ data: { bookingId: cancelledBookingId, customerId, isLead: true } }),
   ])
 
-  // Mark entry as promoted, referencing the same booking
-  await db.waitingList.update({
-    where: { id: entry.id },
-    data: { status: 'promoted', promotedBookingId: cancelledBookingId },
-  })
-
-  // Re-number remaining waiting entries: 0, 1, 2, ...
+  // Mark as promoted + re-number remaining in a single transaction to prevent race conditions
   const remaining = await db.waitingList.findMany({
     where: { status: 'waiting', OR: whereOr },
     orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
     select: { id: true },
   })
-  if (remaining.length > 0) {
-    await Promise.all(
-      remaining.map((r, i) => db.waitingList.update({ where: { id: r.id }, data: { priority: i } }))
-    )
-  }
+
+  // status: 'waiting' guard prevents double-promotion under concurrent cancellations
+  await db.$transaction([
+    db.waitingList.update({
+      where: { id: entry.id, status: 'waiting' },
+      data: { status: 'promoted', promotedBookingId: cancelledBookingId },
+    }),
+    ...remaining.map((r, i) =>
+      db.waitingList.update({ where: { id: r.id }, data: { priority: i } })
+    ),
+  ])
 
   // Notify salesperson — fire-and-forget so cancel response isn't delayed
   const notifyUserId = entry.salespersonId ?? original.salespersonId
@@ -111,7 +111,9 @@ export async function promoteWaitingListForBooking(cancelledBookingId: string) {
         body:      `${entry.contactName} from the waiting list has been moved to On Hold (${original.bookingCode}). Contact them to confirm.`,
         bookingId: cancelledBookingId,
       },
-    }).catch(() => {})
+    }).catch(e => console.error('[waiting-list] notification failed for user', notifyUserId, e))
+  } else {
+    console.warn('[waiting-list] no salesperson to notify for promoted entry', entry.id)
   }
 }
 

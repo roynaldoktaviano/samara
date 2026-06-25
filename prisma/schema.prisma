@@ -321,7 +321,7 @@ model Booking {
   exchangeRate    Float?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-  customer        Customer        @relation(fields: [customerId], references: [id])
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   agent           Agent?          @relation(fields: [agentId], references: [id], onDelete: SetNull)
   agentContact    AgentContact?   @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
   yacht           Yacht?          @relation(fields: [yachtId], references: [id])
@@ -361,7 +361,7 @@ model BookingGuest {
   departureHotel      String?
   departureFlight     String?
   booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer            Customer @relation(fields: [customerId], references: [id])
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cabin               Cabin?   @relation(fields: [cabinId], references: [id])
 
   @@unique([bookingId, customerId])
@@ -477,6 +477,7 @@ model Payment {
 
   @@index([bookingId])
   @@index([status])
+  @@index([status, bookingId])
   @@index([bankId])
   @@index([createdAt])
 }

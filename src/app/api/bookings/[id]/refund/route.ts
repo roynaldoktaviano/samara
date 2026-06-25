@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 
@@ -14,6 +14,9 @@ async function requireFinanceOrAdmin() {
 
 // GET — fetch refund info for a booking
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const booking = await db.booking.findUnique({
@@ -39,6 +42,9 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 // PATCH — Finance decides no_refund or refund; Finance uploads proof; Sales confirms
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const body = await request.json()
@@ -61,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         select: { id: true, bookingCode: true, salespersonId: true },
       })
 
-      await promoteWaitingListForBooking(id).catch(() => {})
+      await promoteWaitingListForBooking(id).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       // Notify salesperson
       if (booking.salespersonId) {
@@ -73,7 +79,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             body:      `Finance decided no refund for booking ${booking.bookingCode}. Reason: ${reason.trim()}`,
             bookingId: id,
           },
-        }).catch(() => {})
+        }).catch(e => console.error('[refund] notification failed:', e))
       }
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'
@@ -112,7 +118,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             body:      `Finance approved refund for booking ${booking.bookingCode}. Waiting for proof of transfer.`,
             bookingId: id,
           },
-        }).catch(() => {})
+        }).catch(e => console.error('[refund] notification failed:', e))
       }
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'
@@ -150,7 +156,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             body:      `Finance uploaded refund proof for booking ${booking.bookingCode}. Please confirm with guest and mark as confirmed.`,
             bookingId: id,
           },
-        }).catch(() => {})
+        }).catch(e => console.error('[refund] notification failed:', e))
       }
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'
@@ -183,9 +189,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       await db.payment.updateMany({
         where: { bookingId: id, status: 'confirmed' },
         data: { status: 'refunded' },
-      }).catch(() => {})
+      }).catch(e => console.error('[refund] payment status update failed for booking', id, e))
 
-      await promoteWaitingListForBooking(id).catch(() => {})
+      await promoteWaitingListForBooking(id).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'
       const actorRole = (session.user as { role?: string })?.role ?? ''

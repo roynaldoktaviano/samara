@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) return null
+  const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
+  if (!isSuperAdmin && role !== 'ADMIN') return null
   return session
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
 
     const trip = await db.openTrip.findUnique({
@@ -96,7 +98,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }) : null
 
     let effectiveStatus = trip.status
-    let closedReason    = (trip as any).closedReason ?? null
+    let closedReason    = (trip as { closedReason?: string | null }).closedReason ?? null
     if (blockingPC) {
       effectiveStatus = 'closed'
       closedReason    = closedReason ?? `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
@@ -124,8 +126,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const adminSession = await requireAdmin()
+  if (!adminSession) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(adminSession)
   try {
-    if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = await params
     await db.openTrip.delete({ where: { id } })
     return NextResponse.json({ ok: true })
@@ -136,8 +140,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const adminSession = await requireAdmin()
+  if (!adminSession) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(adminSession)
   try {
-    if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = await params
     const body = await request.json()
     const { title, description, destination, region, departurePort, arrivalPort, status, pricePerCabin } = body

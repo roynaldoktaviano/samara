@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 async function requireManage() {
   const session = await getServerSession(authOptions)
@@ -11,6 +11,7 @@ async function requireManage() {
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const { id } = await params
     const contacts = await db.agentContact.findMany({
@@ -25,6 +26,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   try {
     const session = await requireManage()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

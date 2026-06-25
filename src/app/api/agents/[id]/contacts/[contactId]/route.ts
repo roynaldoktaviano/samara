@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 async function requireManage() {
   const session = await getServerSession(authOptions)
@@ -14,6 +14,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; contactId: string }> }
 ) {
+  const db = await getDb()
   try {
     const session = await requireManage()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -43,6 +44,7 @@ export async function DELETE(
   _: NextRequest,
   { params }: { params: Promise<{ id: string; contactId: string }> }
 ) {
+  const db = await getDb()
   try {
     const session = await requireManage()
     if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

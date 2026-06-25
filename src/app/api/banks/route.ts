@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 export async function GET() {
+  const db = await getDb()
   try {
     const banks = await db.bank.findMany({ orderBy: { createdAt: 'asc' } })
     return NextResponse.json(banks)
@@ -13,6 +14,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     const role = (session?.user as { role?: string })?.role ?? ''

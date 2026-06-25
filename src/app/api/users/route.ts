@@ -6,11 +6,11 @@ import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
-const STAFF_ROLES = ['SALES', 'FINANCE', 'MARKETING']
+const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (session?.user.role !== 'ADMIN') {
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(session?.user.role ?? '')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -24,7 +24,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
-  if (session?.user.role !== 'ADMIN') {
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(session?.user.role ?? '')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -33,9 +33,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  // Admin can only create staff, not other admins
-  if (!STAFF_ROLES.includes(role)) {
-    return NextResponse.json({ error: 'Admin can only create SALES, FINANCE, or MARKETING users' }, { status: 403 })
+  // Only developer can create SUPER_ADMIN — never through this UI
+  if (!ALLOWED_ROLES.includes(role)) {
+    return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
   }
 
   const tenantDb = getSessionDb(session)
@@ -46,14 +46,27 @@ export async function POST(req: Request) {
   }
 
   const hashed = await bcrypt.hash(password, 10)
-  const user = await tenantDb.user.create({
-    data: { name: name || null, email, password: hashed, role },
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
-  })
 
-  // Auto-register staff in central DB under same tenant as the admin
+  // Create in tenant DB first
+  let user: { id: string; name: string | null; email: string; role: string; createdAt: Date }
+  try {
+    user = await tenantDb.user.create({
+      data: { name: name || null, email, password: hashed, role },
+      select: { id: true, name: true, email: true, role: true, createdAt: true },
+    })
+  } catch {
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+  }
+
+  // Register in central DB — if this fails, rollback tenant DB record
   const tenantId = (session!.user as { tenantId?: string })?.tenantId
-  if (tenantId) {
+  if (!tenantId) {
+    await tenantDb.user.delete({ where: { id: user.id } }).catch(() => {})
+    console.error('[users/POST] session has no tenantId — cannot register in central DB')
+    return NextResponse.json({ error: 'Session error — please log out and log back in' }, { status: 400 })
+  }
+
+  try {
     const cu = await centralDb.centralUser.upsert({
       where: { email },
       update: { name: name || null, isActive: true },
@@ -64,6 +77,11 @@ export async function POST(req: Request) {
       update: {},
       create: { userId: cu.id, tenantId },
     })
+  } catch (err) {
+    // Rollback: remove from tenant DB so the system stays consistent
+    await tenantDb.user.delete({ where: { id: user.id } }).catch(() => {})
+    console.error('[users/POST] central DB registration failed, rolled back:', err)
+    return NextResponse.json({ error: 'Failed to register user — please try again' }, { status: 500 })
   }
 
   logActivity({

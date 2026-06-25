@@ -31,7 +31,7 @@ export function SessionWatcher() {
         style={{ maxWidth: 360, width: '100%' }}
       >
         {/* Header accent */}
-        <div className="h-1.5 w-full" style={{ backgroundColor: '#1a5f6e' }} />
+        <div className="h-1.5 w-full" style={{ backgroundColor: 'var(--brand-primary)' }} />
 
         <div className="px-6 py-6 text-center">
           {/* Icon */}
@@ -39,7 +39,7 @@ export function SessionWatcher() {
             className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
             style={{ backgroundColor: '#f0f9fb' }}
           >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1a5f6e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
@@ -53,7 +53,7 @@ export function SessionWatcher() {
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
             className="mt-5 w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: '#1a5f6e' }}
+            style={{ backgroundColor: 'var(--brand-primary)' }}
           >
             Log In Again
           </button>

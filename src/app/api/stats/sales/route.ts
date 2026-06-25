@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 function summarise(rows: { tripType: string; source: string }[]) {
   return {
@@ -14,6 +14,7 @@ function summarise(rows: { tripType: string; source: string }[]) {
 }
 
 export async function GET(request: NextRequest) {
+  const db = await getDb()
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

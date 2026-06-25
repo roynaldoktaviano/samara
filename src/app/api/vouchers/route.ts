@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { logActivity } from '@/lib/activity'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const role = session?.user?.role ?? ''
+  if (!session || !['ADMIN', 'FINANCE', 'SALES'].includes(role)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
 
-  const isAdmin = session.user.role === 'ADMIN'
+  const isAdmin = role === 'ADMIN'
   const vouchers = await db.voucher.findMany({
     where: isAdmin ? {} : { isActive: true },
     orderBy: { createdAt: 'desc' },
@@ -21,6 +25,7 @@ export async function POST(request: Request) {
   if (!session || session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const db = await getDb(session)
   const body = await request.json()
   const { code, name, description, type, value, minBooking, maxUses, validFrom, validUntil, isActive } = body
 

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING'
 
 interface UserRecord {
   id: string
@@ -44,9 +44,30 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     color: 'bg-orange-100 text-orange-700',
     modules: 'Dashboard, Open Trips, Guests',
   },
+  {
+    value: 'ADMIN',
+    label: 'Admin',
+    desc: 'Full access',
+    color: 'bg-purple-100 text-purple-700',
+    modules: 'All Modules',
+  },
+  {
+    value: 'SUPER_ADMIN',
+    label: 'Super Admin',
+    desc: 'System administration',
+    color: 'bg-red-100 text-red-700',
+    modules: 'All Modules',
+  },
 ]
 
-const roleMeta = (role: Role) => ROLES.find(r => r.value === role)!
+const roleMeta = (role: Role) =>
+  ROLES.find(r => r.value === role) ?? {
+    value: role,
+    label: role,
+    desc: '',
+    color: 'bg-gray-100 text-gray-700',
+    modules: '-',
+  }
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -129,7 +150,7 @@ export default function UsersPage() {
     fetchUsers()
   }
 
-  const countsByRole = ROLES.map(r => ({ ...r, count: users.filter(u => u.role === r.value).length }))
+  const countsByRole = ROLES.filter(r => r.value !== 'SUPER_ADMIN').map(r => ({ ...r, count: users.filter(u => u.role === r.value).length }))
 
   return (
     <div className="space-y-6">
@@ -329,7 +350,7 @@ export default function UsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.map(r => (
+                  {ROLES.filter(r => r.value !== 'SUPER_ADMIN').map(r => (
                     <SelectItem key={r.value} value={r.value}>
                       <div className="flex items-center gap-2">
                         <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${r.color}`}>

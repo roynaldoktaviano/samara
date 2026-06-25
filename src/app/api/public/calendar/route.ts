@@ -1,7 +1,22 @@
-import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server'
+import { centralDb } from '@/lib/central-db'
+import { getTenantDb } from '@/lib/tenant-db'
+import { db as samaraDb } from '@/lib/db'
 
-export async function GET() {
+async function getDbForSlug(slug: string) {
+  if (!slug || slug === 'samara') return samaraDb
+  const tenant = await centralDb.tenant.findUnique({
+    where: { slug },
+    select: { databaseUrl: true },
+  }).catch(() => null)
+  if (!tenant) return samaraDb
+  return getTenantDb(tenant.databaseUrl)
+}
+
+export async function GET(req: NextRequest) {
+  const slug = new URL(req.url).searchParams.get('tenant') ?? 'samara'
+  const db = await getDbForSlug(slug)
+
   try {
     const [bookings, openTrips, yachts] = await Promise.all([
       db.booking.findMany({
@@ -41,7 +56,6 @@ export async function GET() {
       }),
     ])
 
-    // Build cabin statuses for each open trip
     const trips = openTrips.map(t => {
       const cabinMap: Record<string, string | null> = {}
       t.bookings.forEach(b => {
@@ -49,16 +63,14 @@ export async function GET() {
           if (g.cabinId) cabinMap[g.cabinId] = b.status
         })
       })
-
       const spotsAvailable = t.yacht.cabins.filter(c => !cabinMap[c.id]).length
-
       return {
         id: t.id,
         title: t.title,
         startDate: t.startDate,
         endDate: t.endDate,
         status: t.status,
-        closedReason: (t as any).closedReason ?? null,
+        closedReason: (t as Record<string, unknown>).closedReason ?? null,
         spotsAvailable,
         maxCapacity: t.yacht.cabins.length,
         yacht: { id: t.yacht.id, name: t.yacht.name },
@@ -70,7 +82,6 @@ export async function GET() {
       }
     })
 
-    // Bookings: only expose schedule + status + yacht (no customer data)
     const safeBookings = bookings.map(b => ({
       id: b.id,
       startDate: b.startDate,

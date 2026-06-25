@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 
 async function requireFinance() {
   const session = await getServerSession(authOptions)
@@ -11,6 +11,7 @@ async function requireFinance() {
 }
 
 export async function GET(request: NextRequest) {
+  const db = await getDb()
   try {
     if (!await requireFinance()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const { searchParams } = new URL(request.url)
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const db = await getDb()
   try {
     if (!await requireFinance()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

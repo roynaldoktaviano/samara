@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { usePageTransition } from '@/components/PageTransitionOverlay'
+import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
@@ -397,6 +398,8 @@ export default function Home() {
     return null
   }
 
+  const branding = getTenantBranding(session.user.tenantSlug)
+
   const userRole = session.user.role
   const isAdmin   = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
@@ -451,12 +454,78 @@ export default function Home() {
 
   return (
     <>
+    {branding.primaryColor && (
+      <style>{`
+        /* ── Sidebar ── */
+        [data-sidebar="sidebar"] {
+          background-color: ${branding.sidebarBg} !important;
+        }
+        [data-sidebar="sidebar"] button,
+        [data-sidebar="sidebar"] a,
+        [data-sidebar="sidebar"] span {
+          color: rgba(255,255,255,0.82) !important;
+        }
+        [data-sidebar="group-label"] {
+          color: rgba(255,255,255,0.48) !important;
+        }
+        [data-sidebar="sidebar"] p {
+          color: rgba(255,255,255,0.45) !important;
+        }
+        [data-sidebar="sidebar"] button[data-active="true"],
+        [data-sidebar="sidebar"] button[data-active="true"] span {
+          background-color: rgba(255,255,255,0.18) !important;
+          color: #ffffff !important;
+        }
+        [data-sidebar="sidebar"] button:hover {
+          background-color: rgba(255,255,255,0.12) !important;
+          color: #ffffff !important;
+        }
+        [data-sidebar="sidebar"] button:hover span { color: #ffffff !important; }
+        [data-sidebar="sidebar"] svg { color: inherit !important; }
+
+        /* ── Global primary color overrides ── */
+        [data-tenant="siloina"] {
+          --brand-primary: ${branding.primaryColor};
+          --brand-primary-hover: ${branding.primaryHover};
+        }
+        [data-tenant="siloina"] [class*="1a5f6e"] {
+          --_c: ${branding.primaryColor};
+        }
+        [data-tenant="siloina"] [class*="bg-"][class*="1a5f6e"] {
+          background-color: ${branding.primaryColor} !important;
+        }
+        [data-tenant="siloina"] [class*="bg-"][class*="145260"],
+        [data-tenant="siloina"] [class*="bg-"][class*="1a5f6e"]:hover {
+          background-color: ${branding.primaryHover} !important;
+        }
+        [data-tenant="siloina"] [class*="text-"][class*="1a5f6e"] {
+          color: ${branding.primaryColor} !important;
+        }
+        [data-tenant="siloina"] [class*="text-"][class*="1a5f6e"]:hover {
+          color: ${branding.primaryColor} !important;
+        }
+        [data-tenant="siloina"] [class*="border-"][class*="1a5f6e"] {
+          border-color: ${branding.primaryColor} !important;
+        }
+        [data-tenant="siloina"] [stroke="#1a5f6e"] {
+          stroke: ${branding.primaryColor} !important;
+        }
+        [data-tenant="siloina"] [class*="ring-"][class*="1a5f6e"],
+        [data-tenant="siloina"] [class*="1a5f6e\/"] {
+          --tw-ring-color: ${branding.primaryColor}33 !important;
+        }
+      `}</style>
+    )}
     <SidebarProvider defaultOpen={sidebarDefaultOpen}>
-      <div className="flex min-h-screen bg-background w-full">
+      <div className="flex min-h-screen bg-background w-full" data-tenant={session.user.tenantSlug ?? 'samara'}>
         <Sidebar>
-          <SidebarHeader className="p-4 border-b">
+          <SidebarHeader className="p-4 border-b" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
             <div className="flex items-center gap-3">
-              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png" alt="Samara liveaboard logo" />
+              <img
+                src={branding.logoUrl}
+                alt={branding.name}
+                className="h-12 w-auto object-contain"
+              />
             </div>
           </SidebarHeader>
 
@@ -525,9 +594,9 @@ export default function Home() {
             })()}
           </SidebarContent>
 
-          <SidebarFooter className="px-4 py-3 border-t">
-            <p className="text-[10.5px] text-muted-foreground text-center">
-              © 2026 Samara Liveaboard.
+          <SidebarFooter className="px-4 py-3 border-t" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
+            <p className="text-[10.5px] text-center" style={branding.sidebarBg ? { color: 'rgba(255,255,255,0.45)' } : undefined}>
+              © 2026 {branding.name}.
             </p>
           </SidebarFooter>
         </Sidebar>
@@ -702,7 +771,7 @@ export default function Home() {
                       </button>
                       <div className="border-t mx-2" />
                       <button
-                        onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }))}
+                        onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }), 900, branding)}
                         className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                       >
                         <LogOut className="h-4 w-4" />

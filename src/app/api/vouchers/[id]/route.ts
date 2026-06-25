@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDb } from '@/lib/get-db'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   const session = await getServerSession(authOptions)
   if (!session || session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -41,6 +42,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   const session = await getServerSession(authOptions)
   if (!session || session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -52,6 +54,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const db = await getDb()
   const session = await getServerSession(authOptions)
   if (!session || session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
