@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 import type { PrismaClient } from '@prisma/client'
 
-const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'profile'] as const
+const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
 async function getGuest(db: PrismaClient, token: string) {
@@ -16,7 +16,7 @@ async function getGuest(db: PrismaClient, token: string) {
       drinkPreferences: true, equipmentSizes: true,
       passportImage: true,
       guestFormExpiresAt: true,
-      medicalData: true, foodData: true, drinksData: true, divingData: true,
+      medicalData: true, foodData: true, drinksData: true, divingData: true, surfingData: true,
     },
   })
   return customer
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
   const bgId = req.nextUrl.searchParams.get('bg')
   let hasDiving = false
+  let hasSurfing = false
   let isOpenTrip = false
   let tripInfo: Record<string, unknown> | null = null
 
@@ -42,9 +43,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       select: {
         booking: {
           select: {
-            hasDiving: true, tripType: true, bookingCode: true,
+            hasDiving: true, hasSurfing: true, tripType: true, bookingCode: true,
             startDate: true, endDate: true, destination: true,
-            yacht: { select: { name: true, canDiving: true } },
+            yacht: { select: { name: true, canDiving: true, canSurfing: true } },
             openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
           },
         },
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     if (bg?.booking) {
       const b = bg.booking
       hasDiving  = (b.hasDiving ?? false) && (b.yacht?.canDiving ?? false)
+      hasSurfing = (b.hasSurfing ?? false) && (b.yacht?.canSurfing ?? false)
       isOpenTrip = b.tripType === 'OPEN_TRIP'
       tripInfo = {
         bookingCode: b.bookingCode,
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     }
   }
 
-  return NextResponse.json({ ...customer, hasDiving, isOpenTrip, tripInfo })
+  return NextResponse.json({ ...customer, hasDiving, hasSurfing, isOpenTrip, tripInfo })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -110,7 +112,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
       medical: 'medicalData',
       food:    'foodData',
       drinks:  'drinksData',
-      diving:  'divingData',
+      diving:   'divingData',
+      surfing:  'surfingData',
     }
     await db.customer.update({
       where: { id: customer.id },

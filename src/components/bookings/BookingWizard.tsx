@@ -34,7 +34,7 @@ type Source  = 'AGENT' | 'DIRECT'
 type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
-interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; extraBedTiers?: { nights: number; price: number }[] }
+interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; canSurfing?: boolean; extraBedTiers?: { nights: number; price: number }[] }
 interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number }
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
@@ -149,8 +149,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
   const [custSearch,setCSearch]       = useState('')
   const [custFocused,setCustFocused]  = useState(false)
-  const [crewReq,   setCrewReq] = useState(false)
-  const [hasDiving, setHasDiving] = useState(false)
+  const [crewReq,    setCrewReq]    = useState(false)
+  const [hasDiving,        setHasDiving]        = useState(false)
+  const [hasSurfing,       setHasSurfing]       = useState(false)
+  const [hasPhotoPackage,  setHasPhotoPackage]  = useState(false)
 
   /* step-3 */
   const [currency,       setCurrency]   = useState<CurrencyCode>('USD')
@@ -555,7 +557,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setPhase('source'); setSource(null); setTrip(null); setStep(1)
     setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
-    setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false)
+    setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false); setHasSurfing(false); setHasPhotoPackage(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setDiscMode('percent'); setDiscFixed(''); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
@@ -776,8 +778,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           depositDueDate: depositDueDate || undefined,
           finalDueDate:   finalDueDate   || undefined,
           crewRequired:  crewReq,
-          hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
-          notes:         resolvedNotes,
+          hasDiving:       tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
+          hasSurfing:      tripType === 'PRIVATE_CHARTER' ? hasSurfing : false,
+          hasPhotoPackage: hasPhotoPackage,
+notes:         resolvedNotes,
           guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
           services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         }
@@ -816,8 +820,10 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         depositDueDate: depositDueDate || undefined,
         finalDueDate:   finalDueDate   || undefined,
         crewRequired:  crewReq,
-        hasDiving:     tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
-        notes:         resolvedNotes,
+        hasDiving:       tripType === 'PRIVATE_CHARTER' ? hasDiving : false,
+        hasSurfing:      tripType === 'PRIVATE_CHARTER' ? hasSurfing : false,
+        hasPhotoPackage: hasPhotoPackage,
+        notes:           resolvedNotes,
         guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
         services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
@@ -2353,6 +2359,28 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
             </div>
           </>
         )}
+        {tripType === 'PRIVATE_CHARTER' && yachts.find(y => y.id === yachtId)?.canSurfing && (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Surfing</Label>
+                <p className="text-xs text-muted-foreground">Guests will be participating in surfing activities</p>
+              </div>
+              <Switch checked={hasSurfing} onCheckedChange={setHasSurfing} />
+            </div>
+          </>
+        )}
+        <>
+          <Separator />
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Photo &amp; Video Package</Label>
+              <p className="text-xs text-muted-foreground">Trip photography &amp; videography included</p>
+            </div>
+            <Switch checked={hasPhotoPackage} onCheckedChange={setHasPhotoPackage} />
+          </div>
+        </>
       </div>
     )
   }

@@ -9,7 +9,7 @@ const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samar
 const TEAL = '#1a5f6e'
 const GOLD = '#bdac7e'
 
-type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving'
+type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'surfing'
 
 interface TripInfo {
   bookingCode: string
@@ -26,8 +26,8 @@ interface GuestData {
   gender: string; email: string; phone: string; passport: string
   dateOfBirth: string; address: string; nationality: string; passportExpiry: string
   emergencyContact: string
-  medicalData: any; foodData: any; drinksData: any; divingData: any
-  hasDiving: boolean; isOpenTrip: boolean
+  medicalData: any; foodData: any; drinksData: any; divingData: any; surfingData: any
+  hasDiving: boolean; hasSurfing: boolean; isOpenTrip: boolean
   tripInfo: TripInfo | null
   guestFormExpiresAt: string
 }
@@ -261,6 +261,38 @@ function DivingSection({ data, onChange }: { data: any; onChange: (k: string, v:
   )
 }
 
+function SurfingSection({ data, onChange }: { data: any; onChange: (k: string, v: string) => void }) {
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(k, e.target.value)
+  const yn = (k: string) => <YesNo value={data[k] ?? ''} onChange={v => onChange(k, v)} />
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Field label="Surf Level">
+        <select value={data.surfLevel ?? ''} onChange={e => onChange('surfLevel', e.target.value)} className={selectCls}>
+          <option value="">Select level</option>
+          <option value="Beginner">Beginner</option>
+          <option value="Intermediate">Intermediate</option>
+          <option value="Advanced">Advanced</option>
+          <option value="Professional">Professional</option>
+        </select>
+      </Field>
+      <Field label="Do you bring your own surfboard?">{yn('ownBoard')}</Field>
+      <Field label="If yes, how many boards?"><input type="number" min="0" value={data.ownBoardCount ?? ''} onChange={f('ownBoardCount')} placeholder="Number of boards" className={inputCls} /></Field>
+      <Field label="Board Type">
+        <select value={data.boardType ?? ''} onChange={e => onChange('boardType', e.target.value)} className={selectCls}>
+          <option value="">Select type</option>
+          <option value="Funboard">Funboard</option>
+          <option value="Shortboard">Shortboard</option>
+          <option value="Longboard">Longboard</option>
+        </select>
+      </Field>
+      <Field label="Board Length"><input value={data.boardLength ?? ''} onChange={f('boardLength')} placeholder="e.g. 6'2&quot;" className={inputCls} /></Field>
+      <Field label="Board Width"><input value={data.boardWidth ?? ''} onChange={f('boardWidth')} placeholder='e.g. 19.5"' className={inputCls} /></Field>
+      <Field label="Board Volume"><input value={data.boardVolume ?? ''} onChange={f('boardVolume')} placeholder="e.g. 32L" className={inputCls} /></Field>
+      <Field label="Additional Details" full><textarea rows={3} value={data.surfingNotes ?? ''} onChange={f('surfingNotes')} placeholder="Any extra surfing requests…" className={textCls} /></Field>
+    </div>
+  )
+}
+
 /* ── Step config ── */
 const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'profile', title: 'Personal Details',    subtitle: 'Your identity & contact info' },
@@ -268,6 +300,7 @@ const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'food',    title: 'Food Preferences',    subtitle: 'Dietary needs & meal preferences' },
   { id: 'drinks',  title: 'Drink Preferences',   subtitle: 'Beverages you enjoy on board' },
   { id: 'diving',  title: 'Diving Information',  subtitle: 'Certification & equipment sizing' },
+  { id: 'surfing', title: 'Surfing Information', subtitle: 'Board details & skill level' },
 ]
 
 function fmtDate(d: string | null | undefined) {
@@ -296,10 +329,11 @@ function GuestFormInner() {
   const [foodData,    setFoodData]    = useState<any>({})
   const [drinksData,  setDrinksData]  = useState<any>({})
   const [divingData,  setDivingData]  = useState<any>({})
+  const [surfingData, setSurfingData] = useState<any>({})
 
   const dataMap: Record<Section, any> = {
     profile: profileData, medical: medicalData, food: foodData,
-    drinks: drinksData,  diving: divingData,
+    drinks: drinksData,  diving: divingData, surfing: surfingData,
   }
   const setterMap: Record<Section, (k: string, v: string) => void> = {
     profile: (k, v) => setProfileData((p: any) => ({ ...p, [k]: v })),
@@ -307,6 +341,7 @@ function GuestFormInner() {
     food:    (k, v) => setFoodData((p: any) => ({ ...p, [k]: v })),
     drinks:  (k, v) => setDrinksData((p: any) => ({ ...p, [k]: v })),
     diving:  (k, v) => setDivingData((p: any) => ({ ...p, [k]: v })),
+    surfing: (k, v) => setSurfingData((p: any) => ({ ...p, [k]: v })),
   }
 
   useEffect(() => {
@@ -332,13 +367,18 @@ function GuestFormInner() {
         setFoodData(data.foodData       ?? {})
         setDrinksData(data.drinksData   ?? {})
         setDivingData(data.divingData   ?? {})
+        setSurfingData(data.surfingData ?? {})
       })
       .catch(() => setError('Failed to load form'))
       .finally(() => setLoading(false))
   }, [token, bgId])
 
-  const showDiving = guest?.hasDiving && !guest?.isOpenTrip
-  const STEPS = ALL_STEPS.filter(s => s.id !== 'diving' || showDiving)
+  const showDiving  = guest?.hasDiving  && !guest?.isOpenTrip
+  const showSurfing = guest?.hasSurfing && !guest?.isOpenTrip
+  const STEPS = ALL_STEPS.filter(s =>
+    (s.id !== 'diving'  || showDiving) &&
+    (s.id !== 'surfing' || showSurfing)
+  )
   const currentStep = STEPS[stepIdx]
   const isLast = stepIdx === STEPS.length - 1
 
@@ -423,8 +463,9 @@ function GuestFormInner() {
       case 'profile': return <ProfileSection data={d} onChange={onChange} />
       case 'medical': return <MedicalSection data={d} onChange={onChange} />
       case 'food':    return <FoodSection data={d} onChange={onChange} />
-      case 'drinks':  return <DrinksSection data={d} onChange={onChange} />
-      case 'diving':  return <DivingSection data={d} onChange={onChange} />
+      case 'drinks':  return <DrinksSection  data={d} onChange={onChange} />
+      case 'diving':  return <DivingSection  data={d} onChange={onChange} />
+      case 'surfing': return <SurfingSection data={d} onChange={onChange} />
     }
   }
 

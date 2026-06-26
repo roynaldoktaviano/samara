@@ -122,6 +122,7 @@ model Customer {
   foodData            Json?
   drinksData          Json?
   divingData          Json?
+  surfingData         Json?
   passportImage       String?
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
@@ -214,6 +215,7 @@ model Yacht {
   dailyRate      Float
   extraBedTiers  Json          @default("[]")
   canDiving      Boolean       @default(false)
+  canSurfing     Boolean       @default(false)
   status         YachtStatus   @default(available)
   image        String?
   deletedAt    DateTime?
@@ -304,6 +306,8 @@ model Booking {
   guestCount     Int             @default(1)
   crewRequired   Boolean         @default(false)
   hasDiving           Boolean         @default(false)
+  hasSurfing          Boolean         @default(false)
+  hasPhotoPackage     Boolean         @default(false)
   masterFormToken     String?         @unique
   masterFormExpiresAt DateTime?
   salesperson     String?

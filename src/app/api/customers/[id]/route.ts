@@ -151,7 +151,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       passport, dateOfBirth, address,
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
-      medicalData, foodData, drinksData, divingData,
+      medicalData, foodData, drinksData, divingData, surfingData,
       passportImage,
     } = body
 
@@ -177,6 +177,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(foodData      !== undefined && { foodData }),
         ...(drinksData    !== undefined && { drinksData }),
         ...(divingData    !== undefined && { divingData }),
+        ...(surfingData   !== undefined && { surfingData }),
         ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })

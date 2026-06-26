@@ -97,7 +97,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
     departurePickupTime: string; departureHotel: string; departureFlight: string
     emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
-    medicalData: any; foodData: any; drinksData: any; divingData: any
+    medicalData: any; foodData: any; drinksData: any; divingData: any; surfingData: any
   }
 
   const salesperson = booking.salesperson || booking.agent?.name || 'Direct'
@@ -132,6 +132,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     foodData:    (g.customer as any).foodData    ?? {},
     drinksData:  (g.customer as any).drinksData  ?? {},
     divingData:  (g.customer as any).divingData  ?? {},
+    surfingData: (g.customer as any).surfingData ?? {},
   }))
 
   const totalDays   = Math.ceil((new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000)
@@ -140,7 +141,8 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
   const yachtName   = booking.yacht?.name ?? ''
   const sub         = `${dateRange}  ·  Private Charter ${totalDays}D${totalNights}N  ·  ${yachtName}`
   const BLANK       = Math.max(0, 12 - guests.length)
-  const showDiving  = (booking as any).hasDiving === true
+  const showDiving   = (booking as any).hasDiving  === true
+  const showSurfing  = (booking as any).hasSurfing === true
   const adultCount  = guests.filter(g => !g.isChild).length
   const childCount  = guests.filter(g => g.isChild).length
 
@@ -411,7 +413,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             </Sec>
 
             {/* Drinks */}
-            <Sec title="Drink Preferences" last={!showDiving}>
+            <Sec title="Drink Preferences" last={!showDiving && !showSurfing}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                 <Field label="Drinks Alcohol" value={g.drinksData?.drinksAlcohol || undefined} />
                 <Field label="Wine"           value={g.drinksData?.winePreference || undefined} />
@@ -428,7 +430,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
 
             {/* Diving — only for Private Charter with hasDiving */}
             {showDiving && (
-              <Sec title="Diving" last>
+              <Sec title="Diving" last={!showSurfing}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                   <Field label="Is Diver"         value={g.divingData?.isDiver || undefined} />
                   <Field label="Dive Level"       value={g.divingData?.diveLevel || undefined} />
@@ -441,6 +443,23 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                   <Field label="Fins Size"        value={g.divingData?.finsSize || undefined} />
                   <Field label="Mask Size"        value={g.divingData?.maskSize || undefined} />
                   <Field label="Diving Notes"     value={g.divingData?.divingNotes || undefined} />
+                </div>
+              </Sec>
+            )}
+
+            {/* Surfing — only for Private Charter with hasSurfing */}
+            {showSurfing && (
+              <Sec title="Surfing" last>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <Field label="Surf Level"          value={g.surfingData?.surfLevel || undefined} />
+                  <Field label="Own Surfboard"        value={g.surfingData?.ownBoard || undefined} />
+                  <Field label="No. of Boards"        value={g.surfingData?.ownBoardCount || undefined} />
+                  <Field label="Board Type"           value={g.surfingData?.boardType || undefined} />
+                  <Field label="Board Length"         value={g.surfingData?.boardLength || undefined} />
+                  <Field label="Board Width"          value={g.surfingData?.boardWidth || undefined} />
+                  <Field label="Board Volume"         value={g.surfingData?.boardVolume || undefined} />
+                  <Field label="Photo & Video Pkg"    value={(booking as any).hasPhotoPackage ? 'Yes' : 'No'} />
+                  <Field label="Surfing Notes"        value={g.surfingData?.surfingNotes || undefined} />
                 </div>
               </Sec>
             )}

@@ -637,7 +637,7 @@ export default function CalendarView() {
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
-  const [yachtFilter, setYachtFilter]   = useState<string>('Samara I')
+  const [yachtFilter, setYachtFilter]   = useState<string>('all')
 
   /* date filter */
   const [filterMode, setFilterMode]     = useState<'single' | 'range'>('single')
@@ -905,8 +905,16 @@ export default function CalendarView() {
       await Promise.all([
         fetchBookings(),
         fetchOpenTrips(),
-        fetch('/api/yachts').then(r => r.json()).then((d: any) =>
-          setYachts(Array.isArray(d) ? d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })) : [])),
+        fetch('/api/yachts').then(r => r.json()).then((d: any) => {
+          const list: DbYacht[] = Array.isArray(d) ? d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })) : []
+          setYachts(list)
+          setYachtFilter(prev => {
+            if (list.length === 0) return 'all'
+            const names = list.map(y => y.name)
+            if (names.includes(prev)) return prev
+            return list.length === 1 ? list[0].name : 'all'
+          })
+        }),
       ])
       setLoading(false)
     }

@@ -14,7 +14,7 @@ export async function GET() {
       select: {
         id: true, name: true, model: true, year: true,
         capacity: true, cabinCount: true, length: true,
-        hourlyRate: true, dailyRate: true, extraBedTiers: true, canDiving: true, description: true,
+        hourlyRate: true, dailyRate: true, extraBedTiers: true, canDiving: true, canSurfing: true, description: true,
         image: true, status: true, createdAt: true,
         cabins: {
           select: {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, description, image, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, canSurfing, description, image, rooms } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
         dailyRate: parseFloat(dailyRate),
         extraBedTiers: extraBedTiers ?? [],
         canDiving: canDiving ?? false,
+        canSurfing: canSurfing ?? false,
         description: description || null,
         image: image || null,
         status: 'available',

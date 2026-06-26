@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 
-const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'profile'] as const
+const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -17,9 +17,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       endDate: true,
       destination: true,
       hasDiving: true,
+      hasSurfing: true,
       tripType: true,
       masterFormExpiresAt: true,
-      yacht:    { select: { name: true, canDiving: true } },
+      yacht:    { select: { name: true, canDiving: true, canSurfing: true } },
       openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
       guests: {
         select: {
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
               dateOfBirth: true, address: true, nationality: true, passportExpiry: true,
               passportImage: true,
               emergencyContact: true,
-              medicalData: true, foodData: true, drinksData: true, divingData: true,
+              medicalData: true, foodData: true, drinksData: true, divingData: true, surfingData: true,
             },
           },
         },
@@ -48,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
   const isOpenTrip = booking.tripType === 'OPEN_TRIP'
   const hasDiving  = (booking.hasDiving ?? false) && (booking.yacht?.canDiving ?? false) && !isOpenTrip
+  const hasSurfing = (booking.hasSurfing ?? false) && (booking.yacht?.canSurfing ?? false) && !isOpenTrip
 
   const tripInfo = {
     bookingCode: booking.bookingCode,
@@ -65,7 +67,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     ...g.customer,
   }))
 
-  return NextResponse.json({ tripInfo, hasDiving, guests, expiresAt: booking.masterFormExpiresAt })
+  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, expiresAt: booking.masterFormExpiresAt })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -121,7 +123,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
       medical: 'medicalData',
       food:    'foodData',
       drinks:  'drinksData',
-      diving:  'divingData',
+      diving:   'divingData',
+      surfing:  'surfingData',
     }
     await db.customer.update({
       where: { id: customerId },

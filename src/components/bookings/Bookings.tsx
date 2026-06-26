@@ -57,7 +57,9 @@ interface BookingRecord {
   exchangeRate?: number | null
   createdAt?: string
   hasDiving?: boolean
-  yacht?: { id: string; name: string; model?: string; canDiving?: boolean; capacity?: number }
+  hasSurfing?: boolean
+  hasPhotoPackage?: boolean
+  yacht?: { id: string; name: string; model?: string; canDiving?: boolean; canSurfing?: boolean; capacity?: number }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
   agent?:        { id: string; name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
@@ -238,6 +240,11 @@ export default function Bookings() {
   const [divingOffReason,     setDivingOffReason]     = useState('')
   const [divingOffSaving,     setDivingOffSaving]     = useState(false)
 
+  // Surfing toggle off confirmation (admin only)
+  const [surfingOffDialog,    setSurfingOffDialog]    = useState(false)
+  const [surfingOffReason,    setSurfingOffReason]    = useState('')
+  const [surfingOffSaving,    setSurfingOffSaving]    = useState(false)
+
   // Add guest dialog
   const [addGuestOpen,        setAddGuestOpen]        = useState(false)
   const [addGuestSearch,      setAddGuestSearch]      = useState('')
@@ -285,6 +292,7 @@ export default function Bookings() {
   const [editGuestId,      setEditGuestId]      = useState<string | null>(null)
   const [editGuestBgId,       setEditGuestBgId]       = useState<string | null>(null)
   const [editGuestHasDiving,  setEditGuestHasDiving]  = useState(false)
+  const [editGuestHasSurfing, setEditGuestHasSurfing] = useState(false)
   const [cabinSaving,         setCabinSaving]         = useState<string | null>(null) // bgId being saved
   const [guestLinks,          setGuestLinks]          = useState<Record<string, string>>({})
   const [generatingGuestLink, setGeneratingGuestLink] = useState<string | null>(null)
@@ -2268,7 +2276,6 @@ export default function Bookings() {
                           checked={db_.hasDiving ?? false}
                           onCheckedChange={(val) => {
                             if (val) {
-                              // Activate: anyone can turn on
                               fetch(`/api/bookings/${db_.id}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
@@ -2278,13 +2285,65 @@ export default function Bookings() {
                                 if (updated) setDetailBooking({ ...updated, hasDiving: true })
                               })
                             } else {
-                              // Deactivate: only admin, via confirmation dialog
-                              if (userRole !== 'ADMIN') {
-                                alert('Only Admin can deactivate a Diving Trip.')
-                                return
-                              }
+                              if (userRole !== 'ADMIN') { alert('Only Admin can deactivate a Diving Trip.'); return }
                               setDivingOffReason('')
                               setDivingOffDialog(true)
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Photo & Video Package toggle */}
+                    <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                        <div>
+                          <p className="text-sm font-medium leading-tight">Photo & Video Package</p>
+                          <p className="text-[11px] text-muted-foreground">Trip photography & videography</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={db_.hasPhotoPackage ?? false}
+                        onCheckedChange={(val) => {
+                          fetch(`/api/bookings/${db_.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ hasPhotoPackage: val }),
+                          }).then(() => fetchBookings()).then(() => {
+                            const updated = bookings.find(b => b.id === db_.id)
+                            if (updated) setDetailBooking({ ...updated, hasPhotoPackage: val })
+                          })
+                        }}
+                      />
+                    </div>
+
+                    {/* Surfing toggle — only if yacht supports surfing */}
+                    {db_.yacht?.canSurfing && (
+                      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12c2-4 6-6 10-4s8 0 10-4"/><path d="M2 18c2-4 6-6 10-4s8 0 10-4"/></svg>
+                          <div>
+                            <p className="text-sm font-medium leading-tight">Surfing Trip</p>
+                            <p className="text-[11px] text-muted-foreground">Guests will be surfing</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={db_.hasSurfing ?? false}
+                          onCheckedChange={(val) => {
+                            if (val) {
+                              fetch(`/api/bookings/${db_.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ hasSurfing: true }),
+                              }).then(() => fetchBookings()).then(() => {
+                                const updated = bookings.find(b => b.id === db_.id)
+                                if (updated) setDetailBooking({ ...updated, hasSurfing: true })
+                              })
+                            } else {
+                              if (userRole !== 'ADMIN') { alert('Only Admin can deactivate a Surfing Trip.'); return }
+                              setSurfingOffReason('')
+                              setSurfingOffDialog(true)
                             }
                           }}
                         />
@@ -2377,7 +2436,7 @@ export default function Bookings() {
                           <div className="flex items-center justify-between gap-2">
                             <button
                               className="group flex items-center gap-2 hover:bg-muted/50 rounded-lg px-1.5 py-1 -mx-1.5 -my-1 transition-colors text-left flex-1 min-w-0"
-                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id); setEditGuestHasDiving(db_.hasDiving ?? false) }}
+                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id); setEditGuestHasDiving(db_.hasDiving ?? false); setEditGuestHasSurfing(db_.hasSurfing ?? false) }}
                             >
                               <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
                                 <User className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2690,7 +2749,8 @@ export default function Bookings() {
         guestId={editGuestId}
         bookingGuestId={editGuestBgId}
         hasDiving={editGuestHasDiving}
-        onClose={() => { setEditGuestId(null); setEditGuestBgId(null); setEditGuestHasDiving(false) }}
+        hasSurfing={editGuestHasSurfing}
+        onClose={() => { setEditGuestId(null); setEditGuestBgId(null); setEditGuestHasDiving(false); setEditGuestHasSurfing(false) }}
         onSaved={() => {
           fetchBookings()
           if (detailBooking) openDetail(detailBooking)
@@ -3021,6 +3081,56 @@ export default function Bookings() {
               }}
             >
               {divingOffSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Ya, Nonaktifkan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Surfing Off Confirmation Dialog (Admin only) ════ */}
+      <Dialog open={surfingOffDialog} onOpenChange={v => { if (!v) setSurfingOffDialog(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              Disable Surfing Trip?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Guests are registered for a surfing trip. Please provide a reason for disabling surfing.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Reason <span className="text-red-500">*</span></Label>
+              <Textarea
+                rows={3}
+                placeholder="e.g. Guest cancelled surfing activity…"
+                value={surfingOffReason}
+                onChange={e => setSurfingOffReason(e.target.value)}
+                disabled={surfingOffSaving}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSurfingOffDialog(false)} disabled={surfingOffSaving}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!surfingOffReason.trim() || surfingOffSaving}
+              onClick={async () => {
+                if (!detailBooking) return
+                setSurfingOffSaving(true)
+                await fetch(`/api/bookings/${detailBooking.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ hasSurfing: false, notes: detailBooking.notes ? `${detailBooking.notes}\n[Surfing off: ${surfingOffReason}]` : `[Surfing off: ${surfingOffReason}]` }),
+                })
+                await fetchBookings()
+                const updated = bookings.find(b => b.id === detailBooking.id)
+                if (updated) setDetailBooking({ ...updated, hasSurfing: false })
+                setSurfingOffSaving(false)
+                setSurfingOffDialog(false)
+              }}
+            >
+              {surfingOffSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Ya, Nonaktifkan
             </Button>
           </DialogFooter>

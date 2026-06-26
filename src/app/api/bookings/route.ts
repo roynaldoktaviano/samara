@@ -77,9 +77,9 @@ export async function GET(request: NextRequest) {
         depositDueDate: true, finalDueDate: true, holdUntil: true,
         guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
-        currency: true, exchangeRate: true, createdAt: true, hasDiving: true,
+        currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
         salespersonUser: { select: { name: true } },
-        yacht:     { select: { id: true, name: true, model: true, canDiving: true, capacity: true } },
+        yacht:     { select: { id: true, name: true, model: true, canDiving: true, canSurfing: true, capacity: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:        { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
         agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
       totalPrice, depositPaid, discount, voucherCode,
       currency, exchangeRate,
       depositDueDate, finalDueDate,
-      crewRequired, hasDiving, notes,
+      crewRequired, hasDiving, hasSurfing, hasPhotoPackage, notes,
       guests,              // Array<{ customerId, cabinId?, isLead }>
       services,            // Array<{ name, price }>
       confirmCloseOpenTrips, // boolean: user confirmed closing conflicting open trips
@@ -316,6 +316,8 @@ export async function POST(request: NextRequest) {
         guestCount:     isOnHold ? 1 : guests.length,
         crewRequired:   crewRequired ?? false,
         hasDiving:      hasDiving ?? false,
+        hasSurfing:     hasSurfing ?? false,
+        hasPhotoPackage: hasPhotoPackage ?? false,
         notes:          notes || null,
         voucherCode:    voucherCode || null,
         currency:       currency || 'USD',

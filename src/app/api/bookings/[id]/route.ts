@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -85,6 +85,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(yachtId     !== undefined && { yachtId:     yachtId || null }),
         ...(guestCount  !== undefined && { guestCount:  parseInt(guestCount) }),
         ...(hasDiving       !== undefined && { hasDiving:       Boolean(hasDiving) }),
+        ...(hasSurfing       !== undefined && { hasSurfing:       Boolean(hasSurfing) }),
+        ...(hasPhotoPackage  !== undefined && { hasPhotoPackage:  Boolean(hasPhotoPackage) }),
         ...(agentContactId  !== undefined && { agentContactId:  agentContactId || null }),
         ...(holdUntil       !== undefined && { holdUntil:       holdUntil ? new Date(holdUntil) : null }),
         status: computedStatus,
@@ -141,7 +143,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const body    = await request.json()
     const { status, cancelReason, completeBooking, guests, totalPrice, depositPaid,
             discount, depositDueDate, finalDueDate, currency, exchangeRate, services,
-            hasDiving, notes, crewRequired } = body
+            hasDiving, hasSurfing, hasPhotoPackage, notes, crewRequired } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -187,6 +189,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             currency:      currency || 'USD',
             exchangeRate:  (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
             hasDiving:     Boolean(hasDiving),
+            hasSurfing:       Boolean(hasSurfing),
+            hasPhotoPackage:  Boolean(hasPhotoPackage),
             crewRequired:  Boolean(crewRequired),
             notes:         notes || null,
             guestCount:    guests.length,

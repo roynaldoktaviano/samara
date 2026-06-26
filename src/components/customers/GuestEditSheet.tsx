@@ -48,7 +48,7 @@ export function toGuestFormState(data: any): GuestFormState {
   }
 }
 
-type SheetTab = 'profile' | 'medical' | 'food' | 'drinks' | 'diving'
+type SheetTab = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'surfing'
 
 const ALL_TABS: { id: SheetTab; label: string }[] = [
   { id: 'profile',  label: 'Profile'  },
@@ -56,6 +56,7 @@ const ALL_TABS: { id: SheetTab; label: string }[] = [
   { id: 'food',     label: 'Food'     },
   { id: 'drinks',   label: 'Drinks'   },
   { id: 'diving',   label: 'Diving'   },
+  { id: 'surfing',  label: 'Surfing'  },
 ]
 
 
@@ -354,6 +355,17 @@ const DRINKS_FIELDS = [
   { key: 'drinkNotes',          label: 'Notes',                hint: 'Any other drink preferences or restrictions',     rows: 2, col2: true },
 ]
 
+const SURFING_FIELDS = [
+  { key: 'surfLevel',         label: 'Surf Level',             hint: 'Beginner / Intermediate / Advanced / Professional', options: ['Beginner','Intermediate','Advanced','Professional'] },
+  { key: 'ownBoard',          label: 'Own Surfboard',          hint: 'Does the guest bring their own surfboard?',         type: 'yesno' },
+  { key: 'ownBoardCount',     label: 'Number of Boards',       hint: 'How many boards they bring',                        type: 'number' },
+  { key: 'boardType',         label: 'Board Type',             hint: 'Funboard / Shortboard / Longboard',                 options: ['Funboard','Shortboard','Longboard'] },
+  { key: 'boardLength',       label: 'Board Length',           hint: "e.g. 6'2\"" },
+  { key: 'boardWidth',        label: 'Board Width',            hint: 'e.g. 19.5"' },
+  { key: 'boardVolume',       label: 'Board Volume',           hint: 'e.g. 32L' },
+  { key: 'surfingNotes',      label: 'Additional Details',     hint: 'Any extra surfing requests or notes',               rows: 2, col2: true },
+]
+
 const DIVING_FIELDS = [
   { key: 'isDiver',            label: 'Is Diver',              hint: 'Is the guest a certified diver?',                                     type: 'yesno' },
   { key: 'diveLevel',          label: 'Dive Level',            hint: 'Highest certification level achieved',                                options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
@@ -373,11 +385,12 @@ interface Props {
   guestId?: string | null
   bookingGuestId?: string | null
   hasDiving?: boolean
+  hasSurfing?: boolean
   onClose: () => void
   onSaved?: (guest: any) => void
 }
 
-export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDiving = false, onClose, onSaved }: Props) {
+export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDiving = false, hasSurfing = false, onClose, onSaved }: Props) {
   const isEdit = !!guestId
   const [activeTab, setActiveTab] = useState<SheetTab>('profile')
 
@@ -386,6 +399,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
   const [foodData, setFoodData]   = useState<any>({})
   const [drinkData, setDrinkData] = useState<any>({})
   const [divData, setDivData]     = useState<any>({})
+  const [surfData, setSurfData]   = useState<any>({})
 
   const [loading, setLoading]         = useState(false)
   const [saving, setSaving]           = useState(false)
@@ -395,7 +409,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
     if (!open) { setActiveTab('profile'); return }
     if (!guestId) {
       setForm(GUEST_FORM_EMPTY)
-      setMedData({}); setFoodData({}); setDrinkData({}); setDivData({})
+      setMedData({}); setFoodData({}); setDrinkData({}); setDivData({}); setSurfData({})
       setPassportImage('')
       setGuestName('')
       return
@@ -411,6 +425,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         setFoodData(data.foodData    ?? {})
         setDrinkData(data.drinksData ?? {})
         setDivData(data.divingData   ?? {})
+        setSurfData(data.surfingData ?? {})
         setPassportImage(data.passportImage ?? '')
       })
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
@@ -431,6 +446,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         foodData:      foodData,
         drinksData:    drinkData,
         divingData:    divData,
+        surfingData:   surfData,
         passportImage: passportImage || null,
       }
       const res = isEdit
@@ -544,6 +560,50 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
                     />
                     <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Upload a photo or scan of the guest's dive certification card</p>
                   </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'surfing' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Surf Level" hint="Guest's surfing skill level">
+                    <select
+                      value={surfData.surfLevel ?? ''}
+                      onChange={e => setSurfData((p: any) => ({ ...p, surfLevel: e.target.value }))}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Select level</option>
+                      {['Beginner','Intermediate','Advanced','Professional'].map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Own Surfboard" hint="Does the guest bring their own board?">
+                    <YesNo value={surfData.ownBoard ?? ''} onChange={v => setSurfData((p: any) => ({ ...p, ownBoard: v }))} />
+                  </Field>
+                  <Field label="Number of Boards" hint="If they bring own board, how many?">
+                    <input type="number" min="0" value={surfData.ownBoardCount ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, ownBoardCount: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Board Type" hint="Funboard / Shortboard / Longboard">
+                    <select
+                      value={surfData.boardType ?? ''}
+                      onChange={e => setSurfData((p: any) => ({ ...p, boardType: e.target.value }))}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Select type</option>
+                      {['Funboard','Shortboard','Longboard'].map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Board Length" hint="e.g. 6'2&quot;">
+                    <input value={surfData.boardLength ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardLength: e.target.value }))} placeholder="e.g. 6'2&quot;" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Board Width" hint='e.g. 19.5"'>
+                    <input value={surfData.boardWidth ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardWidth: e.target.value }))} placeholder='e.g. 19.5"' className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Board Volume" hint="e.g. 32L">
+                    <input value={surfData.boardVolume ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardVolume: e.target.value }))} placeholder="e.g. 32L" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Additional Details" hint="Extra surfing requests or notes" col2>
+                    <textarea rows={3} value={surfData.surfingNotes ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, surfingNotes: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  </Field>
                 </div>
               </div>
             )}

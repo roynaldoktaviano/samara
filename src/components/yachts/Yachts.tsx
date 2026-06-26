@@ -51,6 +51,7 @@ interface YachtRecord {
   dailyRate: number
   extraBedTiers: PricingTier[]
   canDiving: boolean
+  canSurfing: boolean
   status: string
   description?: string
   cabins: CabinRecord[]
@@ -104,6 +105,7 @@ export default function Yachts() {
     { nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' },
   ])
   const [canDiving,     setCanDiving]     = useState(false)
+  const [canSurfing,    setCanSurfing]    = useState(false)
   const [description,   setDesc]          = useState('')
   const [rooms,          setRooms]        = useState<RoomInput[]>([])
   const [formTiers,      setFormTiers]    = useState<number[]>([2, 3, 4])
@@ -186,6 +188,7 @@ export default function Yachts() {
       price: ((y.extraBedTiers ?? []).find((t: PricingTier) => t.nights === n)?.price ?? 0).toString(),
     })))
     setCanDiving(y.canDiving ?? false)
+    setCanSurfing(y.canSurfing ?? false)
     setDesc(y.description ?? '')
     setRooms(y.cabins.map(c => ({
       tempId: c.id,
@@ -230,7 +233,7 @@ export default function Yachts() {
     setError('')
     try {
       const payload = {
-        name, model, year, capacity, length, hourlyRate: '0', dailyRate, canDiving, description,
+        name, model, year, capacity, length, hourlyRate: '0', dailyRate, canDiving, canSurfing, description,
         extraBedTiers: extraBedTiers.filter(t => t.price && parseFloat(t.price) > 0).map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
         rooms: rooms.filter(r => r.name.trim()).map(r => ({
           id: r.id,
@@ -378,6 +381,13 @@ export default function Yachts() {
                       <p className="text-xs text-muted-foreground mt-0.5">This vessel can be used for diving activities</p>
                     </div>
                     <Switch checked={canDiving} onCheckedChange={setCanDiving} />
+                  </div>
+                  <div className="col-span-2 flex items-center justify-between rounded-lg border px-4 py-3">
+                    <div>
+                      <Label>Can Surfing</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">This vessel can be used for surfing activities</p>
+                    </div>
+                    <Switch checked={canSurfing} onCheckedChange={setCanSurfing} />
                   </div>
                 </div>
               )}

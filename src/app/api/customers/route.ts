@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
       isChild,
-      medicalData, foodData, drinksData, divingData, passportImage,
+      medicalData, foodData, drinksData, divingData, surfingData, passportImage,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
         ...(foodData      !== undefined && { foodData }),
         ...(drinksData    !== undefined && { drinksData }),
         ...(divingData    !== undefined && { divingData }),
+        ...(surfingData   !== undefined && { surfingData }),
         ...(passportImage !== undefined && { passportImage: passportImage || null }),
       },
     })

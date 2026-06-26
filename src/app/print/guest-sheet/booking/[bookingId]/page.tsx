@@ -137,8 +137,10 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
         const med  = (c as any).medicalData  as Record<string,string> | null
         const food = (c as any).foodData     as Record<string,string> | null
         const drk  = (c as any).drinksData   as Record<string,string> | null
-        const div  = (c as any).divingData   as Record<string,string> | null
-        const showDiving = (b as any).hasDiving && b.tripType === 'PRIVATE_CHARTER'
+        const div   = (c as any).divingData   as Record<string,string> | null
+        const surf  = (c as any).surfingData  as Record<string,string> | null
+        const showDiving  = (b as any).hasDiving  && b.tripType === 'PRIVATE_CHARTER'
+        const showSurfing = (b as any).hasSurfing && b.tripType === 'PRIVATE_CHARTER'
         const v = (obj: Record<string,string> | null | undefined, key: string) => obj?.[key] ? String(obj[key]) : undefined
         return (
           <div key={bg.id} className="page-sheet">
@@ -260,7 +262,7 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
 
               {/* Diving — only for Private Charter with hasDiving */}
               {showDiving && (
-                <Sec title="Diving" last>
+                <Sec title="Diving" last={!showSurfing}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                     <Field label="Is Diver"         value={v(div,'isDiver')} />
                     <Field label="Dive Level"       value={v(div,'diveLevel')} />
@@ -273,6 +275,23 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
                     <Field label="Fins Size"        value={v(div,'finsSize')} />
                     <Field label="Mask Size"        value={v(div,'maskSize')} />
                     <Field label="Diving Notes"     value={v(div,'divingNotes')} />
+                  </div>
+                </Sec>
+              )}
+
+              {/* Surfing — only for Private Charter with hasSurfing */}
+              {showSurfing && (
+                <Sec title="Surfing" last>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                    <Field label="Surf Level"        value={v(surf,'surfLevel')} />
+                    <Field label="Own Surfboard"     value={v(surf,'ownBoard')} />
+                    <Field label="No. of Boards"     value={v(surf,'ownBoardCount')} />
+                    <Field label="Board Type"        value={v(surf,'boardType')} />
+                    <Field label="Board Length"      value={v(surf,'boardLength')} />
+                    <Field label="Board Width"       value={v(surf,'boardWidth')} />
+                    <Field label="Board Volume"      value={v(surf,'boardVolume')} />
+                    <Field label="Photo & Video Pkg" value={(b as any).hasPhotoPackage ? 'Yes' : 'No'} />
+                    <Field label="Surfing Notes"     value={v(surf,'surfingNotes')} />
                   </div>
                 </Sec>
               )}
