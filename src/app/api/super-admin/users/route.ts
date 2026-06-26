@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   })
 
   const session = await checkSuperAdmin()
-  logSuperAdmin({ adminEmail: session!.user!.email!, action: 'CREATE_USER', targetType: 'user', targetId: tenantUser.id, detail: `Created ${role} user: ${email} in tenant ${tenantId}` })
+  logSuperAdmin({ adminEmail: session?.user?.email ?? 'super_admin', action: 'CREATE_USER', targetType: 'user', targetId: tenantUser.id, detail: `Created ${role} user: ${email} in tenant ${tenantId}` })
   return NextResponse.json({ id: tenantUser.id, email: tenantUser.email, role: tenantUser.role })
 }
 
@@ -108,6 +108,6 @@ export async function DELETE(req: NextRequest) {
   }
 
   const delSession = await checkSuperAdmin()
-  logSuperAdmin({ adminEmail: delSession!.user!.email!, action: 'DELETE_USER', targetType: 'user', detail: `Removed ${email} from tenant ${tenantId}` })
+  logSuperAdmin({ adminEmail: delSession?.user?.email ?? 'super_admin', action: 'DELETE_USER', targetType: 'user', detail: `Removed ${email} from tenant ${tenantId}` })
   return NextResponse.json({ ok: true })
 }

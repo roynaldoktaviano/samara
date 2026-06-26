@@ -2,9 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   reactStrictMode: false,
   // Turbopack (Next.js 16 default): alias canvas/encoding to empty module
   // so pdfjs-dist doesn't pull in Node-only native addons into the browser bundle.

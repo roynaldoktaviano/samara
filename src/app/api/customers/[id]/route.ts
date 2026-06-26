@@ -160,7 +160,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const parsedDob = dateOfBirth ? new Date(dateOfBirth) : null
     const isChild = parsedDob
-      ? (new Date(Date.now() - parsedDob.getTime()).getUTCFullYear() - 1970) < 12
+      ? Math.floor((Date.now() - parsedDob.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) < 12
       : undefined
 
     const customer = await db.customer.update({

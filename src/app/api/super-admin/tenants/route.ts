@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { centralDb } from '@/lib/central-db'
+import { getTenantDb } from '@/lib/tenant-db'
 import { parseTenantFeatures } from '@/lib/tenant-features'
 import { logSuperAdmin } from '@/lib/super-admin-log'
 
@@ -17,9 +18,18 @@ export async function GET() {
 
   const tenants = await centralDb.tenant.findMany({
     orderBy: { createdAt: 'asc' },
-    include: { _count: { select: { users: true } } },
   })
-  return NextResponse.json(tenants)
+
+  // Get actual user count from each tenant DB (not central UserTenant count)
+  const tenantsWithCount = await Promise.all(
+    tenants.map(async (tenant) => {
+      const tenantDb = getTenantDb(tenant.databaseUrl)
+      const userCount = await tenantDb.user.count({ where: { role: 'ADMIN' } }).catch(() => 0)
+      return { ...tenant, _count: { users: userCount } }
+    })
+  )
+
+  return NextResponse.json(tenantsWithCount)
 }
 
 export async function POST(req: NextRequest) {
@@ -28,6 +38,7 @@ export async function POST(req: NextRequest) {
 
   const { name, slug, databaseUrl, directUrl, domain } = await req.json()
   if (!name || !slug || !databaseUrl) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  if (!/^[a-z0-9-]{2,50}$/.test(slug)) return NextResponse.json({ error: 'Slug must be 2–50 lowercase letters, numbers, or hyphens' }, { status: 400 })
 
   const tenant = await centralDb.tenant.create({
     data: { name, slug, databaseUrl, directUrl, domain },

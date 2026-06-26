@@ -245,11 +245,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const effectiveTotal = payment.booking.totalPrice * (1 - commPctSafe / 100)
         const paymentAmount  = payment.amount
 
-        // Atomic increment: depositPaid += amount inside the same transaction
-        // to prevent double-counting under concurrent confirmations
+        // Atomic: update payment only if still pending_confirmation (prevents double-confirm race)
+        // If another request already confirmed it, Prisma throws P2025 and we return 409.
         await db.$transaction([
           db.payment.update({
-            where: { id },
+            where: { id, status: 'pending_confirmation' },
             data: { status: 'confirmed', confirmedBy: actorName, confirmedAt: new Date() },
           }),
           db.$executeRaw`
@@ -328,6 +328,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (error) {
+    // P2025 = record not found in WHERE clause — payment already confirmed/rejected by concurrent request
+    if ((error as { code?: string }).code === 'P2025') {
+      return NextResponse.json({ error: 'Payment was already processed by another request' }, { status: 409 })
+    }
     console.error('Error processing payment:', error)
     return NextResponse.json({ error: 'Failed to process payment' }, { status: 500 })
   }

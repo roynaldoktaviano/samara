@@ -8,7 +8,16 @@ export type TenantBranding = {
   showName?: boolean
 }
 
+// Static color/theme config per tenant slug.
+// logoUrl and name here are fallbacks only — runtime always prefers session.tenantLogoUrl.
+// To add a new tenant's custom theme, add an entry here and redeploy.
 const TENANT_MAP: Record<string, TenantBranding> = {
+  samara: {
+    logoUrl:  'https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png',
+    name:     'Samara Liveaboard',
+    bgColor:  '#0c2e3a',
+    showName: true,
+  },
   siloina: {
     logoUrl:      'https://siloina.com/wp-content/uploads/2024/09/Siloina-Logo.png',
     name:         'Siloina Surf Charter',
@@ -27,7 +36,11 @@ const DEFAULT: TenantBranding = {
   showName: true,
 }
 
-export function getTenantBranding(slug?: string | null): TenantBranding {
-  if (!slug || slug === 'samara') return DEFAULT
-  return TENANT_MAP[slug] ?? DEFAULT
+export function getTenantBranding(slug?: string | null, overrides?: { logoUrl?: string | null; name?: string }): TenantBranding {
+  const base = (slug && TENANT_MAP[slug]) ? TENANT_MAP[slug] : DEFAULT
+  return {
+    ...base,
+    ...(overrides?.logoUrl ? { logoUrl: overrides.logoUrl } : {}),
+    ...(overrides?.name    ? { name:    overrides.name    } : {}),
+  }
 }

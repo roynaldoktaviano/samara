@@ -112,7 +112,7 @@ interface Segment {
 }
 function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], colorMap: Record<string, string>, year: number, month: number): Segment[] {
   const weeks = weeksOf(year, month)
-  const raw: Omit<Segment, 'lane' | 'laneSpan'>[] = []
+  const raw: Omit<Segment, 'lane' | 'laneSpan' | 'showDetails'>[] = []
   const add = (id: string, label: string, color: string, isStripe: boolean, start: Date, end: Date, bookingRef?: PublicBooking, openTripRef?: PublicOpenTrip) => {
     weeks.forEach((week, wi) => {
       const firstDay = week.find(d => d > 0)!

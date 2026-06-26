@@ -185,9 +185,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
     }
 
-    const lead = isOnHold ? null : (guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0])
-    const paid  = parseFloat(depositPaid) || 0
-    const total = parseFloat(totalPrice)  || 0
+    const lead  = isOnHold ? null : (guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0])
+    const paid  = isFinite(parseFloat(depositPaid)) ? Math.max(0, parseFloat(depositPaid)) : 0
+    const total = isFinite(parseFloat(totalPrice))  ? Math.max(0, parseFloat(totalPrice))  : 0
 
     // ── Conflict check: only for Private Charter ──
     // Open Trip bookings share the same yacht; capacity is managed by the open trip status (open/full/closed).

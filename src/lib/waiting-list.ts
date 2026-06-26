@@ -111,9 +111,9 @@ export async function promoteWaitingListForBooking(cancelledBookingId: string) {
         body:      `${entry.contactName} from the waiting list has been moved to On Hold (${original.bookingCode}). Contact them to confirm.`,
         bookingId: cancelledBookingId,
       },
-    }).catch(e => console.error('[waiting-list] notification failed for user', notifyUserId, e))
+    }).catch(e => console.error('[waiting-list] notification failed | userId:', notifyUserId, '| booking:', original.bookingCode, '| error:', (e as Error).message))
   } else {
-    console.warn('[waiting-list] no salesperson to notify for promoted entry', entry.id)
+    console.warn('[waiting-list] no salesperson to notify for promoted entry', entry.id, '| booking:', original.bookingCode)
   }
 }
 

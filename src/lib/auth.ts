@@ -6,6 +6,21 @@ import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 import { logActivity } from '@/lib/activity'
 
+// In-memory rate limiter for authorize(): max 10 attempts per email per 2 minutes
+const authRateMap = new Map<string, { count: number; resetAt: number }>()
+function checkAuthRateLimit(email: string): boolean {
+  const now = Date.now()
+  const key = email.toLowerCase()
+  const entry = authRateMap.get(key)
+  if (!entry || entry.resetAt < now) {
+    authRateMap.set(key, { count: 1, resetAt: now + 120_000 })
+    return true
+  }
+  if (entry.count >= 10) return false
+  entry.count++
+  return true
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -17,6 +32,10 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
+        if (!checkAuthRateLimit(credentials.email)) {
+          console.warn('[auth] rate limit hit for:', credentials.email)
+          return null
+        }
 
         // ── 1. Check super admin in central DB ──────────────────────────────
         const centralUser = await centralDb.centralUser.findUnique({
@@ -55,7 +74,7 @@ export const authOptions: NextAuthOptions = {
           }).catch((e) => { console.error('[auth] tenant DB lookup error:', e.message ?? e); return null })
           if (!tenantUser) { console.error('[auth] user not found in tenant DB for:', credentials.email); return null }
           const valid = await bcrypt.compare(credentials.password, tenantUser.password)
-          if (!valid) return null
+          if (!valid) { console.error('[auth] wrong password for:', credentials.email); return null }
           return {
             id: tenantUser.id,
             email: tenantUser.email,
@@ -86,15 +105,22 @@ export const authOptions: NextAuthOptions = {
 
         // Lazy migration: register user into central DB so future logins use tenantId
         if (samaraTenant) {
-          centralDb.centralUser.upsert({
-            where: { email: credentials.email },
-            update: { name: user.name ?? undefined },
-            create: { email: credentials.email, name: user.name ?? undefined, isSuperAdmin: false },
-          }).then(cu => centralDb.userTenant.upsert({
-            where: { userId_tenantId: { userId: cu.id, tenantId: samaraTenant.id } },
-            update: {},
-            create: { userId: cu.id, tenantId: samaraTenant.id },
-          })).catch(e => console.error('[auth] lazy migration failed for', credentials.email, e))
+          void (async () => {
+            try {
+              const cu = await centralDb.centralUser.upsert({
+                where: { email: credentials.email },
+                update: { name: user.name ?? undefined },
+                create: { email: credentials.email, name: user.name ?? undefined, isSuperAdmin: false },
+              })
+              await centralDb.userTenant.upsert({
+                where: { userId_tenantId: { userId: cu.id, tenantId: samaraTenant.id } },
+                update: {},
+                create: { userId: cu.id, tenantId: samaraTenant.id },
+              })
+            } catch (e) {
+              console.error('[auth] lazy migration failed for', credentials.email, (e as Error).message)
+            }
+          })()
         }
 
         return {
@@ -146,19 +172,24 @@ export const authOptions: NextAuthOptions = {
       }
       // Refresh name/email on subsequent requests
       if (token.isSuperAdmin) return token
-      if (token.tenantDbUrl) {
-        const tenantDb = getTenantDb(token.tenantDbUrl as string)
-        const dbUser = await tenantDb.user.findUnique({
-          where: { id: token.id as string },
-          select: { name: true, email: true, role: true },
-        }).catch(() => null)
-        if (dbUser) { token.name = dbUser.name; token.email = dbUser.email; token.role = dbUser.role }
-      } else {
-        const dbUser = await db.user.findUnique({
-          where: { id: token.id as string },
-          select: { name: true, email: true, role: true },
-        }).catch(() => null)
-        if (dbUser) { token.name = dbUser.name; token.email = dbUser.email; token.role = dbUser.role }
+      try {
+        if (token.tenantDbUrl) {
+          const tenantDb = getTenantDb(token.tenantDbUrl as string)
+          const dbUser = await tenantDb.user.findUnique({
+            where: { id: token.id as string },
+            select: { name: true, email: true, role: true },
+          }).catch(() => null)
+          if (dbUser) { token.name = dbUser.name; token.email = dbUser.email; token.role = dbUser.role }
+        } else {
+          const dbUser = await db.user.findUnique({
+            where: { id: token.id as string },
+            select: { name: true, email: true, role: true },
+          }).catch(() => null)
+          if (dbUser) { token.name = dbUser.name; token.email = dbUser.email; token.role = dbUser.role }
+        }
+      } catch (e) {
+        // Tenant DB unavailable — return existing token so user stays logged in
+        console.error('[auth] JWT refresh failed, keeping existing token:', (e as Error).message)
       }
       return token
     },

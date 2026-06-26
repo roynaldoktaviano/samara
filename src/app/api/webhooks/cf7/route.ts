@@ -70,33 +70,32 @@ export async function POST(request: NextRequest) {
     ].filter(Boolean).join('\n')
 
     // ── Upsert customer ───────────────────────────────────────────────────────
-    let customer = null
-
-    if (email) {
-      customer = await db.customer.findFirst({ where: { email, deletedAt: null } })
-    }
-    if (!customer && phone) {
-      customer = await db.customer.findFirst({ where: { phone, deletedAt: null } })
+    let existingCustomer = await (email
+      ? db.customer.findFirst({ where: { email, deletedAt: null } })
+      : Promise.resolve(null))
+    if (!existingCustomer && phone) {
+      existingCustomer = await db.customer.findFirst({ where: { phone, deletedAt: null } })
     }
 
-    if (customer) {
-      // Append new inquiry to existing notes (preserve previous notes)
-      const existingNotes = customer.operationalNotes ?? ''
+    let customerId: string
+    if (existingCustomer) {
+      const existingNotes = existingCustomer.operationalNotes ?? ''
       const updatedNotes  = existingNotes ? `${existingNotes}\n\n${noteLines}` : noteLines
-
-      customer = await db.customer.update({
-        where: { id: customer.id },
+      const updated = await db.customer.update({
+        where: { id: existingCustomer.id },
         data: {
-          name:             fullName,
+          name: fullName,
           ...(firstName && { firstName }),
           ...(lastName  && { lastName  }),
           ...(email     && { email     }),
           ...(phone     && { phone     }),
           operationalNotes: updatedNotes,
         },
+        select: { id: true },
       })
+      customerId = updated.id
     } else {
-      customer = await db.customer.create({
+      const created = await db.customer.create({
         data: {
           name:             fullName,
           firstName:        firstName || null,
@@ -105,16 +104,18 @@ export async function POST(request: NextRequest) {
           phone:            phone     || null,
           operationalNotes: noteLines,
         },
+        select: { id: true },
       })
+      customerId = created.id
     }
 
     logActivity({
       userId: '', userName: 'Website CF7', userRole: 'SYSTEM',
-      action: 'CREATE', entity: 'Customer', entityId: customer.id,
+      action: 'CREATE', entity: 'Customer', entityId: customerId,
       detail: `Website inquiry: ${fullName} · ${noteLines.replace(/\n/g, ' ')}`,
     }).catch(() => {})
 
-    return NextResponse.json({ ok: true, customerId: customer.id })
+    return NextResponse.json({ ok: true, customerId })
   } catch (error) {
     console.error('[CF7 webhook]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

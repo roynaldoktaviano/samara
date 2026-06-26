@@ -24,7 +24,19 @@ export default function middleware(req: NextRequest) {
   if (pathname === '/agent/calendar' || pathname.startsWith('/agent/calendar/')) {
     const token  = req.nextUrl.searchParams.get('token')
     const cookie = req.cookies.get('cal-access')?.value
-    if (token || cookie) return NextResponse.next()
+    if (token) {
+      // Persist token to httpOnly cookie so future visits don't expose token in URL
+      const res = NextResponse.next()
+      res.cookies.set('cal-access', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+        path: '/agent/calendar',
+      })
+      return res
+    }
+    if (cookie) return NextResponse.next()
     return NextResponse.rewrite(new URL('/agent/calendar/denied', req.url))
   }
 

@@ -25,9 +25,9 @@ export async function PUT(
 
   const data: Record<string, unknown> = {}
   if (name     !== undefined) data.name     = name || null
-  if (email    !== undefined) data.email    = email
+  if (email    !== undefined) data.email    = email.toLowerCase().trim()
   if (role     !== undefined) data.role     = role
-  if (password)               data.password = await bcrypt.hash(password, 10)
+  if (password)               data.password = await bcrypt.hash(password, 12)
 
   try {
     const db = getSessionDb(session)

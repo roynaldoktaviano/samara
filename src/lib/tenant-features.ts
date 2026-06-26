@@ -1,7 +1,8 @@
-export type TenantFeatureKey = 'sharingCabin'
+export type TenantFeatureKey = 'sharingCabin' | 'agentContract'
 
 export interface TenantFeatures {
   sharingCabin?: boolean
+  agentContract?: boolean
 }
 
 export const TENANT_FEATURE_DEFINITIONS: {
@@ -13,6 +14,11 @@ export const TENANT_FEATURE_DEFINITIONS: {
     key: 'sharingCabin',
     label: 'Sharing Cabin',
     description: 'Allow guests to share a cabin with other passengers',
+  },
+  {
+    key: 'agentContract',
+    label: 'Agent Contract',
+    description: 'Allow generating and printing agent agreement contracts',
   },
 ]
 

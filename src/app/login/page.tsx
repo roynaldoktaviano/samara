@@ -67,7 +67,9 @@ export default function LoginPage() {
 
     const session = await getSession();
     const dest = session?.user?.isSuperAdmin ? "/super-admin" : "/";
-    const branding = getTenantBranding(session?.user?.tenantSlug);
+    const branding = getTenantBranding(session?.user?.tenantSlug, {
+      logoUrl: session?.user?.tenantLogoUrl,
+    });
     trigger(() => { window.location.href = dest; }, 900, branding);
   }
 

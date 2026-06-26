@@ -40,18 +40,19 @@ export async function POST(req: Request) {
 
   const tenantDb = getSessionDb(session)
 
-  const existing = await tenantDb.user.findUnique({ where: { email } })
+  const normalizedEmail = email.toLowerCase().trim()
+  const existing = await tenantDb.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) {
     return NextResponse.json({ error: 'Email already in use' }, { status: 409 })
   }
 
-  const hashed = await bcrypt.hash(password, 10)
+  const hashed = await bcrypt.hash(password, 12)
 
   // Create in tenant DB first
   let user: { id: string; name: string | null; email: string; role: string; createdAt: Date }
   try {
     user = await tenantDb.user.create({
-      data: { name: name || null, email, password: hashed, role },
+      data: { name: name || null, email: normalizedEmail, password: hashed, role },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     })
   } catch {
@@ -68,9 +69,9 @@ export async function POST(req: Request) {
 
   try {
     const cu = await centralDb.centralUser.upsert({
-      where: { email },
+      where: { email: normalizedEmail },
       update: { name: name || null, isActive: true },
-      create: { email, name: name || null, isSuperAdmin: false },
+      create: { email: normalizedEmail, name: name || null, isSuperAdmin: false },
     })
     await centralDb.userTenant.upsert({
       where: { userId_tenantId: { userId: cu.id, tenantId } },

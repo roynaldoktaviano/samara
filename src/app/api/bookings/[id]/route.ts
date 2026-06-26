@@ -133,9 +133,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
     const { id }  = await params
     const body    = await request.json()
     const { status, cancelReason, completeBooking, guests, totalPrice, depositPaid,
@@ -173,9 +174,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             isLead:     g.isLead ?? false,
           })),
         }),
-        // Update booking
+        // Update booking — WHERE includes status: on_hold to prevent double-completion race
         db.booking.update({
-          where: { id },
+          where: { id, status: 'on_hold' },
           data: {
             customerId:    lead.customerId,
             totalPrice:    total,
@@ -311,12 +312,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if ((session?.user as { role?: string })?.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
-    const session  = await getServerSession(authOptions)
-    if ((session?.user as { role?: string })?.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
     const { id }   = await params
     const existing = await db.booking.findUnique({ where: { id }, select: { bookingCode: true, status: true, tripType: true } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })

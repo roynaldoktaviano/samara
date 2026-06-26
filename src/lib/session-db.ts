@@ -7,6 +7,9 @@ import { PrismaClient } from '@prisma/client'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getSessionDb(session: any): PrismaClient {
   const url = session?.user?.tenantDbUrl as string | undefined
+  if (!url) {
+    console.warn('[session-db] no tenantDbUrl in session — falling back to default DB. userId:', session?.user?.id)
+  }
   return url ? getTenantDb(url) : db
 }
 

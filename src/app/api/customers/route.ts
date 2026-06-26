@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
-    const limit  = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 500
+    const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
 
     const where: Record<string, unknown> = { deletedAt: null }
     if (search) {

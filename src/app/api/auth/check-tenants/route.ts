@@ -4,8 +4,30 @@ import { getTenantDb } from '@/lib/tenant-db'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 
+// Simple in-memory rate limiter: max 10 attempts per IP per minute
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT = 10
+const WINDOW_MS = 60_000
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + WINDOW_MS })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT) return false
+  entry.count++
+  return true
+}
+
 // POST { email, password } → returns list of tenants where password matches
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown'
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ error: 'Too many attempts. Please wait a minute.' }, { status: 429 })
+  }
+
   const { email, password } = await req.json()
   if (!email || !password) return NextResponse.json({ tenants: [] })
 
@@ -36,7 +58,7 @@ export async function POST(req: NextRequest) {
         const valid = await bcrypt.compare(password, user.password)
         if (!valid) return null
         return { tenantId: ut.tenant.id, tenantName: ut.tenant.name, tenantSlug: ut.tenant.slug, logoUrl: ut.tenant.logoUrl }
-      } catch { return null }
+      } catch (e) { console.error('[check-tenants] error:', e); return null }
     })
   )
 

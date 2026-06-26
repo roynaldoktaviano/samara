@@ -133,6 +133,7 @@ export default function Agents() {
   const isSales     = userRole === 'SALES'
   const canManage   = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
   const canCalendar = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+  const canGenerateContract = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.agentContract
 
   const canActOnAgent = (a: AgentRecord) => isAdmin || a.salespersonId === userId
 
@@ -924,7 +925,7 @@ export default function Agents() {
                       {canManage && (
                         <td className="py-2.5 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 justify-end">
-                            {canActOnAgent(a) && (
+                            {canActOnAgent(a) && canGenerateContract && (
                               a.contract === 'Yes' && a.contractFileName ? (
                                 <button
                                   className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"

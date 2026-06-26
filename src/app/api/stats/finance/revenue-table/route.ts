@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const year = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
+    const year = Math.max(2000, Math.min(2100, parseInt(searchParams.get('year') ?? String(new Date().getFullYear())) || new Date().getFullYear()))
 
     const startOfYear = new Date(year, 0, 1)
     const endOfYear   = new Date(year, 11, 31, 23, 59, 59)

@@ -13,7 +13,7 @@ interface LogParams {
 export async function logActivity(params: LogParams): Promise<void> {
   try {
     await db.activityLog.create({ data: params })
-  } catch {
-    // logging must never break the main flow
+  } catch (e) {
+    console.error('[activity] log failed:', (e as Error).message, '| action:', params.action, '| user:', params.userId)
   }
 }
