@@ -56,6 +56,7 @@ interface SelectedGuest {
   isLead: boolean
   isChild?: boolean
   isInfant?: boolean
+  isPlaceholder?: boolean
 }
 interface ServiceEntry { tempId: string; name: string; price: string; qty: string }
 
@@ -149,6 +150,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
   const [custSearch,setCSearch]       = useState('')
   const [custFocused,setCustFocused]  = useState(false)
+  const [placeholderSaving, setPlaceholderSaving] = useState(false)
   const [crewReq,    setCrewReq]    = useState(false)
   const [hasDiving,        setHasDiving]        = useState(false)
   const [hasSurfing,       setHasSurfing]       = useState(false)
@@ -673,6 +675,23 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setQuickPhoneSameAsLead(false); setQuickEmailSameAsLead(false); setQuickSetAsLead(false)
       }
     } finally { setQuickSaving(false) }
+  }
+
+  const addPlaceholderGuest = async () => {
+    const num = guests.length + 1
+    const name = `Tamu ${num} (TBD)`
+    setPlaceholderSaving(true)
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, firstName: `Tamu ${num}`, lastName: 'TBD' }),
+      })
+      if (!res.ok) return
+      const created = await res.json() as CustomerOpt
+      setCustomers(prev => [created, ...prev])
+      setGuests(prev => [...prev, { customerId: created.id, name, cabinId: '', isLead: false, isPlaceholder: true }])
+    } finally { setPlaceholderSaving(false) }
   }
 
   /* service helpers */
@@ -1658,6 +1677,7 @@ notes:         resolvedNotes,
         {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
         {g.isInfant && <span className="text-[9px] font-bold text-rose-500 shrink-0 bg-rose-50 px-1 rounded">Infant</span>}
         {g.isChild && !g.isInfant && <span className="text-[9px] font-bold text-blue-600 shrink-0 bg-blue-50 px-1 rounded">Child</span>}
+        {g.isPlaceholder && <span className="text-[9px] font-bold text-orange-600 shrink-0 bg-orange-50 px-1 rounded">TBD</span>}
         <span className="truncate max-w-24">{g.name}</span>
         <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
           className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
@@ -1951,6 +1971,21 @@ notes:         resolvedNotes,
                 <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Add new guest'}
               </button>
             </div>
+          )}
+
+          {/* Add placeholder guest button */}
+          {!showQuickAdd && (
+            <button
+              type="button"
+              disabled={placeholderSaving}
+              onMouseDown={e => { e.preventDefault(); addPlaceholderGuest() }}
+              className="mt-1 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-1 py-1 rounded transition-colors disabled:opacity-50"
+            >
+              {placeholderSaving
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <Plus className="h-3 w-3" />}
+              Tambah tamu (nama belum diketahui)
+            </button>
           )}
 
           {/* Inline quick-add form */}
