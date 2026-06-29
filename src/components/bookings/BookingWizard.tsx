@@ -500,9 +500,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     let usdPrice = 0
     const ot = openTrips.find(t => t.id === openTripId)
     if (tripType === 'OPEN_TRIP' && ot) {
-      const nights = Math.max(1, Math.ceil(
+      const nights = Math.max(1, Math.round(
         (new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000
-      ))
+      ) + 1)
       const assignedCabinIds = [...new Set(guests.filter(g => g.cabinId).map(g => g.cabinId))]
       const cabinTotal = assignedCabinIds.reduce((sum, id) => {
         const c = cabins.find(x => x.id === id)
@@ -595,12 +595,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
 
-  /* trip nights for open trip (endDate - startDate in full days) */
+  /* trip days for open trip (inclusive: endDate - startDate + 1) */
   const tripNights = useMemo(() => {
     if (!selectedOT) return 0
-    return Math.max(1, Math.ceil(
+    return Math.max(1, Math.round(
       (new Date(selectedOT.endDate).getTime() - new Date(selectedOT.startDate).getTime()) / 86400000
-    ))
+    ) + 1)
   }, [selectedOT])
   const filteredCusts = customers.filter(c =>
     !guests.some(g => g.customerId === c.id) &&
@@ -1508,7 +1508,7 @@ notes:         resolvedNotes,
               {paged.map(t => {
                 const selected = openTripId === t.id
                 const isFull   = t.status === 'full'
-                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
+                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000) + 1
                 return (
                   <button
                     key={t.id}
@@ -2403,7 +2403,7 @@ notes:         resolvedNotes,
       let nights = 0
       if (tripType === 'OPEN_TRIP') {
         const ot = openTrips.find(t => t.id === openTripId)
-        nights = ot ? Math.max(1, Math.ceil((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000)) : 0
+        nights = ot ? Math.max(1, Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000) + 1) : 0
       } else if (startDate && endDate) {
         nights = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) - 1)
       }

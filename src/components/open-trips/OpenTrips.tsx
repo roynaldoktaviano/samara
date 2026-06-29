@@ -49,7 +49,7 @@ const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const getDays = (s: string, e: string) =>
-  Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
+  Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / 86400000) + 1)
 
 const emptyForm = () => ({
   title: '', description: '', yachtId: '', startDate: '', endDate: '',
