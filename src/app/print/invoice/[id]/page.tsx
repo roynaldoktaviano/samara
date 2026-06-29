@@ -373,7 +373,7 @@ export default function InvoicePage() {
               {guestsWithCabin.map((g, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 10px 3px 18px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: '#374151', fontSize: 10 }}>{g.customer?.name ?? '—'}</span>
+                    <span style={{ color: '#374151', fontSize: 10 }}>{(g.customer?.name ?? '').toLowerCase().includes('tbd') ? '' : (g.customer?.name ?? '—')}</span>
                     {g.isLead && (
                       <span style={{ fontSize: 8, fontWeight: 600, color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 3, padding: '1px 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Lead</span>
                     )}
