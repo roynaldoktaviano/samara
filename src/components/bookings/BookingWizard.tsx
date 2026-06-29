@@ -504,7 +504,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     if (tripType === 'OPEN_TRIP' && ot) {
       const nights = Math.max(1, Math.round(
         (new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000
-      ) + 1)
+      ))
       const assignedCabinIds = [...new Set(guests.filter(g => g.cabinId).map(g => g.cabinId))]
       const cabinTotal = assignedCabinIds.reduce((sum, id) => {
         const c = cabins.find(x => x.id === id)
@@ -597,12 +597,12 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
 
-  /* trip days for open trip (inclusive: endDate - startDate + 1) */
+  /* actual nights on board for open trip (endDate - startDate) */
   const tripNights = useMemo(() => {
     if (!selectedOT) return 0
     return Math.max(1, Math.round(
       (new Date(selectedOT.endDate).getTime() - new Date(selectedOT.startDate).getTime()) / 86400000
-    ) + 1)
+    ))
   }, [selectedOT])
   const filteredCusts = customers.filter(c =>
     !guests.some(g => g.customerId === c.id) &&
@@ -1527,7 +1527,7 @@ notes:         resolvedNotes,
               {paged.map(t => {
                 const selected = openTripId === t.id
                 const isFull   = t.status === 'full'
-                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000) + 1
+                const nights   = Math.round((new Date(t.endDate).getTime() - new Date(t.startDate).getTime()) / 86400000)
                 return (
                   <button
                     key={t.id}
@@ -1569,7 +1569,7 @@ notes:         resolvedNotes,
                       <div className="flex items-center gap-1.5">
                         <CalendarIcon className="w-3 h-3 shrink-0 opacity-50" />
                         <span>{fmtDate(t.startDate)} → {fmtDate(t.endDate)}</span>
-                        <span className="text-[10px] bg-muted rounded px-1 py-px shrink-0">{nights}N</span>
+                        <span className="text-[10px] bg-muted rounded px-1 py-px shrink-0">{nights + 1}D</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Map className="w-3 h-3 shrink-0 opacity-50" />
@@ -2292,7 +2292,7 @@ notes:         resolvedNotes,
                           if (!display) return null
                           return (
                             <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>
-                              ${display.toLocaleString()} ({tripNights}N{tier ? '' : ' est.'})
+                              ${display.toLocaleString()} ({tripNights + 1}D{tier ? '' : ' est.'})
                             </p>
                           )
                         }
@@ -2438,7 +2438,7 @@ notes:         resolvedNotes,
       let nights = 0
       if (tripType === 'OPEN_TRIP') {
         const ot = openTrips.find(t => t.id === openTripId)
-        nights = ot ? Math.max(1, Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000) + 1) : 0
+        nights = ot ? Math.max(1, Math.round((new Date(ot.endDate).getTime() - new Date(ot.startDate).getTime()) / 86400000)) : 0
       } else if (startDate && endDate) {
         nights = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) - 1)
       }
@@ -2544,7 +2544,7 @@ notes:         resolvedNotes,
               {(tripType === 'OPEN_TRIP' || selectedYacht) && (
                 <p className="text-xs text-muted-foreground">
                   {tripType === 'OPEN_TRIP'
-                    ? `Cabin price/night × ${tripNights} night${tripNights !== 1 ? 's' : ''} per assigned cabin`
+                    ? `Cabin price × ${tripNights + 1} day${tripNights + 1 !== 1 ? 's' : ''} per assigned cabin`
                     : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
                 </p>
               )}

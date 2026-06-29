@@ -16,6 +16,8 @@ enum Role {
   SALES
   FINANCE
   MARKETING
+  PURCHASING
+  WAREHOUSE
 }
 
 enum BookingSource {
