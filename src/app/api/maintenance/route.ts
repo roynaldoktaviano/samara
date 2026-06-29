@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'CREATE', entity: 'Maintenance', entityId: maintenance.id,
       detail: `Jadwal maintenance: ${title}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(maintenance, { status: 201 })
   } catch (error) {

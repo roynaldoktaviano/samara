@@ -4,10 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 export async function POST() {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)

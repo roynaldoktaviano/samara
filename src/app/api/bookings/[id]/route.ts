@@ -125,7 +125,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       userId, userName, userRole,
       action: 'UPDATE', entity: 'Booking', entityId: id,
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(booking)
   } catch (error) {
@@ -221,7 +221,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         userId, userName, userRole,
         action: 'UPDATE', entity: 'Booking', entityId: id,
         detail: `Complete booking ${existing.bookingCode} — ${guests.length} guest(s), total: ${total}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
 
       return NextResponse.json({ id, bookingCode: existing.bookingCode, status: paymentStatus(paid, total) })
     }
@@ -278,7 +278,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         logActivity({ userId, userName, userRole, action: 'UPDATE', entity: 'Booking', entityId: id,
           detail: `Cancel booking ${booking.bookingCode} with confirmed payment → pending refund decision`,
-        }).catch(() => {})
+        }, db).catch(() => {})
 
         return NextResponse.json({ ...booking, requiresRefundDecision: true })
       }
@@ -299,14 +299,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         where: { bookingId: id, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
         data: { status: 'cancelled' },
       }).catch(e => console.error('cancel payments failed:', e))
-      await promoteWaitingListForBooking(id).catch(e => console.error('promote waiting list failed:', e))
+      await promoteWaitingListForBooking(id, db).catch(e => console.error('promote waiting list failed:', e))
     }
 
     logActivity({
       userId, userName, userRole,
       action: 'UPDATE', entity: 'Booking', entityId: id,
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${cancelReason ? ` (alasan: ${cancelReason})` : ''}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(booking)
   } catch (error) {
@@ -348,7 +348,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       userId, userName, userRole,
       action: 'DELETE', entity: 'Booking', entityId: id,
       detail: `Hapus booking ${existing?.bookingCode ?? id}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json({ ok: true })
   } catch (error) {

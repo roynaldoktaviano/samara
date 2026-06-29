@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         select: { id: true, bookingCode: true, salespersonId: true },
       })
 
-      await promoteWaitingListForBooking(id).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
+      await promoteWaitingListForBooking(id, db).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       // Notify salesperson
       if (booking.salespersonId) {
@@ -87,7 +87,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       logActivity({ userId: session.user.id, userName: actorName, userRole: actorRole,
         action: 'UPDATE', entity: 'Booking', entityId: id,
         detail: `No refund decision for ${booking.bookingCode}: ${reason}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
 
       return NextResponse.json(booking)
     }
@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       logActivity({ userId: session.user.id, userName: actorName, userRole: actorRole,
         action: 'UPDATE', entity: 'Booking', entityId: id,
         detail: `Refund approved for ${booking.bookingCode}: ${reason}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
 
       return NextResponse.json(booking)
     }
@@ -164,7 +164,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       logActivity({ userId: session.user.id, userName: actorName, userRole: actorRole,
         action: 'UPDATE', entity: 'Booking', entityId: id,
         detail: `Refund proof uploaded for ${booking.bookingCode}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
 
       return NextResponse.json(booking)
     }
@@ -191,14 +191,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         data: { status: 'refunded' },
       }).catch(e => console.error('[refund] payment status update failed for booking', id, e))
 
-      await promoteWaitingListForBooking(id).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
+      await promoteWaitingListForBooking(id, db).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'
       const actorRole = (session.user as { role?: string })?.role ?? ''
       logActivity({ userId: session.user.id, userName: actorName, userRole: actorRole,
         action: 'UPDATE', entity: 'Booking', entityId: id,
         detail: `Refund confirmed by sales for ${booking.bookingCode}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
 
       return NextResponse.json(booking)
     }

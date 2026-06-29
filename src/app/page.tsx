@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings, UserPen, Eye, EyeOff } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,6 +28,16 @@ import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
 import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
+import PurchasingOverview from '@/components/purchasing/PurchasingOverview'
+import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
+import PurchasingLocationsPage from '@/components/purchasing/locations/LocationsPage'
+import PurchasingRequestsPage from '@/components/purchasing/RequestsAndOrders'
+import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
+import PurchasingTransfersPage from '@/components/purchasing/transfers/TransfersPage'
+import PurchasingExceptionsPage from '@/components/purchasing/exceptions/ExceptionsPage'
+import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
+import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
+import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
@@ -61,7 +71,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers'
 
 type NavItem = {
   id: View
@@ -69,6 +79,7 @@ type NavItem = {
   icon: React.ElementType
   roles: string[]
   group: string
+  feature?: string  // tenant feature flag required to show this item
 }
 
 const NAV_GROUPS = [
@@ -78,6 +89,7 @@ const NAV_GROUPS = [
   { key: 'statistics', label: 'Statistics' },
   { key: 'marketing',  label: 'Marketing'  },
   { key: 'management', label: 'Management' },
+  { key: 'purchasing', label: 'Purchasing & Inventory' },
 ]
 
 const navigationItems: NavItem[] = [
@@ -96,20 +108,34 @@ const navigationItems: NavItem[] = [
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
+  { id: 'purchasing-overview',   label: 'Purchasing',        icon: ShoppingCart,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-requests',  label: 'Requests & POs',    icon: ClipboardList,  roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-stock',     label: 'Stock by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-locations',    label: 'Locations',        icon: MapPin,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-stock-counts', label: 'Stock Counts',     icon: Shield,      roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-suppliers',     label: 'Suppliers',        icon: Building2,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-exceptions',   label: 'Exceptions',       icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-reports',      label: 'Reports',          icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
 ]
 
 const roleBadgeColor: Record<string, string> = {
-  ADMIN:     'bg-purple-100 text-purple-700',
-  SALES:     'bg-blue-100 text-blue-700',
-  FINANCE:   'bg-emerald-100 text-emerald-700',
-  MARKETING: 'bg-orange-100 text-orange-700',
+  ADMIN:      'bg-purple-100 text-purple-700',
+  SALES:      'bg-blue-100 text-blue-700',
+  FINANCE:    'bg-emerald-100 text-emerald-700',
+  MARKETING:  'bg-orange-100 text-orange-700',
+  PURCHASING: 'bg-amber-100 text-amber-700',
+  WAREHOUSE:  'bg-teal-100 text-teal-700',
 }
 
 const roleLabel: Record<string, string> = {
-  ADMIN:     'Admin',
-  SALES:     'Sales',
-  FINANCE:   'Finance',
-  MARKETING: 'Marketing',
+  ADMIN:      'Admin',
+  SALES:      'Sales',
+  FINANCE:    'Finance',
+  MARKETING:  'Marketing',
+  PURCHASING: 'Purchasing',
+  WAREHOUSE:  'Warehouse',
 }
 
 interface Notification {
@@ -120,17 +146,22 @@ interface Notification {
   isRead: boolean
   paymentId: string | null
   bookingId: string | null
+  orderId: string | null
   createdAt: string
 }
 
 const NOTIF_ICON: Record<string, React.ElementType> = {
-  PAYMENT_SUBMITTED: Clock,
-  PAYMENT_CONFIRMED: CheckCircle2,
-  PAYMENT_REJECTED:  XCircle,
-  INVOICE_READY:     CreditCard,
-  DEPOSIT_DUE_H2:    Bell,
-  DEPOSIT_DUE_H1:    Bell,
-  DEPOSIT_DUE_H0:    Bell,
+  PAYMENT_SUBMITTED:      Clock,
+  PAYMENT_CONFIRMED:      CheckCircle2,
+  PAYMENT_REJECTED:       XCircle,
+  INVOICE_READY:          CreditCard,
+  DEPOSIT_DUE_H2:         Bell,
+  DEPOSIT_DUE_H1:         Bell,
+  DEPOSIT_DUE_H0:         Bell,
+  PO_ORDERED:             ShoppingCart,
+  PO_IN_TRANSIT:          ArrowRightLeft,
+  PO_RECEIVED:            CheckCircle2,
+  PO_PARTIALLY_RECEIVED:  CheckCircle2,
 }
 const NOTIF_COLOR: Record<string, string> = {
   PAYMENT_SUBMITTED: 'text-amber-600',
@@ -173,6 +204,22 @@ function playChime() {
       osc.stop(ctx.currentTime + delay + dur + 0.05)
     })
   } catch { /* AudioContext not supported */ }
+}
+
+function PurchasingComingSoon({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
+        <p className="text-muted-foreground text-sm mt-1">{desc}</p>
+      </div>
+      <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
+        <ShoppingCart className="h-8 w-8 mx-auto mb-3 opacity-30" />
+        <p className="text-sm font-medium">Segera hadir</p>
+        <p className="text-xs mt-1">Fitur ini sedang dalam pengembangan</p>
+      </div>
+    </div>
+  )
 }
 
 const dropdownVariants = {
@@ -364,7 +411,9 @@ export default function Home() {
   const handleNotifClick = (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
-    if (n.paymentId && isFinance) {
+    if (n.orderId || n.type.startsWith('PO_')) {
+      setCurrentView('purchasing-requests')
+    } else if (n.paymentId && isFinance) {
       setCurrentView('payments')
     } else if (n.bookingId || n.paymentId || n.type.startsWith('DEPOSIT_DUE')) {
       setCurrentView('bookings')
@@ -403,7 +452,11 @@ export default function Home() {
   const userRole = session.user.role
   const isAdmin   = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
-  const visibleNavItems = navigationItems.filter((item) => item.roles.includes(userRole))
+  const tenantFeatures = (session.user as { tenantFeatures?: Record<string, boolean> }).tenantFeatures ?? {}
+  const visibleNavItems = navigationItems.filter((item) =>
+    item.roles.includes(userRole) &&
+    (!item.feature || tenantFeatures[item.feature] === true)
+  )
 
   const invoiceReadyCount = !isFinance
     ? notifications.filter(n => !n.isRead && n.type === 'INVOICE_READY').length
@@ -418,6 +471,7 @@ export default function Home() {
 
   const isCurrentViewAllowed = visibleNavItems.some((item) => item.id === currentView)
   const activeView = isCurrentViewAllowed ? currentView : visibleNavItems[0]?.id ?? 'calendar'
+
 
   const renderView = () => {
     switch (activeView) {
@@ -438,6 +492,16 @@ export default function Home() {
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
+      case 'purchasing-overview':   return <PurchasingOverview />
+      case 'purchasing-requests':  return <PurchasingRequestsPage />
+      case 'purchasing-items':     return <PurchasingItemsPage />
+      case 'purchasing-locations': return <PurchasingLocationsPage />
+      case 'purchasing-stock':     return <PurchasingStockPage />
+      case 'purchasing-transfers':    return <PurchasingTransfersPage />
+      case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
+      case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
+      case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
+      case 'purchasing-reports':      return <PurchasingReportsPage />
       case 'settings':      return (
         <div className="space-y-6">
           <div>

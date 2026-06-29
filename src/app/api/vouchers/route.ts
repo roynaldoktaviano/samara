@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       userRole: session!.user.role ?? '',
       action: 'CREATE', entity: 'Voucher', entityId: voucher.id,
       detail: `Add voucher: ${voucher.code}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(voucher, { status: 201 })
   } catch (err: any) {

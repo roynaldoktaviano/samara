@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       userId: '', userName: 'Website CF7', userRole: 'SYSTEM',
       action: 'CREATE', entity: 'Customer', entityId: customerId,
       detail: `Website inquiry: ${fullName} · ${noteLines.replace(/\n/g, ' ')}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json({ ok: true, customerId })
   } catch (error) {

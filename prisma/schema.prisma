@@ -94,6 +94,16 @@ model User {
   bookings         Booking[]     @relation("SalespersonBookings")
   managedAgents    Agent[]       @relation("AgentSalesperson")
   waitingListItems WaitingList[]
+  stockMovements   StockMovement[]
+  purchaseRequests PurchaseRequest[]
+  goodsReceipts    GoodsReceipt[]
+  transfersDispatched         StockTransfer[] @relation("TransferDispatch")
+  transfersReceived           StockTransfer[] @relation("TransferReceive")
+  transfersExpectedReceive    StockTransfer[] @relation("TransferExpectedReceive")
+  inventoryExceptionsResolved InventoryException[] @relation("ExceptionResolvedBy")
+  crewRequests        CrewRequest[]
+  stockCountsBy       StockCount[]   @relation("StockCountBy")
+  stockCountsApproved StockCount[]   @relation("StockCountApprove")
 }
 
 model Customer {
@@ -228,6 +238,8 @@ model Yacht {
   maintenances     Maintenance[]
   expenses         Expense[]
   waitingListItems WaitingList[]
+  stockLocations   StockLocation[]
+  crewRequests     CrewRequest[]
 }
 
 model Cabin {
@@ -527,15 +539,17 @@ model Notification {
   body      String
   paymentId String?
   bookingId String?
+  orderId   String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  payment       Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  purchaseOrder PurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
   @@index([paymentId])
   @@index([bookingId])
-  @@unique([userId, type, bookingId])
+  @@index([orderId])
 }
 
 model WaitingList {
@@ -601,4 +615,447 @@ model SystemSetting {
 model Counter {
   key   String @id
   value Int    @default(0)
+}
+
+// ─── Purchasing & Inventory ────────────────────────────────────────────────────
+
+enum StockLocationType {
+  WAREHOUSE
+  VESSEL
+  TRANSIT
+  SITE
+  ADJUSTMENT
+}
+
+enum PurchaseRequestStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum TransferStatus {
+  PENDING
+  DISPATCHED
+  RECEIVED
+  CANCELLED
+}
+
+enum CrewRequestStatus {
+  PENDING
+  REVIEWED
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+}
+
+enum StockCountStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  APPROVED
+}
+
+model PurchaseItem {
+  id               String   @id @default(cuid())
+  sku              String   @unique
+  name             String
+  category         String
+  baseUnit         String
+  purchaseUnit     String
+  conversionFactor Float    @default(1)
+  standardCost     Float    @default(0)
+  sellingPrice     Float    @default(0)
+  valuationMethod  String   @default("FIFO")
+  minStock         Float    @default(0)
+  reorderQty       Float    @default(0)
+  imageKey         String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  stockLots        StockLot[]
+  requestItems     PurchaseRequestItem[]
+  orderItems       PurchaseOrderItem[]
+  receiptItems     GoodsReceiptItem[]
+  transferItems    StockTransferItem[]
+  crewRequestItems CrewRequestItem[]
+  movements        StockMovement[]
+  stockCountItems  StockCountItem[]
+
+  @@index([name])
+  @@index([category])
+}
+
+model StockLocation {
+  id           String            @id @default(cuid())
+  name         String
+  type         StockLocationType @default(WAREHOUSE)
+  yachtId      String?
+  parentId     String?
+  manager      String?
+  storageClass String?
+  managedBy    String            @default("WAREHOUSE")
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+
+  yacht            Yacht?            @relation(fields: [yachtId], references: [id], onDelete: SetNull)
+  parent           StockLocation?    @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children         StockLocation[]   @relation("LocationParent")
+  stockLots        StockLot[]
+  transfersFrom    StockTransfer[]   @relation("TransferFrom")
+  transfersTo      StockTransfer[]   @relation("TransferTo")
+  receipts         GoodsReceipt[]
+  stockCounts      StockCount[]
+  purchaseRequests PurchaseRequest[] @relation("PRDelivery")
+  purchaseOrders   PurchaseOrder[]   @relation("PODelivery")
+
+  @@index([type])
+  @@index([yachtId])
+  @@index([parentId])
+}
+
+model StockLot {
+  id          String        @id @default(cuid())
+  itemId      String
+  locationId  String
+  quantity    Float         @default(0)
+  costPerUnit Float         @default(0)
+  batch       String?
+  expiresAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  item        PurchaseItem  @relation(fields: [itemId], references: [id])
+  location    StockLocation @relation(fields: [locationId], references: [id])
+
+  @@index([itemId, locationId])
+  @@index([expiresAt])
+}
+
+model StockMovement {
+  id             String   @id @default(cuid())
+  itemId         String
+  fromLocationId String?
+  toLocationId   String?
+  quantity       Float
+  type           String
+  referenceId    String?
+  referenceType  String?
+  notes          String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  item           PurchaseItem @relation(fields: [itemId], references: [id])
+  createdBy      User         @relation(fields: [createdById], references: [id])
+
+  @@index([itemId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([referenceId])
+}
+
+model PurchaseRequest {
+  id                 String                @id @default(cuid())
+  prNumber           String                @unique
+  requestedById      String
+  deliveryLocationId String?
+  notes              String?
+  status             PurchaseRequestStatus @default(DRAFT)
+  pdfKey             String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  requestedBy      User                  @relation(fields: [requestedById], references: [id])
+  deliveryLocation StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  items            PurchaseRequestItem[]
+  orders           PurchaseOrder[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([requestedById])
+  @@index([deliveryLocationId])
+}
+
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String
+  locations Json     @default("[]")
+  contact   String?
+  phone     String?
+  email     String?
+  notes     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  orders        PurchaseOrder[]
+  requestItems  PurchaseRequestItem[]
+}
+
+model PurchaseRequestItem {
+  id            String          @id @default(cuid())
+  requestId     String
+  itemId        String?
+  itemName      String
+  quantity      Float
+  unit          String
+  estimatedCost Float           @default(0)
+  supplierId    String?
+  supplierName  String?
+  notes         String?
+
+  request     PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item        PurchaseItem?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+}
+
+model PurchaseOrder {
+  id                 String              @id @default(cuid())
+  poNumber           String              @unique
+  requestId          String?
+  supplierId         String?
+  supplierName       String?
+  deliveryLocationId String?
+  status             PurchaseOrderStatus @default(ORDERED)
+  dispatchPhotoKey   String?
+  dispatchedAt       DateTime?
+  dispatchedByName   String?
+  notes              String?
+  orderedAt          DateTime            @default(now())
+  expectedAt         DateTime?
+  cancelledAt        DateTime?
+  cancelledByName    String?
+  cancellationReason String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  request          PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  deliveryLocation StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  items            PurchaseOrderItem[]
+  receipts         GoodsReceipt[]
+  notifications    Notification[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([deliveryLocationId])
+}
+
+model PurchaseOrderItem {
+  id           String        @id @default(cuid())
+  orderId      String
+  itemId       String?
+  itemName     String
+  orderedQty   Float
+  receivedQty  Float         @default(0)
+  unitCost     Float         @default(0)
+
+  order        PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item         PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+model GoodsReceipt {
+  id              String             @id @default(cuid())
+  grNumber        String             @unique
+  orderId         String
+  receivedById    String
+  receiverName    String?
+  locationId      String
+  receivePhotoKey String?
+  notes           String?
+  receivedAt      DateTime           @default(now())
+  createdAt       DateTime           @default(now())
+
+  order           PurchaseOrder      @relation(fields: [orderId], references: [id])
+  receivedBy      User               @relation(fields: [receivedById], references: [id])
+  location        StockLocation      @relation(fields: [locationId], references: [id])
+  items           GoodsReceiptItem[]
+
+  @@index([orderId])
+  @@index([receivedAt])
+}
+
+model GoodsReceiptItem {
+  id          String       @id @default(cuid())
+  receiptId   String
+  itemId      String?
+  itemName    String
+  receivedQty Float
+  unitCost    Float        @default(0)
+  outcome     String       @default("ACCEPTED")
+  condition   String       @default("good")
+  batch       String?
+  expiryDate  DateTime?
+  notes       String?
+
+  receipt     GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item        PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([receiptId])
+}
+
+model StockTransfer {
+  id               String            @id @default(cuid())
+  transferNumber   String            @unique
+  fromLocationId   String
+  toLocationId     String
+  crewRequestId    String?
+  status           TransferStatus    @default(PENDING)
+  dispatchPhotoKey String?
+  receivePhotoKey  String?
+  dispatchedById       String?
+  receivedById         String?
+  expectedReceiverId   String?
+  expectedReceiverName String?
+  receivedByName       String?
+  notes            String?
+  dispatchedAt     DateTime?
+  receivedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  fromLocation     StockLocation     @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation       StockLocation     @relation("TransferTo", fields: [toLocationId], references: [id])
+  crewRequest      CrewRequest?      @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
+  dispatchedBy       User?             @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
+  receivedBy         User?             @relation("TransferReceive", fields: [receivedById], references: [id], onDelete: SetNull)
+  expectedReceivedBy User?             @relation("TransferExpectedReceive", fields: [expectedReceiverId], references: [id], onDelete: SetNull)
+  items            StockTransferItem[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([crewRequestId])
+}
+
+model StockTransferItem {
+  id            String        @id @default(cuid())
+  transferId    String
+  itemId        String?
+  itemName      String
+  requestedQty  Float
+  dispatchedQty Float         @default(0)
+  receivedQty   Float         @default(0)
+
+  transfer      StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item          PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([transferId])
+}
+
+model StockCount {
+  id           String           @id @default(cuid())
+  countNumber  String           @unique
+  locationId   String
+  status       StockCountStatus @default(DRAFT)
+  notes        String?
+  photoKey     String?
+  countedById  String
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  location     StockLocation    @relation(fields: [locationId], references: [id])
+  countedBy    User             @relation("StockCountBy", fields: [countedById], references: [id])
+  approvedBy   User?            @relation("StockCountApprove", fields: [approvedById], references: [id], onDelete: SetNull)
+  items        StockCountItem[]
+
+  @@index([status])
+  @@index([locationId])
+  @@index([createdAt])
+}
+
+model StockCountItem {
+  id          String     @id @default(cuid())
+  countId     String
+  itemId      String?
+  itemName    String
+  systemQty   Float
+  countedQty  Float      @default(0)
+  reason      String?
+
+  count       StockCount   @relation(fields: [countId], references: [id], onDelete: Cascade)
+  item        PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([countId])
+}
+
+model CrewRequest {
+  id            String            @id @default(cuid())
+  yachtId       String
+  requestedById String
+  status        CrewRequestStatus @default(PENDING)
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  yacht         Yacht             @relation(fields: [yachtId], references: [id])
+  requestedBy   User              @relation(fields: [requestedById], references: [id])
+  items         CrewRequestItem[]
+  transfers     StockTransfer[]
+
+  @@index([yachtId, status])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CrewRequestItem {
+  id         String       @id @default(cuid())
+  requestId  String
+  itemId     String?
+  itemName   String
+  quantity   Float
+  unit       String
+  notes      String?
+
+  request    CrewRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item       PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+}
+
+model InventoryException {
+  id            String    @id @default(cuid())
+  type          String    // TRANSFER_DISCREPANCY | NEGATIVE_STOCK | RECEIVING_DISCREPANCY | STOCK_COUNT_VARIANCE
+  itemId        String?
+  itemName      String
+  locationId    String?
+  locationName  String
+  qty           Float     @default(0)
+  value         Float     @default(0)
+  reason        String?
+  referenceId   String?
+  referenceType String?
+  status        String    @default("OPEN")
+  resolution    String?
+  resolvedAt    DateTime?
+  resolvedById  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  resolvedBy    User?     @relation("ExceptionResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([referenceId])
 }

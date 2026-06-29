@@ -6,7 +6,7 @@ import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
-const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN']
+const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     userRole: session!.user.role ?? '',
     action: 'CREATE', entity: 'User', entityId: user.id,
     detail: `Add user: ${user.name ?? user.email} (${user.role})`,
-  }).catch(() => {})
+  }, tenantDb).catch(() => {})
 
   return NextResponse.json(user, { status: 201 })
 }

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'CREATE', entity: 'Customer', entityId: customer.id,
       detail: `Add customer: ${customer.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(customer, { status: 201 })
   } catch (error) {

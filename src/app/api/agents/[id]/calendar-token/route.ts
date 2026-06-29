@@ -59,7 +59,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'UPDATE', entity: 'Agent', entityId: id,
       detail: `Generate calendar token untuk agent: ${agent.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
     return NextResponse.json(agent)
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 }) }
 }
@@ -82,7 +82,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'UPDATE', entity: 'Agent', entityId: id,
       detail: `${active ? 'Aktifkan' : 'Nonaktifkan'} calendar token untuk agent: ${agent.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
     return NextResponse.json(agent)
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to update' }, { status: 500 }) }
 }
@@ -104,7 +104,7 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'UPDATE', entity: 'Agent', entityId: id,
       detail: `Revoke calendar token untuk agent: ${agent.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
     return NextResponse.json({ ok: true })
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to revoke' }, { status: 500 }) }
 }

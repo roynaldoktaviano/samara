@@ -5,7 +5,7 @@ import { getSessionDb } from '@/lib/session-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
-const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN']
+const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE']
 
 export async function PUT(
   req: NextRequest,
@@ -43,7 +43,7 @@ export async function PUT(
       userRole: session!.user.role ?? '',
       action: 'UPDATE', entity: 'User', entityId: user.id,
       detail: `Update user: ${user.name ?? user.email}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(user)
   } catch (err: unknown) {
@@ -78,7 +78,7 @@ export async function DELETE(
     userRole: session!.user.role ?? '',
     action: 'DELETE', entity: 'User', entityId: id,
     detail: `Hapus user: ${target?.name ?? target?.email ?? id}`,
-  }).catch(() => {})
+  }, db).catch(() => {})
 
   return NextResponse.json({ ok: true })
 }

@@ -4,10 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 export async function GET() {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json([], { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json([], { status: 401 })
 
     const notifications = await db.notification.findMany({
       where: { userId: session.user.id },
@@ -23,10 +23,10 @@ export async function GET() {
 
 // Mark all as read
 export async function PATCH() {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     await db.notification.updateMany({
       where: { userId: session.user.id, isRead: false },

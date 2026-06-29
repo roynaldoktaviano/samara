@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/external',
   '/api/public',
   '/api/webhooks',
+  '/proto',
 ]
 
 function isPublic(pathname: string) {

@@ -1,0 +1,22 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { getDb } from '@/lib/get-db'
+
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
+  const receipt = await db.goodsReceipt.findUnique({ where: { id }, include: { items: true } })
+  if (!receipt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const [receiver, location, order] = await Promise.all([
+    db.user.findUnique({ where: { id: receipt.receivedById }, select: { id: true, name: true } }),
+    db.stockLocation.findUnique({ where: { id: receipt.locationId }, select: { id: true, name: true } }),
+    db.purchaseOrder.findUnique({ where: { id: receipt.orderId }, select: { id: true, poNumber: true, supplierName: true } }),
+  ])
+  return NextResponse.json({ ...receipt, receiver, location, order })
+}

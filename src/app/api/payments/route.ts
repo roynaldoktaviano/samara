@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       userId: submittedByUserId ?? '', userName: submittedByName ?? 'Unknown', userRole,
       action: 'CREATE', entity: 'Payment', entityId: payment.id,
       detail: `Request invoice ${invoiceNumber} (${paymentType}) — ${booking.bookingCode}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {

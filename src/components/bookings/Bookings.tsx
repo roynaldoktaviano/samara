@@ -1024,7 +1024,7 @@ export default function Bookings() {
                   <TableHead className="hidden sm:table-cell">Type</TableHead>
                   <TableHead>Yacht / Trip</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Destination</TableHead>
+                  <TableHead className="hidden md:table-cell">Destination</TableHead>
                   <TableHead className="hidden lg:table-cell">Due Dates</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -1082,7 +1082,7 @@ export default function Bookings() {
                       <div className="text-sm">{b.customer.name}</div>
                       {b.agent && <div className="text-xs text-muted-foreground">via {b.agent.name}</div>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <div className="text-xs text-muted-foreground">
                         {b.tripType === 'OPEN_TRIP' ? (b.openTrip?.destination ?? '—') : (b.destination ?? b.yacht?.model ?? '—')}
                       </div>

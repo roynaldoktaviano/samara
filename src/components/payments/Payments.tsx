@@ -367,7 +367,7 @@ export default function Payments() {
     p.booking.openTrip?.title ?? p.booking.destination ?? p.booking.yacht?.name ?? '—'
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full overflow-hidden">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
@@ -453,11 +453,11 @@ export default function Payments() {
       )}
 
       {/* Table card */}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader className="pb-3 space-y-3">
           {/* Row 1: title + view toggle + search */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <CardTitle>{tableView === 'payments' ? 'All Payments' : 'Refund Records'}</CardTitle>
                 <CardDescription>
@@ -468,42 +468,55 @@ export default function Payments() {
                 <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0">
                   <button
                     onClick={() => setTableView('payments')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     Payments
                   </button>
                   <button
                     onClick={() => setTableView('refunds')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   >
-                    Refund Records
+                    Refunds
                   </button>
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search invoice, booking, name..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="pl-8 w-64 h-8 text-sm"
-                />
-                {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
-                    <X className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                )}
-              </div>
+            <div className="relative w-full">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search invoice, booking, name..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 w-full h-8 text-sm"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Row 2: status + vessel filters — payments view only */}
+          {/* Row 2: status + date filters — payments view only */}
           {tableView === 'payments' && (
-            <div className="flex items-center justify-between gap-3">
-              {/* Status tabs */}
-              <div className="flex gap-1 flex-wrap">
+            <div className="flex flex-col gap-2">
+
+              {/* Status: dropdown on mobile, chips on sm+ */}
+              <div className="sm:hidden">
+                <Select value={filter} onValueChange={v => setFilter(v as typeof filter)}>
+                  <SelectTrigger className="h-9 text-sm w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'refunded'] as const).map(f => (
+                      <SelectItem key={f} value={f}>
+                        {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label} ({counts[f]})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="hidden sm:flex gap-1 flex-wrap">
                 {(['all', 'requested', 'invoice_ready', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'refunded'] as const).map(f => (
                   <button
                     key={f}
@@ -521,35 +534,32 @@ export default function Payments() {
                 ))}
               </div>
 
-              {/* Right-side filters */}
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Date range */}
-                <div className="flex items-center gap-1.5">
+              {/* Date range + vessel */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <input
                     type="date"
                     value={dateFrom}
                     onChange={e => setDateFrom(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring w-34"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
                   />
-                  <span className="text-xs text-muted-foreground">–</span>
+                  <span className="text-xs text-muted-foreground shrink-0">–</span>
                   <input
                     type="date"
                     value={dateTo}
                     min={dateFrom}
                     onChange={e => setDateTo(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring w-34"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
                   />
                   {(dateFrom || dateTo) && (
-                    <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-muted-foreground hover:text-foreground">
+                    <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-muted-foreground hover:text-foreground shrink-0">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
-
-                {/* Vessel dropdown */}
                 {vessels.length > 0 && (
                   <Select value={vesselFilter} onValueChange={setVesselFilter}>
-                    <SelectTrigger className="h-8 text-xs w-36">
+                    <SelectTrigger className="h-8 text-xs w-full sm:w-36">
                       <SelectValue placeholder="All Vessels" />
                     </SelectTrigger>
                     <SelectContent>
@@ -577,14 +587,13 @@ export default function Payments() {
                     <TableRow className="text-xs">
                       <TableHead>Booking</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Sales</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Cancel Reason</TableHead>
-                      <TableHead>Decision</TableHead>
-                      <TableHead>Refund Reason</TableHead>
+                      <TableHead className="hidden sm:table-cell">Amount</TableHead>
+                      <TableHead className="hidden md:table-cell">Cancel Reason</TableHead>
+                      <TableHead className="hidden sm:table-cell">Decision</TableHead>
+                      <TableHead className="hidden md:table-cell">Refund Reason</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Confirmed By</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead className="hidden lg:table-cell">Confirmed By</TableHead>
+                      <TableHead className="hidden md:table-cell">Date</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -598,30 +607,32 @@ export default function Payments() {
                       }
                       const statusLabel: Record<string, string> = {
                         no_refund:        'No Refund',
-                        refund_pending:   'Pending Proof',
-                        refund_uploaded:  'Awaiting Confirm',
-                        refund_confirmed: 'Refund Confirmed',
+                        refund_pending:   'Pending',
+                        refund_uploaded:  'Awaiting',
+                        refund_confirmed: 'Confirmed',
                       }
                       return (
                         <TableRow key={r.id} className="text-sm cursor-pointer hover:bg-muted/50" onClick={() => setRefundHistorySelected(r)}>
-                          <TableCell><span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{r.bookingCode}</span></TableCell>
-                          <TableCell className="font-medium">{r.customer.name}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs">{r.salespersonUser?.name ?? '—'}</TableCell>
-                          <TableCell className="font-semibold">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={r.cancelReason ?? ''}>{r.cancelReason ?? '—'}</TableCell>
                           <TableCell>
+                            <div className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded inline-block">{r.bookingCode}</div>
+                            <div className="sm:hidden text-xs font-semibold mt-0.5">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          </TableCell>
+                          <TableCell className="font-medium">{r.customer.name}</TableCell>
+                          <TableCell className="hidden sm:table-cell font-semibold whitespace-nowrap">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[140px] truncate" title={r.cancelReason ?? ''}>{r.cancelReason ?? '—'}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full border ${r.refundDecision === 'refund' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.refundDecision === 'no_refund' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
                               {r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No Refund' : '—'}
                             </span>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate" title={r.refundReason ?? ''}>{r.refundReason ?? '—'}</TableCell>
+                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[160px] truncate" title={r.refundReason ?? ''}>{r.refundReason ?? '—'}</TableCell>
                           <TableCell>
                             <span className={`inline-flex text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusCfg[r.refundStatus ?? ''] ?? 'bg-gray-50 text-gray-400 border-gray-200'}`}>
                               {statusLabel[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'}
                             </span>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{r.refundConfirmedBy ?? '—'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{r.refundConfirmedBy ?? '—'}</TableCell>
+                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap">
                             {new Date(r.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </TableCell>
                         </TableRow>
@@ -632,20 +643,20 @@ export default function Payments() {
               </div>
             )
           ) : (
-          <div className="rounded-b-md border-t">
+          <div className="rounded-b-md border-t overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="text-xs">
                   <TableHead>Invoice</TableHead>
-                  <TableHead>Booking</TableHead>
+                  <TableHead className="hidden sm:table-cell">Booking</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Amount</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Vessel / Trip</TableHead>
-                  <TableHead>Submitted By</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead className="hidden md:table-cell">Method</TableHead>
+                  <TableHead className="hidden sm:table-cell">Vessel / Trip</TableHead>
+                  <TableHead className="hidden lg:table-cell">Submitted By</TableHead>
+                  <TableHead className="hidden md:table-cell">Date</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Confirmed By</TableHead>
+                  <TableHead className="hidden lg:table-cell">Confirmed By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -653,7 +664,7 @@ export default function Payments() {
                 {loading ? (
                   [...Array(5)].map((_, i) => (
                     <TableRow key={i}>
-                      {[...Array(11)].map((_, j) => (
+                      {[...Array(5)].map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-3.5 w-full" /></TableCell>
                       ))}
                     </TableRow>
@@ -676,20 +687,23 @@ export default function Payments() {
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="font-mono text-xs font-medium">{p.invoiceNumber}</span>
+                          <div>
+                            <span className="font-mono text-xs font-medium">{p.invoiceNumber}</span>
+                            <div className="sm:hidden font-mono text-[10px] text-muted-foreground mt-0.5">{p.booking.bookingCode}</div>
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{p.booking.bookingCode}</span>
                       </TableCell>
                       <TableCell className="font-medium">{p.booking.customer.name}</TableCell>
-                      <TableCell className="font-semibold">
+                      <TableCell className="font-semibold whitespace-nowrap">
                         ${fmt(p.amount)}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap">
                         {p.paymentMethod ?? '—'}
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="hidden sm:table-cell text-sm">
                         <div className="font-medium leading-tight">
                           {p.booking.tripType === 'OPEN_TRIP'
                             ? (p.booking.openTrip?.title ?? p.booking.destination ?? '—')
@@ -699,17 +713,17 @@ export default function Payments() {
                           <div className="text-xs text-muted-foreground">{p.booking.yacht.model}</div>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
+                      <TableCell className="hidden lg:table-cell text-muted-foreground text-xs">
                         {p.submittedByName ?? p.booking.salesperson ?? '—'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{fmtDate(p.createdAt)}</TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground text-xs">{fmtDate(p.createdAt)}</TableCell>
                       <TableCell>
                         <div className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${sc?.color ?? ''}`}>
                           <StatusIcon className="h-3 w-3" />
-                          {sc?.label ?? p.status}
+                          <span className="hidden xs:inline">{sc?.label ?? p.status}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                         {p.confirmedBy ?? '—'}
                       </TableCell>
                       <TableCell className="text-right">
@@ -720,7 +734,7 @@ export default function Payments() {
                               className="h-7 px-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1"
                               onClick={() => openDetail(p)}
                             >
-                              <FilePlus className="h-3.5 w-3.5" /> Generate
+                              <FilePlus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Generate</span>
                             </Button>
                           )}
                           {p.status === 'pending_confirmation' && isFinance && (
@@ -798,7 +812,7 @@ export default function Payments() {
 
               {/* Amount summary */}
               <Card className="bg-muted/40">
-                <CardContent className="pt-4 pb-3 px-4 grid grid-cols-3 gap-4 text-center">
+                <CardContent className="pt-4 pb-3 px-4 grid grid-cols-3 gap-2 sm:gap-4 text-center">
                   <div>
                     <p className="text-xs text-muted-foreground mb-0.5">Previously Paid</p>
                     <p className="font-semibold text-sm">${fmt(selected.previouslyPaid)}</p>

@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         userRole: (session.user as { role?: string }).role ?? '',
         action: 'UPDATE', entity: 'Agent', entityId: id,
         detail: `Void contract for agent: ${agent.name}`,
-      }).catch(() => {})
+      }, db).catch(() => {})
       return NextResponse.json(agent)
     }
 
@@ -102,7 +102,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'UPDATE', entity: 'Agent', entityId: id,
       detail: `Update agent: ${name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(agent)
   } catch (error) {
@@ -128,7 +128,7 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'DELETE', entity: 'Agent', entityId: id,
       detail: `Nonaktifkan agent: ${existing?.name ?? id}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json({ ok: true })
   } catch (error) {

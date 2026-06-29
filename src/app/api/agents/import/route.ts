@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
       userRole: role,
       action: 'CREATE', entity: 'Agent', entityId: 'bulk',
       detail: `Import CSV: ${agentsCreated} new agent(s), ${agentsUpdated} updated, ${contactsCreated} new contact(s)`,
-    }).catch(() => {})
+    }, db).catch(() => {})
   }
 
   return NextResponse.json({

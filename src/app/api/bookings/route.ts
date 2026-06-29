@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         where: { status: 'pending', depositDueDate: { lt: todayStart } },
         data: { status: 'cancelled' },
       }),
-      processExpiredHoldsAndPromote(),
+      processExpiredHoldsAndPromote(db),
     ]).catch(e => console.error('[bookings] background housekeeping failed:', e))
 
     const where: Record<string, unknown> = {}
@@ -380,7 +380,7 @@ export async function POST(request: NextRequest) {
       userId, userName, userRole,
       action: 'CREATE', entity: 'Booking', entityId: booking.id,
       detail: `New booking ${booking.bookingCode}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(booking, { status: 201 })
   } catch (error) {

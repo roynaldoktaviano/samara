@@ -119,7 +119,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'UPDATE', entity: 'Yacht', entityId: yacht.id,
       detail: `Update yacht: ${name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(result)
   } catch (error) {
@@ -142,7 +142,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'DELETE', entity: 'Yacht', entityId: id,
       detail: `Hapus yacht: ${existing?.name ?? id}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json({ ok: true })
   } catch (error) {

@@ -1,4 +1,5 @@
-import { db } from '@/lib/db'
+import { db as defaultDb } from '@/lib/db'
+import type { PrismaClient } from '@prisma/client'
 
 /**
  * Promotes the first waiting list entry for a cancelled/expired booking.
@@ -6,7 +7,8 @@ import { db } from '@/lib/db'
  * Re-numbers remaining waiting entries so priority stays contiguous.
  * Notification is fire-and-forget so the cancel response isn't held up.
  */
-export async function promoteWaitingListForBooking(cancelledBookingId: string) {
+export async function promoteWaitingListForBooking(cancelledBookingId: string, prisma?: PrismaClient) {
+  const db = prisma ?? defaultDb
   const original = await db.booking.findUnique({
     where: { id: cancelledBookingId },
     select: {
@@ -121,7 +123,8 @@ export async function promoteWaitingListForBooking(cancelledBookingId: string) {
  * Finds all expired on_hold bookings, cancels them, and triggers waiting list promotions.
  * Fire-and-forget — call without await.
  */
-export async function processExpiredHoldsAndPromote() {
+export async function processExpiredHoldsAndPromote(prisma?: PrismaClient) {
+  const db = prisma ?? defaultDb
   const now = new Date()
   const expired = await db.booking.findMany({
     where: { status: 'on_hold', holdUntil: { lt: now } },
@@ -135,6 +138,6 @@ export async function processExpiredHoldsAndPromote() {
   })
 
   for (const b of expired) {
-    await promoteWaitingListForBooking(b.id).catch(e => console.error('promote failed:', e))
+    await promoteWaitingListForBooking(b.id, db).catch(e => console.error('promote failed:', e))
   }
 }

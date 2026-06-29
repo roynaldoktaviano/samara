@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'CREATE', entity: 'Yacht', entityId: yacht.id,
       detail: `Add yacht: ${yacht.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     const result = await db.yacht.findUnique({
       where: { id: yacht.id },

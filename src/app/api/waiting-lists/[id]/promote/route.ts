@@ -7,10 +7,10 @@ import type { PrismaClient } from '@prisma/client'
 
 // Manually promote a specific waiting list entry to on_hold
 export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = await params
     const entry = await db.waitingList.findUnique({
@@ -23,7 +23,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
     }
 
     if (entry.bookingId) {
-      await promoteWaitingListForBooking(entry.bookingId)
+      await promoteWaitingListForBooking(entry.bookingId, db)
     } else {
       // No linked booking — promote directly using yacht/open trip + date info
       await promoteDirect(db, entry)

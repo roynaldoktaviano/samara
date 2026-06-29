@@ -1,4 +1,5 @@
-import { db } from '@/lib/db'
+import { db as defaultDb } from '@/lib/db'
+import type { PrismaClient } from '@prisma/client'
 
 interface LogParams {
   userId:   string
@@ -10,9 +11,10 @@ interface LogParams {
   detail?:  string
 }
 
-export async function logActivity(params: LogParams): Promise<void> {
+export async function logActivity(params: LogParams, prisma?: PrismaClient): Promise<void> {
+  const client = prisma ?? defaultDb
   try {
-    await db.activityLog.create({ data: params })
+    await client.activityLog.create({ data: params })
   } catch (e) {
     console.error('[activity] log failed:', (e as Error).message, '| action:', params.action, '| user:', params.userId)
   }

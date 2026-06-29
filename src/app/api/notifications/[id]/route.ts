@@ -4,10 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 export async function PATCH(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = await params
     await db.notification.update({

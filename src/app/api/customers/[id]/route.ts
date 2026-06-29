@@ -130,7 +130,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'DELETE', entity: 'Customer', entityId: id,
       detail: `Hapus guest: ${existing?.name ?? id}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json({ ok: true })
   } catch (error) {
@@ -188,7 +188,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       userRole: (session?.user as { role?: string })?.role ?? '',
       action: 'UPDATE', entity: 'Customer', entityId: id,
       detail: `Update guest: ${customer.name}`,
-    }).catch(() => {})
+    }, db).catch(() => {})
 
     return NextResponse.json(customer)
   } catch (error) {

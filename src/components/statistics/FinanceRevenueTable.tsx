@@ -75,6 +75,7 @@ function SectionTitle({ color, children }: { color: string; children: React.Reac
 function TableWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg border overflow-hidden shadow-sm">
+      <p className="sm:hidden text-xs text-muted-foreground px-3 py-1.5 border-b bg-gray-50">← Geser untuk lihat semua kolom</p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">{children}</table>
       </div>
