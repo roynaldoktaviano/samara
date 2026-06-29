@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Package, ArrowRightLeft, ClipboardList, MapPin, BarChart3, AlertCircle, Boxes } from 'lucide-react'
+import { ShoppingCart, Package, ArrowRightLeft, ClipboardList, MapPin, BarChart3, AlertCircle, Boxes, TrendingDown } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
-const ItemsPage = dynamic(() => import('./items/ItemsPage'), { loading: () => <Loading /> })
-const LocationsPage = dynamic(() => import('./locations/LocationsPage'), { loading: () => <Loading /> })
-const RequestsPage = dynamic(() => import('./requests/RequestsPage'), { loading: () => <Loading /> })
+const ItemsPage         = dynamic(() => import('./items/ItemsPage'),                   { loading: () => <Loading /> })
+const LocationsPage     = dynamic(() => import('./locations/LocationsPage'),            { loading: () => <Loading /> })
+const RequestsPage      = dynamic(() => import('./requests/RequestsPage'),              { loading: () => <Loading /> })
+const WithdrawalsPage   = dynamic(() => import('./reports/WithdrawalsPage'),            { loading: () => <Loading /> })
 
 type PurchasingView =
   | 'overview'
@@ -18,17 +19,19 @@ type PurchasingView =
   | 'items'
   | 'locations'
   | 'reports'
+  | 'withdrawals'
 
 const NAV: { id: PurchasingView; label: string; icon: React.ElementType; description: string; built?: boolean }[] = [
-  { id: 'overview',   label: 'Overview',         icon: BarChart3,      description: 'Stock & activity dashboard'         },
-  { id: 'requests',   label: 'Purchase Request',  icon: ClipboardList,  description: 'Item purchase requests',    built: true },
-  { id: 'orders',     label: 'Purchase Order',    icon: ShoppingCart,   description: 'POs to suppliers'                    },
-  { id: 'receiving',  label: 'Goods Receipt',     icon: Package,        description: 'Receive items at warehouse'         },
-  { id: 'transfers',  label: 'Transfer to Vessel',icon: ArrowRightLeft, description: 'Ship items to vessel'               },
-  { id: 'stock',      label: 'Warehouse Stock',   icon: Boxes,          description: 'Stock balance per item'             },
-  { id: 'items',      label: 'Item Master',       icon: Package,        description: 'Catalog & item pricing',   built: true },
-  { id: 'locations',  label: 'Locations',         icon: MapPin,         description: 'Warehouses & vessel locations', built: true },
-  { id: 'reports',    label: 'Reports',           icon: BarChart3,      description: 'Stock movement reports'             },
+  { id: 'overview',     label: 'Overview',          icon: BarChart3,     description: 'Stock & activity dashboard'          },
+  { id: 'requests',     label: 'Purchase Request',   icon: ClipboardList, description: 'Item purchase requests',    built: true },
+  { id: 'orders',       label: 'Purchase Order',     icon: ShoppingCart,  description: 'POs to suppliers'                    },
+  { id: 'receiving',    label: 'Goods Receipt',      icon: Package,       description: 'Receive items at warehouse'          },
+  { id: 'transfers',    label: 'Transfer to Vessel', icon: ArrowRightLeft,description: 'Ship items to vessel'                },
+  { id: 'stock',        label: 'Warehouse Stock',    icon: Boxes,         description: 'Stock balance per item'              },
+  { id: 'items',        label: 'Item Master',        icon: Package,       description: 'Catalog & item pricing',    built: true },
+  { id: 'locations',    label: 'Locations',          icon: MapPin,        description: 'Warehouses & vessel locations', built: true },
+  { id: 'withdrawals',  label: 'Withdrawal Report',  icon: TrendingDown,  description: 'Items withdrawn per vessel',  built: true },
+  { id: 'reports',      label: 'Reports',            icon: BarChart3,     description: 'Stock movement reports'              },
 ]
 
 export default function Purchasing() {
@@ -78,11 +81,12 @@ function PurchasingContent({ view }: { view: PurchasingView }) {
     case 'requests':  return <RequestsPage />
     case 'items':     return <ItemsPage />
     case 'locations': return <LocationsPage />
-    case 'orders':    return <ComingSoon title="Purchase Order" desc="POs to suppliers based on approved purchase requests." />
-    case 'receiving': return <ComingSoon title="Goods Receipt" desc="Warehouse admin confirms & photographs items received from suppliers." />
-    case 'transfers': return <ComingSoon title="Transfer to Vessel" desc="Ship items from warehouse to vessel." />
-    case 'stock':     return <ComingSoon title="Warehouse Stock" desc="Real-time stock balance per item per location." />
-    case 'reports':   return <ComingSoon title="Reports" desc="Stock movement, receipt, and dispatch reports." />
+    case 'orders':      return <ComingSoon title="Purchase Order" desc="POs to suppliers based on approved purchase requests." />
+    case 'receiving':   return <ComingSoon title="Goods Receipt" desc="Warehouse admin confirms & photographs items received from suppliers." />
+    case 'transfers':   return <ComingSoon title="Transfer to Vessel" desc="Ship items from warehouse to vessel." />
+    case 'stock':       return <ComingSoon title="Warehouse Stock" desc="Real-time stock balance per item per location." />
+    case 'withdrawals': return <WithdrawalsPage />
+    case 'reports':     return <ComingSoon title="Reports" desc="Stock movement, receipt, and dispatch reports." />
     default:          return <OverviewPage />
   }
 }

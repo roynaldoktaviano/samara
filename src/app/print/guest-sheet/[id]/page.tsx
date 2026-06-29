@@ -1,21 +1,20 @@
-import { db } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import { PrintButton } from '../../PrintButton'
+import { getPrintContext } from '@/lib/print-helpers'
 
-const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const GOLD = '#bdac7e'
 const DARK = '#1a252f'
 
-function Banner({ sub }: { sub?: string }) {
+function Banner({ sub, name, logo }: { sub?: string; name: string; logo: string }) {
   return (
     <div style={{ background: `linear-gradient(135deg,${DARK} 0%,#0d1b2a 100%)`, borderBottom: `3px solid ${GOLD}`, padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div>
-        <p style={{ color: GOLD, fontSize: 9, letterSpacing: '3px', textTransform: 'uppercase', margin: '0 0 4px' }}>Samara Liveaboard</p>
+        <p style={{ color: GOLD, fontSize: 9, letterSpacing: '3px', textTransform: 'uppercase', margin: '0 0 4px' }}>{name}</p>
         <h1 style={{ color: 'white', fontSize: 17, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>— Guest Information Sheet —</h1>
         {sub && <p style={{ color: GOLD, fontSize: 11, margin: '4px 0 0' }}>{sub}</p>}
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={LOGO} alt="Samara" style={{ width: 44, height: 44, opacity: 0.9 }} />
+      <img src={logo} alt={name} style={{ width: 44, height: 44, opacity: 0.9 }} />
     </div>
   )
 }
@@ -74,6 +73,7 @@ function fmtRange(start: Date, end: Date) {
 
 export default async function GuestSheetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const { db, company } = await getPrintContext()
 
   const bg = await db.bookingGuest.findUnique({
     where: { id },
@@ -135,7 +135,7 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
 
       <PrintButton label="Save as PDF / Print" />
 
-      <Banner sub={sub} />
+      <Banner sub={sub} name={company.name} logo={company.logoUrl} />
 
       <div style={{ padding: '14px 32px' }}>
 

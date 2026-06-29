@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,11 +36,13 @@ import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
 import PurchasingTransfersPage from '@/components/purchasing/transfers/TransfersPage'
 import PurchasingExceptionsPage from '@/components/purchasing/exceptions/ExceptionsPage'
 import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
+import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
+import CompanySettings from '@/components/settings/CompanySettings'
 import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
@@ -71,7 +73,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals'
 
 type NavItem = {
   id: View
@@ -116,8 +118,9 @@ const navigationItems: NavItem[] = [
   { id: 'purchasing-locations',    label: 'Locations',        icon: MapPin,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-stock-counts', label: 'Stock Counts',     icon: Shield,      roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-suppliers',     label: 'Suppliers',        icon: Building2,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-exceptions',   label: 'Exceptions',       icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-reports',      label: 'Reports',          icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-exceptions',   label: 'Exceptions',        icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-withdrawals',  label: 'Withdrawal Report', icon: TrendingDown, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-reports',      label: 'Reports',           icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
 ]
 
 const roleBadgeColor: Record<string, string> = {
@@ -501,6 +504,7 @@ export default function Home() {
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
+      case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />
       case 'purchasing-reports':      return <PurchasingReportsPage />
       case 'settings':      return (
         <div className="space-y-6">
@@ -508,6 +512,7 @@ export default function Home() {
             <h3 className="text-2xl font-bold tracking-tight">Settings</h3>
             <p className="text-muted-foreground text-sm">Konfigurasi sistem</p>
           </div>
+          <CompanySettings />
           <TncPdfSettings />
           <ResetBookingCounter />
         </div>

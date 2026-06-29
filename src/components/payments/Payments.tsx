@@ -66,6 +66,8 @@ interface Payment {
     tripType: string
     source: string | null
     salesperson: string | null
+    depositDueDate: string | null
+    finalDueDate: string | null
     currency: string
     exchangeRate: number | null
     customer: { name: string; email: string | null; phone: string | null }
@@ -895,6 +897,24 @@ export default function Payments() {
                     <p className="font-medium">{fmtDate(selected.booking.startDate)} – {fmtDate(selected.booking.endDate)}</p>
                   </div>
                 </div>
+                {selected.booking.depositDueDate && (
+                  <div className="flex items-start gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Deposit Due</p>
+                      <p className="font-medium text-amber-700">{fmtDate(selected.booking.depositDueDate)}</p>
+                    </div>
+                  </div>
+                )}
+                {selected.booking.finalDueDate && (
+                  <div className="flex items-start gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Final Balance Due</p>
+                      <p className="font-medium text-amber-700">{fmtDate(selected.booking.finalDueDate)}</p>
+                    </div>
+                  </div>
+                )}
                 {selected.booking.agent && (
                   <div className="flex items-start gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />

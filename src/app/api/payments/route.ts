@@ -52,6 +52,8 @@ export async function GET(_: NextRequest) {
             currency: true,
             exchangeRate: true,
             salesperson: true,
+            depositDueDate: true,
+            finalDueDate: true,
             salespersonUser: { select: { name: true } },
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },

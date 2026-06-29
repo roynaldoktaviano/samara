@@ -249,7 +249,7 @@ function MonthGrid({
             <p className="text-sm font-semibold text-foreground">
               {MONTH_FULL[month]} {year}
             </p>
-            {yachtFilter !== 'all' && (
+            {yachtFilter && (
               <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? '#64748b' }}>
                 {yachtFilter}
               </p>
@@ -288,7 +288,7 @@ function MonthGrid({
                   // Use allBookings/allOpenTrips (unfiltered by type) so red bg shows regardless of type filter
                   const occupancyBookings  = allBookings  ?? bookings
                   const occupancyOpenTrips = allOpenTrips ?? openTrips
-                  const isOccupied = day > 0 && !isPast && yachtFilter !== 'all' && (
+                  const isOccupied = day > 0 && !isPast && !!yachtFilter && (
                     occupancyBookings.some(b => dateStr >= b.startDate && dateStr <= b.endDate) ||
                     occupancyOpenTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate)
                   )
@@ -637,7 +637,7 @@ export default function CalendarView() {
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
-  const [yachtFilter, setYachtFilter]   = useState<string>('all')
+  const [yachtFilter, setYachtFilter]   = useState<string>('')
 
   /* date filter */
   const [filterMode, setFilterMode]     = useState<'single' | 'range'>('single')
@@ -909,10 +909,9 @@ export default function CalendarView() {
           const list: DbYacht[] = Array.isArray(d) ? d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })) : []
           setYachts(list)
           setYachtFilter(prev => {
-            if (list.length === 0) return 'all'
             const names = list.map(y => y.name)
             if (names.includes(prev)) return prev
-            return list.length === 1 ? list[0].name : 'all'
+            return list[0]?.name ?? ''
           })
         }),
       ])
@@ -1097,7 +1096,7 @@ export default function CalendarView() {
     if (new Date(dateStr) <= today) return
 
     // Block if clicked date is occupied by a trip for the currently filtered yacht
-    if (yachtFilter !== 'all') {
+    if (yachtFilter) {
       const occupied =
         bookings.some(b =>
           b.yachtName === yachtFilter &&
@@ -1118,7 +1117,7 @@ export default function CalendarView() {
     }
 
     setSelectedDate(dateStr)
-    setWizardYachtId(yachtFilter !== 'all' ? (yachts.find(y => y.name === yachtFilter)?.id) : undefined)
+    setWizardYachtId(yachtFilter ? (yachts.find(y => y.name === yachtFilter)?.id) : undefined)
     setWizardOpen(true)
   }
 
@@ -1258,7 +1257,7 @@ export default function CalendarView() {
         const e = new Date(b.endDate)
         if (s > monthEnd || e < monthStart) return false
         if (tripFilter !== 'all' && b.tripType !== tripFilter) return false
-        if (yachtFilter !== 'all' && b.yachtName !== yachtFilter) return false
+        if (yachtFilter && b.yachtName !== yachtFilter) return false
         return true
       })
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
@@ -1322,23 +1321,23 @@ export default function CalendarView() {
       {/* Stats strip */}
       {(() => {
         const todayDate = new Date(); todayDate.setHours(0,0,0,0)
-        const filterOtByYacht = (t: OpenTripEvent) => yachtFilter === 'all' || t.yacht?.name === yachtFilter
+        const filterOtByYacht = (t: OpenTripEvent) => !yachtFilter || t.yacht?.name === yachtFilter
         const isNotPrivatePC = (t: OpenTripEvent) => !(t.status === 'closed' && t.closedReason?.toLowerCase().includes('private'))
         const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
         const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
         const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t))
         const activeCabins    = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const cancelledCabins = cancelledOtCabins
-          .filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+          .filter(b => !yachtFilter || b.yachtName === yachtFilter)
           .reduce((s, b) => s + b.count, 0)
         const totalCabins     = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
         const bookedCabins    = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
         const closedCabins    = Math.max(0, closedTrips.reduce((s, t) => s + t.spotsAvailable, 0) - cancelledCabins)
         const viewYear  = currentDate.getFullYear()
         const viewMonth = currentDate.getMonth()
-        const yachtLabel = yachtFilter === 'all' ? 'All Yachts' : yachtFilter
-        const yachtColor = yachtFilter !== 'all' ? (yachtColorMap[yachtFilter] ?? '#64748b') : '#64748b'
-        const filterByYacht = (b: BookingEvent) => yachtFilter === 'all' || b.yachtName === yachtFilter
+        const yachtLabel = yachtFilter
+        const yachtColor = yachtColorMap[yachtFilter] ?? '#64748b'
+        const filterByYacht = (b: BookingEvent) => !yachtFilter || b.yachtName === yachtFilter
         const inViewMonth = (b: BookingEvent) => {
           const start = new Date(b.startDate + 'T00:00:00')
           const end   = new Date(b.endDate   + 'T00:00:00')
@@ -1553,7 +1552,7 @@ export default function CalendarView() {
             <div className="flex items-center gap-1.5 pr-4 py-2.5 shrink-0">
               <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-1 shrink-0">Yacht</span>
               {(() => {
-                const ORDER = ['Samara I', 'Samara II', 'Mischief', 'Otium']
+                const ORDER = ['Samara I', 'Samara II', 'Siloina I', 'Siloina II', 'Mischief', 'Otium']
                 return [...yachts].sort((a, b) => {
                   const ai = ORDER.indexOf(a.name), bi = ORDER.indexOf(b.name)
                   return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
@@ -1713,14 +1712,14 @@ export default function CalendarView() {
                   (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
                     ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
                     : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
-                  ).filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+                  ).filter(b => !yachtFilter || b.yachtName === yachtFilter)
                 }
                 openTrips={
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
-                    .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
+                    .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
                 }
-                allBookings={bookings.filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)}
-                allOpenTrips={openTrips.filter(t => (yachtFilter === 'all' || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
+                allBookings={bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter)}
+                allOpenTrips={openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
                 onBookingClick={b => {
@@ -1753,14 +1752,14 @@ export default function CalendarView() {
                   (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
                     ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
                     : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
-                  ).filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
+                  ).filter(b => !yachtFilter || b.yachtName === yachtFilter)
                 }
                 openTrips={
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
-                    .filter(t => yachtFilter === 'all' || t.yacht.name === yachtFilter)
+                    .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
                 }
-                allBookings={bookings.filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)}
-                allOpenTrips={openTrips.filter(t => (yachtFilter === 'all' || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
+                allBookings={bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter)}
+                allOpenTrips={openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
                 onDateClick={handleDateClick}
                 onBookingClick={b => {

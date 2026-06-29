@@ -3,6 +3,17 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 
+interface CompanyInfo {
+  name:    string
+  logoUrl: string
+  tagline: string
+  address: string
+  phone:   string
+  website: string
+  email:   string
+  showTnc: boolean
+}
+
 interface BankDetail {
   name: string
   bankAddress: string | null
@@ -76,13 +87,18 @@ export default function InvoicePage() {
   const searchParams = useSearchParams()
   const currencyOverride = searchParams.get('currency')?.toUpperCase() ?? null
   const [payment,   setPayment]   = useState<PaymentDetail | null>(null)
+  const [company,   setCompany]   = useState<CompanyInfo | null>(null)
   const [loading,   setLoading]   = useState(true)
   const printed = useRef(false)
 
   useEffect(() => {
     async function load() {
-      const paymentData = await fetch(`/api/payments/${id}`).then(r => r.json())
+      const [paymentData, companyData] = await Promise.all([
+        fetch(`/api/payments/${id}`).then(r => r.json()),
+        fetch('/api/admin/settings/company').then(r => r.ok ? r.json() : null).catch(() => null),
+      ])
       setPayment(paymentData)
+      setCompany(companyData)
       setLoading(false)
     }
     load().catch(() => setLoading(false))
@@ -105,6 +121,17 @@ export default function InvoicePage() {
       Invoice not found.
     </div>
   )
+
+  const co = company ?? {
+    name:    'Samara Liveaboard',
+    logoUrl: 'https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png',
+    tagline: 'PREMIUM YACHT EXPERIENCES',
+    address: 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234',
+    phone:   '+62 859-5495-1085',
+    website: 'samaraliveaboard.com',
+    email:   'inquiry@samaraliveaboard.com',
+    showTnc: true,
+  }
 
   const b              = payment.booking
   const tripName       = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
@@ -198,8 +225,8 @@ export default function InvoicePage() {
                 </div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
-                  alt="Samara Liveaboard"
+                  src={co.logoUrl}
+                  alt={co.name}
                   style={{ height: 22, objectFit: 'contain', display: 'block' }}
                 />
               </div>
@@ -214,10 +241,10 @@ export default function InvoicePage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: '#374151', marginBottom: 3 }}>
-                    Samara Liveaboard
+                    {co.name}
                   </div>
-                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>samaraliveaboard.com</div>
-                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>Bali, Indonesia</div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>{co.website}</div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>{co.address.split(',').pop()?.trim() ?? 'Bali, Indonesia'}</div>
                 </div>
                 <div style={{
                   fontFamily: 'Palatino Linotype, Palatino, Book Antiqua, Georgia, serif',
@@ -260,11 +287,11 @@ export default function InvoicePage() {
           <div className="il" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '14px 22px', borderRight: '1px solid #e5e7eb', minWidth: 190 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
-              alt="Samara Liveaboard"
+              src={co.logoUrl}
+              alt={co.name}
               style={{ width: 120, objectFit: 'contain' }}
             />
-            <div style={{ color: '#9ca3af', fontSize: 8, letterSpacing: 1.5, marginTop: 4 }}>PREMIUM YACHT EXPERIENCES</div>
+            {co.tagline && <div style={{ color: '#9ca3af', fontSize: 8, letterSpacing: 1.5, marginTop: 4 }}>{co.tagline}</div>}
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px' }}>
             <div>
@@ -330,7 +357,6 @@ export default function InvoicePage() {
               ['Trip',        tripName],
               ['Destination', destination],
               ['Date',        `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
-              ['Guests',      `${b.guestCount} pax`],
               ...(b.depositDueDate ? [['Deposit Due', fmtDateShort(b.depositDueDate)]] : []),
               ...(b.finalDueDate   ? [['Balance Due', fmtDateShort(b.finalDueDate)]]   : []),
               ...(b.salesperson    ? [['Sales',        b.salesperson]]                  : []),
@@ -505,8 +531,8 @@ export default function InvoicePage() {
         <div className="so" style={{ flexShrink: 0 }}>
           <div style={{ margin: '0 22px', paddingTop: 10, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>Thank you for sailing with Samara.</div>
-              <div style={{ fontSize: 9, color: '#9ca3af', marginTop: 1 }}>samaraliveaboard.com</div>
+              <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>Thank you for sailing with {co.name}.</div>
+              <div style={{ fontSize: 9, color: '#9ca3af', marginTop: 1 }}>{co.website}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 9, color: '#d1d5db' }}>Generated {fmtDate(new Date().toISOString())}</div>
@@ -526,12 +552,12 @@ export default function InvoicePage() {
       </table>
 
       {/* ══ T&C PAGES ══ */}
-      {(() => {
+      {co.showTnc && (() => {
         const TncHdr = () => (
           <div className="pg-header">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
-              alt="Samara Yachting"
+            <img src={co.logoUrl}
+              alt={co.name}
               style={{ height: 22, objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
             />
           </div>
@@ -540,19 +566,14 @@ export default function InvoicePage() {
           <div className="pg-footer">
             <div className="ft-addr">
               <strong>Office Address</strong>
-              Jalan Tukad Badung IXB No.9, Renon,<br/>
-              Denpasar Selatan, Kota Denpasar,<br/>
-              Bali 80234<br/><br/>
+              {co.address}<br/><br/>
               Phone/WhatsApp<br/>
-              +62 859-5495-1085
+              {co.phone}
             </div>
             <div className="ft-num">{n}</div>
             <div className="ft-contact">
-              www.samaraliveaboard.com<br/>
-              inquiry@samaraliveaboard.com<br/>
-              @samara.liveaboard<br/>
-              @otiumyacht<br/>
-              @mischief.voyage
+              {co.website}<br/>
+              {co.email}
             </div>
           </div>
         )
@@ -565,8 +586,8 @@ export default function InvoicePage() {
             <div style={{ textAlign: 'center' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
-                alt="Samara Yachting"
+                src={co.logoUrl}
+                alt={co.name}
                 style={{ height: 56, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
               />
             </div>
@@ -574,7 +595,7 @@ export default function InvoicePage() {
               <div style={{ fontSize: 26, fontWeight: 300, letterSpacing: 7, color: 'white', textTransform: 'uppercase', marginBottom: 14 }}>TERMS &amp; CONDITIONS</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>www.samaraliveaboard.com</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>{co.website}</div>
             </div>
           </div>
         </div>
@@ -586,12 +607,12 @@ export default function InvoicePage() {
           <div className="pg-body">
             <div className="body-p" style={{marginBottom:4}}>
               <div style={{fontWeight:700,marginBottom:6,textAlign:'center',letterSpacing:1,textTransform:'uppercase'}}>Preamble</div>
-              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>PT Samara Yacht Agency</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
+              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>{co.name}</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
             </div>
 
             <div className="sec-h">1. Roles and Responsibilities</div>
             <ul className="clauses">
-              <li><span className="cn">1.1.</span><span className="ct"><strong>Principal and Operator:</strong> <strong>PT Samara Yacht Agency</strong> acts as the commercial principal and/or chartering entity. The operational management of the vessel is carried out by <strong>PT Samara Yacht Management</strong> (the &quot;Operator&quot;).</span></li>
+              <li><span className="cn">1.1.</span><span className="ct"><strong>Principal and Operator:</strong> <strong>{co.name}</strong> acts as the commercial principal and/or chartering entity. The operational management of the vessel is carried out by the Operator.</span></li>
               <li><span className="cn">1.2.</span><span className="ct"><strong>Travel Agent:</strong> Where a booking is made through a Travel Agent, the Agency acts solely as an intermediary between the Guest and the Principal. The Travel Agent does not own, operate, manage, or control the vessel, crew, or maritime operations and shall not be considered a contractual carrier or service provider.</span></li>
             </ul>
 
@@ -800,8 +821,8 @@ export default function InvoicePage() {
             <div className="sec-h">19. Contact</div>
             <p className="body-p" style={{paddingLeft:14}}>
               For assistance or inquiries, please contact:<br/>
-              <strong>PT Samara Yacht Agency</strong><br/>
-              info@samarayachting.com&nbsp;&nbsp;·&nbsp;&nbsp;www.samaraliveaboard.com
+              <strong>{co.name}</strong><br/>
+              {co.email}&nbsp;&nbsp;·&nbsp;&nbsp;{co.website}
             </p>
           </div>
           <TncFtr n={5} />

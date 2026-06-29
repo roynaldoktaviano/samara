@@ -14,8 +14,9 @@ async function requireAdmin() {
 
 // GET — info only (no binary)
 export async function GET() {
-  const db = await getDb()
-  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
 
   const setting = await db.systemSetting.findUnique({
     where: { key: KEY },
@@ -34,9 +35,9 @@ export async function GET() {
 
 // POST — upload new PDF
 export async function POST(request: NextRequest) {
-  const db = await getDb()
   const session = await requireAdmin()
   if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
 
   const formData = await request.formData()
   const file = formData.get('file') as File | null
@@ -57,8 +58,9 @@ export async function POST(request: NextRequest) {
 
 // DELETE — remove PDF
 export async function DELETE() {
-  const db = await getDb()
-  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
 
   await db.systemSetting.deleteMany({ where: { key: KEY } })
   return NextResponse.json({ ok: true })

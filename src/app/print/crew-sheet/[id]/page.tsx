@@ -1,6 +1,6 @@
-import { db } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import { PrintButton } from '../../PrintButton'
+import { getPrintContext } from '@/lib/print-helpers'
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 function fmtRange(start: Date, end: Date) {
@@ -13,21 +13,20 @@ function fmtRange(start: Date, end: Date) {
   return `${fmt(start)} – ${fmt(end)}`
 }
 
-const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const GOLD = '#bdac7e'
 const DARK = '#1a252f'
 
 /* ─── Shared pieces ────────────────────────────────────────────────────────── */
-function Banner({ sub }: { sub?: string }) {
+function Banner({ sub, name, logo }: { sub?: string; name: string; logo: string }) {
   return (
     <div style={{ background: `linear-gradient(135deg,${DARK} 0%,#0d1b2a 100%)`, borderBottom: `3px solid ${GOLD}`, padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div>
-        <p style={{ color: GOLD, fontSize: 9, letterSpacing: '3px', textTransform: 'uppercase', margin: '0 0 4px' }}>Samara Liveaboard</p>
+        <p style={{ color: GOLD, fontSize: 9, letterSpacing: '3px', textTransform: 'uppercase', margin: '0 0 4px' }}>{name}</p>
         <h1 style={{ color: 'white', fontSize: 17, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>— Cruise Departure Guest Sheet —</h1>
         {sub && <p style={{ color: GOLD, fontSize: 11, margin: '4px 0 0' }}>{sub}</p>}
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={LOGO} alt="Samara" style={{ width: 44, height: 44, opacity: 0.9 }} />
+      <img src={logo} alt={name} style={{ width: 44, height: 44, opacity: 0.9 }} />
     </div>
   )
 }
@@ -67,6 +66,7 @@ function Sec({ title, children, accent, last }: { title: string; children: React
 /* ─── Page ─────────────────────────────────────────────────────────────────── */
 export default async function CrewSheetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const { db, company } = await getPrintContext()
 
   const trip = await db.openTrip.findUnique({
     where: { id },
@@ -190,7 +190,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {/* ═══════════════════════════════════ PAGE 1 — Instructions */}
       {page(
         <div className="samara-page">
-          <Banner />
+          <Banner name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <p style={{ fontSize: 11, color: '#555', lineHeight: 1.8, marginBottom: 18 }}>
               Please fill in carefully the details in this sheet in order to prepare your departure the best possible way.
@@ -218,7 +218,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {/* ═══════════════════════════════════ PAGE 2 — DO's & DON'Ts */}
       {page(
         <div className="samara-page">
-          <Banner />
+          <Banner name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <p style={{ fontWeight: 700, marginBottom: 14, fontSize: 13 }}>
               <span style={{ color: '#27ae60' }}>*DO</span> and <span style={{ color: '#e74c3c' }}>DONT&apos;S</span> while sailing in Komodo National Park Area
@@ -242,7 +242,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                 ['Drones are NOT allowed above Komodo National Park area.', ' Advance permit + IDR 1,000,000 fee required.'],
               ].map(([b, r], i) => <li key={i}><em><strong>{b}</strong></em>{r}</li>)}
             </ul>
-            <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>Samara Liveaboard Team</p>
+            <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>{company.name} Team</p>
           </div>
         </div>
       )}
@@ -250,7 +250,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {/* ═══════════════════════════════════ PAGE 3 — Guest Overview */}
       {page(
         <div className="samara-page">
-          <Banner sub={sub} />
+          <Banner sub={sub} name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '16px 32px' }}>
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>Cruise / Boat / Details:</p>
@@ -318,7 +318,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       {/* ═══════════════════════════════════ PAGES 4+ — One per guest */}
       {guests.map((g) => page(
         <div className="samara-page">
-          <Banner sub={sub} />
+          <Banner sub={sub} name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '14px 32px' }}>
 
 
