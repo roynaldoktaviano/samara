@@ -448,6 +448,11 @@ export default function InvoicePage() {
           <div style={{ margin: '0 22px 12px', padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 5, flexShrink: 0 }}>
             <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#166534', textTransform: 'uppercase', marginBottom: 3 }}>Payment Method</div>
             <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600 }}>{payment.paymentMethod}</div>
+            {payment.paymentMethod === 'Credit Card' && (
+              <div style={{ marginTop: 6, padding: '5px 10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, fontSize: 9, color: '#1d4ed8' }}>
+                Payment via Credit Card + 3% Additional Charge
+              </div>
+            )}
           </div>
         )}
 

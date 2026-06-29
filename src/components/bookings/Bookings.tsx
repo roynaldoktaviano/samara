@@ -2294,29 +2294,7 @@ export default function Bookings() {
                       </div>
                     )}
 
-                    {/* Photo & Video Package toggle */}
-                    <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-                        <div>
-                          <p className="text-sm font-medium leading-tight">Photo & Video Package</p>
-                          <p className="text-[11px] text-muted-foreground">Trip photography & videography</p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={db_.hasPhotoPackage ?? false}
-                        onCheckedChange={(val) => {
-                          fetch(`/api/bookings/${db_.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ hasPhotoPackage: val }),
-                          }).then(() => fetchBookings()).then(() => {
-                            const updated = bookings.find(b => b.id === db_.id)
-                            if (updated) setDetailBooking({ ...updated, hasPhotoPackage: val })
-                          })
-                        }}
-                      />
-                    </div>
+                    {/* Photo & Video Package toggle — hidden for now */}
 
                     {/* Surfing toggle — only if yacht supports surfing */}
                     {db_.yacht?.canSurfing && (

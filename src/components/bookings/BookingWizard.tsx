@@ -434,15 +434,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }, [openTripId, completeBookingId])
 
   /* yacht date conflict check — Private Charter only */
+  const [conflictChecking, setConflictChecking] = useState(false)
   useEffect(() => {
     if (tripType !== 'PRIVATE_CHARTER' || !yachtId || !startDate || !endDate) {
       setYachtConflict(null)
+      setConflictChecking(false)
       return
     }
     const s = new Date(startDate).getTime()
     const e = new Date(endDate).getTime()
     const overlaps = (a: string, b: string) => new Date(a).getTime() < e && new Date(b).getTime() > s
 
+    setConflictChecking(true)
     // Check existing bookings for this yacht (hard block)
     fetch(`/api/bookings?yachtId=${yachtId}`)
       .then(r => r.json())
@@ -469,6 +472,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         )
       })
       .catch(() => setYachtConflict(null))
+      .finally(() => setConflictChecking(false))
   }, [tripType, yachtId, startDate, endDate, openTrips])
 
   /* load blocked date ranges for the selected yacht (calendar display) */
@@ -704,7 +708,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const canNext = () => {
     if (phase === 'agentInfo') return !!agentId
     if (step === 1) {
-      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && (!yachtConflict || !!yachtConflict.isOpenTrip)
+      if (tripType === 'PRIVATE_CHARTER') return !!(yachtId && startDate && endDate) && !conflictChecking && (!yachtConflict || !!yachtConflict.isOpenTrip)
       return !!openTripId
     }
     if (step === 2) {
@@ -1341,6 +1345,12 @@ notes:         resolvedNotes,
           </div>
         )
       })()}
+
+      {conflictChecking && yachtId && startDate && endDate && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+          <Loader2 className="h-3 w-3 animate-spin" /> Checking availability…
+        </div>
+      )}
 
       {yachtConflict && (
         <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${yachtConflict.isOpenTrip ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-red-200 bg-red-50 text-red-700'}`}>

@@ -52,6 +52,41 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const guest = await db.bookingGuest.update({ where: { id }, data })
+
+    // Recalculate Open Trip price when cabin assignment changes
+    if (cabinId !== undefined) {
+      const booking = await db.booking.findUnique({
+        where: { id: guest.bookingId },
+        select: {
+          tripType: true, status: true, depositPaid: true,
+          openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true } },
+          guests:   { select: { cabinId: true } },
+        },
+      })
+      if (booking && booking.tripType === 'OPEN_TRIP' && booking.openTrip && !['cancelled','completed','on_hold'].includes(booking.status)) {
+        const nights = Math.max(1, Math.round(
+          (new Date(booking.openTrip.endDate).getTime() - new Date(booking.openTrip.startDate).getTime()) / 86400000
+        ))
+        const uniqueCabinIds = [...new Set(booking.guests.map(g => g.cabinId).filter(Boolean) as string[])]
+        if (uniqueCabinIds.length > 0) {
+          const cabins = await db.cabin.findMany({
+            where: { id: { in: uniqueCabinIds } },
+            select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true } } },
+          })
+          const cabinTotal = cabins.reduce((sum, c) => {
+            const tier = c.pricingTiers.find(t => t.nights === nights)
+            return sum + (tier ? tier.price : c.price * nights)
+          }, 0)
+          const newTotal = cabinTotal > 0 ? cabinTotal : uniqueCabinIds.length * (booking.openTrip.pricePerCabin ?? 0)
+          if (newTotal > 0) {
+            const dep = booking.depositPaid
+            const newStatus = dep <= 0 ? 'pending' : dep >= newTotal ? 'fully_paid' : 'partially_paid'
+            await db.booking.update({ where: { id: guest.bookingId }, data: { totalPrice: newTotal, status: newStatus } })
+          }
+        }
+      }
+    }
+
     return NextResponse.json(guest)
   } catch (error) {
     console.error('Error updating booking guest:', error)

@@ -3,6 +3,57 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
+type Db = Awaited<ReturnType<typeof getDb>>
+
+function calcPaymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
+  if (depositPaid <= 0)          return 'pending'
+  if (depositPaid >= totalPrice) return 'fully_paid'
+  return 'partially_paid'
+}
+
+/** Recalculate Open Trip booking total from assigned cabins and update booking status. */
+async function recalcOpenTripPrice(db: Db, bookingId: string) {
+  const booking = await db.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      tripType: true, status: true, depositPaid: true,
+      openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true } },
+      guests:   { select: { cabinId: true } },
+    },
+  })
+  if (!booking || booking.tripType !== 'OPEN_TRIP' || !booking.openTrip) return
+  if (['cancelled', 'completed', 'on_hold'].includes(booking.status)) return
+
+  const nights = Math.max(1, Math.round(
+    (new Date(booking.openTrip.endDate).getTime() - new Date(booking.openTrip.startDate).getTime()) / 86400000
+  ))
+
+  const uniqueCabinIds = [...new Set(booking.guests.map(g => g.cabinId).filter(Boolean) as string[])]
+
+  let newTotal = 0
+  if (uniqueCabinIds.length > 0) {
+    const cabins = await db.cabin.findMany({
+      where: { id: { in: uniqueCabinIds } },
+      select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true } } },
+    })
+    const cabinTotal = cabins.reduce((sum, c) => {
+      const tier = c.pricingTiers.find(t => t.nights === nights)
+      return sum + (tier ? tier.price : c.price * nights)
+    }, 0)
+    newTotal = cabinTotal > 0
+      ? cabinTotal
+      : uniqueCabinIds.length * (booking.openTrip.pricePerCabin ?? 0)
+  }
+
+  if (newTotal <= 0) return
+
+  const newStatus = calcPaymentStatus(booking.depositPaid, newTotal)
+  await db.booking.update({
+    where: { id: bookingId },
+    data: { totalPrice: newTotal, status: newStatus },
+  })
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const db = await getDb()
   try {
@@ -35,7 +86,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (booking.tripType === 'OPEN_TRIP' && cabinId) {
       const cabin = await db.cabin.findUnique({ where: { id: cabinId }, select: { capacity: true } })
       if (cabin) {
-        // Count guests already in this cabin on bookings for the same open trip
         const cabinOccupancy = await db.bookingGuest.count({
           where: {
             cabinId,
@@ -62,6 +112,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       data: { guestCount: { increment: 1 } },
     })
 
+    // ── Recalculate price for Open Trip ──
+    await recalcOpenTripPrice(db, id)
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error adding guest:', error)
@@ -85,6 +138,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     await db.bookingGuest.delete({ where: { id: bookingGuestId } })
     await db.booking.update({ where: { id }, data: { guestCount: { decrement: 1 } } })
+
+    // ── Recalculate price for Open Trip ──
+    await recalcOpenTripPrice(db, id)
 
     return NextResponse.json({ ok: true })
   } catch (error) {

@@ -1127,7 +1127,7 @@ export default function Payments() {
                     </div>
 
                     {/* Payment link / bank selector — always editable by finance */}
-                    {genInvMethod.toLowerCase().includes('transfer') && (
+                    {(
                       <>
                         <Separator />
                         {/* Pay link toggle */}
