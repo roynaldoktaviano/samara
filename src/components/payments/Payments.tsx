@@ -247,6 +247,7 @@ export default function Payments() {
     if (!selected) return
     const amount = parseFloat(genInvAmount.replace(/,/g, '')) || 0
     if (amount <= 0) return
+    const isFirstGeneration = selected.status === 'requested'
     setGenInvSaving(true)
     try {
       const res = await fetch(`/api/payments/${selected.id}`, {
@@ -266,7 +267,7 @@ export default function Payments() {
         }),
       })
       if (!res.ok) throw new Error(await res.text())
-      toast.success('Invoice generated successfully')
+      toast.success(isFirstGeneration ? 'Invoice generated successfully' : 'Invoice updated — Sales has been notified')
       setSelected(null)
       setGenInvAmount(''); setGenInvType('DP'); setGenInvMethod('Transfer Bank'); setGenInvNotes(''); setGenInvBillTo('CUSTOMER'); setGenInvBankId(null); setGenInvUsePayLink(false); setGenInvPayLink(''); setGenInvEditing(false); setGenInvConfirmEdit(false)
       fetchPayments()
@@ -988,15 +989,17 @@ export default function Payments() {
                 </div>
               )}
 
-              {/* Generate Invoice (Finance only, status=requested) */}
-              {isFinance && selected.status === 'requested' && (
+              {/* Generate / Edit Invoice (Finance only) — editable while requested, invoice_ready, or pending_confirmation */}
+              {isFinance && ['requested', 'invoice_ready', 'pending_confirmation'].includes(selected.status) && (() => {
+                const isFirstGeneration = selected.status === 'requested'
+                return (
                 <>
                   <Separator />
                   <div className="space-y-3">
                     {/* Header row */}
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
-                        <FilePlus className="h-4 w-4" /> Generate Invoice
+                        <FilePlus className="h-4 w-4" /> {isFirstGeneration ? 'Generate Invoice' : 'Edit Invoice'}
                       </p>
                       {!genInvEditing && (
                         <Button
@@ -1266,12 +1269,13 @@ export default function Payments() {
                         onClick={handleGenerateInvoice}
                       >
                         {genInvSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FilePlus className="h-4 w-4 mr-1.5" />}
-                        Generate & Notify Sales
+                        {isFirstGeneration ? 'Generate & Notify Sales' : 'Save Changes & Notify Sales'}
                       </Button>
                     </DialogFooter>
                   </div>
                 </>
-              )}
+                )
+              })()}
 
               {/* Proof of transfer */}
               {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready' || selected.status === 'confirmed') && (

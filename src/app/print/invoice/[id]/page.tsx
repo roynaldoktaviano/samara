@@ -398,12 +398,21 @@ export default function InvoicePage() {
           </div>
 
           {/* Main item */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 10px', borderBottom: showCommissionNote ? 'none' : '1px solid #f3f4f6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '9px 10px', borderBottom: showCommissionNote ? 'none' : '1px solid #f3f4f6' }}>
             <div>
               <div style={{ fontWeight: 600, color: '#111827', fontSize: 11 }}>
                 {b.tripType === 'OPEN_TRIP' ? 'Open Trip — Cabin Booking' : 'Private Charter'}
               </div>
               <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{tripName} · {destination}</div>
+              {hasCabins && (
+                <div style={{ marginTop: 4 }}>
+                  {guestsWithCabin.map((g, i) => (
+                    <div key={i} style={{ fontSize: 10, color: '#6b7280' }}>
+                      {(g.customer?.name ?? '').toLowerCase().includes('tbd') ? `Guest ${i + 1} (TBD)` : (g.customer?.name ?? '—')} · Room: {g.cabin?.name}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16, fontSize: 11 }}>
               {fmtAmt(showCommissionNote ? baseAfterDisc : displayBase)}
@@ -417,24 +426,6 @@ export default function InvoicePage() {
               <span style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', marginLeft: 16 }}>
                 −{fmtAmt(commissionAmt)}
               </span>
-            </div>
-          )}
-
-          {/* Cabin / Passenger breakdown */}
-          {hasCabins && (
-            <div style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ padding: '5px 10px 3px', display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#6b7280', textTransform: 'uppercase' }}>Passengers &amp; Cabins</span>
-              </div>
-              {guestsWithCabin.map((g, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 10px 3px 18px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: '#374151', fontSize: 10 }}>{(g.customer?.name ?? '').toLowerCase().includes('tbd') ? '' : (g.customer?.name ?? '—')}</span>
-                  </div>
-                  <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>{g.cabin?.name}</span>
-                </div>
-              ))}
-              <div style={{ height: 5 }} />
             </div>
           )}
 
