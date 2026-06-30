@@ -247,11 +247,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             UPDATE "Booking"
             SET
               "depositPaid" = "depositPaid" + ${paymentAmount},
-              "status" = CASE
+              "status" = (CASE
                 WHEN "depositPaid" + ${paymentAmount} >= ${effectiveTotal} THEN 'fully_paid'
                 WHEN "depositPaid" + ${paymentAmount} > 0               THEN 'partially_paid'
                 ELSE 'pending'
-              END
+              END)::"BookingStatus"
             WHERE id = ${payment.bookingId}
           `,
         ]))
