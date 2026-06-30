@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 import { BookingStatus } from '@prisma/client'
 
@@ -17,7 +18,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const db = await getDb(session)
   try {
     const { id } = await params
-    const payment = await db.payment.findUnique({
+    const payment = await withRetry(() => db.payment.findUnique({
       where: { id },
       include: {
         bank: true,
@@ -38,7 +39,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
           },
         },
       },
-    })
+    }))
     if (!payment) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(payment)
   } catch (error) {
@@ -72,10 +73,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Amount is required' }, { status: 400 })
       }
 
-      const existing = await db.payment.findUnique({
+      const existing = await withRetry(() => db.payment.findUnique({
         where: { id },
         include: { booking: { select: { id: true, bookingCode: true, depositPaid: true, totalPrice: true, salespersonId: true } } },
-      })
+      }))
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       if (existing.status !== 'requested') {
         return NextResponse.json({ error: 'Invoice can only be generated from "requested" status' }, { status: 400 })
@@ -85,7 +86,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const invNum      = await nextVal(`payment_inv:${existing.booking.bookingCode}`, db)
       const invoiceNumber = `INV-${existing.booking.bookingCode}-${String(invNum).padStart(2, '0')}`
 
-      await db.payment.update({
+      await withRetry(() => db.payment.update({
         where: { id },
         data: {
           invoiceNumber,
@@ -101,7 +102,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           invoiceGeneratedAt: new Date(),
           status: 'invoice_ready',
         },
-      })
+      }))
 
       logActivity({
         userId: actorId, userName: actorName, userRole: actorRole,
@@ -154,23 +155,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Payment proof must be attached' }, { status: 400 })
       }
 
-      const existing = await db.payment.findUnique({
+      const existing = await withRetry(() => db.payment.findUnique({
         where: { id },
         include: { booking: { select: { id: true, bookingCode: true } } },
-      })
+      }))
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       if (existing.status !== 'invoice_ready') {
         return NextResponse.json({ error: 'Proof can only be submitted when status is "invoice_ready"' }, { status: 400 })
       }
 
-      await db.payment.update({
+      await withRetry(() => db.payment.update({
         where: { id },
         data: {
           proofOfTransfer,
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
           status: 'pending_confirmation',
         },
-      })
+      }))
 
       logActivity({
         userId: actorId, userName: actorName, userRole: actorRole,
@@ -205,7 +206,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      const payment = await db.payment.findUnique({
+      const payment = await withRetry(() => db.payment.findUnique({
         where: { id },
         include: {
           booking: {
@@ -216,7 +217,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             },
           },
         },
-      })
+      }))
       if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
       if (payment.status !== 'pending_confirmation') {
         return NextResponse.json({ error: 'Can only confirm/reject from "pending_confirmation" status' }, { status: 400 })
@@ -237,7 +238,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         // Atomic: update payment only if still pending_confirmation (prevents double-confirm race)
         // If another request already confirmed it, Prisma throws P2025 and we return 409.
-        await db.$transaction([
+        await withRetry(() => db.$transaction([
           db.payment.update({
             where: { id, status: 'pending_confirmation' },
             data: { status: 'confirmed', confirmedBy: actorName, confirmedAt: new Date() },
@@ -253,7 +254,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               END
             WHERE id = ${payment.bookingId}
           `,
-        ])
+        ]))
 
         logActivity({
           userId: actorId, userName: actorName, userRole: actorRole,
@@ -271,10 +272,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             ).catch(() => {})
         }
       } else {
-        await db.payment.update({
+        await withRetry(() => db.payment.update({
           where: { id },
           data: { status: 'rejected', confirmedBy: actorName, confirmedAt: new Date() },
-        })
+        }))
 
         logActivity({
           userId: actorId, userName: actorName, userRole: actorRole,

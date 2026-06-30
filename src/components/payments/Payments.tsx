@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
+import TripSheet from './TripSheet'
 
 interface Bank {
   id: string
@@ -110,7 +111,7 @@ export default function Payments() {
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [proofPreview, setProofPreview] = useState<string | null>(null)
   const [proofLoading, setProofLoading] = useState(false)
-  const [tableView,    setTableView]    = useState<'payments' | 'refunds'>('payments')
+  const [tableView,    setTableView]    = useState<'payments' | 'refunds' | 'trip-sheet'>('payments')
 
   /* generate invoice */
   const [genInvSaving,       setGenInvSaving]      = useState(false)
@@ -461,42 +462,50 @@ export default function Payments() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <CardTitle>{tableView === 'payments' ? 'All Payments' : 'Refund Records'}</CardTitle>
+                <CardTitle>{tableView === 'payments' ? 'All Payments' : tableView === 'refunds' ? 'Refund Records' : 'Trip Sheet'}</CardTitle>
                 <CardDescription>
-                  {tableView === 'payments' ? `${filtered.length} record(s) found` : `${refundHistory.length} record(s)`}
+                  {tableView === 'payments' ? `${filtered.length} record(s) found` : tableView === 'refunds' ? `${refundHistory.length} record(s)` : 'Trip-by-trip guest & payment breakdown'}
                 </CardDescription>
               </div>
-              {isFinance && (
-                <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0">
-                  <button
-                    onClick={() => setTableView('payments')}
-                    className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Payments
-                  </button>
+              <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0">
+                <button
+                  onClick={() => setTableView('payments')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Payments
+                </button>
+                <button
+                  onClick={() => setTableView('trip-sheet')}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'trip-sheet' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Trip Sheet
+                </button>
+                {isFinance && (
                   <button
                     onClick={() => setTableView('refunds')}
                     className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'refunds' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     Refunds
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-            <div className="relative w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search invoice, booking, name..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-8 w-full h-8 text-sm"
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              )}
-            </div>
+            {tableView !== 'trip-sheet' && (
+              <div className="relative w-full">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search invoice, booking, name..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 w-full h-8 text-sm"
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Row 2: status + date filters — payments view only */}
@@ -576,7 +585,11 @@ export default function Payments() {
         </CardHeader>
 
         <CardContent className="p-0">
-          {tableView === 'refunds' ? (
+          {tableView === 'trip-sheet' ? (
+            <div className="p-3">
+              <TripSheet />
+            </div>
+          ) : tableView === 'refunds' ? (
             /* ── Refund Records Table ── */
             refundHistoryLoading ? (
               <div className="p-4 space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-10 rounded bg-muted animate-pulse" />)}</div>
