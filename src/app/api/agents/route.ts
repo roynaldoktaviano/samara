@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const userRole = (session?.user as { role?: string })?.role ?? ''
   const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
-  if (!isSuperAdmin && userRole !== 'ADMIN') {
+  const isSales = userRole === 'SALES'
+  if (!isSuperAdmin && userRole !== 'ADMIN' && !isSales) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const db = await getDb(session)
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
         commission:                   commission ? parseFloat(commission) : 0,
         commissionOpenTrip:           commissionOpenTrip ? parseFloat(commissionOpenTrip) : 0,
         commissionPrivateCharter:     commissionPrivateCharter ? parseFloat(commissionPrivateCharter) : 0,
-        salespersonId: salespersonId || null,
+        salespersonId: isSales ? (session!.user.id ?? null) : (salespersonId || null),
         country:          country          || null,
         address:          address          || null,
         email:            email            || null,

@@ -19,7 +19,9 @@ async function requireManage() {
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
   try {
     const { id } = await params
     const agent = await db.agent.findUnique({
@@ -35,12 +37,12 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await requireManage()
+  if (!session) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
-    const session = await requireManage()
-    if (!session) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
     const { id } = await params
     const body = await request.json()
 
@@ -112,12 +114,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const db = await getDb()
+  const session = await requireAdmin()
+  if (!session) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const db = await getDb(session)
   try {
-    const session = await requireAdmin()
-    if (!session) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
     const { id } = await params
     const existing = await db.agent.findUnique({ where: { id }, select: { name: true } })
     await db.agent.update({ where: { id }, data: { isActive: false } })
