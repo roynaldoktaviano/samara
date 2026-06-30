@@ -23,9 +23,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { sku, name, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, isActive, imageKey } = body
-  if (!sku || !name || !category || !baseUnit || !purchaseUnit) {
-    return NextResponse.json({ error: 'sku, name, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, isActive, imageKey } = body
+  if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
+    return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+  }
+  if (!['FOOD', 'BEVERAGE', 'SPAREPART'].includes(type)) {
+    return NextResponse.json({ error: 'type tidak valid' }, { status: 400 })
   }
   const skuConflict = await db.purchaseItem.findFirst({ where: { sku: sku.trim().toUpperCase(), NOT: { id } } })
   if (skuConflict) return NextResponse.json({ error: `SKU "${sku}" sudah digunakan` }, { status: 409 })
@@ -34,6 +37,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     data: {
       sku: sku.trim().toUpperCase(),
       name: name.trim(),
+      type,
       category,
       baseUnit,
       purchaseUnit,

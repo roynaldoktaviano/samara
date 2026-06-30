@@ -31,6 +31,7 @@ interface PaymentDetail {
   paymentMethod?: string | null
   billToType?: string | null
   showNetAmount?: boolean
+  showCommissionNote?: boolean
   previouslyPaid: number
   amount: number
   currency: string
@@ -86,6 +87,10 @@ export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const currencyOverride = searchParams.get('currency')?.toUpperCase() ?? null
+  const showNetParam = searchParams.get('showNet')
+  const showNetOverride = showNetParam === null ? null : showNetParam === 'true'
+  const showNoteParam = searchParams.get('showNote')
+  const showNoteOverride = showNoteParam === null ? null : showNoteParam === 'true'
   const [payment,   setPayment]   = useState<PaymentDetail | null>(null)
   const [company,   setCompany]   = useState<CompanyInfo | null>(null)
   const [loading,   setLoading]   = useState(true)
@@ -153,7 +158,9 @@ export default function InvoicePage() {
 
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount
-  const commissionPct  = isAgentBooking && payment.showNetAmount
+  const showNet        = showNetOverride ?? payment.showNetAmount
+  const showCommissionNote = showNet && (showNoteOverride ?? payment.showCommissionNote ?? false)
+  const commissionPct  = isAgentBooking && showNet
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
     : 0
   const baseRaw        = b.totalPrice - servicesTotal
@@ -378,7 +385,7 @@ export default function InvoicePage() {
           </div>
 
           {/* Main item */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 10px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 10px', borderBottom: showCommissionNote ? 'none' : '1px solid #f3f4f6' }}>
             <div>
               <div style={{ fontWeight: 600, color: '#111827', fontSize: 11 }}>
                 {b.tripType === 'OPEN_TRIP' ? 'Open Trip — Cabin Booking' : 'Private Charter'}
@@ -386,9 +393,19 @@ export default function InvoicePage() {
               <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{tripName} · {destination}</div>
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16, fontSize: 11 }}>
-              {fmtAmt(displayBase)}
+              {fmtAmt(showCommissionNote ? baseAfterDisc : displayBase)}
             </div>
           </div>
+
+          {/* Commission breakdown — only when explicitly disclosed on the invoice */}
+          {showCommissionNote && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px 9px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>Less: Agent Commission ({commissionPct}%)</span>
+              <span style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', marginLeft: 16 }}>
+                −{fmtAmt(commissionAmt)}
+              </span>
+            </div>
+          )}
 
           {/* Cabin / Passenger breakdown */}
           {hasCabins && (

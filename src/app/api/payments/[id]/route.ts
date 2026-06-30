@@ -96,6 +96,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           ...(notes         !== undefined && { notes:         notes         || null }),
           ...(billToType    !== undefined && { billToType:    billToType    || existing.billToType }),
           ...(body.showNetAmount !== undefined && { showNetAmount: !!body.showNetAmount }),
+          ...(body.showCommissionNote !== undefined && { showCommissionNote: !!body.showCommissionNote }),
           ...(bankId        !== undefined && { bankId:        bankId        || null }),
           ...(paymentLink   !== undefined && { paymentLink:   paymentLink   || null }),
           invoiceGeneratedBy: actorName,
@@ -211,9 +212,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         include: {
           booking: {
             select: {
-              id: true, bookingCode: true, totalPrice: true, depositPaid: true,
+              id: true, bookingCode: true, totalPrice: true, discount: true, depositPaid: true,
               salespersonId: true, source: true, tripType: true,
               agent: { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
+              services: { select: { price: true, quantity: true } },
             },
           },
         },
@@ -233,7 +235,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               : (payment.booking.agent?.commissionPrivateCharter ?? 0))
           : 0
         const commPctSafe = Math.max(0, Math.min(commPct, 100))
-        const effectiveTotal = payment.booking.totalPrice * (1 - commPctSafe / 100)
+        // Commission applies only to the TRIP portion (price excl. additional services), not the whole total.
+        const svcTotal = payment.booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+        const trip = Math.max(0, (payment.booking.totalPrice - svcTotal) - (payment.booking.discount ?? 0))
+        const effectiveTotal = (trip - trip * commPctSafe / 100) + svcTotal
         const paymentAmount  = payment.amount
 
         // Atomic: update payment only if still pending_confirmation (prevents double-confirm race)

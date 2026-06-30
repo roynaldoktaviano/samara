@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ExternalLink, Ship, Calendar, Users, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { ExternalLink, Ship, Calendar, Users, ChevronRight, ClipboardList, FileText } from 'lucide-react'
 
 interface TripRow {
   bookingId: string
@@ -171,9 +172,12 @@ export default function TripSheet() {
                 <TableHead className="text-center">Cabin</TableHead>
                 <TableHead className="text-center">Pax</TableHead>
                 <TableHead className="text-center">Invoice</TableHead>
+                <TableHead className="text-center border-l">Publish</TableHead>
+                <TableHead className="text-center">Disc.</TableHead>
+                <TableHead className="text-center">Agent Com.</TableHead>
                 <TableHead className="text-center border-l">Total Price</TableHead>
                 <TableHead className="text-center">DP</TableHead>
-                <TableHead className="text-center">2nd DP</TableHead>
+                <TableHead className="text-center">2nd DP / Payment</TableHead>
                 <TableHead className="text-center">Balance</TableHead>
                 <TableHead className="text-center">Payment</TableHead>
               </TableRow>
@@ -207,7 +211,7 @@ export default function TripSheet() {
                               <Badge className={`text-[9px] px-1.5 py-0 ${TRIP_TYPE_STYLE[g.tripType]}`}>{g.tripType}</Badge>
                             </div>
                           </TableCell>
-                          <TableCell rowSpan={totalGroupRows} className="align-top">
+                          <TableCell rowSpan={totalGroupRows} className="align-middle text-center">
                             <Badge className={`text-[10px] ${g.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
                               {g.status}
                             </Badge>
@@ -234,6 +238,9 @@ export default function TripSheet() {
                               </a>
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right border-l">${fmt(r.publish)}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.discountPct > 0 ? `${fmt(r.discountPct)}%` : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.agentCommission > 0 ? `$${fmt(r.agentCommission)}` : ''}</TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right border-l">
                             <div className="font-semibold">${fmt(r.totalUSD)}</div>
                             {r.totalIDR != null && <div className="text-[10px] text-muted-foreground">Rp {r.totalIDR.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</div>}
@@ -256,7 +263,7 @@ export default function TripSheet() {
           </Table>
         </div>
       )}
-      <p className="text-[11px] text-muted-foreground px-1">Click a trip&apos;s date to see the full price breakdown (Publish, Disc., Agent Commission, TRIP, TNK, Method, Booking Code).</p>
+      <p className="text-[11px] text-muted-foreground px-1">Click a trip&apos;s date to see TRIP, TNK, payment method, and booking code per guest.</p>
 
       {selectedTrip && (
         <Dialog open={!!selectedTrip} onOpenChange={v => { if (!v) setSelectedTrip(null) }}>
@@ -268,6 +275,25 @@ export default function TripSheet() {
                 <span className="text-muted-foreground">· {selectedTrip.tripLabel}</span>
               </DialogTitle>
             </DialogHeader>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => window.open(
+                selectedTrip.tripType === 'Sharing'
+                  ? `/print/crew-sheet/${selectedTrip.id}`
+                  : `/print/crew-sheet/booking/${selectedTrip.id}`,
+                '_blank'
+              )}>
+                <ClipboardList className="h-3.5 w-3.5" /> Crew Sheet
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => window.open(
+                selectedTrip.tripType === 'Sharing'
+                  ? `/print/guest-sheet/open-trip/${selectedTrip.id}`
+                  : `/print/guest-sheet/booking/${selectedTrip.id}`,
+                '_blank'
+              )}>
+                <FileText className="h-3.5 w-3.5" /> Guest Sheet
+              </Button>
+            </div>
 
             <div className="space-y-4">
               {/* Trip summary */}

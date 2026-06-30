@@ -12,7 +12,7 @@ export async function GET() {
   const db = await getDb(session)
 
   const [items, lots] = await Promise.all([
-    db.purchaseItem.findMany({ orderBy: [{ category: 'asc' }, { name: 'asc' }] }),
+    db.purchaseItem.findMany({ orderBy: [{ type: 'asc' }, { category: 'asc' }, { name: 'asc' }] }),
     db.stockLot.findMany({ where: { quantity: { gt: 0 } }, select: { itemId: true, quantity: true, costPerUnit: true } }),
   ])
 
@@ -40,9 +40,12 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { sku, name, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, imageKey } = body
-  if (!sku || !name || !category || !baseUnit || !purchaseUnit) {
-    return NextResponse.json({ error: 'sku, name, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, imageKey } = body
+  if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
+    return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+  }
+  if (!['FOOD', 'BEVERAGE', 'SPAREPART'].includes(type)) {
+    return NextResponse.json({ error: 'type tidak valid' }, { status: 400 })
   }
   const existing = await db.purchaseItem.findUnique({ where: { sku } })
   if (existing) return NextResponse.json({ error: `SKU "${sku}" sudah digunakan` }, { status: 409 })
@@ -51,6 +54,7 @@ export async function POST(req: NextRequest) {
       id: crypto.randomUUID(),
       sku: sku.trim().toUpperCase(),
       name: name.trim(),
+      type,
       category,
       baseUnit,
       purchaseUnit,

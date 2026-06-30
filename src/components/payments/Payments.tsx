@@ -51,6 +51,8 @@ interface Payment {
   proofOfTransfer: string | null
   hasProof?: boolean
   billToType: string | null
+  showNetAmount: boolean
+  showCommissionNote: boolean
   bankId: string | null
   submittedByName: string | null
   confirmedBy: string | null
@@ -61,6 +63,7 @@ interface Payment {
     totalPrice: number
     discount: number
     depositPaid: number
+    services: { price: number; quantity: number }[]
     startDate: string
     endDate: string
     destination: string | null
@@ -92,6 +95,17 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtDateTime = (d: string) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** Total price net of agent commission. Commission applies only to the TRIP portion (price excl. additional services). */
+function netOfCommission(booking: {
+  totalPrice: number; discount: number; tripType: string
+  services: { price: number; quantity: number }[]
+  agent: { commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
+}, commPct: number) {
+  const svcTotal = booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+  const trip = Math.max(0, (booking.totalPrice - svcTotal) - (booking.discount ?? 0))
+  return (trip - trip * commPct / 100) + svcTotal
+}
 
 export default function Payments() {
   const { data: session } = useSession()
@@ -126,6 +140,7 @@ export default function Payments() {
   const [genInvUsePayLink,   setGenInvUsePayLink]  = useState(false)
   const [genInvPayLink,      setGenInvPayLink]     = useState('')
   const [genInvShowNet,      setGenInvShowNet]     = useState(false)
+  const [genInvShowNote,     setGenInvShowNote]    = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
 
   /* refund decisions */
@@ -245,6 +260,7 @@ export default function Payments() {
           notes: genInvNotes || null,
           billToType: genInvBillTo,
           showNetAmount: genInvShowNet,
+          showCommissionNote: genInvShowNet && genInvShowNote,
           bankId: genInvUsePayLink ? null : (genInvBankId || null),
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
         }),
@@ -338,7 +354,7 @@ export default function Payments() {
     const commPct = p.booking.source === 'AGENT'
       ? (p.booking.tripType === 'OPEN_TRIP' ? (p.booking.agent?.commissionOpenTrip ?? 0) : (p.booking.agent?.commissionPrivateCharter ?? 0))
       : 0
-    const net = p.booking.totalPrice * (1 - commPct / 100)
+    const net = netOfCommission(p.booking, commPct)
     const remaining = Math.max(0, net - p.previouslyPaid)
     const isFullPayment = p.amount > 0 && Math.abs(p.amount - remaining) < 0.01
     setGenInvAmount(p.amount > 0 ? p.amount.toFixed(2) : '')
@@ -349,7 +365,8 @@ export default function Payments() {
     setGenInvBankId(p.bankId ?? null)
     setGenInvUsePayLink(false)
     setGenInvPayLink('')
-    setGenInvShowNet((p as any).showNetAmount ?? false)
+    setGenInvShowNet(p.showNetAmount ?? false)
+    setGenInvShowNote(p.showCommissionNote ?? false)
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
     if (p.status === 'pending_confirmation' || p.status === 'invoice_ready' || p.status === 'confirmed') {
@@ -805,24 +822,32 @@ export default function Payments() {
                     </div>
                   )
                 })()}
-                {selected.booking.currency === 'IDR' && selected.booking.exchangeRate ? (
-                  <div className="flex gap-1.5">
+                {(() => {
+                  const netParam = selected.booking.source === 'AGENT' ? `showNet=${genInvShowNet}` : null
+                  const noteParam = selected.booking.source === 'AGENT' ? `showNote=${genInvShowNet && genInvShowNote}` : null
+                  const invoiceUrl = (currency?: string) => {
+                    const params = [currency && `currency=${currency}`, netParam, noteParam].filter(Boolean)
+                    return `/print/invoice/${selected.id}${params.length ? `?${params.join('&')}` : ''}`
+                  }
+                  return selected.booking.currency === 'IDR' && selected.booking.exchangeRate ? (
+                    <div className="flex gap-1.5">
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
+                        onClick={() => window.open(invoiceUrl('USD'), '_blank')}>
+                        <Download className="h-3.5 w-3.5" /> USD
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                        onClick={() => window.open(invoiceUrl('IDR'), '_blank')}>
+                        <Download className="h-3.5 w-3.5" /> IDR
+                      </Button>
+                    </div>
+                  ) : (
                     <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
-                      onClick={() => window.open(`/print/invoice/${selected.id}?currency=USD`, '_blank')}>
-                      <Download className="h-3.5 w-3.5" /> USD
+                      onClick={() => window.open(invoiceUrl(), '_blank')}>
+                      <Download className="h-3.5 w-3.5" />
+                      Download Invoice
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
-                      onClick={() => window.open(`/print/invoice/${selected.id}?currency=IDR`, '_blank')}>
-                      <Download className="h-3.5 w-3.5" /> IDR
-                    </Button>
-                  </div>
-                ) : (
-                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
-                    onClick={() => window.open(`/print/invoice/${selected.id}`, '_blank')}>
-                    <Download className="h-3.5 w-3.5" />
-                    Download Invoice
-                  </Button>
-                )}
+                  )
+                })()}
               </div>
 
               {/* Amount summary */}
@@ -842,18 +867,18 @@ export default function Payments() {
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <p className="text-xs text-muted-foreground">Total Booking</p>
                       {selected.booking.source === 'AGENT' && (
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${(selected as any).showNetAmount ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
-                          {(selected as any).showNetAmount ? 'Net' : 'Published'}
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${selected.showNetAmount ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                          {selected.showNetAmount ? 'Net' : 'Published'}
                         </span>
                       )}
                     </div>
                     <p className="font-semibold text-sm">${fmt(
                       (() => {
-                        const isNet = selected.booking.source === 'AGENT' && (selected as any).showNetAmount
+                        const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
                         const commPct = isNet
                           ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
                           : 0
-                        return (selected.booking.totalPrice - selected.booking.discount) * (1 - commPct / 100)
+                        return netOfCommission(selected.booking, commPct)
                       })()
                     )}</p>
                   </div>
@@ -1097,8 +1122,7 @@ export default function Payments() {
                         ? (selected.booking.agent?.commissionOpenTrip ?? 0)
                         : (selected.booking.agent?.commissionPrivateCharter ?? 0)
                       const grossAmt  = selected.booking.totalPrice - (selected.booking.discount ?? 0)
-                      const commAmt   = grossAmt * commPct / 100
-                      const netAmt    = grossAmt - commAmt
+                      const netAmt    = netOfCommission(selected.booking, commPct)
                       const fmtN = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       return (
                         <div className="rounded-lg border overflow-hidden">
@@ -1129,6 +1153,25 @@ export default function Payments() {
                         </div>
                       )
                     })()}
+
+                    {/* Commission breakdown disclosure — only meaningful when Net is selected */}
+                    {selected.booking.source === 'AGENT' && genInvShowNet && (
+                      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                        <div>
+                          <p className="text-xs font-medium">Show Commission on Invoice</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {genInvShowNote ? 'Invoice shows published price + a "less commission" line.' : 'Invoice shows only the final net amount, no breakdown.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setGenInvShowNote(v => !v)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNote ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                        >
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${genInvShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    )}
 
                     <div className="space-y-1.5">
                       <Label className="text-xs">Payment Method</Label>

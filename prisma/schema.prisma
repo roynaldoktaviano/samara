@@ -242,6 +242,7 @@ model Yacht {
   waitingListItems WaitingList[]
   stockLocations   StockLocation[]
   crewRequests     CrewRequest[]
+  cashierSales     CashierSale[]
 }
 
 model Cabin {
@@ -353,6 +354,7 @@ model Booking {
   waitingList          WaitingList[]        @relation("BookingWaitingList")
   slotHistory          WaitingListHistory[] @relation("BookingSlotHistory")
   promotedWaitingLists WaitingList[]        @relation("WaitingListPromotedBooking")
+  cashierSales         CashierSale[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -381,6 +383,7 @@ model BookingGuest {
   booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   customer            Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cabin               Cabin?   @relation(fields: [cabinId], references: [id])
+  cashierSales        CashierSale[]
 
   @@unique([bookingId, customerId])
   @@index([customerId])
@@ -479,6 +482,7 @@ model Payment {
   proofOfTransfer     String?
   billToType          String?
   showNetAmount       Boolean   @default(false)
+  showCommissionNote  Boolean   @default(false)
   bankId              String?
   paymentLink         String?
   submittedByUserId   String?
@@ -629,6 +633,12 @@ enum StockLocationType {
   ADJUSTMENT
 }
 
+enum PurchaseItemType {
+  FOOD
+  BEVERAGE
+  SPAREPART
+}
+
 enum PurchaseRequestStatus {
   DRAFT
   SENT
@@ -672,9 +682,10 @@ enum StockCountStatus {
 }
 
 model PurchaseItem {
-  id               String   @id @default(cuid())
-  sku              String   @unique
+  id               String           @id @default(cuid())
+  sku              String           @unique
   name             String
+  type             PurchaseItemType @default(SPAREPART)
   category         String
   baseUnit         String
   purchaseUnit     String
@@ -697,6 +708,7 @@ model PurchaseItem {
   crewRequestItems CrewRequestItem[]
   movements        StockMovement[]
   stockCountItems  StockCountItem[]
+  cashierSaleItems CashierSaleItem[]
 
   @@index([name])
   @@index([category])
@@ -724,10 +736,56 @@ model StockLocation {
   stockCounts      StockCount[]
   purchaseRequests PurchaseRequest[] @relation("PRDelivery")
   purchaseOrders   PurchaseOrder[]   @relation("PODelivery")
+  cashierSales     CashierSale[]
 
   @@index([type])
   @@index([yachtId])
   @@index([parentId])
+}
+
+model CashierSale {
+  id         String    @id @default(cuid())
+  yachtId    String
+  locationId String
+  bookingId  String?
+  guestId    String?
+  guestName  String?
+  status     String    @default("open") // open | closed
+  payMethod  String?
+  total      Float     @default(0)
+  openedBy   String?
+  closedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  yacht      Yacht           @relation(fields: [yachtId], references: [id])
+  location   StockLocation   @relation(fields: [locationId], references: [id])
+  booking    Booking?        @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  guest      BookingGuest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  items      CashierSaleItem[]
+
+  @@index([yachtId])
+  @@index([bookingId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CashierSaleItem {
+  id        String   @id @default(cuid())
+  saleId    String
+  itemId    String?
+  name      String
+  unit      String
+  price     Float
+  qty       Float
+  round     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  sale      CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item      PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([itemId])
 }
 
 model StockLot {

@@ -196,6 +196,8 @@ export default function Bookings() {
   const [payPctValue,     setPayPctValue]     = useState('')
   const [payBillTo,       setPayBillTo]       = useState<'AGENT' | 'CUSTOMER'>('AGENT')
   const [payMethod,       setPayMethod]       = useState('Transfer Bank')
+  const [payShowNet,      setPayShowNet]      = useState(false)
+  const [payShowNote,     setPayShowNote]     = useState(false)
 
   /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -551,6 +553,8 @@ export default function Bookings() {
     setPayPctValue('')
     setPayBillTo(b.source === 'AGENT' ? 'AGENT' : 'CUSTOMER')
     setPayMethod('Transfer Bank')
+    setPayShowNet(false)
+    setPayShowNote(false)
   }
   const submitPayment = async () => {
     if (!paymentBooking) return
@@ -577,6 +581,8 @@ export default function Bookings() {
           amount: amount > 0 ? amount : undefined,
           billToType: payBillTo,
           paymentMethod: payMethod || undefined,
+          showNetAmount: paymentBooking.source === 'AGENT' ? payShowNet : undefined,
+          showCommissionNote: paymentBooking.source === 'AGENT' ? (payShowNet && payShowNote) : undefined,
         }),
       })
       if (res.ok) {
@@ -1134,11 +1140,7 @@ export default function Bookings() {
           {paymentBooking && (() => {
             const rate      = paymentBooking.exchangeRate ?? 1
             const hasIDR    = paymentBooking.currency === 'IDR' && rate > 1
-            const svcTotal  = paymentBooking.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
-            const basePrice = paymentBooking.totalPrice - svcTotal
-            const discount  = paymentBooking.discount ?? 0
-            const afterDisc = Math.max(0, basePrice - discount)
-            const net       = afterDisc + svcTotal
+            const net       = netBook(paymentBooking)
             const remaining = Math.max(0, net - paymentBooking.depositPaid)
             const pct       = parseFloat(payPctValue) || 0
             const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
@@ -1320,6 +1322,47 @@ export default function Bookings() {
                     <p className="text-[11px] text-muted-foreground">
                       {payBillTo === 'AGENT' ? 'Invoice will be addressed to the agent company.' : 'Invoice will be addressed directly to the guest.'}
                     </p>
+                  </div>
+                )}
+
+                {/* Show Agent Commission — AGENT bookings only */}
+                {paymentBooking.source === 'AGENT' && paymentBooking.agent && (
+                  <div className="space-y-2">
+                    <Label>Agent Commission on Invoice</Label>
+                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                      {([{ v: false, l: 'Published' }, { v: true, l: 'Net (after commission)' }] as const).map(opt => (
+                        <button
+                          key={String(opt.v)}
+                          type="button"
+                          onClick={() => setPayShowNet(opt.v)}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payShowNet === opt.v ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          style={payShowNet === opt.v ? { backgroundColor: ACCENT } : {}}
+                        >
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {payShowNet ? 'Invoice will show the price net of agent commission.' : 'Invoice will show the published (full) price — commission not shown.'}
+                    </p>
+
+                    {payShowNet && (
+                      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5 mt-2">
+                        <div>
+                          <p className="text-xs font-medium">Show Commission on Invoice</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {payShowNote ? 'Invoice shows published price + a "less commission" line.' : 'Invoice shows only the final net amount, no breakdown.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPayShowNote(v => !v)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${payShowNote ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                        >
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${payShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

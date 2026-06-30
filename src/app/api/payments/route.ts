@@ -33,6 +33,8 @@ export async function GET(_: NextRequest) {
         notes: true,
         proofOfTransfer: true,
         billToType: true,
+        showNetAmount: true,
+        showCommissionNote: true,
         submittedByUserId: true,
         submittedByName: true,
         confirmedBy: true,
@@ -44,6 +46,7 @@ export async function GET(_: NextRequest) {
             totalPrice: true,
             discount: true,
             depositPaid: true,
+            services: { select: { price: true, quantity: true } },
             startDate: true,
             endDate: true,
             destination: true,
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote } = body
 
     if (!bookingId) {
       return NextResponse.json({ error: 'Missing bookingId' }, { status: 400 })
@@ -127,6 +130,8 @@ export async function POST(request: NextRequest) {
         submittedByName,
         ...(billToType && { billToType }),
         ...(paymentMethod && { paymentMethod }),
+        showNetAmount: !!showNetAmount,
+        showCommissionNote: !!showCommissionNote,
       },
     })
 

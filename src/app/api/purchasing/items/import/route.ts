@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
   const headers = rows[0]
   const iSKU      = col(headers, 'SKU', 'sku')
   const iName     = col(headers, 'Nama', 'name', 'nama barang')
+  const iType     = col(headers, 'Tipe', 'type', 'jenis')
   const iCat      = col(headers, 'Kategori', 'category')
   const iBase     = col(headers, 'Satuan Dasar', 'baseUnit', 'satuan dasar')
   const iPurch    = col(headers, 'Satuan Beli', 'purchaseUnit', 'satuan beli')
@@ -84,7 +85,9 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    const category       = (iCat >= 0     ? row[iCat]    : '') || 'Umum'
+    const typeRaw        = ((iType >= 0   ? row[iType]   : '') || '').trim().toUpperCase()
+    const type           = (['FOOD', 'BEVERAGE', 'SPAREPART'].includes(typeRaw) ? typeRaw : 'SPAREPART') as 'FOOD' | 'BEVERAGE' | 'SPAREPART'
+    const category       = (iCat >= 0     ? row[iCat]    : '') || 'Other'
     const baseUnit       = (iBase >= 0    ? row[iBase]   : '') || 'pcs'
     const purchaseUnit   = (iPurch >= 0   ? row[iPurch]  : '') || baseUnit
     const conversionFactor = parseFloat(iConv >= 0   ? row[iConv]   : '') || 1
@@ -97,12 +100,12 @@ export async function POST(req: NextRequest) {
       if (existing) {
         await db.purchaseItem.update({
           where: { sku },
-          data: { name, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
+          data: { name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
         })
         updated++
       } else {
         await db.purchaseItem.create({
-          data: { id: crypto.randomUUID(), sku, name, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
+          data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
         })
         imported++
       }

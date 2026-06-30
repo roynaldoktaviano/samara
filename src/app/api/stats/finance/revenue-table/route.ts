@@ -17,11 +17,23 @@ function netBooking(b: {
   source: string; tripType: string;
   agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
   confirmedAmount: number; // sum of confirmed payments
+  totalPrice: number; discount: number;
+  services: { price: number; quantity: number }[];
 }) {
   const commPct = b.source === 'AGENT'
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
     : 0
-  return b.confirmedAmount - (b.confirmedAmount * commPct / 100)
+  if (commPct <= 0) return b.confirmedAmount
+
+  // Commission only applies to the TRIP portion (price excl. additional services), not the whole amount paid.
+  const svc   = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
+  const trip  = Math.max(0, (b.totalPrice - svc) - (b.discount ?? 0))
+  const total = trip + svc
+  if (total <= 0) return b.confirmedAmount
+
+  const tripShareOfConfirmed = b.confirmedAmount * (trip / total)
+  const commission = tripShareOfConfirmed * commPct / 100
+  return b.confirmedAmount - commission
 }
 
 export async function GET(request: NextRequest) {
@@ -47,6 +59,8 @@ export async function GET(request: NextRequest) {
         },
         select: {
           id: true, tripType: true, source: true, startDate: true, yachtId: true,
+          totalPrice: true, discount: true,
+          services: { select: { price: true, quantity: true } },
           agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
           payments: { where: { status: { in: ['confirmed', 'refunded'] } }, select: { amount: true } },
           guests: {
