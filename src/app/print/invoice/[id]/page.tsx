@@ -57,7 +57,7 @@ interface PaymentDetail {
     finalDueDate?: string
     customer: { name: string; email?: string; phone?: string; address?: string; gender?: string | null }
     yacht?: { name: string; model?: string }
-    openTrip?: { title: string; destination?: string }
+    openTrip?: { title: string; destination?: string; yacht?: { name: string } }
     source?: string
     agent?: { name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
     services: Array<{ name: string; price: number; quantity: number }>
@@ -141,8 +141,13 @@ export default function InvoicePage() {
   const b              = payment.booking
   const tripName       = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? '—') : (b.yacht?.name ?? '—')
   const destination    = b.destination ?? b.openTrip?.destination ?? '—'
+  const vesselName     = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.yacht?.name ?? b.yacht?.name ?? '—') : (b.yacht?.name ?? '—')
   const isAgentBooking = b.source === 'AGENT' && !!b.agent
   const billToAgent    = isAgentBooking && (payment.billToType !== 'CUSTOMER')
+
+  const nights         = Math.max(1, Math.round((new Date(b.endDate).getTime() - new Date(b.startDate).getTime()) / 86400000))
+  const days           = nights + 1
+  const packageLabel   = `${b.tripType === 'OPEN_TRIP' ? 'Shared Trip' : 'Private Charter'} – ${days} Days / ${nights} Nights ${vesselName}`
 
   const invoiceCurrency = currencyOverride ?? b.currency ?? 'USD'
   const rate            = (invoiceCurrency !== 'USD' && b.exchangeRate) ? b.exchangeRate : 1
@@ -171,7 +176,7 @@ export default function InvoicePage() {
   const displayBase    = baseAfterDisc - commissionAmt
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
-  const hasCabins = !isAgentBooking && guestsWithCabin.length > 0
+  const hasCabins = guestsWithCabin.length > 0
 
   return (
     <>
@@ -343,9 +348,17 @@ export default function InvoicePage() {
               <>
                 <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent!.name}</div>
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
-                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Guest</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
-                  {b.customer.phone && <div style={{ fontSize: 10, color: '#9ca3af' }}>{b.customer.phone}</div>}
+                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{guestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
+                  {guestsWithCabin.length > 0 ? (
+                    guestsWithCabin.map((g, i) => (
+                      <div key={i} style={{ fontSize: 11, color: '#6b7280' }}>
+                        {(g.customer?.name ?? '').toLowerCase().includes('tbd') ? `Guest ${i + 1} (TBD)` : (g.customer?.name ?? '—')}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
+                  )}
+                  {b.customer.phone && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{b.customer.phone}</div>}
                 </div>
               </>
             ) : (
@@ -360,10 +373,10 @@ export default function InvoicePage() {
           <div style={{ paddingLeft: 20 }}>
             <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 7 }}>Booking Details</div>
             {([
-              ['Booking No.', b.bookingCode],
-              ['Trip',        tripName],
-              ['Destination', destination],
-              ['Date',        `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
+              ['Booking No.',   b.bookingCode],
+              ['Package',       packageLabel],
+              ['Destination',   destination],
+              ['Sailing Dates', `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
               ...(b.depositDueDate ? [['Deposit Due', fmtDateShort(b.depositDueDate)]] : []),
               ...(b.finalDueDate   ? [['Balance Due', fmtDateShort(b.finalDueDate)]]   : []),
               ...(b.salesperson    ? [['Sales',        b.salesperson]]                  : []),
@@ -417,9 +430,6 @@ export default function InvoicePage() {
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 10px 3px 18px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ color: '#374151', fontSize: 10 }}>{(g.customer?.name ?? '').toLowerCase().includes('tbd') ? '' : (g.customer?.name ?? '—')}</span>
-                    {g.isLead && (
-                      <span style={{ fontSize: 8, fontWeight: 600, color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 3, padding: '1px 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Lead</span>
-                    )}
                   </div>
                   <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>{g.cabin?.name}</span>
                 </div>

@@ -26,7 +26,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
           include: {
             customer: { select: { name: true, email: true, phone: true, address: true, gender: true } },
             yacht:    { select: { name: true, model: true } },
-            openTrip: { select: { title: true, destination: true } },
+            openTrip: { select: { title: true, destination: true, yacht: { select: { name: true } } } },
             agent:    { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
             services: true,
             guests: {
