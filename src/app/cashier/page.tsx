@@ -54,6 +54,19 @@ const fmtDateRange = (s: string, e: string) => {
 
 const FONTS = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600&display=swap" rel="stylesheet" />
 
+// Below this width, the sidebar collapses into a top bar and the cart becomes a slide-up drawer (tablet portrait / phone).
+const COMPACT_BREAKPOINT = 900
+function useIsCompact() {
+  const [isCompact, setIsCompact] = useState(false)
+  useEffect(() => {
+    const check = () => setIsCompact(window.innerWidth < COMPACT_BREAKPOINT)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isCompact
+}
+
 // ─── PIN SCREEN ───────────────────────────────────────────────────────────────
 function PinScreen({ vessel, onSuccess, onBack }: { vessel: Vessel; onSuccess: () => void; onBack: () => void }) {
   const [pin, setPin] = useState('')
@@ -238,21 +251,48 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
 }
 
 // ─── BILLS PAGE ───────────────────────────────────────────────────────────────
-function BillsPage({ sales, reload, setActiveSaleId, vessel, setSection, setReceipt, closeSale }: {
-  sales: Sale[]; reload: () => void; setActiveSaleId: (id: string | null) => void; vessel: Vessel
-  setSection: (s: string) => void; setReceipt: (s: Sale) => void; closeSale: (sale: Sale, pm: string) => Promise<void>
+function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, setReceipt, closeSale, createBill }: {
+  sales: Sale[]; reload: () => void; setActiveSaleId: (id: string | null) => void; vessel: Vessel; trip: Trip | null
+  setSection: (s: string) => void; setReceipt: (s: Sale) => void; closeSale: (sale: Sale, pm: string) => void
+  createBill: (guest: TripGuest | null, walkInLabel: string) => Promise<boolean>
 }) {
   const openBills   = sales.filter(b => b.status === 'open')
   const closedBills = sales.filter(b => b.status === 'closed').slice(0, 10)
 
+  const [newBillOpen, setNewBillOpen] = useState(false)
+  const [newBillGuest, setNewBillGuest] = useState<TripGuest | null>(null)
+  const [newBillWalkIn, setNewBillWalkIn] = useState('')
+  const [creatingBill, setCreatingBill] = useState(false)
+
+  const [billDetailId, setBillDetailId] = useState<string | null>(null)
+  const billDetail = openBills.find(b => b.id === billDetailId) ?? null
+  const setBillDetail = (b: Sale | null) => setBillDetailId(b?.id ?? null)
+
+  function closeNewBillModal() {
+    setNewBillOpen(false); setNewBillGuest(null); setNewBillWalkIn('')
+  }
+
+  async function handleCreateBill() {
+    setCreatingBill(true)
+    const ok = await createBill(trip ? newBillGuest : null, newBillWalkIn)
+    setCreatingBill(false)
+    if (ok) closeNewBillModal()
+  }
+
+  const canCreate = trip ? !!newBillGuest : !!newBillWalkIn.trim()
+  const isCompact = useIsCompact()
+
   return (
-    <div style={{ overflowY: 'auto', padding: 24, minHeight: 0 }}>
-      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ overflowY: 'auto', padding: isCompact ? '16px' : 24, minHeight: 0 }}>
+      <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <div>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: INK, marginBottom: 4 }}>📋 Bills</div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: isCompact ? 19 : 22, fontWeight: 600, color: INK, marginBottom: 4 }}>📋 Bills</div>
           <div style={{ fontSize: 13, color: '#8a8378' }}>Manage open tabs for {vessel.name}</div>
         </div>
-        <button onClick={reload} style={{ ...S.btnGhost, fontSize: 12 }}>↻ Refresh</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={reload} style={{ ...S.btnGhost, fontSize: 12 }}>↻ Refresh</button>
+          <button onClick={() => setNewBillOpen(true)} style={{ ...S.goldBtn, padding: '8px 16px', borderRadius: 9, fontSize: 13 }}>+ New Bill</button>
+        </div>
       </div>
 
       {openBills.length > 0 && (
@@ -260,36 +300,16 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, setSection, setRece
           <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 700, letterSpacing: '0.08em', marginBottom: 12 }}>OPEN BILLS ({openBills.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {openBills.map(b => (
-              <div key={b.id} style={{ ...S.card, padding: '16px 18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>{b.guestName ?? 'Guest'}</div>
-                    <div style={{ fontSize: 12, color: '#8a8378', marginTop: 3 }}>{new Set(b.items.map(i => i.round)).size} round(s) · opened {new Date(b.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
-                  </div>
-                  <div style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK }}>{fmt(b.total)}</div>
+              <button key={b.id} onClick={() => setBillDetail(b)} style={{ ...S.card, padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, width: '100%', cursor: 'pointer', textAlign: 'left', fontFamily: "'DM Sans', sans-serif" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestName ?? 'Guest'}</div>
+                  <div style={{ fontSize: 12, color: '#8a8378', marginTop: 3 }}>{new Set(b.items.map(i => i.round)).size} round(s) · opened {new Date(b.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
-
-                {b.items.length > 0 && (
-                  <div style={{ background: '#fafaf8', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
-                    {Object.values(b.items.reduce((acc: Record<string, { name: string; qty: number; val: number }>, i) => {
-                      acc[i.name] = acc[i.name] ? { ...acc[i.name], qty: acc[i.name].qty + i.qty, val: acc[i.name].val + i.qty * i.price } : { name: i.name, qty: i.qty, val: i.qty * i.price }
-                      return acc
-                    }, {})).map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: '#7a7468', fontSize: 13, marginBottom: 3 }}>
-                        <span>{item.name} <span style={{ color: '#b3ab9c' }}>×{item.qty}</span></span>
-                        <span style={S.mono}>{fmt(item.val)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => { setActiveSaleId(b.id); setSection('sales') }} style={{ ...S.goldBtn, padding: '8px 16px', borderRadius: 9, fontSize: 13 }}>+ Add Items</button>
-                  {PAY_METHODS.map(pm => (
-                    <button key={pm} onClick={() => closeSale(b, pm)} style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid #c5e5d4', background: '#eaf7f0', color: '#1f9d5c', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>✓ {pm}</button>
-                  ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <div style={{ ...S.mono, fontSize: 19, fontWeight: 800, color: GOLD_DARK, letterSpacing: 'normal', whiteSpace: 'nowrap' }}>{fmt(b.total)}</div>
+                  <span style={{ color: '#cfc8b8', fontSize: 16 }}>›</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -318,12 +338,96 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, setSection, setRece
           No bills yet today
         </div>
       )}
+
+      {/* ── New Bill Modal ── */}
+      {newBillOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,37,47,0.45)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, padding: 24, fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 40px rgba(26,37,47,0.2)' }}>
+            <div style={{ fontWeight: 700, fontSize: 17, color: INK, marginBottom: 4 }}>New Bill / Tab</div>
+            <div style={{ fontSize: 13, color: '#8a8378', marginBottom: 18 }}>Pilih tamu untuk membuka bill baru</div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>GUEST {trip ? '(from trip)' : ''}</div>
+              {trip ? (
+                <select
+                  value={newBillGuest?.id ?? newBillGuest?.bookingId ?? ''}
+                  onChange={e => setNewBillGuest(trip.guests.find(g => (g.id ?? g.bookingId) === e.target.value) ?? null)}
+                  style={S.input}
+                  autoFocus
+                >
+                  <option value="">Select guest…</option>
+                  {trip.guests.map(g => <option key={g.id ?? g.bookingId} value={g.id ?? g.bookingId}>{g.name}</option>)}
+                </select>
+              ) : (
+                <input value={newBillWalkIn} onChange={e => setNewBillWalkIn(e.target.value)} placeholder="Guest / table name…" style={S.input} autoFocus />
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={closeNewBillModal} disabled={creatingBill} style={{ ...S.btnGhost, flex: 1, padding: '10px 16px' }}>Cancel</button>
+              <button onClick={handleCreateBill} disabled={creatingBill || !canCreate} style={{ ...S.goldBtn, flex: 1, padding: '10px 16px', borderRadius: 9, opacity: (creatingBill || !canCreate) ? 0.5 : 1, cursor: (creatingBill || !canCreate) ? 'not-allowed' : 'pointer' }}>
+                {creatingBill ? 'Creating…' : '+ Create Bill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bill Detail Modal ── */}
+      {billDetail && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,37,47,0.45)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setBillDetail(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, maxHeight: '85vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 40px rgba(26,37,47,0.2)' }}>
+            <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid #f1ede2', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 17, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{billDetail.guestName ?? 'Guest'}</div>
+                  <div style={{ fontSize: 12, color: '#8a8378', marginTop: 3 }}>{new Set(billDetail.items.map(i => i.round)).size} round(s) · opened {new Date(billDetail.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+                <button onClick={() => setBillDetail(null)} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer', fontSize: 20, lineHeight: 1, flexShrink: 0 }}>×</button>
+              </div>
+            </div>
+
+            <div style={{ padding: '16px 22px', overflowY: 'auto', flex: 1 }}>
+              <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 8 }}>ORDER ({billDetail.items.length})</div>
+              {billDetail.items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: '#cfc8b8', fontSize: 13 }}>Belum ada item</div>
+              ) : (
+                <div style={{ background: '#fafaf8', borderRadius: 10, padding: '4px 14px' }}>
+                  {billDetail.items.map((item, i) => (
+                    <div key={item.id ?? i} style={{ display: 'flex', justifyContent: 'space-between', color: '#7a7468', fontSize: 13, padding: '8px 0', borderBottom: i < billDetail.items.length - 1 ? '1px solid #ece6d8' : 'none' }}>
+                      <span>{item.name} <span style={{ color: '#b3ab9c' }}>×{item.qty}</span> <span style={{ fontSize: 10, color: '#cfc8b8' }}>· R{item.round}</span></span>
+                      <span style={{ ...S.mono, letterSpacing: 'normal' }}>{fmt(item.qty * item.price)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1ede2' }}>
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#7a7468' }}>TOTAL</span>
+                <span style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK, letterSpacing: 'normal' }}>{fmt(billDetail.total)}</span>
+              </div>
+            </div>
+
+            <div style={{ padding: '16px 22px 22px', borderTop: '1px solid #f1ede2', flexShrink: 0 }}>
+              <button onClick={() => { const b = billDetail; setBillDetail(null); setActiveSaleId(b.id); setSection('sales') }} style={{ ...S.goldBtn, width: '100%', padding: '10px 16px', borderRadius: 9, fontSize: 13 }}>+ Add Items</button>
+
+              <div style={{ fontSize: 10, color: '#b3ab9c', fontWeight: 700, letterSpacing: '0.06em', margin: '14px 0 6px' }}>CLOSE BILL</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {PAY_METHODS.map(pm => (
+                  <button key={pm} onClick={() => { const b = billDetail; setBillDetail(null); closeSale(b, pm) }} style={{ flex: 1, minWidth: 0, padding: '8px 4px', borderRadius: 8, border: '1px solid #c5e5d4', background: '#eaf7f0', color: '#1f9d5c', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pm}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── MAIN CASHIER APP ─────────────────────────────────────────────────────────
 function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | null; onBack: () => void }) {
+  const isCompact = useIsCompact()
+  const [cartOpen, setCartOpen]   = useState(false)
   const [section, setSection]     = useState('sales')
   const [activeType, setActiveType] = useState<'All' | 'FOOD' | 'BEVERAGE'>('All')
   const [activeCat, setActiveCat] = useState('All')
@@ -337,6 +441,7 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
   const [receipt, setReceipt]     = useState<Sale | null>(null)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [busy, setBusy]           = useState(false)
+  const [closeSaleConfirm, setCloseSaleConfirm] = useState<{ sale: Sale; pm: string } | null>(null)
 
   const ac = GOLD_DARK
 
@@ -392,7 +497,7 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'add_items', items: cart }),
       })
-      if (res.ok) { clearCart(); loadSales(); loadMenu() }
+      if (res.ok) { clearCart(); setCartOpen(false); loadSales(); loadMenu() }
     } finally { setBusy(false) }
   }
 
@@ -406,10 +511,20 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
       if (res.ok) {
         const updated = await res.json()
         setActiveSaleId(null)
+        setCartOpen(false)
         setReceipt(updated)
         loadSales()
       }
     } finally { setBusy(false) }
+  }
+
+  const requestCloseSale = (sale: Sale, pm: string) => setCloseSaleConfirm({ sale, pm })
+
+  const confirmCloseSale = async () => {
+    if (!closeSaleConfirm) return
+    const { sale, pm } = closeSaleConfirm
+    setCloseSaleConfirm(null)
+    await closeSale(sale, pm)
   }
 
   const openNewBill = async () => {
@@ -434,6 +549,19 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
     } finally { setBusy(false) }
   }
 
+  const createBillFor = async (guest: TripGuest | null, walkInLabel: string) => {
+    const res = await fetch('/api/cashier/sales', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        yachtId: vessel.id, locationId: vessel.locationId,
+        bookingId: guest?.bookingId ?? null, guestId: guest?.id ?? null,
+        guestName: guest ? guest.name : (walkInLabel.trim() || null),
+      }),
+    })
+    if (res.ok) loadSales()
+    return res.ok
+  }
+
   const recordDirectSale = async () => {
     if (!cart.length) return
     const guest = selectedGuest
@@ -451,6 +579,7 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
         const sale = await res.json()
         setReceipt(sale)
         clearCart()
+        setCartOpen(false)
         loadSales(); loadMenu()
       }
     } finally { setBusy(false) }
@@ -459,37 +588,69 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
   if (receipt) return <ReceiptView sale={receipt} vessel={vessel} onDone={() => setReceipt(null)} />
 
   return (
-    <div style={{ ...S.page, height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div style={{ ...S.page, height: '100dvh', display: 'flex', flexDirection: isCompact ? 'column' : 'row', overflow: 'hidden' }}>
       {FONTS}
 
-      {/* ── LEFT SIDEBAR NAV ── */}
-      <div style={{ width: 200, background: '#fff', borderRight: '1px solid #ece6d8', display: 'flex', flexDirection: 'column', padding: '24px 0', flexShrink: 0 }}>
-        <div style={{ padding: '0 20px 20px' }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: INK }}>Samara</div>
-          <div style={{ ...S.mono, fontSize: 9, color: GOLD_DARK, letterSpacing: '0.2em', marginTop: 3 }}>CASHIER</div>
-        </div>
+      {/* ── SIDEBAR NAV (top bar on compact / tablet & phone) ── */}
+      <div style={{
+        width: isCompact ? '100%' : 200, flexShrink: 0,
+        background: '#fff',
+        borderRight: isCompact ? 'none' : '1px solid #ece6d8',
+        borderBottom: isCompact ? '1px solid #ece6d8' : 'none',
+        display: 'flex', flexDirection: isCompact ? 'row' : 'column',
+        alignItems: isCompact ? 'center' : 'stretch',
+        justifyContent: isCompact ? 'space-between' : 'flex-start',
+        flexWrap: 'wrap', gap: isCompact ? 10 : 0,
+        padding: isCompact ? '10px 16px' : '24px 0',
+      }}>
+        {!isCompact && (
+          <div style={{ padding: '0 20px 20px' }}>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: INK }}>Samara</div>
+            <div style={{ ...S.mono, fontSize: 9, color: GOLD_DARK, letterSpacing: '0.2em', marginTop: 3 }}>CASHIER</div>
+          </div>
+        )}
 
-        <div style={{ margin: '0 14px 20px', background: `${GOLD}15`, border: `1px solid ${GOLD}55`, borderRadius: 10, padding: '10px 14px' }}>
-          <div style={{ fontSize: 11, color: ac, fontWeight: 700, letterSpacing: '0.08em' }}>⚓ {vessel.name}</div>
-          {trip && <div style={{ fontSize: 10, color: '#8a8378', marginTop: 2 }}>{trip.label}</div>}
-          <button onClick={onBack} style={{ marginTop: 5, fontSize: 11, color: '#8a8378', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Change vessel →</button>
-        </div>
+        {isCompact ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: ac, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>⚓ {vessel.name}</span>
+            <button onClick={onBack} style={{ fontSize: 11, color: '#8a8378', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600, whiteSpace: 'nowrap' }}>Change →</button>
+          </div>
+        ) : (
+          <div style={{ margin: '0 14px 20px', background: `${GOLD}15`, border: `1px solid ${GOLD}55`, borderRadius: 10, padding: '10px 14px' }}>
+            <div style={{ fontSize: 11, color: ac, fontWeight: 700, letterSpacing: '0.08em' }}>⚓ {vessel.name}</div>
+            {trip && <div style={{ fontSize: 10, color: '#8a8378', marginTop: 2 }}>{trip.label}</div>}
+            <button onClick={onBack} style={{ marginTop: 5, fontSize: 11, color: '#8a8378', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Change vessel →</button>
+          </div>
+        )}
 
-        {NAV.map(n => (
-          <button key={n.key} onClick={() => setSection(n.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px', background: section === n.key ? `${ac}10` : 'transparent', border: 'none', borderLeft: section === n.key ? `3px solid ${ac}` : '3px solid transparent', cursor: 'pointer', color: section === n.key ? ac : '#8a8378', fontWeight: 600, fontSize: 14, fontFamily: "'DM Sans', sans-serif", width: '100%', textAlign: 'left' }}>
-            <span style={{ fontSize: 16 }}>{n.icon}</span>
-            <span style={{ flex: 1 }}>{n.label}</span>
-            {!!n.badge && n.badge > 0 && <span style={{ background: GOLD, color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20 }}>{n.badge}</span>}
-          </button>
-        ))}
+        <div style={{ display: 'flex', flexDirection: isCompact ? 'row' : 'column', gap: isCompact ? 6 : 0 }}>
+          {NAV.map(n => (
+            <button key={n.key} onClick={() => { setSection(n.key); setCartOpen(false) }} style={{
+              display: 'flex', alignItems: 'center', gap: isCompact ? 6 : 10,
+              padding: isCompact ? '8px 14px' : '12px 20px',
+              borderRadius: isCompact ? 20 : 0,
+              background: section === n.key ? (isCompact ? ac : `${ac}10`) : 'transparent',
+              border: 'none',
+              borderLeft: !isCompact && section === n.key ? `3px solid ${ac}` : (isCompact ? 'none' : '3px solid transparent'),
+              cursor: 'pointer',
+              color: section === n.key ? (isCompact ? '#fff' : ac) : '#8a8378',
+              fontWeight: 600, fontSize: isCompact ? 13 : 14, fontFamily: "'DM Sans', sans-serif",
+              width: isCompact ? 'auto' : '100%', textAlign: 'left', whiteSpace: 'nowrap',
+            }}>
+              <span style={{ fontSize: isCompact ? 14 : 16 }}>{n.icon}</span>
+              <span style={isCompact ? undefined : { flex: 1 }}>{n.label}</span>
+              {!!n.badge && n.badge > 0 && <span style={{ background: isCompact && section === n.key ? 'rgba(255,255,255,0.3)' : GOLD, color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20 }}>{n.badge}</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── MAIN: Sales POS ── */}
       {section === 'sales' && (
-        <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: '1fr 340px' }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'grid', gridTemplateColumns: isCompact ? '1fr' : '1fr 340px', position: 'relative' }}>
 
           {/* Menu panel */}
-          <div style={{ overflowY: 'auto', padding: 20, borderRight: '1px solid #ece6d8' }}>
+          <div style={{ overflowY: 'auto', padding: 20, paddingBottom: isCompact ? 84 : 20, borderRight: isCompact ? 'none' : '1px solid #ece6d8' }}>
             {activeSale && (
               <div style={{ background: `${ac}12`, border: `1px solid ${ac}33`, borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: ac, fontWeight: 700 }}>📋 Bill: {activeSale.guestName ?? 'Guest'} · {fmt(activeSale.total)}</span>
@@ -499,55 +660,93 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
 
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search menu…" style={{ ...S.input, marginBottom: 10 }} />
 
-            {types.length > 2 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                {types.map(t => {
-                  const sel = activeType === t
+            <div style={{ background: '#fff', border: '1px solid #ece6d8', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+              {types.length > 2 && (
+                <>
+                  <div style={{ display: 'inline-flex', gap: 4, background: '#f6f3ea', borderRadius: 9, padding: 4 }}>
+                    {types.map(t => {
+                      const sel = activeType === t
+                      return (
+                        <button key={t} onClick={() => { setActiveType(t); setActiveCat('All') }} style={{ padding: '7px 16px', borderRadius: 7, cursor: 'pointer', border: 'none', fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", background: sel ? '#fff' : 'transparent', color: sel ? INK : '#8a8378', boxShadow: sel ? '0 1px 3px rgba(26,37,47,0.1)' : 'none', transition: 'all .15s' }}>
+                          {t === 'All' ? 'All Items' : `${TYPE_ICONS[t]} ${TYPE_LABELS[t]}`}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ height: 1, background: '#f1ede2', margin: '10px 0' }} />
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {categories.map(cat => {
+                  const sel = activeCat === cat
+                  const inType = menuItems.filter(i => activeType === 'All' || i.type === activeType)
+                  const count = cat === 'All' ? inType.length : inType.filter(i => i.category === cat).length
                   return (
-                    <button key={t} onClick={() => { setActiveType(t); setActiveCat('All') }} style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', border: 'none', fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", background: sel ? INK : '#fff', color: sel ? '#fff' : INK, boxShadow: sel ? 'none' : '0 0 0 1px #ece6d8' }}>
-                      {t === 'All' ? 'All' : `${TYPE_ICONS[t]} ${TYPE_LABELS[t]}`}
+                    <button key={cat} onClick={() => setActiveCat(cat)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px 7px 14px', borderRadius: 20, cursor: 'pointer', border: sel ? 'none' : '1px solid #ece6d8', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", background: sel ? ac : '#fff', color: sel ? '#fff' : '#5f594e', boxShadow: sel ? `0 2px 6px ${ac}44` : 'none', transition: 'all .15s' }}>
+                      {cat}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: sel ? 'rgba(255,255,255,0.25)' : '#f1ede2', color: sel ? '#fff' : '#8a8378' }}>{count}</span>
                     </button>
                   )
                 })}
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-              {categories.map(cat => {
-                const sel = activeCat === cat
-                return (
-                  <button key={cat} onClick={() => setActiveCat(cat)} style={{ padding: '5px 13px', borderRadius: 7, cursor: 'pointer', border: 'none', fontSize: 12, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", background: sel ? ac : '#f1ede2', color: sel ? '#fff' : '#8a8378' }}>
-                    {cat}
-                  </button>
-                )
-              })}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
               {filtered.map(item => {
                 const inCart = cart.find(c => c.itemId === item.id)
                 const outOfStock = item.stock <= 0
                 const atStockLimit = !!inCart && inCart.qty >= item.stock
                 return (
-                  <button key={item.id} onClick={() => !outOfStock && !atStockLimit && addToCart(item)} disabled={outOfStock || atStockLimit} style={{ background: inCart ? `${GOLD}14` : '#fff', border: inCart ? `2px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 12, padding: '12px', cursor: (outOfStock || atStockLimit) ? 'not-allowed' : 'pointer', textAlign: 'left', position: 'relative', fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
-                    {inCart && <span style={{ position: 'absolute', top: 8, right: 8, background: GOLD, color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, zIndex: 1 }}>{inCart.qty}</span>}
-                    <div style={{ width: '100%', aspectRatio: '1', borderRadius: 8, background: '#f1ede2', marginBottom: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {item.imageKey ? <img src={item.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 24, color: '#cfc8b8' }}>🍾</span>}
+                  <div key={item.id} style={{ background: '#fff', border: inCart ? `1.5px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 14, padding: 12, display: 'flex', gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
+                    <div style={{ width: 76, height: 76, borderRadius: 10, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {item.imageKey ? <img src={item.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 22, color: '#cfc8b8' }}>🍾</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: GOLD_DARK, fontWeight: 700, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{item.category}</div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: INK, marginBottom: 6, lineHeight: 1.3 }}>{item.name}</div>
-                    <div style={{ ...S.mono, fontSize: 12, color: ac, fontWeight: 600 }}>{fmt(item.sellingPrice)}</div>
-                    <div style={{ fontSize: 11, color: outOfStock ? '#dc6868' : '#b3ab9c', marginTop: 3 }}>{outOfStock ? 'Out of stock' : `${item.stock} ${item.baseUnit} left`}</div>
-                  </button>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, color: INK, lineHeight: 1.3 }}>{item.name}</div>
+                        <div style={{ ...S.mono, fontSize: 13, fontWeight: 800, color: ac, whiteSpace: 'nowrap', flexShrink: 0 }}>{fmt(item.sellingPrice)}</div>
+                      </div>
+                      <div style={{ fontSize: 11, color: outOfStock ? '#dc6868' : '#8a8378', marginTop: 3 }}>
+                        {item.category} · {outOfStock ? 'Out of stock' : `${item.stock} ${item.baseUnit} left`}
+                      </div>
+
+                      {inCart ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#fafaf8', border: '1px solid #ece6d8', borderRadius: 20, padding: 3 }}>
+                            <button onClick={() => chgQty(item.id, -1)} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: '#dc6868', cursor: 'pointer', fontWeight: 700, fontSize: 14, boxShadow: '0 0 0 1px #ece6d8' }}>−</button>
+                            <span style={{ ...S.mono, fontWeight: 700, fontSize: 13, minWidth: 16, textAlign: 'center' }}>{inCart.qty}</span>
+                            <button onClick={() => !atStockLimit && chgQty(item.id, +1)} disabled={atStockLimit} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: atStockLimit ? '#cfc8b8' : '#1f9d5c', cursor: atStockLimit ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 14, boxShadow: '0 0 0 1px #ece6d8' }}>+</button>
+                          </div>
+                          <div style={{ flex: 1, textAlign: 'center', padding: '7px 4px', borderRadius: 20, background: GOLD, color: '#fff', fontSize: 11.5, fontWeight: 700 }}>
+                            Added to Cart
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => addToCart(item)} disabled={outOfStock} style={{ marginTop: 'auto', width: '100%', padding: '8px 4px', borderRadius: 20, border: `1px solid ${ac}`, background: '#fff', color: ac, fontSize: 12, fontWeight: 700, cursor: outOfStock ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                          Add to Cart
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )
               })}
               {!filtered.length && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 48, color: '#cfc8b8' }}><div style={{ fontSize: 32, marginBottom: 10 }}>🍾</div>No items</div>}
             </div>
           </div>
 
-          {/* Cart sidebar */}
-          <div style={{ background: '#fff', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-            <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Cart sidebar (static panel on desktop, slide-up drawer on compact) */}
+          {(!isCompact || cartOpen) && (
+          <div style={isCompact
+            ? { position: 'fixed', inset: 0, background: '#fff', zIndex: 50, display: 'flex', flexDirection: 'column' }
+            : { background: '#fff', display: 'flex', flexDirection: 'column', overflowY: 'auto' }
+          }>
+            {isCompact && (
+              <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #ece6d8', flexShrink: 0 }}>
+                <button onClick={() => setCartOpen(false)} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0 }}>‹ Back to Menu</button>
+              </div>
+            )}
+            <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column', overflowY: isCompact ? 'auto' : 'visible' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: INK, marginBottom: 14 }}>
                 {activeSale ? <span style={{ color: ac }}>📋 {activeSale.guestName ?? 'Guest'}</span> : '🛒 Order'}
               </div>
@@ -578,15 +777,18 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
               ) : (
                 <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 14 }}>
                   {cart.map(item => {
-                    const stock = menuItems.find(m => m.id === item.itemId)?.stock ?? Infinity
-                    const atLimit = item.qty >= stock
+                    const mi = menuItems.find(m => m.id === item.itemId)
+                    const atLimit = item.qty >= (mi?.stock ?? Infinity)
                     return (
-                    <div key={item.itemId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 0', borderBottom: '1px solid #ece6d8' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{item.name}</div>
-                        <div style={{ ...S.mono, fontSize: 11, color: ac }}>{fmt(item.qty * item.price)}</div>
+                    <div key={item.itemId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #ece6d8' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {mi?.imageKey ? <img src={mi.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 15, color: '#cfc8b8' }}>🍾</span>}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                        <div style={{ ...S.mono, fontSize: 11, color: ac, letterSpacing: 'normal' }}>{fmt(item.qty * item.price)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                         <button onClick={() => item.itemId && chgQty(item.itemId, -1)} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: '#dc6868', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>−</button>
                         <span style={{ ...S.mono, fontWeight: 700, fontSize: 14, minWidth: 18, textAlign: 'center' }}>{item.qty}</span>
                         <button onClick={() => !atLimit && item.itemId && chgQty(item.itemId, +1)} disabled={atLimit} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: atLimit ? '#cfc8b8' : '#1f9d5c', cursor: atLimit ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 15 }}>+</button>
@@ -599,9 +801,9 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
 
               {cart.length > 0 && (
                 <div style={{ background: '#fafaf8', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 20 }}>
-                    <span style={{ color: '#7a7468' }}>TOTAL</span>
-                    <span style={{ ...S.mono, color: ac }}>{fmt(cartTotal)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontWeight: 800, fontSize: 20 }}>
+                    <span style={{ color: '#7a7468' }}>TOTAL <span style={{ fontWeight: 600, fontSize: 11, color: '#b3ab9c' }}>· {cart.reduce((s, i) => s + i.qty, 0)} items</span></span>
+                    <span style={{ ...S.mono, color: ac, letterSpacing: 'normal' }}>{fmt(cartTotal)}</span>
                   </div>
                 </div>
               )}
@@ -627,7 +829,7 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
                     </button>
                     <div style={{ display: 'flex', gap: 6 }}>
                       {PAY_METHODS.map(pm => (
-                        <button key={pm} disabled={busy} onClick={() => closeSale(activeSale, pm)} style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: '1px solid #c5e5d4', background: '#eaf7f0', color: '#1f9d5c', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>✓ {pm}</button>
+                        <button key={pm} disabled={busy} onClick={() => requestCloseSale(activeSale, pm)} style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: '1px solid #c5e5d4', background: '#eaf7f0', color: '#1f9d5c', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>✓ {pm}</button>
                       ))}
                     </div>
                     <button onClick={() => setActiveSaleId(null)} style={{ ...S.btnGhost, width: '100%', fontSize: 12 }}>Exit Bill Mode</button>
@@ -639,21 +841,65 @@ function CashierApp({ vessel, trip, onBack }: { vessel: Vessel; trip: Trip | nul
                         {busy ? 'Processing…' : `✓ Charge ${fmt(cartTotal)}`}
                       </button>
                     )}
-                    <button onClick={openNewBill} disabled={busy || (!selectedGuest && !walkInName.trim())} style={{ ...S.btnGhost, width: '100%', padding: 13, borderRadius: 10, fontSize: 13, borderColor: ac, color: ac }}>
+                    <button onClick={openNewBill} disabled={busy || (!selectedGuest && !walkInName.trim())} style={{ ...S.btnGhost, width: '100%', padding: 13, borderRadius: 10, fontSize: 13, border: `1px solid ${ac}`, color: ac }}>
                       📋 Open as Bill / Tab
                     </button>
-                    {cart.length > 0 && <button onClick={clearCart} style={{ ...S.btnGhost, width: '100%', fontSize: 12, color: '#dc6868', borderColor: '#f3c9c9' }}>Clear</button>}
+                    {cart.length > 0 && <button onClick={clearCart} style={{ ...S.btnGhost, width: '100%', fontSize: 12, color: '#dc6868', border: '1px solid #f3c9c9' }}>Clear</button>}
                   </>
                 )}
               </div>
             </div>
           </div>
+          )}
+
+          {/* Floating "View Cart" bar — compact layout only */}
+          {isCompact && !cartOpen && (
+            <button onClick={() => setCartOpen(true)} style={{
+              position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 18px', borderRadius: 14,
+              ...S.goldBtn, boxShadow: '0 8px 24px rgba(168,149,106,0.4)',
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>
+                {activeSale ? `📋 ${activeSale.guestName ?? 'Guest'}` : '🛒 Cart'}
+                {cart.length > 0 && ` · ${cart.reduce((s, i) => s + i.qty, 0)} items`}
+              </span>
+              <span style={{ ...S.mono, fontWeight: 800, letterSpacing: 'normal' }}>
+                {fmt(cart.length > 0 ? cartTotal : (activeSale?.total ?? 0))} ›
+              </span>
+            </button>
+          )}
         </div>
       )}
 
       {/* ── MAIN: Bills page ── */}
       {section === 'bills' && (
-        <BillsPage sales={sales} reload={loadSales} setActiveSaleId={setActiveSaleId} vessel={vessel} setSection={setSection} setReceipt={setReceipt} closeSale={closeSale} />
+        <BillsPage sales={sales} reload={loadSales} setActiveSaleId={setActiveSaleId} vessel={vessel} trip={trip} setSection={setSection} setReceipt={setReceipt} closeSale={requestCloseSale} createBill={createBillFor} />
+      )}
+
+      {/* ── Confirm Close Bill ── */}
+      {closeSaleConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,37,47,0.45)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 360, padding: 24, fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 40px rgba(26,37,47,0.2)' }}>
+            <div style={{ fontWeight: 700, fontSize: 17, color: INK, marginBottom: 6 }}>Selesaikan Bill?</div>
+            <div style={{ fontSize: 13, color: '#8a8378', marginBottom: 18 }}>
+              Bill <b style={{ color: INK }}>{closeSaleConfirm.sale.guestName ?? 'Guest'}</b> akan ditutup dan tidak bisa diubah lagi.
+            </div>
+            <div style={{ background: '#fafaf8', borderRadius: 10, padding: '12px 14px', marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#b3ab9c', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 2 }}>METODE</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>{closeSaleConfirm.pm}</div>
+              </div>
+              <div style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK, letterSpacing: 'normal' }}>{fmt(closeSaleConfirm.sale.total)}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setCloseSaleConfirm(null)} disabled={busy} style={{ ...S.btnGhost, flex: 1, padding: '10px 16px' }}>Batal</button>
+              <button onClick={confirmCloseSale} disabled={busy} style={{ flex: 1, padding: '10px 16px', borderRadius: 9, border: 'none', background: '#1f9d5c', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: busy ? 0.6 : 1 }}>
+                {busy ? 'Memproses…' : 'Ya, Selesaikan'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

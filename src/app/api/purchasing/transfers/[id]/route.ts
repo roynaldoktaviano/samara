@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const transfer = await db.stockTransfer.findUnique({
     where: { id },
     include: {
-      items: { include: { item: { select: { baseUnit: true, purchaseUnit: true, conversionFactor: true } } } },
+      items: { include: { item: { select: { baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } } } },
       dispatchedBy: { select: { id: true, name: true } },
       receivedBy: { select: { id: true, name: true } },
       expectedReceivedBy: { select: { id: true, name: true } },
@@ -29,17 +29,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { locationId: transfer.fromLocationId, itemId: { in: transfer.items.map(i => i.itemId).filter(Boolean) as string[] } },
   })
   const stockMap = new Map(stockLots.map(l => [l.itemId, l.quantity]))
-  return NextResponse.json({
-    ...transfer,
-    fromLocation: fromLoc,
-    toLocation: toLoc,
-    items: transfer.items.map(i => ({
+  const items = transfer.items.map(i => {
+    const unitCost = i.item?.standardCost ?? 0
+    return {
       ...i,
       baseUnit: i.item?.baseUnit ?? null,
       purchaseUnit: i.item?.purchaseUnit ?? null,
       conversionFactor: i.item?.conversionFactor ?? 1,
       availableQty: i.itemId ? (stockMap.get(i.itemId) ?? 0) : null,
-    })),
+      unitCost,
+      requestedValue: i.requestedQty * unitCost,
+      dispatchedValue: i.dispatchedQty * unitCost,
+      receivedValue: i.receivedQty * unitCost,
+    }
+  })
+  const totalValue = items.reduce((sum, i) => sum + (transfer.status === 'PENDING' ? i.requestedValue : transfer.status === 'DISPATCHED' ? i.dispatchedValue : i.receivedValue), 0)
+  return NextResponse.json({
+    ...transfer,
+    fromLocation: fromLoc,
+    toLocation: toLoc,
+    totalValue,
+    items,
   })
 }
 

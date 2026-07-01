@@ -19,7 +19,7 @@ export async function GET() {
   const db = await getDb(session)
   const transfers = await db.stockTransfer.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { items: { select: { id: true, itemName: true } } },
+    include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })
   const locIds = [...new Set([...transfers.map(t => t.fromLocationId), ...transfers.map(t => t.toLocationId)])]
   const locations = await db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } })
@@ -28,11 +28,14 @@ export async function GET() {
     const first = t.items[0]?.itemName ?? null
     const extra = t.items.length > 1 ? t.items.length - 1 : 0
     const contents = first ? (extra > 0 ? `${first} +${extra} more` : first) : null
+    const valueQty = (i: typeof t.items[number]) => t.status === 'PENDING' ? i.requestedQty : t.status === 'DISPATCHED' ? i.dispatchedQty : i.receivedQty
+    const totalValue = t.items.reduce((sum, i) => sum + valueQty(i) * (i.item?.standardCost ?? 0), 0)
     return {
       ...t,
       itemCount: t.items.length,
       items: undefined,
       contents,
+      totalValue,
       hasDispatchPhoto: !!t.dispatchPhotoKey,
       hasReceivePhoto: !!t.receivePhotoKey,
       fromLocation: locMap.get(t.fromLocationId) ?? null,

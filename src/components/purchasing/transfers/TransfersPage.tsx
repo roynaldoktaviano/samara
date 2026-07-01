@@ -6,12 +6,13 @@ import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, Ale
 interface StockLocation { id: string; name: string; type: string }
 interface StockLotItem { item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number }; qty: number }
 interface TeamUser { id: string; name: string; role: string }
-interface TransferItem { id: string; itemId: string | null; itemName: string; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null }
+interface TransferItem { id: string; itemId: string | null; itemName: string; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null; unitCost?: number; requestedValue?: number; dispatchedValue?: number; receivedValue?: number }
 interface StockTransfer {
   id: string; transferNumber: string; status: string; notes: string | null
   fromLocationId: string; toLocationId: string
   fromLocation: StockLocation | null; toLocation: StockLocation | null
   itemCount: number; contents: string | null
+  totalValue?: number
   hasDispatchPhoto: boolean; hasReceivePhoto: boolean
   dispatchPhotoKey?: string | null; receivePhotoKey?: string | null
   dispatchedBy?: { id: string; name: string } | null
@@ -25,6 +26,7 @@ const STATUS_LABEL: Record<string, string> = { PENDING: 'Pending', DISPATCHED: '
 const STATUS_COLOR: Record<string, string> = { PENDING: 'bg-muted text-muted-foreground', DISPATCHED: 'bg-amber-100 text-amber-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtTime = (s: string) => new Date(s).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 
 function compressPhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -272,6 +274,7 @@ export default function TransfersPage() {
               <th className="text-left px-4 py-3 font-medium">Transfer No.</th>
               <th className="text-left px-4 py-3 font-medium">Route</th>
               <th className="text-left px-4 py-3 font-medium">Contents</th>
+              <th className="text-right px-4 py-3 font-medium">Value</th>
               <th className="text-left px-4 py-3 font-medium">Photo</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
@@ -282,11 +285,11 @@ export default function TransfersPage() {
             {loading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-t">
-                  {[...Array(7)].map((_, j) => <td key={j} className="px-4 py-3.5"><div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: j === 0 ? 100 : j === 6 ? 16 : 80 }} /></td>)}
+                  {[...Array(8)].map((_, j) => <td key={j} className="px-4 py-3.5"><div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: j === 0 ? 100 : j === 7 ? 16 : 80 }} /></td>)}
                 </tr>
               ))
             ) : transfers.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-12 text-sm text-muted-foreground">No transfers yet.</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-sm text-muted-foreground">No transfers yet.</td></tr>
             ) : transfers.map(t => (
               <tr key={t.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(t)}>
                 <td className="px-4 py-3 font-mono text-sm font-medium">{t.transferNumber}</td>
@@ -298,6 +301,7 @@ export default function TransfersPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs max-w-[140px] truncate">{t.contents ?? `${t.itemCount} items`}</td>
+                <td className="px-4 py-3 text-right text-xs font-medium tabular-nums whitespace-nowrap">{t.totalValue ? fmtMoney(t.totalValue) : '—'}</td>
                 <td className="px-4 py-3">
                   {t.status === 'PENDING' ? (
                     <span className="text-xs text-muted-foreground">—</span>
@@ -547,6 +551,12 @@ export default function TransfersPage() {
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
                 <span>{detail.fromLocation?.name}</span><ArrowRight className="h-3.5 w-3.5" /><span>{detail.toLocation?.name}</span>
               </div>
+              {!!detail.totalValue && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {detail.status === 'DISPATCHED' ? 'Nilai barang in transit: ' : detail.status === 'RECEIVED' ? 'Nilai barang diterima: ' : 'Nilai barang: '}
+                  <span className="font-semibold text-foreground">{fmtMoney(detail.totalValue)}</span>
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
@@ -648,6 +658,7 @@ export default function TransfersPage() {
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Dispatched</th>
                   <th className="text-right px-5 py-2.5 font-medium">Received</th>
+                  <th className="text-right px-5 py-2.5 font-medium">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -664,6 +675,7 @@ export default function TransfersPage() {
                       </span>
                     )
                   }
+                  const lineValue = detail.status === 'PENDING' ? it.requestedValue : detail.status === 'DISPATCHED' ? it.dispatchedValue : it.receivedValue
                   return (
                     <tr key={i} className="hover:bg-muted/20">
                       <td className="px-5 py-3">
@@ -675,10 +687,19 @@ export default function TransfersPage() {
                       <td className={`px-5 py-3 text-right font-medium ${hasDiscrepancy ? 'text-red-600' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-green-600' : ''}`}>
                         {it.receivedQty > 0 ? fmtQty(it.receivedQty) : '—'}
                       </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{lineValue ? fmtMoney(lineValue) : '—'}</td>
                     </tr>
                   )
                 })}
               </tbody>
+              {!!detail.totalValue && (
+                <tfoot>
+                  <tr className="border-t bg-muted/20">
+                    <td className="px-5 py-2.5 font-medium text-xs text-muted-foreground uppercase" colSpan={4}>Total Value</td>
+                    <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{fmtMoney(detail.totalValue)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
           {detail.notes && <p className="text-sm text-muted-foreground">Notes: {detail.notes}</p>}
