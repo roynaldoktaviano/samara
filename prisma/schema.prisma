@@ -98,6 +98,7 @@ model User {
   waitingListItems WaitingList[]
   stockMovements   StockMovement[]
   purchaseRequests PurchaseRequest[]
+  purchaseOrdersCreated PurchaseOrder[]
   goodsReceipts    GoodsReceipt[]
   transfersDispatched         StockTransfer[] @relation("TransferDispatch")
   transfersReceived           StockTransfer[] @relation("TransferReceive")
@@ -902,15 +903,19 @@ model PurchaseOrder {
   cancelledAt        DateTime?
   cancelledByName    String?
   cancellationReason String?
+  createdById        String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
   request          PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
   supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   deliveryLocation StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  createdBy        User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
   items            PurchaseOrderItem[]
   receipts         GoodsReceipt[]
   notifications    Notification[]
+
+  @@index([createdById])
 
   @@index([status])
   @@index([createdAt])

@@ -93,6 +93,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             supplierName,
             deliveryLocationId: request.deliveryLocationId,
             status: 'DRAFT',
+            createdById: request.requestedById,
             updatedAt: new Date(),
             items: {
               create: groupItems.map((it) => ({

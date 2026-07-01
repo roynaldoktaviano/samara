@@ -22,6 +22,8 @@ export async function GET() {
     include: {
       items: { select: { id: true, orderedQty: true, receivedQty: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
+      createdBy: { select: { name: true } },
+      request: { select: { requestedBy: { select: { name: true } } } },
       receipts: {
         orderBy: { receivedAt: 'desc' },
         take: 1,
@@ -43,6 +45,9 @@ export async function GET() {
       lastReceivedAt: o.receipts[0]?.receivedAt ?? null,
       lastReceivedBy: o.receipts[0]?.receivedBy?.name ?? null,
       receipts: undefined,
+      requestedByName: o.request?.requestedBy?.name ?? o.createdBy?.name ?? null,
+      request: undefined,
+      createdBy: undefined,
     }
   }))
 }
@@ -53,20 +58,29 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { requestId, supplierName, deliveryLocationId, expectedAt, notes, items } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items } = body
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+
+  // Resolve supplierId by name if not provided, so order history stays linked even for raw API callers
+  let resolvedSupplierId = supplierId || null
+  if (!resolvedSupplierId) {
+    const matched = await db.supplier.findFirst({ where: { name: { equals: supplierName.trim(), mode: 'insensitive' } }, select: { id: true } })
+    resolvedSupplierId = matched?.id ?? null
+  }
+
   const poNumber = await generatePoNumber(db)
   const order = await db.purchaseOrder.create({
     data: {
       id: crypto.randomUUID(),
       poNumber,
-      requestId: requestId || null,
+      supplierId: resolvedSupplierId,
       supplierName: supplierName.trim(),
       deliveryLocationId: deliveryLocationId || null,
       status: 'ORDERED',
       expectedAt: expectedAt ? new Date(expectedAt) : null,
       notes: notes?.trim() || null,
+      createdById: session.user.id,
       updatedAt: new Date(),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number }) => ({
@@ -80,8 +94,5 @@ export async function POST(req: NextRequest) {
     },
     include: { items: true },
   })
-  if (requestId) {
-    await db.purchaseRequest.update({ where: { id: requestId }, data: { status: 'ORDERED', updatedAt: new Date() } }).catch(() => {})
-  }
   return NextResponse.json(order, { status: 201 })
 }

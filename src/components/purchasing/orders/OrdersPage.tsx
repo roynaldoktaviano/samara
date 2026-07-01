@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2 } from 'lucide-react'
 
 
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
@@ -12,8 +12,9 @@ interface PurchaseOrder {
   itemCount: number; totalOrdered: number; totalReceived: number; fullyReceivedCount: number
   notes: string | null; orderedAt: string; expectedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
+  requestedByName: string | null
 }
-interface PurchaseRequest { id: string; prNumber: string; status: string; items: { itemId: string | null; itemName: string; quantity: number; unit: string; estimatedCost: number }[] }
+interface SupplierOption { id: string; name: string }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
 interface OrderItem { itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
@@ -21,20 +22,19 @@ interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedAt?: string | null
   dispatchedByName?: string | null
-  requestedByName?: string | null
   request?: { prNumber: string; createdAt: string } | null
   cancellationReason?: string | null
   cancelledAt?: string | null
   cancelledByName?: string | null
   items: OrderItem[]
-  receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
+  receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
 }
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
-  const [photoOpen, setPhotoOpen] = useState(false)
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null)
   const fmt = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  type Step = { key: string; done: boolean; label: string; date: string | null; sub: (string | null | undefined)[]; photo?: string | null; cancelled?: boolean }
+  type Step = { key: string; done: boolean; label: string; date: string | null; sub: (string | null | undefined)[]; photo?: string | null; photoLabel?: string; cancelled?: boolean }
 
   const steps: Step[] = [
     ...(detail.request ? [{
@@ -49,7 +49,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       done: !['DRAFT'].includes(detail.status),
       label: 'PO Confirmed',
       date: detail.orderedAt ? fmt(detail.orderedAt) : null,
-      sub: [detail.supplierName],
+      sub: [detail.supplierName, detail.requestedByName ? `by ${detail.requestedByName}` : null],
     },
     {
       key: 'transit',
@@ -58,6 +58,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       date: detail.dispatchedAt ? fmt(detail.dispatchedAt) : null,
       sub: [detail.dispatchedByName],
       photo: detail.dispatchPhotoKey,
+      photoLabel: 'View dispatch photo',
     },
     ...detail.receipts.map((r, i) => ({
       key: `gr-${r.id}`,
@@ -65,13 +66,15 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       label: detail.receipts.length === 1 ? 'Received' : `Receipt ${i + 1}`,
       date: fmt(r.receivedAt),
       sub: [r.receiverName, `${r.items.length} item${r.items.length !== 1 ? 's' : ''}`],
+      photo: r.receivePhotoKey,
+      photoLabel: 'View receipt photo',
     })),
     ...(!['RECEIVED', 'CANCELLED'].includes(detail.status) && detail.receipts.length === 0 ? [{
       key: 'receive',
       done: false,
-      label: 'Pending Receipt',
-      date: detail.expectedAt ? fmt(detail.expectedAt) : null,
-      sub: [detail.expectedAt ? 'Expected arrival' : null],
+      label: 'Received',
+      date: null,
+      sub: [],
     }] : []),
     ...(detail.status === 'CANCELLED' ? [{
       key: 'cancelled',
@@ -108,16 +111,16 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
                 <p key={i} className="text-xs text-muted-foreground/70 truncate">{s}</p>
               ))}
               {step.photo && (
-                <button onClick={() => setPhotoOpen(true)} className="mt-1 text-xs text-green-600 hover:text-green-700 font-medium underline underline-offset-2">
-                  View dispatch photo
+                <button onClick={() => setViewPhoto(step.photo!)} className="mt-1 text-xs text-green-600 hover:text-green-700 font-medium underline underline-offset-2">
+                  {step.photoLabel ?? 'View photo'}
                 </button>
               )}
             </div>
           </div>
         ))}
       </div>
-      {photoOpen && detail.dispatchPhotoKey && (
-        <PhotoLightbox photoKey={detail.dispatchPhotoKey} onClose={() => setPhotoOpen(false)} />
+      {viewPhoto && (
+        <PhotoLightbox photoKey={viewPhoto} onClose={() => setViewPhoto(null)} />
       )}
     </div>
   )
@@ -127,6 +130,84 @@ const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered
 const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+
+function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
+  value: string; suppliers: SupplierOption[]; onChange: (name: string, id: string) => void; onAdded: (s: SupplierOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? suppliers.filter(s => s.name.toLowerCase().includes(q)) : suppliers
+  const exactMatch = suppliers.some(s => s.name.toLowerCase() === q)
+
+  async function addNew() {
+    const name = search.trim()
+    if (!name || adding) return
+    setAdding(true); setAddError('')
+    try {
+      const res = await fetch('/api/purchasing/suppliers', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        onAdded({ id: data.id, name: data.name })
+        onChange(data.name, data.id)
+        setOpen(false); setSearch('')
+      } else {
+        setAddError(data.error ?? 'Failed to add supplier')
+      }
+    } catch {
+      setAddError('Failed to add supplier')
+    } finally { setAdding(false) }
+  }
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch(''); setAddError('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select supplier...'}</span>
+        <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search or add supplier..." value={search} onChange={e => { setSearch(e.target.value); setAddError('') }} />
+              </div>
+              {addError && <p className="text-xs text-red-600 mt-1.5">{addError}</p>}
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && !q && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No suppliers yet</p>
+              )}
+              {opts.map(s => (
+                <button key={s.id} type="button" onClick={() => { onChange(s.name, s.id); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-2 transition-colors">
+                  <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  {s.name}
+                </button>
+              ))}
+              {q && !exactMatch && (
+                <button type="button" onClick={addNew} disabled={adding}
+                  className="w-full text-left px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-2 border-t transition-colors disabled:opacity-50">
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                  {adding ? 'Adding...' : <>Add &ldquo;{search.trim()}&rdquo; as new supplier</>}
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   return (
@@ -157,12 +238,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
-  const [requests, setRequests] = useState<PurchaseRequest[]>([])
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [locations, setLocations] = useState<StockLocation[]>([])
 
   // create form
-  const [fromPR, setFromPR] = useState('')
   const [supplier, setSupplier] = useState('')
+  const [supplierId, setSupplierId] = useState('')
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
@@ -205,10 +286,10 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, iRes, rRes, lRes, tRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/requests'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team')])
+    const [oRes, iRes, sRes, lRes, tRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team')])
     if (oRes.ok) setOrders(await oRes.json())
     if (iRes.ok) setPurchaseItems((await iRes.json()).filter((i: PurchaseItem) => i.isActive))
-    if (rRes.ok) setRequests((await rRes.json()).filter((r: PurchaseRequest) => ['SENT', 'APPROVED'].includes(r.status)))
+    if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive !== false))
     if (tRes.ok) setTeam(await tRes.json())
     setLoading(false)
@@ -231,14 +312,6 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     setDetailLoading(false)
   }
 
-  function fillFromPR(prId: string) {
-    setFromPR(prId)
-    if (!prId) return
-    const pr = requests.find(r => r.id === prId)
-    if (!pr) return
-    setLines(pr.items.map(i => ({ itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: i.quantity, unitCost: i.estimatedCost, search: '', open: false })))
-  }
-
   function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }]) }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)) }
   function pickItem(idx: number, item: PurchaseItem) {
@@ -257,12 +330,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     if (!supplier.trim()) { setSaveError('Supplier name is required'); setSaving(false); return }
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requestId: fromPR || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes, items: lines }),
+      body: JSON.stringify({ supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes, items: lines }),
     })
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false); setView('list')
-    setSupplier(''); setFromPR(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
+    setSupplier(''); setSupplierId(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
     setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
     load()
   }
@@ -340,6 +413,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
               <th className="text-left px-4 py-3 font-medium">Supplier</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
+              <th className="text-left px-4 py-3 font-medium">Requested By</th>
               <th className="text-center px-4 py-3 font-medium">Items</th>
               <th className="text-left px-4 py-3 font-medium">Received</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
@@ -354,6 +428,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
@@ -362,7 +437,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : visibleOrders.length === 0 ? <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
               : visibleOrders.map(o => {
                 const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
@@ -374,6 +449,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
                       ) : '—'}
                     </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.requestedByName ?? '—'}</td>
                     <td className="px-4 py-3 text-center text-muted-foreground">{o.itemCount}</td>
                     <td className="px-4 py-3 min-w-[120px]">
                       {o.itemCount === 0 || o.status === 'DRAFT' ? (
@@ -433,14 +509,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Supplier <span className="text-red-500">*</span></label>
-                <input className={inp} placeholder="e.g. CV Maju Bersama" value={supplier} onChange={e => setSupplier(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-muted-foreground">From PR <span className="font-normal">(optional)</span></label>
-                <select className={inp} value={fromPR} onChange={e => fillFromPR(e.target.value)}>
-                  <option value="">No linked PR</option>
-                  {requests.map(r => <option key={r.id} value={r.id}>{r.prNumber}</option>)}
-                </select>
+                <SupplierCombobox
+                  value={supplier}
+                  suppliers={suppliers}
+                  onChange={(name, id) => { setSupplier(name); setSupplierId(id) }}
+                  onAdded={s => setSuppliers(prev => [...prev, s])}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Delivery Location</label>
@@ -677,6 +751,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>
                 {STATUS_LABEL[detail.status] ?? detail.status}
               </span>
+            </p>
+            <p className="text-muted-foreground text-xs mt-1">
+              Requested by <span className="font-medium text-foreground">{detail.requestedByName ?? 'Unknown'}</span>
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">

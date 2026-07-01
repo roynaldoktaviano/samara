@@ -18,17 +18,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       items: { include: { item: { select: { purchaseUnit: true } } } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
-      request: { select: { prNumber: true, createdAt: true, requestedById: true } },
+      createdBy: { select: { name: true } },
+      request: { select: { prNumber: true, createdAt: true, requestedBy: { select: { name: true } } } },
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Fetch PR requester name if linked
-  let requestedByName: string | null = null
-  if (order.request?.requestedById) {
-    const u = await db.user.findUnique({ where: { id: order.request.requestedById }, select: { name: true } })
-    requestedByName = u?.name ?? null
-  }
+  const requestedByName = order.request?.requestedBy?.name ?? order.createdBy?.name ?? null
 
   const receipts = await db.goodsReceipt.findMany({
     where: { orderId: id },
@@ -39,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     ...order,
     receipts,
     requestedByName,
+    createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? null, item: undefined })),
   })
 }

@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   '/api/public',
   '/api/webhooks',
   '/proto',
+  '/proto-2',
 ]
 
 function isPublic(pathname: string) {
