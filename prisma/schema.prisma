@@ -738,6 +738,7 @@ model StockLocation {
   purchaseRequests PurchaseRequest[] @relation("PRDelivery")
   purchaseOrders   PurchaseOrder[]   @relation("PODelivery")
   cashierSales     CashierSale[]
+  employees        Employee[]
 
   @@index([type])
   @@index([yachtId])
@@ -1123,4 +1124,52 @@ model InventoryException {
   @@index([type])
   @@index([createdAt])
   @@index([referenceId])
+}
+
+// ─── People & HR (minimal master data) ─────────────────────────────────────────
+
+model LegalEntity {
+  id        String     @id @default(cuid())
+  name      String
+  code      String?    @unique
+  country   String?
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+
+  employees Employee[]
+}
+
+model EmployeeRole {
+  id        String     @id @default(cuid())
+  title     String
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+
+  employees Employee[]
+
+  @@index([title])
+}
+
+model Employee {
+  id             String    @id @default(cuid())
+  employeeNumber String    @unique
+  fullName       String
+  department     String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  legalEntityId  String?
+  legalEntity    LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+
+  locationId     String?
+  location       StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  roleId         String?
+  role           EmployeeRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([legalEntityId])
+  @@index([locationId])
+  @@index([roleId])
+  @@index([fullName])
 }
