@@ -13,7 +13,7 @@ import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } 
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
-interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; imageKey: string | null }
+interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null }
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
 interface LocationLite { id: string; name: string; type: string }
 interface CartLine {
@@ -21,11 +21,15 @@ interface CartLine {
   itemId: string | null
   itemName: string
   category: string
-  baseUnit: string
+  unit: string
   imageKeys: string[]
   quantity: number
   isCustom: boolean
   notes: string
+}
+
+function capitalize(s: string) {
+  return s.length ? s[0].toUpperCase() + s.slice(1) : s
 }
 
 function compressImage(file: File): Promise<string> {
@@ -98,11 +102,12 @@ export default function RequestOrderPage() {
     (!search || i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase()))
   ), [catalog, activeType, activeCat, search])
 
-  function addToCart(item: CatalogItem) {
+  function addToCart(item: CatalogItem, unit: string) {
+    const key = `${item.id}-${unit}`
     setCart(prev => {
-      const existing = prev.find(l => l.itemId === item.id)
-      if (existing) return prev.map(l => l.itemId === item.id ? { ...l, quantity: l.quantity + 1 } : l)
-      return [...prev, { key: item.id, itemId: item.id, itemName: item.name, category: item.category, baseUnit: item.baseUnit, imageKeys: item.imageKey ? [item.imageKey] : [], quantity: 1, isCustom: false, notes: '' }]
+      const existing = prev.find(l => l.key === key)
+      if (existing) return prev.map(l => l.key === key ? { ...l, quantity: l.quantity + 1 } : l)
+      return [...prev, { key, itemId: item.id, itemName: item.name, category: item.category, unit, imageKeys: item.imageKey ? [item.imageKey] : [], quantity: 1, isCustom: false, notes: '' }]
     })
   }
 
@@ -135,7 +140,7 @@ export default function RequestOrderPage() {
       itemId: null,
       itemName: customForm.itemName.trim(),
       category: 'Custom Request',
-      baseUnit: customForm.unit.trim() || 'pcs',
+      unit: customForm.unit.trim() || 'pcs',
       imageKeys: customForm.images,
       quantity: Number(customForm.quantity) || 1,
       isCustom: true,
@@ -157,7 +162,7 @@ export default function RequestOrderPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
-        items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.baseUnit, notes: l.notes, imageKeys: l.imageKeys })),
+        items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
       }),
     })
     const data = await res.json()
@@ -267,7 +272,9 @@ export default function RequestOrderPage() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {filtered.map(item => {
-                const inCart = cart.find(l => l.itemId === item.id)
+                const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
+                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
+                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
                 return (
                   <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
@@ -276,24 +283,46 @@ export default function RequestOrderPage() {
                     <div className="p-3 flex flex-col flex-1">
                       <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: GOLD_DARK }}>{item.category}</span>
                       <p className="text-sm font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.baseUnit}</p>
-                      <div className="mt-auto pt-2">
-                        {inCart ? (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
+                      </p>
+                      <div className="mt-auto pt-2 space-y-1.5">
+                        {baseLine ? (
                           <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeQty(inCart.key, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <button onClick={() => changeQty(baseLine.key, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Minus className="h-3.5 w-3.5" />
                             </button>
-                            <span className="text-sm font-semibold tabular-nums">{inCart.quantity}</span>
-                            <button onClick={() => changeQty(inCart.key, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <span className="text-xs font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
+                            <button onClick={() => changeQty(baseLine.key, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Plus className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => addToCart(item)}
+                          <button onClick={() => addToCart(item, item.baseUnit)}
                             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors" style={{ background: GOLD }}
                             onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)} onMouseLeave={e => (e.currentTarget.style.background = GOLD)}>
-                            <Plus className="h-3.5 w-3.5" /> Add
+                            <Plus className="h-3.5 w-3.5" /> Add {capitalize(item.baseUnit)}
                           </button>
+                        )}
+
+                        {hasPurchaseUnit && (
+                          purchaseLine ? (
+                            <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
+                              <button onClick={() => changeQty(purchaseLine.key, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Minus className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="text-xs font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
+                              <button onClick={() => changeQty(purchaseLine.key, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => addToCart(item, item.purchaseUnit!)}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors"
+                              style={{ borderColor: GOLD, color: GOLD_DARK }}>
+                              <Plus className="h-3.5 w-3.5" /> Add {capitalize(item.purchaseUnit!)}
+                            </button>
+                          )
                         )}
                       </div>
                     </div>
@@ -518,10 +547,10 @@ function RequestSidebar({
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium truncate">{line.itemName}</p>
-                    <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : line.category}</p>
+                    <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : `${line.category} · ${line.unit}`}</p>
                   </div>
                   {line.isCustom ? (
-                    <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.baseUnit}</span>
+                    <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.unit}</span>
                   ) : (
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => changeQty(line.key, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>

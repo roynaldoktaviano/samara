@@ -6,7 +6,7 @@ import { db } from '@/lib/db'
 export async function GET() {
   const items = await db.purchaseItem.findMany({
     where: { isActive: true },
-    select: { id: true, sku: true, name: true, type: true, category: true, baseUnit: true, imageKey: true },
+    select: { id: true, sku: true, name: true, type: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, imageKey: true },
     orderBy: { name: 'asc' },
   })
   return NextResponse.json(items)
