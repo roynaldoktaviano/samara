@@ -16,16 +16,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       items: true,
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
+      requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
-  const [requester, lots, purchaseItems] = await Promise.all([
+  const [requesterUser, lots, purchaseItems] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, quantity: true } }) : ([] as { itemId: string | null; quantity: number }[]),
     itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number }[]),
   ])
+  // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
+  // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
+  const requester = request.requestedByEmployee
+    ? { id: request.requestedByEmployee.id, name: `${request.requestedByEmployee.fullName} (${request.requestedByEmployee.employeeNumber})` }
+    : requesterUser
 
   const stockMap = new Map<string, number>()
   for (const lot of lots) {

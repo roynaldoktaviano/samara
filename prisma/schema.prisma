@@ -831,24 +831,27 @@ model StockMovement {
 }
 
 model PurchaseRequest {
-  id                 String                @id @default(cuid())
-  prNumber           String                @unique
-  requestedById      String
-  deliveryLocationId String?
-  notes              String?
-  status             PurchaseRequestStatus @default(DRAFT)
-  pdfKey             String?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  id                    String                @id @default(cuid())
+  prNumber              String                @unique
+  requestedById         String
+  requestedByEmployeeId String?
+  deliveryLocationId    String?
+  notes                 String?
+  status                PurchaseRequestStatus @default(DRAFT)
+  pdfKey                String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
-  requestedBy      User                  @relation(fields: [requestedById], references: [id])
-  deliveryLocation StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  items            PurchaseRequestItem[]
-  orders           PurchaseOrder[]
+  requestedBy         User                  @relation(fields: [requestedById], references: [id])
+  requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  items               PurchaseRequestItem[]
+  orders              PurchaseOrder[]
 
   @@index([status])
   @@index([createdAt])
   @@index([requestedById])
+  @@index([requestedByEmployeeId])
   @@index([deliveryLocationId])
 }
 
@@ -879,6 +882,7 @@ model PurchaseRequestItem {
   supplierId    String?
   supplierName  String?
   notes         String?
+  imageKeys     Json            @default("[]") // reference photos for custom requests — array of base64/URL strings
 
   request     PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   item        PurchaseItem?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
@@ -1156,6 +1160,9 @@ model Employee {
   fullName       String
   department     String?
   isActive       Boolean   @default(true)
+  resignedAt     DateTime?
+  resignStatus   String?   // RESIGNED | TERMINATED | CONTRACT_ENDED | OTHER
+  resignReason   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1167,6 +1174,8 @@ model Employee {
 
   roleId         String?
   role           EmployeeRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  purchaseRequests PurchaseRequest[]
 
   @@index([legalEntityId])
   @@index([locationId])

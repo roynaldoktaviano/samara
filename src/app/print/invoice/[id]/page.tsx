@@ -59,7 +59,8 @@ interface PaymentDetail {
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string; yacht?: { name: string } }
     source?: string
-    agent?: { name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
+    agent?: { name: string; address?: string | null; commissionOpenTrip?: number; commissionPrivateCharter?: number }
+    agentContact?: { name: string } | null
     services: Array<{ name: string; price: number; quantity: number }>
     guests: Array<{
       isLead: boolean
@@ -347,6 +348,8 @@ export default function InvoicePage() {
             {billToAgent ? (
               <>
                 <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent!.name}</div>
+                {b.agentContact?.name && <div style={{ color: '#6b7280', fontSize: 10, marginTop: 3, textTransform: 'uppercase' }}>{b.agentContact.name}</div>}
+                {b.agent!.address && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{b.agent!.address}</div>}
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{guestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
                   {guestsWithCabin.length > 0 ? (

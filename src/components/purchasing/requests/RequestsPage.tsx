@@ -7,7 +7,7 @@ interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
-interface RequestLine { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null }
+interface RequestLine { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[] }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -702,11 +702,29 @@ export default function RequestsPage() {
                   const stock = item.currentStock ?? null
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
+                  const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
                   return (
                     <tr key={i} className="hover:bg-muted/20">
                       <td className="px-5 py-3">
-                        <p className="font-medium">{item.itemName}</p>
-                        {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
+                        <div className="flex items-start gap-2.5">
+                          {!!photos.length && (
+                            <div className="flex -space-x-2 shrink-0">
+                              {photos.slice(0, 3).map((src, j) => (
+                                <img key={j} src={src} alt={`${item.itemName} reference ${j + 1}`} className="w-9 h-9 rounded-md object-cover border-2 border-white shadow-sm" style={{ zIndex: 3 - j }} />
+                              ))}
+                              {photos.length > 3 && (
+                                <div className="w-9 h-9 rounded-md bg-muted border-2 border-white flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+                                  +{photos.length - 3}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium">{item.itemName}</p>
+                            {!item.itemId && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                            {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-5 py-3 text-muted-foreground">{item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}</td>
                       <td className="px-5 py-3 text-right">

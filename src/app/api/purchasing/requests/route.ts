@@ -28,6 +28,7 @@ export async function GET() {
     include: {
       items: { select: { id: true, quantity: true, estimatedCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
+      requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
     },
   })
   const userIds = [...new Set(requests.map(r => r.requestedById))]
@@ -38,7 +39,11 @@ export async function GET() {
       ...r,
       itemCount: r.items.length,
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
-      requestedBy: userMap.get(r.requestedById) ?? null,
+      // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
+      // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
+      requestedBy: r.requestedByEmployee
+        ? { name: `${r.requestedByEmployee.fullName} (${r.requestedByEmployee.employeeNumber})` }
+        : (userMap.get(r.requestedById) ?? null),
       items: undefined,
     })),
   )

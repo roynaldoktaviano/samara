@@ -1,17 +1,28 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX } from 'lucide-react'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface EmployeeRole { id: string; title: string }
 interface Location { id: string; name: string; type: string }
 interface Employee {
   id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
+  resignedAt: string | null; resignStatus: string | null; resignReason: string | null
   legalEntity: LegalEntity | null; location: Location | null; role: EmployeeRole | null
 }
 
 const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '' }
+
+const RESIGN_STATUSES = [
+  { value: 'RESIGNED', label: 'Resigned' },
+  { value: 'TERMINATED', label: 'Terminated' },
+  { value: 'CONTRACT_ENDED', label: 'Contract Ended' },
+  { value: 'OTHER', label: 'Other' },
+]
+const RESIGN_STATUS_LABEL: Record<string, string> = Object.fromEntries(RESIGN_STATUSES.map(s => [s.value, s.label]))
+const todayISO = () => new Date().toISOString().slice(0, 10)
+const RESIGN_BLANK = { resignedAt: todayISO(), resignStatus: 'RESIGNED', resignReason: '' }
 
 const CSV_HEADERS = ['Employee Number', 'Full Name', 'Legal Entity', 'Work Location', 'Department', 'Role', 'Status']
 
@@ -46,6 +57,10 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
+
+  const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null)
+  const [resignForm, setResignForm] = useState({ ...RESIGN_BLANK })
+  const [deactivating, setDeactivating] = useState(false)
 
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ imported: number; updated: number; total: number; errors: { row: number; sku: string; error: string }[] } | null>(null)
@@ -89,8 +104,28 @@ export default function EmployeesPage() {
     setModal(false); setSaving(false); load()
   }
 
-  async function toggleActive(emp: Employee) {
-    await fetch(`/api/hr/employees/${emp.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !emp.isActive }) })
+  function toggleActive(emp: Employee) {
+    if (emp.isActive) {
+      // Deactivating requires a reason — open the resignation modal instead of toggling directly.
+      setDeactivateTarget(emp); setResignForm({ ...RESIGN_BLANK }); return
+    }
+    reactivate(emp)
+  }
+
+  async function reactivate(emp: Employee) {
+    await fetch(`/api/hr/employees/${emp.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true }) })
+    load()
+  }
+
+  async function confirmDeactivate() {
+    if (!deactivateTarget) return
+    setDeactivating(true)
+    await fetch(`/api/hr/employees/${deactivateTarget.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: false, ...resignForm }),
+    })
+    setDeactivating(false)
+    setDeactivateTarget(null)
     load()
   }
 
@@ -264,11 +299,16 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.department ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.role?.title ?? '—'}</td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => toggleActive(emp)}>
+                    <button onClick={() => toggleActive(emp)} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
                       {emp.isActive
                         ? <ToggleRight className="h-5 w-5 text-green-600 mx-auto" />
                         : <ToggleLeft className="h-5 w-5 text-muted-foreground mx-auto" />}
                     </button>
+                    {!emp.isActive && emp.resignedAt && (
+                      <div className="mt-1 text-[10px] text-muted-foreground leading-tight" title={emp.resignReason ?? undefined}>
+                        {RESIGN_STATUS_LABEL[emp.resignStatus ?? ''] ?? 'Left'} · {new Date(emp.resignedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -406,6 +446,65 @@ export default function EmployeesPage() {
             <div className="flex gap-3 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Deactivate / Resignation Modal ── */}
+      {deactivateTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-5 border-b">
+              <div className="p-2 rounded-full bg-red-50">
+                <UserX className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base leading-tight">Deactivate Employee</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  <span className="font-medium text-foreground">{deactivateTarget.fullName}</span> ({deactivateTarget.employeeNumber})
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-muted-foreground">Is this employee resigning? Record the details below.</p>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={resignForm.resignStatus} onChange={e => setResignForm(f => ({ ...f, resignStatus: e.target.value }))}
+                >
+                  {RESIGN_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resignation Date</label>
+                <input
+                  type="date"
+                  className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={resignForm.resignedAt} onChange={e => setResignForm(f => ({ ...f, resignedAt: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</label>
+                <textarea
+                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  rows={3}
+                  placeholder="Optional notes on why this employee is leaving..."
+                  value={resignForm.resignReason} onChange={e => setResignForm(f => ({ ...f, resignReason: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
+              <button onClick={() => setDeactivateTarget(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
+              <button onClick={confirmDeactivate} disabled={deactivating} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90 disabled:opacity-50">
+                {deactivating ? 'Deactivating...' : 'Deactivate'}
+              </button>
             </div>
           </div>
         </div>

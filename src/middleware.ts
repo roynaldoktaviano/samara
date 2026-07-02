@@ -9,6 +9,9 @@ const PUBLIC_PATHS = [
   '/api/webhooks',
   '/proto',
   '/proto-2',
+  // Internal Request Order page — used by staff without an ERP login (crew, field staff, etc.)
+  '/request-order',
+  '/api/hr/request-orders',
 ]
 
 function isPublic(pathname: string) {
