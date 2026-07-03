@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     if (!it.quantity || Number(it.quantity) <= 0) return NextResponse.json({ error: `Quantity for "${it.itemName}" must be greater than 0` }, { status: 400 })
   }
 
-  const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, isActive: true } })
+  const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, isActive: true, fullName: true } })
   if (!employee || !employee.isActive) return NextResponse.json({ error: 'Selected requester was not found' }, { status: 400 })
 
   if (locationId) {
@@ -90,5 +90,23 @@ export async function POST(req: NextRequest) {
     },
     include: { items: true },
   })
+
+  // Notify the purchasing team so they know a new draft is waiting for review.
+  const purchasingUsers = await db.user.findMany({
+    where: { role: { in: ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] } },
+    select: { id: true },
+  })
+  if (purchasingUsers.length) {
+    await db.notification.createMany({
+      data: purchasingUsers.map(u => ({
+        userId: u.id,
+        type: 'REQUEST_ORDER_SUBMITTED',
+        title: 'New request order submitted',
+        body: `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.`,
+        requestId: request.id,
+      })),
+    }).catch(() => {})
+  }
+
   return NextResponse.json(request, { status: 201 })
 }

@@ -12,6 +12,13 @@ function csvCell(value: string | number | null | undefined) {
   return s
 }
 
+// Kept in sync with the Add/Edit Agent form fields (Agents.tsx) — see import/route.ts for the same header.
+export const CSV_HEADER = [
+  'name', 'salesperson', 'country', 'address', 'email', 'whatsapp', 'website', 'instagram',
+  'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'contract', 'isActive', 'note',
+  'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
+]
+
 export async function GET(_: NextRequest) {
   const db = await getDb()
   const session = await getServerSession(authOptions)
@@ -22,12 +29,9 @@ export async function GET(_: NextRequest) {
 
   const agents = await db.agent.findMany({
     select: {
-      name:       true,
-      commission: true,
-      country:    true,
-      note:       true,
-      contract:   true,
-      isActive:   true,
+      name: true, country: true, address: true, email: true, whatsapp: true, website: true, instagram: true,
+      source: true, currentCondition: true, commissionOpenTrip: true, commissionPrivateCharter: true,
+      contract: true, isActive: true, note: true,
       salesperson: { select: { name: true } },
       contacts: {
         select: { name: true, email: true, whatsapp: true, jobTitle: true, dateOfBirth: true },
@@ -37,22 +41,24 @@ export async function GET(_: NextRequest) {
     orderBy: { name: 'asc' },
   })
 
-  const header = [
-    'name', 'salesperson', 'country', 'note', 'commission',
-    'contract', 'isActive',
-    'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
-  ]
-
   const rows: string[][] = []
   for (const a of agents) {
     const base = [
       csvCell(a.name),
       csvCell(a.salesperson?.name ?? ''),
       csvCell(a.country),
-      csvCell(a.note),
-      csvCell(a.commission),
+      csvCell(a.address),
+      csvCell(a.email),
+      csvCell(a.whatsapp),
+      csvCell(a.website),
+      csvCell(a.instagram),
+      csvCell(a.source),
+      csvCell(a.currentCondition),
+      csvCell(a.commissionOpenTrip),
+      csvCell(a.commissionPrivateCharter),
       csvCell(a.contract),
       csvCell(a.isActive ? 'true' : 'false'),
+      csvCell(a.note),
     ]
     if (a.contacts.length === 0) {
       rows.push([...base, '', '', '', '', ''])
@@ -71,7 +77,7 @@ export async function GET(_: NextRequest) {
     }
   }
 
-  const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n')
+  const csv = [CSV_HEADER.join(','), ...rows.map(r => r.join(','))].join('\n')
 
   return new NextResponse(csv, {
     headers: {

@@ -51,13 +51,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
-      select: { totalPrice: true, depositPaid: true, status: true },
+      select: {
+        totalPrice: true, depositPaid: true, status: true,
+        depositDueDate: true, finalDueDate: true,
+        depositDueDateInvoiceOverride: true, finalDueDateInvoiceOverride: true,
+      },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // Due dates can't be moved into the past. Unchanged values (e.g. resaving an older booking
+    // whose due date already lapsed) are exempt — only an actual change to a past date is rejected.
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+    const rejectsPastDate = (newVal: unknown, existingVal: Date | null) => {
+      if (typeof newVal !== 'string' || !newVal) return false
+      const newDate = new Date(newVal)
+      if (isNaN(newDate.getTime())) return false
+      if (existingVal && existingVal.getTime() === newDate.getTime()) return false
+      return newDate.getTime() < todayStart.getTime()
+    }
+    if (depositDueDate !== undefined && rejectsPastDate(depositDueDate, existing.depositDueDate)) {
+      return NextResponse.json({ error: 'Deposit due date cannot be in the past' }, { status: 400 })
+    }
+    if (finalDueDate !== undefined && rejectsPastDate(finalDueDate, existing.finalDueDate)) {
+      return NextResponse.json({ error: 'Final due date cannot be in the past' }, { status: 400 })
+    }
 
     const newDeposit = depositPaid !== undefined ? parseFloat(depositPaid) : existing.depositPaid
     const newTotal   = totalPrice  !== undefined ? parseFloat(totalPrice)  : existing.totalPrice
@@ -67,6 +88,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const computedStatus = manualOverride
       ? (status as 'completed' | 'cancelled')
       : paymentStatus(newDeposit, newTotal)
+
+    // Extending a due date can optionally leave the invoice showing the original date.
+    // syncXToInvoice is only present when the change comes from the dedicated "Extend Due Date"
+    // action — the full Edit Booking form never sends it, so its behavior is unchanged.
+    let depositDueDateInvoiceOverride: Date | null | undefined
+    if (depositDueDate !== undefined && syncDepositDueToInvoice !== undefined) {
+      depositDueDateInvoiceOverride = syncDepositDueToInvoice
+        ? null
+        : (existing.depositDueDateInvoiceOverride ?? existing.depositDueDate)
+    }
+    let finalDueDateInvoiceOverride: Date | null | undefined
+    if (finalDueDate !== undefined && syncFinalDueToInvoice !== undefined) {
+      finalDueDateInvoiceOverride = syncFinalDueToInvoice
+        ? null
+        : (existing.finalDueDateInvoiceOverride ?? existing.finalDueDate)
+    }
 
     const booking = await db.booking.update({
       where: { id },
@@ -78,6 +115,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(destination    !== undefined && { destination:    destination || null }),
         ...(depositDueDate !== undefined && { depositDueDate: depositDueDate ? new Date(depositDueDate) : null }),
         ...(finalDueDate   !== undefined && { finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null }),
+        ...(depositDueDateInvoiceOverride !== undefined && { depositDueDateInvoiceOverride }),
+        ...(finalDueDateInvoiceOverride   !== undefined && { finalDueDateInvoiceOverride }),
         ...(salesperson !== undefined && { salesperson: salesperson || null }),
         ...(startDate   !== undefined && { startDate:   new Date(startDate) }),
         ...(endDate     !== undefined && { endDate:     new Date(endDate) }),

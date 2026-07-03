@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronRight, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2 } from 'lucide-react'
+import { Plus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download } from 'lucide-react'
 
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; avgPrice: number; isActive: boolean }
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
-interface RequestLine { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[] }
+interface RequestLine { id?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[] }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -19,6 +19,8 @@ interface PurchaseRequest {
   notes: string | null
   createdAt: string
   requestedBy: { name: string } | null
+  approvedBy: { name: string } | null
+  approvedAt: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -62,12 +64,36 @@ export default function RequestsPage() {
   const [lines, setLines] = useState<RequestLine[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', quantity: 1, estimatedCost: 0, supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false }])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [supplierModal, setSupplierModal] = useState<{ idx: number } | null>(null)
+  const [supplierModal, setSupplierModal] = useState<{ idx: number } | 'editItem' | null>(null)
   const [supplierModalSearch, setSupplierModalSearch] = useState('')
   const [supplierFilterCity, setSupplierFilterCity] = useState('All')
   const [itemModal, setItemModal] = useState(false)
   const [itemModalSearch, setItemModalSearch] = useState('')
   const [itemModalSelected, setItemModalSelected] = useState<Set<string>>(new Set())
+
+  // Edit item (est. price / supplier) from the detail view — also used to view custom request detail
+  const [editItemModal, setEditItemModal] = useState<RequestLine | null>(null)
+  const [editItemCost, setEditItemCost] = useState('')
+  const [editItemSupplierId, setEditItemSupplierId] = useState('')
+  const [editItemSaving, setEditItemSaving] = useState(false)
+  const [editItemError, setEditItemError] = useState('')
+
+  // Reference photo lightbox
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; name: string } | null>(null)
+
+  function openLightbox(images: string[], index: number, name: string) {
+    setLightbox({ images, index, name })
+  }
+
+  function downloadLightboxImage() {
+    if (!lightbox) return
+    const src = lightbox.images[lightbox.index]
+    const ext = src.match(/^data:image\/(\w+);/)?.[1] ?? 'jpg'
+    const a = document.createElement('a')
+    a.href = src
+    a.download = `${lightbox.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-reference-${lightbox.index + 1}.${ext}`
+    a.click()
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -95,6 +121,32 @@ export default function RequestsPage() {
     setDetailLoading(false)
   }
 
+  function openEditItem(item: RequestLine) {
+    setEditItemModal(item)
+    setEditItemCost(String(item.estimatedCost ?? 0))
+    setEditItemSupplierId(item.supplierId || '')
+    setEditItemError('')
+  }
+
+  async function saveEditItem() {
+    if (!editItemModal?.id || !detail) return
+    setEditItemSaving(true); setEditItemError('')
+    const supplier = suppliers.find(s => s.id === editItemSupplierId)
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        estimatedCost: parseFloat(editItemCost) || 0,
+        supplierId: editItemSupplierId || null,
+        supplierName: supplier?.name || null,
+      }),
+    })
+    const data = await res.json()
+    setEditItemSaving(false)
+    if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return }
+    setEditItemModal(null)
+    await openDetail(selected!)
+  }
+
   function addLine() {
     setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', quantity: 1, estimatedCost: 0, supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false }])
   }
@@ -119,7 +171,15 @@ export default function RequestsPage() {
     setLines(l => l.map((line, i) => i !== idx ? line : { ...line, [field]: value }))
   }
 
-  async function quickAddSupplier(idx: number, name: string) {
+  function selectSupplierForTarget(target: number | 'editItem', s: Supplier) {
+    if (target === 'editItem') {
+      setEditItemSupplierId(s.id)
+    } else {
+      setLines(l => l.map((li, i) => i !== target ? li : { ...li, supplierId: s.id, supplierName: s.name }))
+    }
+  }
+
+  async function quickAddSupplier(target: number | 'editItem', name: string) {
     const res = await fetch('/api/purchasing/suppliers', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -127,7 +187,11 @@ export default function RequestsPage() {
     if (!res.ok) return
     const s: Supplier = await res.json()
     setSuppliers(prev => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)))
-    setLines(l => l.map((li, i) => i !== idx ? li : { ...li, supplierId: s.id, supplierName: s.name, supplierSearch: '', supplierOpen: false }))
+    if (target === 'editItem') {
+      setEditItemSupplierId(s.id)
+    } else {
+      setLines(l => l.map((li, i) => i !== target ? li : { ...li, supplierId: s.id, supplierName: s.name, supplierSearch: '', supplierOpen: false }))
+    }
   }
 
   async function submit() {
@@ -489,7 +553,7 @@ export default function RequestsPage() {
                   )}
                   <div className="overflow-y-auto flex-1">
                     {filtered.map(s => (
-                      <button key={s.id} onClick={() => { setLines(l => l.map((li, i) => i !== supplierModal.idx ? li : { ...li, supplierId: s.id, supplierName: s.name })); setSupplierModal(null) }}
+                      <button key={s.id} onClick={() => { selectSupplierForTarget(supplierModal === 'editItem' ? 'editItem' : supplierModal.idx, s); setSupplierModal(null) }}
                         className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
                         <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                           <Building2 className="h-4 w-4 text-amber-600" />
@@ -503,11 +567,11 @@ export default function RequestsPage() {
                             {s.contact && <span className="text-xs text-muted-foreground">{s.contact}</span>}
                           </div>
                         </div>
-                        {lines[supplierModal.idx]?.supplierId === s.id && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
+                        {(supplierModal === 'editItem' ? editItemSupplierId === s.id : lines[supplierModal.idx]?.supplierId === s.id) && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
                       </button>
                     ))}
                     {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (
-                      <button onClick={() => quickAddSupplier(supplierModal.idx, supplierModalSearch.trim()).then(() => setSupplierModal(null))}
+                      <button onClick={() => quickAddSupplier(supplierModal === 'editItem' ? 'editItem' : supplierModal.idx, supplierModalSearch.trim()).then(() => setSupplierModal(null))}
                         className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-green-50 transition-colors border-t">
                         <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
                           <Plus className="h-4 w-4 text-green-600" />
@@ -615,7 +679,9 @@ export default function RequestsPage() {
           <div>
             <h2 className="text-2xl font-bold tracking-tight">{selected.prNumber}</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {fmtDate(selected.createdAt)} · by {selected.requestedBy?.name ?? '—'} ·{' '}
+              {fmtDate(selected.createdAt)} · requested by {selected.requestedBy?.name ?? '—'}
+              {selected.approvedBy && <> · approved by {selected.approvedBy.name}</>}
+              {' · '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status] ?? ''}`}>
                 {STATUS_LABEL[selected.status] ?? selected.status}
               </span>
@@ -695,6 +761,7 @@ export default function RequestsPage() {
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   <th className="text-right px-5 py-2.5 font-medium">Est. Price</th>
                   <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -703,14 +770,25 @@ export default function RequestsPage() {
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
+                  const editable = ['DRAFT', 'SENT'].includes(detail.status)
+                  const isCustom = !item.itemId
                   return (
-                    <tr key={i} className="hover:bg-muted/20">
+                    <tr
+                      key={i}
+                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''}`}
+                      onClick={() => isCustom && openEditItem(item)}
+                    >
                       <td className="px-5 py-3">
                         <div className="flex items-start gap-2.5">
                           {!!photos.length && (
                             <div className="flex -space-x-2 shrink-0">
                               {photos.slice(0, 3).map((src, j) => (
-                                <img key={j} src={src} alt={`${item.itemName} reference ${j + 1}`} className="w-9 h-9 rounded-md object-cover border-2 border-white shadow-sm" style={{ zIndex: 3 - j }} />
+                                <img
+                                  key={j} src={src} alt={`${item.itemName} reference ${j + 1}`}
+                                  className="w-9 h-9 rounded-md object-cover border-2 border-white shadow-sm cursor-zoom-in hover:opacity-80 transition-opacity"
+                                  style={{ zIndex: 3 - j }}
+                                  onClick={e => { e.stopPropagation(); openLightbox(photos, j, item.itemName) }}
+                                />
                               ))}
                               {photos.length > 3 && (
                                 <div className="w-9 h-9 rounded-md bg-muted border-2 border-white flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
@@ -721,7 +799,7 @@ export default function RequestsPage() {
                           )}
                           <div className="min-w-0">
                             <p className="font-medium">{item.itemName}</p>
-                            {!item.itemId && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                            {isCustom && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
                             {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
                           </div>
                         </div>
@@ -743,6 +821,13 @@ export default function RequestsPage() {
                       </td>
                       <td className="px-5 py-3 text-right text-muted-foreground">Rp {new Intl.NumberFormat('id-ID').format(item.estimatedCost)}</td>
                       <td className="px-5 py-3 text-right font-medium">Rp {new Intl.NumberFormat('id-ID').format(item.quantity * item.estimatedCost)}</td>
+                      <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
+                        {editable && (
+                          <button onClick={() => openEditItem(item)} className="text-muted-foreground hover:text-foreground transition-colors" title="Edit price / supplier">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -750,7 +835,7 @@ export default function RequestsPage() {
               <tfoot className="bg-muted/30 border-t">
                 <tr>
                   <td colSpan={5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
-                  <td className="px-5 py-3 text-right font-bold">
+                  <td className="px-5 py-3 text-right font-bold" colSpan={2}>
                     Rp {new Intl.NumberFormat('id-ID').format(detail.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0))}
                   </td>
                 </tr>
@@ -758,6 +843,216 @@ export default function RequestsPage() {
             </table>
           </div>
         </>
+      )}
+
+      {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
+      {editItemModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="font-semibold text-base">{editItemModal.itemId ? 'Edit Item' : 'Custom Request Detail'}</h3>
+              <button onClick={() => setEditItemModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {editItemError && (
+                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0" /> {editItemError}
+                </div>
+              )}
+
+              {!editItemModal.itemId ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Description</p>
+                    <p className="text-sm">{editItemModal.itemName}</p>
+                  </div>
+                  {editItemModal.notes && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
+                      <p className="text-sm text-muted-foreground">{editItemModal.notes}</p>
+                    </div>
+                  )}
+                  {!!editItemModal.imageKeys?.length && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Reference Photos</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {editItemModal.imageKeys.map((src, i) => (
+                          <img
+                            key={i} src={src} alt={`Reference ${i + 1}`}
+                            className="aspect-square rounded-lg object-cover border cursor-zoom-in hover:opacity-80 transition-opacity"
+                            onClick={() => openLightbox(editItemModal.imageKeys!, i, editItemModal.itemName)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="border-t" />
+                </>
+              ) : (
+                <p className="text-sm font-medium">{editItemModal.itemName}</p>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estimated Price</label>
+                  <input
+                    type="number" min={0}
+                    className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    value={editItemCost}
+                    onChange={e => setEditItemCost(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier</label>
+                  <button
+                    type="button"
+                    onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                    className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
+                      {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
+                    </span>
+                    <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
+              <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
+              <button onClick={saveEditItem} disabled={editItemSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
+                {editItemSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Supplier picker modal (for Edit Item modal) ── */}
+      {supplierModal === 'editItem' && (() => {
+        const allCities = ['All', ...Array.from(new Set(suppliers.flatMap(s => (s.locations ?? []).map(l => l.city).filter(Boolean)))).sort()]
+        const filtered = suppliers.filter(s => {
+          const q = supplierModalSearch.toLowerCase()
+          if (q && !s.name.toLowerCase().includes(q)) return false
+          if (supplierFilterCity !== 'All' && !(s.locations ?? []).some(l => l.city === supplierFilterCity)) return false
+          return true
+        })
+        return (
+          <>
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={() => setSupplierModal(null)} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[82vh]">
+                <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
+                  <h3 className="font-semibold text-base">Select Supplier</h3>
+                  <button onClick={() => setSupplierModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+                </div>
+                <div className="px-4 py-3 border-b shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <input autoFocus className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="Search or type a new supplier name..." value={supplierModalSearch} onChange={e => setSupplierModalSearch(e.target.value)} />
+                  </div>
+                </div>
+                {allCities.length > 1 && (
+                  <div className="px-4 py-2 border-b shrink-0 flex gap-1.5 flex-wrap">
+                    {allCities.map(c => (
+                      <button key={c} onClick={() => setSupplierFilterCity(c)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${supplierFilterCity === c ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="overflow-y-auto flex-1">
+                  <button onClick={() => { setEditItemSupplierId(''); setSupplierModal(null) }}
+                    className="w-full text-left px-5 py-3 text-sm text-muted-foreground hover:bg-muted/40 border-b transition-colors">
+                    — None —
+                  </button>
+                  {filtered.map(s => (
+                    <button key={s.id} onClick={() => { selectSupplierForTarget('editItem', s); setSupplierModal(null) }}
+                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
+                      <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                        <Building2 className="h-4 w-4 text-amber-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{s.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {(s.locations ?? []).map((l, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">{l.city}</span>
+                          ))}
+                          {s.contact && <span className="text-xs text-muted-foreground">{s.contact}</span>}
+                        </div>
+                      </div>
+                      {editItemSupplierId === s.id && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
+                    </button>
+                  ))}
+                  {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (
+                    <button onClick={() => quickAddSupplier('editItem', supplierModalSearch.trim()).then(() => setSupplierModal(null))}
+                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-green-50 transition-colors border-t">
+                      <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                        <Plus className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-green-700">Add &quot;{supplierModalSearch.trim()}&quot;</p>
+                        <p className="text-xs text-green-600">Create as new supplier</p>
+                      </div>
+                    </button>
+                  )}
+                  {filtered.length === 0 && !supplierModalSearch.trim() && (
+                    <p className="px-5 py-8 text-sm text-muted-foreground text-center">No suppliers match the filter.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
+      {/* ── Reference Photo Lightbox ── */}
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/80 hover:text-white">
+            <X className="h-7 w-7" />
+          </button>
+
+          {lightbox.images.length > 1 && (
+            <button
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && { ...l, index: (l.index - 1 + l.images.length) % l.images.length }) }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-colors"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+
+          <img
+            src={lightbox.images[lightbox.index]}
+            alt={`${lightbox.name} reference ${lightbox.index + 1}`}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            onClick={e => e.stopPropagation()}
+          />
+
+          {lightbox.images.length > 1 && (
+            <button
+              onClick={e => { e.stopPropagation(); setLightbox(l => l && { ...l, index: (l.index + 1) % l.images.length }) }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-colors"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          )}
+
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3" onClick={e => e.stopPropagation()}>
+            {lightbox.images.length > 1 && (
+              <span className="text-white/70 text-sm">{lightbox.index + 1} / {lightbox.images.length}</span>
+            )}
+            <button
+              onClick={downloadLightboxImage}
+              className="flex items-center gap-1.5 bg-white text-foreground text-sm font-medium px-3 py-1.5 rounded-full hover:bg-white/90 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" /> Download
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

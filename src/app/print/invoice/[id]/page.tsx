@@ -55,6 +55,8 @@ interface PaymentDetail {
     exchangeRate?: number
     depositDueDate?: string
     finalDueDate?: string
+    depositDueDateInvoiceOverride?: string | null
+    finalDueDateInvoiceOverride?: string | null
     customer: { name: string; email?: string; phone?: string; address?: string; gender?: string | null }
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string; yacht?: { name: string } }
@@ -380,8 +382,8 @@ export default function InvoicePage() {
               ['Package',       packageLabel],
               ['Destination',   destination],
               ['Sailing Dates', `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
-              ...(b.depositDueDate ? [['Deposit Due', fmtDateShort(b.depositDueDate)]] : []),
-              ...(b.finalDueDate   ? [['Balance Due', fmtDateShort(b.finalDueDate)]]   : []),
+              ...(b.depositDueDate ? [['Deposit Due', fmtDateShort(b.depositDueDateInvoiceOverride ?? b.depositDueDate)]] : []),
+              ...(b.finalDueDate   ? [['Balance Due', fmtDateShort(b.finalDueDateInvoiceOverride ?? b.finalDueDate)]]   : []),
               ...(b.salesperson    ? [['Sales',        b.salesperson]]                  : []),
             ] as [string, string][]).map(([k, v]) => (
               <div key={k} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>

@@ -38,6 +38,7 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 
 const VALID_CONTRACTS = ['Yes', 'Not Yet', 'Not Qualified']
+const VALID_CONDITIONS = ['In Conversation', 'Follow Up', 'Contract Sent', 'Active', 'No Response', 'Not Qualified', 'Inactive']
 
 // Normalize column name aliases
 function col(row: Record<string, string>, ...keys: string[]) {
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb()
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -103,7 +104,9 @@ export async function POST(request: NextRequest) {
 
   // First pass: collect unique agents from CSV (keyed by name, last non-empty value wins for optional fields)
   const agentMeta: Map<string, {
-    name: string; commission: number; country: string | null
+    name: string; country: string | null; address: string | null; email: string | null; whatsapp: string | null
+    website: string | null; instagram: string | null; source: string | null; currentCondition: string | null
+    commissionOpenTrip: number; commissionPrivateCharter: number
     note: string | null; contract: string | null
     isActive: boolean; salespersonId: string | null
   }> = new Map()
@@ -119,10 +122,16 @@ export async function POST(request: NextRequest) {
 
     const key = name.toLowerCase().trim()
 
-    const commissionRaw = col(row, 'commission')
-    const commission = commissionRaw ? parseFloat(commissionRaw) : 0
-    if (commissionRaw && isNaN(commission)) {
-      errors.push(`Row ${rowNum}: invalid commission "${commissionRaw}"`)
+    const commissionOpenTripRaw = col(row, 'commissionOpenTrip', 'commission')
+    const commissionOpenTrip = commissionOpenTripRaw ? parseFloat(commissionOpenTripRaw) : 0
+    if (commissionOpenTripRaw && isNaN(commissionOpenTrip)) {
+      errors.push(`Row ${rowNum}: invalid commissionOpenTrip "${commissionOpenTripRaw}"`)
+      continue
+    }
+    const commissionPrivateCharterRaw = col(row, 'commissionPrivateCharter')
+    const commissionPrivateCharter = commissionPrivateCharterRaw ? parseFloat(commissionPrivateCharterRaw) : 0
+    if (commissionPrivateCharterRaw && isNaN(commissionPrivateCharter)) {
+      errors.push(`Row ${rowNum}: invalid commissionPrivateCharter "${commissionPrivateCharterRaw}"`)
       continue
     }
 
@@ -131,7 +140,18 @@ export async function POST(request: NextRequest) {
       errors.push(`Row ${rowNum}: invalid contract "${contract}" — use: ${VALID_CONTRACTS.join(', ')}`)
     }
 
+    const currentCondition = col(row, 'currentCondition', 'condition') || null
+    if (currentCondition && !VALID_CONDITIONS.includes(currentCondition)) {
+      errors.push(`Row ${rowNum}: invalid currentCondition "${currentCondition}" — use: ${VALID_CONDITIONS.join(', ')}`)
+    }
+
     const country      = col(row, 'country') || null
+    const address       = col(row, 'address') || null
+    const email          = col(row, 'email') || null
+    const whatsapp       = col(row, 'whatsapp', 'wa', 'phone') || null
+    const website        = col(row, 'website') || null
+    const instagram      = col(row, 'instagram') || null
+    const source         = col(row, 'source') || null
     const note         = col(row, 'note', 'notes') || null
     const isActiveRaw  = col(row, 'isActive', 'active') || 'true'
     const isActive     = isActiveRaw.toLowerCase() !== 'false'
@@ -143,15 +163,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (!agentMeta.has(key)) {
-      agentMeta.set(key, { name, commission, country, note, contract, isActive, salespersonId })
+      agentMeta.set(key, {
+        name, country, address, email, whatsapp, website, instagram, source, currentCondition,
+        commissionOpenTrip, commissionPrivateCharter, note, contract, isActive, salespersonId,
+      })
     } else {
       // Update meta only if new row provides non-empty values
       const prev = agentMeta.get(key)!
-      if (country)      prev.country      = country
-      if (note)         prev.note         = note
-      if (contract)     prev.contract     = contract
-      if (commissionRaw) prev.commission  = commission
-      if (salespersonId) prev.salespersonId = salespersonId
+      if (country)          prev.country          = country
+      if (address)          prev.address          = address
+      if (email)            prev.email            = email
+      if (whatsapp)         prev.whatsapp         = whatsapp
+      if (website)          prev.website          = website
+      if (instagram)        prev.instagram        = instagram
+      if (source)           prev.source           = source
+      if (currentCondition) prev.currentCondition = currentCondition
+      if (note)             prev.note             = note
+      if (contract)         prev.contract         = contract
+      if (commissionOpenTripRaw)        prev.commissionOpenTrip        = commissionOpenTrip
+      if (commissionPrivateCharterRaw)  prev.commissionPrivateCharter  = commissionPrivateCharter
+      if (salespersonId)    prev.salespersonId    = salespersonId
     }
   }
 
@@ -167,11 +198,10 @@ export async function POST(request: NextRequest) {
         await db.agent.update({
           where: { id: existingId },
           data: {
-            commission:    meta.commission,
-            country:       meta.country,
-            note:          meta.note,
-            contract:      meta.contract,
-            isActive:      meta.isActive,
+            country: meta.country, address: meta.address, email: meta.email, whatsapp: meta.whatsapp,
+            website: meta.website, instagram: meta.instagram, source: meta.source, currentCondition: meta.currentCondition,
+            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter,
+            note: meta.note, contract: meta.contract, isActive: meta.isActive,
             ...(meta.salespersonId ? { salespersonId: meta.salespersonId } : {}),
           },
         })
@@ -184,13 +214,12 @@ export async function POST(request: NextRequest) {
       try {
         const agent = await db.agent.create({
           data: {
-            name:           meta.name,
-            commission:     meta.commission,
-            country:        meta.country,
-            note:           meta.note,
-            contract:       meta.contract,
-            isActive:       meta.isActive,
-            salespersonId:  meta.salespersonId,
+            name: meta.name,
+            country: meta.country, address: meta.address, email: meta.email, whatsapp: meta.whatsapp,
+            website: meta.website, instagram: meta.instagram, source: meta.source, currentCondition: meta.currentCondition,
+            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter,
+            note: meta.note, contract: meta.contract, isActive: meta.isActive,
+            salespersonId: meta.salespersonId,
           },
         })
         agentIdMap.set(key, agent.id)
@@ -222,7 +251,7 @@ export async function POST(request: NextRequest) {
     const contactEmail    = col(row, 'contactEmail', 'email') || null
     const contactWhatsapp = col(row, 'contactWhatsapp', 'whatsapp', 'wa', 'phone') || null
     const contactJobTitle = col(row, 'contactJobTitle', 'jobTitle', 'title', 'role') || null
-    const dobRaw          = col(row, 'dateOfBirth', 'dob', 'birthday') || null
+    const dobRaw          = col(row, 'dateOfBirth', 'contactdateofbirth', 'dob', 'birthday') || null
 
     let dateOfBirth: Date | null = null
     if (dobRaw) {

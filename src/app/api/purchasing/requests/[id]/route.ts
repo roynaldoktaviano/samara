@@ -17,6 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       items: true,
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      approvedBy: { select: { id: true, name: true } },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -67,7 +68,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   const request = await db.purchaseRequest.update({
     where: { id },
-    data: { status, updatedAt: new Date() },
+    data: {
+      status,
+      updatedAt: new Date(),
+      ...(status === 'APPROVED' && { approvedById: session.user.id, approvedAt: new Date() }),
+    },
     include: { items: true },
   })
 

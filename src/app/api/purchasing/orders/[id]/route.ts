@@ -19,12 +19,29 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       items: { include: { item: { select: { purchaseUnit: true } } } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       createdBy: { select: { name: true } },
-      request: { select: { prNumber: true, createdAt: true, requestedBy: { select: { name: true } } } },
+      supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
+      request: {
+        select: {
+          prNumber: true,
+          createdAt: true,
+          requestedBy: { select: { name: true } },
+          requestedByEmployee: { select: { fullName: true, employeeNumber: true } },
+        },
+      },
+      paymentRequests: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          requestedBy: { select: { name: true } },
+          paidBy: { select: { name: true } },
+        },
+      },
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const requestedByName = order.request?.requestedBy?.name ?? order.createdBy?.name ?? null
+  const requestedByName = order.request?.requestedByEmployee
+    ? `${order.request.requestedByEmployee.fullName} (${order.request.requestedByEmployee.employeeNumber})`
+    : order.request?.requestedBy?.name ?? order.createdBy?.name ?? null
 
   const receipts = await db.goodsReceipt.findMany({
     where: { orderId: id },
@@ -85,7 +102,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: `Only ${managedBy.toLowerCase()} team can receive items for this delivery location` }, { status: 403 })
   }
 
-  const actingUser = (status === 'IN_TRANSIT' || status === 'CANCELLED')
+  const actingUser = (status === 'IN_TRANSIT' || status === 'CANCELLED' || status === 'ORDERED')
     ? await db.user.findUnique({ where: { id: session.user.id }, select: { name: true } })
     : null
 
@@ -97,6 +114,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(expectedAt !== undefined && { expectedAt: expectedAt ? new Date(expectedAt) : null }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(dispatchPhotoKey !== undefined && { dispatchPhotoKey }),
+      ...(status === 'ORDERED' && { orderedAt: new Date(), confirmedByName: actingUser?.name ?? null }),
       ...(status === 'IN_TRANSIT' && { dispatchedAt: new Date(), dispatchedByName: actingUser?.name ?? null }),
       ...(status === 'CANCELLED' && {
         cancelledAt: new Date(),

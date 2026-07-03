@@ -2,9 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2 } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet } from 'lucide-react'
 
 
+interface PaymentRequest {
+  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string
+  createdAt: string; requestedBy: { name: string } | null
+  paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
+}
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
 interface PurchaseOrder {
   id: string; poNumber: string; supplierName: string | null; status: string
@@ -13,6 +18,7 @@ interface PurchaseOrder {
   notes: string | null; orderedAt: string; expectedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
   requestedByName: string | null
+  paymentStatus: string
 }
 interface SupplierOption { id: string; name: string }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
@@ -22,12 +28,14 @@ interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedAt?: string | null
   dispatchedByName?: string | null
+  confirmedByName?: string | null
   request?: { prNumber: string; createdAt: string } | null
   cancellationReason?: string | null
   cancelledAt?: string | null
   cancelledByName?: string | null
   items: OrderItem[]
   receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
+  paymentRequests: PaymentRequest[]
 }
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
@@ -48,9 +56,35 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       key: 'ordered',
       done: !['DRAFT'].includes(detail.status),
       label: 'PO Confirmed',
-      date: detail.orderedAt ? fmt(detail.orderedAt) : null,
-      sub: [detail.supplierName, detail.requestedByName ? `by ${detail.requestedByName}` : null],
+      date: !['DRAFT'].includes(detail.status) && detail.orderedAt ? fmt(detail.orderedAt) : null,
+      sub: !['DRAFT'].includes(detail.status)
+        ? [detail.supplierName, detail.confirmedByName ? `by ${detail.confirmedByName}` : null]
+        : [],
     },
+    ...(detail.paymentRequests.length > 0 ? (() => {
+      const latest = detail.paymentRequests[0]
+      const paid = latest.status === 'PAID'
+      return [
+        {
+          key: 'payment-requested',
+          done: true,
+          label: 'Payment Requested',
+          date: fmt(latest.createdAt),
+          sub: [fmtMoney(latest.amount), latest.requestedBy?.name ? `by ${latest.requestedBy.name}` : null],
+          photo: latest.notePhotoKey,
+          photoLabel: 'View nota',
+        },
+        {
+          key: 'payment-paid',
+          done: paid,
+          label: 'Payment Confirmed',
+          date: paid && latest.paidAt ? fmt(latest.paidAt) : null,
+          sub: paid ? [latest.paidBy?.name ? `by ${latest.paidBy.name}` : null] : [],
+          photo: paid ? latest.transferProofKey : null,
+          photoLabel: 'View transfer proof',
+        },
+      ]
+    })() : []),
     {
       key: 'transit',
       done: ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(detail.status),
@@ -128,6 +162,8 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
 const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
+const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PAID: 'Paid' }
+const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
@@ -271,6 +307,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [cancelReason, setCancelReason] = useState('')
   const [cancelSaving, setCancelSaving] = useState(false)
   const [cancelError, setCancelError] = useState('')
+
+  // request payment modal
+  const [paymentModal, setPaymentModal] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null)
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentSaving, setPaymentSaving] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const paymentFileInputRef = useRef<HTMLInputElement>(null)
+  const [paymentPhotoView, setPaymentPhotoView] = useState<string | null>(null)
 
   // receive form
   const [receiveModal, setReceiveModal] = useState(false)
@@ -418,6 +464,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <th className="text-left px-4 py-3 font-medium">Received</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-left px-4 py-3 font-medium">Payment</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -433,11 +480,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
+                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5" />
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : visibleOrders.length === 0 ? <tr><td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
               : visibleOrders.map(o => {
                 const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
@@ -474,6 +522,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                       {o.lastReceivedBy && (
                         <p className="text-[10px] text-muted-foreground mt-0.5">by {o.lastReceivedBy}</p>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
                     </td>
                     <td className="px-4 py-3"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
                   </tr>
@@ -734,6 +785,36 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     openDetail(detail); load()
   }
 
+  function handlePaymentPhotoFile(file: File) {
+    const canvas = document.createElement('canvas')
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1200
+      const ratio = Math.min(MAX / img.width, MAX / img.height, 1)
+      canvas.width = img.width * ratio
+      canvas.height = img.height * ratio
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      setPaymentPhoto(canvas.toDataURL('image/jpeg', 0.75))
+    }
+    img.src = URL.createObjectURL(file)
+  }
+
+  async function submitPaymentRequest() {
+    if (!detail) return
+    if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
+    if (!paymentPhoto) { setPaymentError('Receipt/nota photo is required'); return }
+    setPaymentSaving(true); setPaymentError('')
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/payment-request`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKey: paymentPhoto, notes: paymentNotes || undefined }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setPaymentError(data.error ?? 'Failed'); setPaymentSaving(false); return }
+    setPaymentSaving(false); setPaymentModal(false)
+    setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes('')
+    openDetail(detail); load()
+  }
+
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -757,6 +838,18 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
+            {detail.status !== 'DRAFT' && (
+              <button onClick={() => window.open(`/print/purchase-order/${detail.id}`, '_blank')}
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                <FileDown className="h-3.5 w-3.5" /> Download PDF
+              </button>
+            )}
+            {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && detail.paymentRequests.length === 0 && (
+              <button onClick={() => { setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                <Wallet className="h-3.5 w-3.5" /> Request Payment
+              </button>
+            )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
               const allowed = managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -926,6 +1019,47 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               )}
             </div>
           )}
+
+          {detail.paymentRequests.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Payment Requests</h3>
+              {detail.paymentRequests.map(p => (
+                <div key={p.id} className="rounded-xl border overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
+                    <div>
+                      <p className="font-semibold text-base">{fmtMoney(p.amount)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Requested {fmtDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
+                      {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : 'PENDING']}
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
+                    <div className={p.status === 'PAID' && p.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
+                        <img src={p.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(p.notePhotoKey)}
+                          className="w-full max-h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                      </div>
+                      {p.status === 'PAID' && p.transferProofKey && (
+                        <div>
+                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
+                          <img src={p.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(p.transferProofKey)}
+                            className="w-full max-h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          <p className="text-xs text-green-700 mt-1.5">
+                            Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           </div>{/* end left column */}
 
           {/* Right column — Timeline */}
@@ -1025,6 +1159,79 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             </div>
           </div>
         </>
+      )}
+
+      {/* Request Payment Modal */}
+      {paymentModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setPaymentModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">Request Payment</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
+                </div>
+                <button onClick={() => setPaymentModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {paymentError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{paymentError}</div>}
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <input type="number" min={0} autoFocus
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="e.g. 1500000"
+                    value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Receipt / Nota Photo <span className="text-red-500">*</span></label>
+                  <input ref={paymentFileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handlePaymentPhotoFile(f) }} />
+                  {paymentPhoto ? (
+                    <div className="space-y-2">
+                      <img src={paymentPhoto} alt="Nota" className="w-full rounded-xl object-cover max-h-56 border" />
+                      <button onClick={() => { setPaymentPhoto(null); paymentFileInputRef.current?.click() }}
+                        className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
+                        Replace photo
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => paymentFileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
+                      <Camera className="h-6 w-6 text-amber-500" />
+                      <p className="text-sm font-medium">Take or upload photo</p>
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Notes</label>
+                  <textarea rows={2}
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Payment terms, urgency, etc. (optional)"
+                    value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} />
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Requested by <span className="font-medium text-foreground">{session?.user?.name ?? 'You'}</span>
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={submitPaymentRequest} disabled={!paymentAmount || !paymentPhoto || paymentSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  {paymentSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending...</> : <><Wallet className="h-3.5 w-3.5" />Send to Finance</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {paymentPhotoView && (
+        <PhotoLightbox photoKey={paymentPhotoView} onClose={() => setPaymentPhotoView(null)} />
       )}
 
       {/* Receive Modal */}

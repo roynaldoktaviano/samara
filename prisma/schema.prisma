@@ -97,7 +97,8 @@ model User {
   managedAgents    Agent[]       @relation("AgentSalesperson")
   waitingListItems WaitingList[]
   stockMovements   StockMovement[]
-  purchaseRequests PurchaseRequest[]
+  purchaseRequests PurchaseRequest[] @relation("PRRequestedBy")
+  purchaseRequestsApproved PurchaseRequest[] @relation("PRApprovedBy")
   purchaseOrdersCreated PurchaseOrder[]
   goodsReceipts    GoodsReceipt[]
   transfersDispatched         StockTransfer[] @relation("TransferDispatch")
@@ -107,6 +108,8 @@ model User {
   crewRequests        CrewRequest[]
   stockCountsBy       StockCount[]   @relation("StockCountBy")
   stockCountsApproved StockCount[]   @relation("StockCountApprove")
+  poPaymentRequestsMade POPaymentRequest[] @relation("POPaymentRequestedBy")
+  poPaymentRequestsPaid POPaymentRequest[] @relation("POPaymentPaidBy")
 }
 
 model Customer {
@@ -318,6 +321,10 @@ model Booking {
   discount       Float           @default(0)
   depositDueDate DateTime?
   finalDueDate   DateTime?
+  // When set, the invoice PDF shows this date instead of the live depositDueDate/finalDueDate above —
+  // lets staff extend a due date internally without amending an already-issued invoice.
+  depositDueDateInvoiceOverride DateTime?
+  finalDueDateInvoiceOverride   DateTime?
   holdUntil      DateTime?
   guestCount     Int             @default(1)
   crewRequired   Boolean         @default(false)
@@ -547,16 +554,19 @@ model Notification {
   paymentId String?
   bookingId String?
   orderId   String?
+  requestId String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  payment       Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  booking       Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  purchaseOrder PurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payment       Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  booking       Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  purchaseOrder PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  purchaseRequest PurchaseRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
   @@index([paymentId])
   @@index([bookingId])
   @@index([orderId])
+  @@index([requestId])
 }
 
 model WaitingList {
@@ -839,20 +849,25 @@ model PurchaseRequest {
   notes                 String?
   status                PurchaseRequestStatus @default(DRAFT)
   pdfKey                String?
+  approvedById          String?
+  approvedAt            DateTime?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
-  requestedBy         User                  @relation(fields: [requestedById], references: [id])
+  requestedBy         User                  @relation("PRRequestedBy", fields: [requestedById], references: [id])
   requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
   deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   items               PurchaseRequestItem[]
   orders              PurchaseOrder[]
+  notifications       Notification[]
 
   @@index([status])
   @@index([createdAt])
   @@index([requestedById])
   @@index([requestedByEmployeeId])
   @@index([deliveryLocationId])
+  @@index([approvedById])
 }
 
 model Supplier {
@@ -902,6 +917,7 @@ model PurchaseOrder {
   dispatchPhotoKey   String?
   dispatchedAt       DateTime?
   dispatchedByName   String?
+  confirmedByName    String?
   notes              String?
   orderedAt          DateTime            @default(now())
   expectedAt         DateTime?
@@ -919,6 +935,7 @@ model PurchaseOrder {
   items            PurchaseOrderItem[]
   receipts         GoodsReceipt[]
   notifications    Notification[]
+  paymentRequests  POPaymentRequest[]
 
   @@index([createdById])
 
@@ -926,6 +943,34 @@ model PurchaseOrder {
   @@index([createdAt])
   @@index([requestId])
   @@index([deliveryLocationId])
+}
+
+enum POPaymentRequestStatus {
+  PENDING
+  PAID
+}
+
+model POPaymentRequest {
+  id               String                 @id @default(cuid())
+  orderId          String
+  requestedById    String
+  amount           Float
+  notePhotoKey     String
+  notes            String?
+  status           POPaymentRequestStatus @default(PENDING)
+  paidAt           DateTime?
+  paidById         String?
+  transferProofKey String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedBy User          @relation("POPaymentRequestedBy", fields: [requestedById], references: [id])
+  paidBy      User?         @relation("POPaymentPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([requestedById])
 }
 
 model PurchaseOrderItem {

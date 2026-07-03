@@ -539,6 +539,26 @@ export default function Agents() {
     finally { setToggling(false) }
   }
 
+  const AGENT_CSV_HEADER = [
+    'name', 'salesperson', 'country', 'address', 'email', 'whatsapp', 'website', 'instagram',
+    'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'contract', 'isActive', 'note',
+    'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
+  ]
+
+  const downloadTemplate = () => {
+    const sample = [
+      'Navelia LLC', 'Efrinda', 'United States', '123 Main St, Miami, FL', 'info@navelia.com', '+1 305 555 0100',
+      'https://navelia.com', '@navelia', 'Referral', 'Active', '20', '15', 'Yes', 'true', 'Long-time partner agent',
+      'Philip D De Wilde', 'philip@navelia.com', '+62 853 3351 4655', 'Charter Manager', '1985-04-12',
+    ]
+    const csv = [AGENT_CSV_HEADER.join(','), sample.map(v => `"${v.replace(/"/g, '""')}"`).join(',')].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = 'template-agents.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -627,18 +647,16 @@ export default function Agents() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && (
+          {canManage && (
             <>
               <Button
                 variant="outline" size="sm"
-                onClick={handleExport}
-                disabled={exporting}
+                onClick={downloadTemplate}
                 className="h-8 px-3 text-xs"
+                title="Download a sample CSV with the correct columns"
               >
-                {exporting
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                  : <Download className="h-3.5 w-3.5 mr-1.5" />}
-                Export CSV
+                <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                Template
               </Button>
 
               <label className="cursor-pointer">
@@ -656,6 +674,22 @@ export default function Agents() {
                   Import CSV
                 </span>
               </label>
+            </>
+          )}
+
+          {isAdmin && (
+            <>
+              <Button
+                variant="outline" size="sm"
+                onClick={handleExport}
+                disabled={exporting}
+                className="h-8 px-3 text-xs"
+              >
+                {exporting
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                Export CSV
+              </Button>
             </>
           )}
 

@@ -23,18 +23,27 @@ export async function GET() {
       items: { select: { id: true, orderedQty: true, receivedQty: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       createdBy: { select: { name: true } },
-      request: { select: { requestedBy: { select: { name: true } } } },
+      request: {
+        select: {
+          requestedBy: { select: { name: true } },
+          requestedByEmployee: { select: { fullName: true, employeeNumber: true } },
+        },
+      },
       receipts: {
         orderBy: { receivedAt: 'desc' },
         take: 1,
         select: { receivedAt: true, receivedBy: { select: { name: true } } },
       },
+      paymentRequests: { select: { status: true } },
     },
   })
   return NextResponse.json(orders.map(o => {
     const totalOrdered = o.items.reduce((s, i) => s + i.orderedQty, 0)
     const totalReceived = o.items.reduce((s, i) => s + i.receivedQty, 0)
     const fullyReceivedCount = o.items.filter(i => i.receivedQty >= i.orderedQty).length
+    const paymentStatus = o.paymentRequests.length === 0
+      ? 'UNPAID'
+      : o.paymentRequests.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
     return {
       ...o,
       itemCount: o.items.length,
@@ -45,7 +54,11 @@ export async function GET() {
       lastReceivedAt: o.receipts[0]?.receivedAt ?? null,
       lastReceivedBy: o.receipts[0]?.receivedBy?.name ?? null,
       receipts: undefined,
-      requestedByName: o.request?.requestedBy?.name ?? o.createdBy?.name ?? null,
+      paymentStatus,
+      paymentRequests: undefined,
+      requestedByName: o.request?.requestedByEmployee
+        ? `${o.request.requestedByEmployee.fullName} (${o.request.requestedByEmployee.employeeNumber})`
+        : o.request?.requestedBy?.name ?? o.createdBy?.name ?? null,
       request: undefined,
       createdBy: undefined,
     }
@@ -69,7 +82,10 @@ export async function POST(req: NextRequest) {
     resolvedSupplierId = matched?.id ?? null
   }
 
-  const poNumber = await generatePoNumber(db)
+  const [poNumber, actingUser] = await Promise.all([
+    generatePoNumber(db),
+    db.user.findUnique({ where: { id: session.user.id }, select: { name: true } }),
+  ])
   const order = await db.purchaseOrder.create({
     data: {
       id: crypto.randomUUID(),
@@ -78,6 +94,7 @@ export async function POST(req: NextRequest) {
       supplierName: supplierName.trim(),
       deliveryLocationId: deliveryLocationId || null,
       status: 'ORDERED',
+      confirmedByName: actingUser?.name ?? null,
       expectedAt: expectedAt ? new Date(expectedAt) : null,
       notes: notes?.trim() || null,
       createdById: session.user.id,

@@ -29,6 +29,7 @@ export async function GET() {
       items: { select: { id: true, quantity: true, estimatedCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      approvedBy: { select: { id: true, name: true } },
     },
   })
   const userIds = [...new Set(requests.map(r => r.requestedById))]

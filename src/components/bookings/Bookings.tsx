@@ -41,6 +41,8 @@ interface BookingRecord {
   status: string
   depositDueDate?: string | null
   finalDueDate?: string | null
+  depositDueDateInvoiceOverride?: string | null
+  finalDueDateInvoiceOverride?: string | null
   holdUntil?: string | null
   destination?: string
   notes?: string
@@ -222,6 +224,12 @@ export default function Bookings() {
   const [detailCabins,        setDetailCabins]        = useState<any[]>([])
   const [detailCabinsLoading, setDetailCabinsLoading] = useState(false)
   const [cancelDialogBooking, setCancelDialogBooking] = useState<BookingRecord | null>(null)
+
+  /* extend deposit/final due date */
+  const [extendDateTarget, setExtendDateTarget] = useState<{ booking: BookingRecord; field: 'deposit' | 'final' } | null>(null)
+  const [extendNewDate,    setExtendNewDate]    = useState('')
+  const [extendSyncInvoice, setExtendSyncInvoice] = useState(true)
+  const [extendSaving,     setExtendSaving]     = useState(false)
 
   const [cancelReasonText,    setCancelReasonText]    = useState('')
   const [cancelSaving,        setCancelSaving]        = useState(false)
@@ -419,6 +427,42 @@ export default function Bookings() {
       if (bookingRes.ok) { await fetchBookings(); setEditBooking(null) }
     } catch (e) { console.error(e) }
     finally { setEditSaving(false) }
+  }
+
+  /* extend deposit/final due date */
+  const openExtendDate = (b: BookingRecord, field: 'deposit' | 'final') => {
+    setExtendDateTarget({ booking: b, field })
+    setExtendNewDate(fmtDateInput(field === 'deposit' ? b.depositDueDate : b.finalDueDate))
+    setExtendSyncInvoice(true)
+  }
+
+  const saveExtendDate = async () => {
+    if (!extendDateTarget || !extendNewDate) return
+    setExtendSaving(true)
+    try {
+      const { booking, field } = extendDateTarget
+      const body = field === 'deposit'
+        ? { depositDueDate: extendNewDate, syncDepositDueToInvoice: extendSyncInvoice }
+        : { finalDueDate: extendNewDate, syncFinalDueToInvoice: extendSyncInvoice }
+      const res = await fetch(`/api/bookings/${booking.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        await fetchBookings()
+        setDetailBooking(prev => prev && prev.id === booking.id
+          ? {
+              ...prev,
+              ...(field === 'deposit'
+                ? { depositDueDate: extendNewDate, depositDueDateInvoiceOverride: extendSyncInvoice ? null : (prev.depositDueDateInvoiceOverride ?? prev.depositDueDate) }
+                : { finalDueDate: extendNewDate, finalDueDateInvoiceOverride: extendSyncInvoice ? null : (prev.finalDueDateInvoiceOverride ?? prev.finalDueDate) }),
+            }
+          : prev)
+        setExtendDateTarget(null)
+      }
+    } catch (e) { console.error(e) }
+    finally { setExtendSaving(false) }
   }
 
   const applyReschedule = async () => {
@@ -1739,7 +1783,7 @@ export default function Bookings() {
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Payment Due Date</p><p className="text-sm font-medium">{editDepDue || '—'}</p></div>
                         <div className="space-y-1.5">
                           <Label className="text-xs">Final Balance Due Date</Label>
-                          <Input type="date" value={editFinalDue} onChange={e => setEditFinalDue(e.target.value)} />
+                          <Input type="date" value={editFinalDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
                         </div>
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Notes</p><p className="text-sm font-medium">{editNotes || '—'}</p></div>
                       </div>
@@ -2247,14 +2291,40 @@ export default function Bookings() {
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         {db_.depositDueDate && (
                           <div className="rounded-lg border p-2.5">
-                            <p className="text-muted-foreground mb-0.5">Deposit Due</p>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <p className="text-muted-foreground">Deposit Due</p>
+                              {canManageBookings && (
+                                <button
+                                  onClick={() => openExtendDate(db_, 'deposit')}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                                >
+                                  Extend
+                                </button>
+                              )}
+                            </div>
                             <p className="font-semibold">{fmtDate(db_.depositDueDate)}</p>
+                            {db_.depositDueDateInvoiceOverride && (
+                              <p className="text-[10px] text-amber-600 mt-0.5">Invoice shows {fmtDate(db_.depositDueDateInvoiceOverride)}</p>
+                            )}
                           </div>
                         )}
                         {db_.finalDueDate && (
                           <div className="rounded-lg border p-2.5">
-                            <p className="text-muted-foreground mb-0.5">Final Due</p>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <p className="text-muted-foreground">Final Due</p>
+                              {canManageBookings && (
+                                <button
+                                  onClick={() => openExtendDate(db_, 'final')}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                                >
+                                  Extend
+                                </button>
+                              )}
+                            </div>
                             <p className="font-semibold">{fmtDate(db_.finalDueDate)}</p>
+                            {db_.finalDueDateInvoiceOverride && (
+                              <p className="text-[10px] text-amber-600 mt-0.5">Invoice shows {fmtDate(db_.finalDueDateInvoiceOverride)}</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2841,6 +2911,58 @@ export default function Bookings() {
             </Button>
             <Button onClick={saveExtendHold} disabled={extendHoldSaving || !extendHoldDate}>
               {extendHoldSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════ Extend Deposit/Final Due Date Dialog ════ */}
+      <Dialog open={!!extendDateTarget} onOpenChange={v => !v && setExtendDateTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-500" />
+              Extend {extendDateTarget?.field === 'deposit' ? 'Deposit' : 'Final'} Due Date
+            </DialogTitle>
+          </DialogHeader>
+          {extendDateTarget && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Booking <span className="font-mono font-semibold text-foreground">{extendDateTarget.booking.bookingCode}</span> — {extendDateTarget.booking.customer.name}
+              </p>
+              <div className="space-y-1.5">
+                <Label>New Due Date</Label>
+                <Input
+                  type="date"
+                  value={extendNewDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => setExtendNewDate(e.target.value)}
+                  disabled={extendSaving}
+                />
+                {extendNewDate && extendNewDate < new Date().toISOString().split('T')[0] && (
+                  <p className="text-xs text-destructive">Due date cannot be in the past.</p>
+                )}
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="pr-3">
+                  <p className="text-sm font-medium">Change in Invoice</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {extendSyncInvoice
+                      ? 'The invoice will show this new date.'
+                      : 'Internal record only — the invoice keeps showing the original date, even if this is extended again later.'}
+                  </p>
+                </div>
+                <Switch checked={extendSyncInvoice} onCheckedChange={setExtendSyncInvoice} disabled={extendSaving} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtendDateTarget(null)} disabled={extendSaving}>
+              Cancel
+            </Button>
+            <Button onClick={saveExtendDate} disabled={extendSaving || !extendNewDate || extendNewDate < new Date().toISOString().split('T')[0]}>
+              {extendSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save
             </Button>
           </DialogFooter>
