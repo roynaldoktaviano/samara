@@ -23,7 +23,7 @@ interface PurchaseOrder {
 interface SupplierOption { id: string; name: string }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
-interface OrderItem { itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
+interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedAt?: string | null
@@ -323,7 +323,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [receiveLocation, setReceiveLocation] = useState('')
   const [receiveNotes, setReceiveNotes] = useState('')
   const [receiverName, setReceiverName] = useState('')
-  const [receiveLines, setReceiveLines] = useState<{ itemId: string | null; itemName: string; orderedQty: number; receivedQty: number; unitCost: number; outcome: string; batch: string; expiryDate: string; unit?: string | null }[]>([])
+  const [receiveLines, setReceiveLines] = useState<{ poItemId: string; itemId: string | null; itemName: string; orderedQty: number; receivedQty: number; unitCost: number; outcome: string; batch: string; expiryDate: string; unit?: string | null }[]>([])
   const [receivePhoto, setReceivePhoto] = useState<string | null>(null)
   const receivePhotoRef = useRef<HTMLInputElement>(null)
   const [receiveSaving, setReceiveSaving] = useState(false)
@@ -370,13 +370,24 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       search: '', open: false,
     }))
   }
+  function pickCustomItem(idx: number, name: string) {
+    setLines(l => l.map((line, i) => i !== idx ? line : {
+      ...line,
+      itemId: '', itemName: name.trim(),
+      baseUnit: '', purchaseUnit: '', itemUnit: '',
+      search: '', open: false,
+    }))
+  }
 
   async function submit() {
     setSaving(true); setSaveError('')
     if (!supplier.trim()) { setSaveError('Supplier name is required'); setSaving(false); return }
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes, items: lines }),
+      body: JSON.stringify({
+        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes,
+        items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
@@ -389,7 +400,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   async function openReceive() {
     if (!detail) return
     setReceiveLines(detail.items.map(i => ({
-      itemId: i.itemId, itemName: i.itemName,
+      poItemId: i.id, itemId: i.itemId, itemName: i.itemName,
       orderedQty: i.orderedQty, receivedQty: i.orderedQty - (i.receivedQty ?? 0),
       unitCost: i.unitCost, outcome: 'ACCEPTED', batch: '', expiryDate: '', unit: i.unit,
     })))
@@ -596,8 +607,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         </div>
 
         {/* Line items */}
-        <div className="rounded-xl border bg-white overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b">
+        <div className="rounded-xl border bg-white">
+          <div className="flex items-center justify-between px-5 py-4 border-b rounded-t-xl">
             <h3 className="text-sm font-semibold">Items</h3>
             <button onClick={addLine}
               className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
@@ -655,6 +666,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                                   {item.avgPrice > 0 && <span className="text-xs text-amber-700 font-medium">{fmtMoney(item.avgPrice)}</span>}
                                 </button>
                               ))}
+                              {line.search.trim() && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase()) && (
+                                <button onClick={() => pickCustomItem(idx, line.search)}
+                                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 flex items-center gap-2.5 border-t transition-colors">
+                                  <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                                  <span className="font-medium text-green-700 flex-1">Use &quot;{line.search.trim()}&quot;</span>
+                                  <span className="text-xs text-green-600">Not in master list</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </>
@@ -687,6 +706,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                             ))}
                           </div>
                         )
+                      ) : line.itemName ? (
+                        <input className={inp} placeholder="e.g. bouquet" value={line.itemUnit}
+                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemUnit: e.target.value }))} />
                       ) : (
                         <span className="h-9 flex items-center px-3 text-sm text-muted-foreground">—</span>
                       )}
@@ -839,8 +861,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {detail.status !== 'DRAFT' && (
-              <button onClick={() => window.open(`/print/purchase-order/${detail.id}`, '_blank')}
-                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+              <button disabled title="PDF export is still being finalized"
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg opacity-50 cursor-not-allowed">
                 <FileDown className="h-3.5 w-3.5" /> Download PDF
               </button>
             )}
@@ -857,7 +879,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             })() && (
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
-            {detail.status === 'ORDERED' && canTransit && (
+            {detail.status === 'ORDERED' && canTransit && detail.paymentRequests.some(p => p.status === 'PAID') && (
               <button onClick={() => { setTransitPhoto(null); setTransitError(''); setTransitModal(true) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 <Camera className="h-3.5 w-3.5" /> Mark In Transit

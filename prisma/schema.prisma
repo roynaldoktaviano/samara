@@ -978,6 +978,7 @@ model PurchaseOrderItem {
   orderId      String
   itemId       String?
   itemName     String
+  unit         String?
   orderedQty   Float
   receivedQty  Float         @default(0)
   unitCost     Float         @default(0)

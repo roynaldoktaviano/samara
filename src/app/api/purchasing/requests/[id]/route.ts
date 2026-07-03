@@ -111,6 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                 id: crypto.randomUUID(),
                 itemId: it.itemId ?? null,
                 itemName: it.itemName,
+                unit: it.itemId ? null : it.unit,
                 orderedQty: it.quantity,
                 unitCost: it.estimatedCost,
               })),

@@ -100,10 +100,11 @@ export async function POST(req: NextRequest) {
       createdById: session.user.id,
       updatedAt: new Date(),
       items: {
-        create: items.map((it: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number }) => ({
+        create: items.map((it: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string }) => ({
           id: crypto.randomUUID(),
           itemId: it.itemId || null,
           itemName: it.itemName,
+          unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty),
           unitCost: Number(it.unitCost) || 0,
         })),

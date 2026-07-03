@@ -53,7 +53,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     receipts,
     requestedByName,
     createdBy: undefined,
-    items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? null, item: undefined })),
+    items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
   })
 }
 

@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         receivePhotoKey: receivePhotoKey || null,
         receivedAt: new Date(),
         items: {
-          create: items.map((it: { itemId?: string; itemName: string; receivedQty: number; unitCost?: number; outcome?: string; batch?: string; expiryDate?: string; notes?: string }) => ({
+          create: items.map((it: { itemId?: string; poItemId?: string; itemName: string; receivedQty: number; unitCost?: number; outcome?: string; batch?: string; expiryDate?: string; notes?: string }) => ({
             id: crypto.randomUUID(),
             itemId: it.itemId || null,
             itemName: it.itemName,
@@ -108,9 +108,22 @@ export async function POST(req: NextRequest) {
     })
 
     for (const it of items) {
-      if (!it.itemId || !it.receivedQty) continue
+      if (!it.receivedQty) continue
       const purchaseQty = Number(it.receivedQty)
       if (purchaseQty <= 0) continue
+
+      // Advance the PO line's receivedQty regardless of whether it's linked to a master item —
+      // custom/non-stock lines (e.g. one-off purchases) still need to reach RECEIVED status.
+      const poItem = it.poItemId
+        ? await tx.purchaseOrderItem.findUnique({ where: { id: it.poItemId } })
+        : await tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } })
+      if (poItem) {
+        await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
+      }
+
+      // Everything below (stock lots, movements, discrepancy checks, standard cost) only
+      // applies to items linked to the master catalog.
+      if (!it.itemId) continue
 
       const factor = conversionMap.get(it.itemId) ?? 1
       const baseQty = purchaseQty * factor                                // e.g. 1 carton × 24 = 24 cans
@@ -128,11 +141,8 @@ export async function POST(req: NextRequest) {
       await tx.stockMovement.create({
         data: { id: crypto.randomUUID(), itemId: it.itemId, toLocationId: locationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: session.user.id },
       })
-      // receivedQty on PO item stays in purchase units (matches orderedQty unit)
-      const poItem = await tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId } })
-      if (poItem) {
-        await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
 
+      if (poItem) {
         // Auto-create Receiving Discrepancy exception if qty received ≠ qty remaining
         const remaining = poItem.orderedQty - poItem.receivedQty
         const discrepancy = purchaseQty - remaining
