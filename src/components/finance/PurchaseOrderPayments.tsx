@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Wallet, X, Camera, Upload, MapPin } from 'lucide-react'
+import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
+import { FilePreview } from '@/components/ui/file-preview'
 
 interface PaymentRequest {
   id: string
@@ -22,10 +24,22 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
+  const isPdf = isPdfDataUrl(photoKey)
   return (
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-        <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+        {isPdf ? (
+          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+            <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
+            <div className="p-3 flex justify-center">
+              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                Open PDF in new tab
+              </a>
+            </div>
+          </div>
+        ) : (
+          <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+        )}
         <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
           <X className="h-4 w-4" />
         </button>
@@ -61,17 +75,7 @@ export default function PurchaseOrderPayments() {
   useEffect(() => { load() }, [load])
 
   function handleProofFile(file: File) {
-    const canvas = document.createElement('canvas')
-    const img = new Image()
-    img.onload = () => {
-      const MAX = 1200
-      const ratio = Math.min(MAX / img.width, MAX / img.height, 1)
-      canvas.width = img.width * ratio
-      canvas.height = img.height * ratio
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      setTransferProof(canvas.toDataURL('image/jpeg', 0.75))
-    }
-    img.src = URL.createObjectURL(file)
+    readUploadFile(file).then(setTransferProof).catch(() => setPayError('Failed to read file'))
   }
 
   async function confirmPaid() {
@@ -205,15 +209,15 @@ export default function PurchaseOrderPayments() {
                 <div className={selected.status === 'PAID' && selected.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
-                    <img src={selected.notePhotoKey} alt="Nota" onClick={() => setViewPhoto(selected.notePhotoKey)}
-                      className="w-full max-h-64 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                    <FilePreview src={selected.notePhotoKey} alt="Nota" onClick={() => setViewPhoto(selected.notePhotoKey)}
+                      className="w-full h-64 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                   </div>
 
                   {selected.status === 'PAID' && selected.transferProofKey && (
                     <div>
                       <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
-                      <img src={selected.transferProofKey} alt="Transfer proof" onClick={() => setViewPhoto(selected.transferProofKey)}
-                        className="w-full max-h-64 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                      <FilePreview src={selected.transferProofKey} alt="Transfer proof" onClick={() => setViewPhoto(selected.transferProofKey)}
+                        className="w-full h-64 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                       <p className="text-xs text-green-700 mt-1.5">
                         Paid {selected.paidAt && fmtDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
                       </p>
@@ -251,14 +255,14 @@ export default function PurchaseOrderPayments() {
               </div>
               <div className="p-5 space-y-4">
                 {payError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{payError}</div>}
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleProofFile(f) }} />
                 {transferProof ? (
                   <div className="space-y-2">
-                    <img src={transferProof} alt="Transfer proof" className="w-full rounded-xl object-contain bg-muted/20 max-h-56 border" />
+                    <FilePreview src={transferProof} alt="Transfer proof" className="w-full h-56 rounded-xl object-contain bg-muted/20 border" />
                     <button onClick={() => { setTransferProof(null); fileInputRef.current?.click() }}
                       className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
-                      Replace photo
+                      Replace file
                     </button>
                   </div>
                 ) : (
@@ -268,7 +272,7 @@ export default function PurchaseOrderPayments() {
                       <Camera className="h-6 w-6 text-green-500" />
                     </div>
                     <div className="text-center">
-                      <p className="font-medium text-sm">Take or upload transfer proof</p>
+                      <p className="font-medium text-sm">Take a photo or upload photo/PDF</p>
                       <p className="text-xs mt-0.5">Bank transfer receipt or confirmation screenshot</p>
                     </div>
                   </button>

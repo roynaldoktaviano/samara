@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2 } from 'lucide-react'
+import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
+import { FilePreview } from '@/components/ui/file-preview'
 
 
 interface PaymentRequest {
@@ -258,10 +260,22 @@ function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
 }
 
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
+  const isPdf = isPdfDataUrl(photoKey)
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-        <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+        {isPdf ? (
+          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+            <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
+            <div className="p-3 flex justify-center">
+              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                Open PDF in new tab
+              </a>
+            </div>
+          </div>
+        ) : (
+          <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+        )}
         <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
           <X className="h-4 w-4" />
         </button>
@@ -821,17 +835,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   }
 
   function handlePaymentPhotoFile(file: File) {
-    const canvas = document.createElement('canvas')
-    const img = new Image()
-    img.onload = () => {
-      const MAX = 1200
-      const ratio = Math.min(MAX / img.width, MAX / img.height, 1)
-      canvas.width = img.width * ratio
-      canvas.height = img.height * ratio
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      setPaymentPhoto(canvas.toDataURL('image/jpeg', 0.75))
-    }
-    img.src = URL.createObjectURL(file)
+    readUploadFile(file).then(setPaymentPhoto).catch(() => setPaymentError('Failed to read file'))
   }
 
   async function submitPaymentRequest() {
@@ -1087,14 +1091,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     <div className={p.status === 'PAID' && p.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
-                        <img src={p.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(p.notePhotoKey)}
-                          className="w-full max-h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                        <FilePreview src={p.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(p.notePhotoKey)}
+                          className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                       </div>
                       {p.status === 'PAID' && p.transferProofKey && (
                         <div>
                           <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
-                          <img src={p.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(p.transferProofKey)}
-                            className="w-full max-h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          <FilePreview src={p.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(p.transferProofKey)}
+                            className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                           <p className="text-xs text-green-700 mt-1.5">
                             Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
                           </p>
@@ -1243,22 +1247,22 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Receipt / Nota Photo <span className="text-red-500">*</span></label>
-                  <input ref={paymentFileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <input ref={paymentFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handlePaymentPhotoFile(f) }} />
                   {paymentPhoto ? (
                     <div className="space-y-2">
-                      <img src={paymentPhoto} alt="Nota" className="w-full rounded-xl object-cover max-h-56 border" />
+                      <FilePreview src={paymentPhoto} alt="Nota" className="w-full h-40 rounded-xl object-cover border" />
                       <button onClick={() => { setPaymentPhoto(null); paymentFileInputRef.current?.click() }}
                         className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
-                        Replace photo
+                        Replace file
                       </button>
                     </div>
                   ) : (
                     <button onClick={() => paymentFileInputRef.current?.click()}
                       className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
                       <Camera className="h-6 w-6 text-amber-500" />
-                      <p className="text-sm font-medium">Take or upload photo</p>
+                      <p className="text-sm font-medium">Take a photo or upload photo/PDF</p>
                     </button>
                   )}
                 </div>
