@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2 } from 'lucide-react'
 
 
 interface PaymentRequest {
-  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string
+  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string; paymentMethod: string
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
 }
@@ -64,6 +64,18 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
     ...(detail.paymentRequests.length > 0 ? (() => {
       const latest = detail.paymentRequests[0]
       const paid = latest.status === 'PAID'
+      const isCard = latest.paymentMethod === 'CARD'
+      if (isCard) {
+        return [{
+          key: 'payment-card',
+          done: true,
+          label: 'Debit Paid',
+          date: latest.paidAt ? fmt(latest.paidAt) : fmt(latest.createdAt),
+          sub: [fmtMoney(latest.amount), 'Debit Paid', (latest.paidBy?.name ?? latest.requestedBy?.name) ? `by ${latest.paidBy?.name ?? latest.requestedBy?.name}` : null],
+          photo: latest.notePhotoKey,
+          photoLabel: 'View nota',
+        }]
+      }
       return [
         {
           key: 'payment-requested',
@@ -310,6 +322,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // request payment modal
   const [paymentModal, setPaymentModal] = useState(false)
+  const [paymentMode, setPaymentMode] = useState<'REQUEST' | 'DIRECT'>('REQUEST')
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null)
   const [paymentNotes, setPaymentNotes] = useState('')
@@ -828,7 +841,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     setPaymentSaving(true); setPaymentError('')
     const res = await fetch(`/api/purchasing/orders/${detail.id}/payment-request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKey: paymentPhoto, notes: paymentNotes || undefined }),
+      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKey: paymentPhoto, notes: paymentNotes || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
     })
     const data = await res.json()
     if (!res.ok) { setPaymentError(data.error ?? 'Failed'); setPaymentSaving(false); return }
@@ -867,10 +880,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               </button>
             )}
             {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && detail.paymentRequests.length === 0 && (
-              <button onClick={() => { setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
-                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                <Wallet className="h-3.5 w-3.5" /> Request Payment
-              </button>
+              <>
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                  <Wallet className="h-3.5 w-3.5" /> Request Payment
+                </button>
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
+                </button>
+              </>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
@@ -1045,18 +1064,23 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
           {detail.paymentRequests.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Payment Requests</h3>
-              {detail.paymentRequests.map(p => (
+              {detail.paymentRequests.map(p => {
+                const isCard = p.paymentMethod === 'CARD'
+                return (
                 <div key={p.id} className="rounded-xl border overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                     <div>
                       <p className="font-semibold text-base">{fmtMoney(p.amount)}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Requested {fmtDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
+                        {isCard ? 'Paid' : 'Requested'} {fmtDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
                       </p>
                     </div>
-                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
-                      {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : 'PENDING']}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
+                        {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : 'PENDING']}
+                      </span>
+                      {isCard && <span className="text-[10px] text-muted-foreground">Debit Paid</span>}
+                    </div>
                   </div>
                   <div className="p-4 space-y-3">
                     {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
@@ -1076,10 +1100,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                           </p>
                         </div>
                       )}
+                      {isCard && p.status === 'PAID' && (
+                        <p className="text-xs text-green-700">
+                          Debit Paid directly by {p.paidBy?.name ?? p.requestedBy?.name ?? 'purchasing'} — no bank transfer needed.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
           </div>{/* end left column */}
@@ -1191,12 +1221,17 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
-                  <h3 className="font-semibold">Request Payment</h3>
+                  <h3 className="font-semibold">{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
                 </div>
                 <button onClick={() => setPaymentModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
+                {paymentMode === 'DIRECT' && (
+                  <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+                    Use this when purchasing already paid via debit. This will be recorded as paid immediately — finance is just notified, no approval needed.
+                  </div>
+                )}
                 {paymentError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{paymentError}</div>}
 
                 <div className="space-y-1.5">
@@ -1237,14 +1272,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  Requested by <span className="font-medium text-foreground">{session?.user?.name ?? 'You'}</span>
+                  {paymentMode === 'DIRECT' ? 'Paid by' : 'Requested by'} <span className="font-medium text-foreground">{session?.user?.name ?? 'You'}</span>
                 </p>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitPaymentRequest} disabled={!paymentAmount || !paymentPhoto || paymentSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {paymentSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending...</> : <><Wallet className="h-3.5 w-3.5" />Send to Finance</>}
+                  className={`flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
+                  {paymentSaving
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    : paymentMode === 'DIRECT' ? <><CheckCircle2 className="h-3.5 w-3.5" />Mark as Paid</> : <><Wallet className="h-3.5 w-3.5" />Send to Finance</>}
                 </button>
               </div>
             </div>

@@ -9,6 +9,7 @@ interface PaymentRequest {
   notePhotoKey: string
   notes: string | null
   status: string
+  paymentMethod: string
   createdAt: string
   paidAt: string | null
   transferProofKey: string | null
@@ -147,6 +148,9 @@ export default function PurchaseOrderPayments() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                     {r.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
                   </span>
+                  {r.paymentMethod === 'CARD' && (
+                    <span className="block text-[10px] text-muted-foreground mt-0.5">Debit Paid · no action needed</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -174,14 +178,25 @@ export default function PurchaseOrderPayments() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
                     <p className="text-2xl font-bold mt-0.5">{fmtMoney(selected.amount)}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${selected.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {selected.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${selected.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {selected.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
+                    </span>
+                    {selected.paymentMethod === 'CARD' && (
+                      <p className="text-[10px] text-muted-foreground mt-1">Debit Paid · no action needed</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="text-sm text-muted-foreground">
-                  Requested {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
+                  {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
                 </div>
+
+                {selected.paymentMethod === 'CARD' && (
+                  <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+                    Debit Paid directly by the purchasing team. No transfer or approval needed — this is for your records.
+                  </div>
+                )}
 
                 {selected.notes && (
                   <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-sm">{selected.notes}</div>

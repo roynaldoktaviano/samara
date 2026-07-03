@@ -174,6 +174,7 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   REQUEST_ORDER_SUBMITTED: ClipboardList,
   PO_PAYMENT_REQUESTED:   Wallet,
   PO_PAYMENT_PAID:        CheckCircle2,
+  PO_PAID_BY_PURCHASING: CheckCircle2,
 }
 const NOTIF_COLOR: Record<string, string> = {
   PAYMENT_SUBMITTED: 'text-amber-600',
@@ -186,6 +187,7 @@ const NOTIF_COLOR: Record<string, string> = {
   REQUEST_ORDER_SUBMITTED: 'text-blue-600',
   PO_PAYMENT_REQUESTED: 'text-amber-600',
   PO_PAYMENT_PAID: 'text-green-600',
+  PO_PAID_BY_PURCHASING: 'text-green-600',
 }
 
 function fmtRelative(d: string) {
@@ -426,7 +428,7 @@ export default function Home() {
   const handleNotifClick = (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
-    if (n.type === 'PO_PAYMENT_REQUESTED' && isFinance) {
+    if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')
     } else if (n.orderId || n.requestId || n.type.startsWith('PO_') || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')

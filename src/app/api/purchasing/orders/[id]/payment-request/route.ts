@@ -17,9 +17,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
 
   const body = await req.json()
-  const { amount, notePhotoKey, notes } = body
+  const { amount, notePhotoKey, notes, paidByPurchasing } = body
   if (!amount || Number(amount) <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
   if (!notePhotoKey) return NextResponse.json({ error: 'Receipt/nota photo is required' }, { status: 400 })
+
+  const isDirect = !!paidByPurchasing
+  const amountFormatted = `Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))}`
 
   const paymentRequest = await db.pOPaymentRequest.create({
     data: {
@@ -30,14 +33,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       notePhotoKey,
       notes: notes?.trim() || null,
       updatedAt: new Date(),
+      ...(isDirect && {
+        status: 'PAID',
+        paymentMethod: 'CARD',
+        paidAt: new Date(),
+        paidById: session.user.id,
+      }),
     },
   })
 
-  notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAYMENT_REQUESTED',
-    'Payment Request Submitted',
-    `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} needs payment approval (Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))})`,
-    id,
-  ).catch(console.error)
+  if (isDirect) {
+    notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAID_BY_PURCHASING',
+      'Debit Paid',
+      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} was paid directly by the purchasing team (debit) — ${amountFormatted}`,
+      id,
+    ).catch(console.error)
+  } else {
+    notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAYMENT_REQUESTED',
+      'Payment Request Submitted',
+      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} needs payment approval (${amountFormatted})`,
+      id,
+    ).catch(console.error)
+  }
 
   return NextResponse.json(paymentRequest, { status: 201 })
 }

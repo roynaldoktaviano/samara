@@ -958,6 +958,7 @@ model POPaymentRequest {
   notePhotoKey     String
   notes            String?
   status           POPaymentRequestStatus @default(PENDING)
+  paymentMethod    String                 @default("TRANSFER")
   paidAt           DateTime?
   paidById         String?
   transferProofKey String?
