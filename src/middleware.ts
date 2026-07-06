@@ -15,6 +15,9 @@ const PUBLIC_PATHS = [
   // Agent Portal preview — has its own password login, separate from staff NextAuth
   '/agent-portal',
   '/media-kit',
+  // Guest-facing form — access controlled by its own per-guest token, not staff login
+  '/guest-form',
+  '/api/guest-form',
 ]
 
 function isPublic(pathname: string) {

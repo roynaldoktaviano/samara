@@ -91,6 +91,73 @@ function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: s
   )
 }
 
+/* ── Multi-file upload (images + PDF) ── */
+function readFileAsDataUrl(file: File): Promise<string> {
+  if (file.type === 'application/pdf') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+  return new Promise((resolve) => {
+    const img = new window.Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const MAX = 1200
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width * scale
+      canvas.height = img.height * scale
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+      URL.revokeObjectURL(url)
+    }
+    img.src = url
+  })
+}
+
+function FileUpload({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (files: string[]) => void }) {
+  const list = values ?? []
+  function handleFiles(fileList: FileList) {
+    Promise.all(Array.from(fileList).map(readFileAsDataUrl)).then(newOnes => onChange([...list, ...newOnes]))
+  }
+  function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
+  const isPdf = (v: string) => v.startsWith('data:application/pdf')
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        {list.map((v, i) => (
+          <div key={i} className="relative group aspect-square rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
+            {isPdf(v) ? (
+              <div className="flex flex-col items-center gap-1 text-gray-400">
+                <span className="text-2xl">📄</span>
+                <span className="text-[9px] font-medium">PDF</span>
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={v} alt={label} className="w-full h-full object-cover" />
+            )}
+            <button type="button" onClick={() => removeAt(i)}
+              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+              ✕
+            </button>
+          </div>
+        ))}
+        <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-all">
+          <span className="text-xl leading-none mb-0.5 text-gray-400">＋</span>
+          <span className="text-[9px] font-medium text-gray-500 text-center px-1">Add file</span>
+          <input type="file" multiple className="hidden" accept="image/*,application/pdf"
+            onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
+        </label>
+      </div>
+      {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
+    </div>
+  )
+}
+
 function YesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
@@ -108,8 +175,8 @@ function ProfileSection({ data, onChange }: { data: any; onChange: (k: string, v
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="First Name *"><input value={data.firstName ?? ''} onChange={f('firstName')} placeholder="First name" className={inputCls} /></Field>
-        <Field label="Last Name"><input value={data.lastName ?? ''} onChange={f('lastName')} placeholder="Last name" className={inputCls} /></Field>
-        <Field label="Gender">
+        <Field label="Last Name *"><input value={data.lastName ?? ''} onChange={f('lastName')} placeholder="Last name" className={inputCls} /></Field>
+        <Field label="Gender *">
           <select value={data.gender ?? ''} onChange={e => onChange('gender', e.target.value)} className={selectCls}>
             <option value="">Select</option>
             <option value="Male">Male</option>
@@ -117,17 +184,17 @@ function ProfileSection({ data, onChange }: { data: any; onChange: (k: string, v
             <option value="Other">Other</option>
           </select>
         </Field>
-        <Field label="Date of Birth"><input type="date" value={data.dateOfBirth ?? ''} onChange={f('dateOfBirth')} className={inputCls} /></Field>
-        <Field label="Nationality"><input value={data.nationality ?? ''} onChange={f('nationality')} placeholder="e.g. Indonesian, Australian" className={inputCls} /></Field>
-        <Field label="Email"><input type="email" value={data.email ?? ''} onChange={f('email')} placeholder="email@example.com" className={inputCls} /></Field>
-        <Field label="Phone"><input type="tel" value={data.phone ?? ''} onChange={f('phone')} placeholder="+62 812 3456 7890" className={inputCls} /></Field>
-        <Field label="Address"><input value={data.address ?? ''} onChange={f('address')} placeholder="City, Country" className={inputCls} /></Field>
-        <Field label="Passport / ID Number"><input value={data.passport ?? ''} onChange={f('passport')} placeholder="A1234567" className={inputCls} /></Field>
-        <Field label="Passport Expiry"><input type="date" value={data.passportExpiry ?? ''} onChange={f('passportExpiry')} className={inputCls} /></Field>
+        <Field label="Date of Birth *"><input type="date" value={data.dateOfBirth ?? ''} onChange={f('dateOfBirth')} className={inputCls} /></Field>
+        <Field label="Nationality *"><input value={data.nationality ?? ''} onChange={f('nationality')} placeholder="e.g. Indonesian, Australian" className={inputCls} /></Field>
+        <Field label="Email *"><input type="email" value={data.email ?? ''} onChange={f('email')} placeholder="email@example.com" className={inputCls} /></Field>
+        <Field label="Phone *"><input type="tel" value={data.phone ?? ''} onChange={f('phone')} placeholder="+62 812 3456 7890" className={inputCls} /></Field>
+        <Field label="Address *"><input value={data.address ?? ''} onChange={f('address')} placeholder="City, Country" className={inputCls} /></Field>
+        <Field label="Passport / ID Number *"><input value={data.passport ?? ''} onChange={f('passport')} placeholder="A1234567" className={inputCls} /></Field>
+        <Field label="Passport Expiry *"><input type="date" value={data.passportExpiry ?? ''} onChange={f('passportExpiry')} className={inputCls} /></Field>
       </div>
       <div className="pt-2 border-t border-gray-100">
         <ImageUpload
-          label="Passport / ID Photo"
+          label="Passport / ID Photo *"
           hint="Take a photo of your passport data page or ID card. This helps us prepare your documents in advance."
           value={data.passportImage ?? ''}
           onChange={v => onChange('passportImage', v)}
@@ -144,20 +211,18 @@ function MedicalSection({ data, onChange }: { data: any; onChange: (k: string, v
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Medical Conditions"><textarea rows={3} value={data.medicalConditions ?? ''} onChange={f('medicalConditions')} placeholder="e.g. Diabetes, Asthma" className={textCls} /></Field>
         <Field label="Medications"><textarea rows={3} value={data.medications ?? ''} onChange={f('medications')} placeholder="e.g. Insulin, Aspirin" className={textCls} /></Field>
-        <Field label="Food Allergy"><YesNo value={data.foodAllergy ?? ''} onChange={v => onChange('foodAllergy', v)} /></Field>
-        <Field label="Food Allergy Details"><textarea rows={2} value={data.foodAllergyDetails ?? ''} onChange={f('foodAllergyDetails')} placeholder="Describe food allergies in detail" className={textCls} /></Field>
         <Field label="Other Allergies"><textarea rows={2} value={data.otherAllergies ?? ''} onChange={f('otherAllergies')} placeholder="e.g. Pollen, Pet, Medication" className={textCls} /></Field>
         <Field label="Motion Sickness"><YesNo value={data.motionSickness ?? ''} onChange={v => onChange('motionSickness', v)} /></Field>
         <Field label="Physical Limitations"><textarea rows={2} value={data.physicalLimitations ?? ''} onChange={f('physicalLimitations')} placeholder="e.g. Mobility issues, Back pain" className={textCls} /></Field>
         <Field label="Special Assistance Required"><YesNo value={data.specialAssistance ?? ''} onChange={v => onChange('specialAssistance', v)} /></Field>
       </div>
       <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Emergency Contact</p>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Emergency Contact *</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Full Name"><input value={data.emergencyContactName ?? ''} onChange={f('emergencyContactName')} placeholder="Full name" className={inputCls} /></Field>
-          <Field label="Relationship"><input value={data.emergencyContactRelationship ?? ''} onChange={f('emergencyContactRelationship')} placeholder="e.g. Spouse, Parent" className={inputCls} /></Field>
-          <Field label="Phone"><input type="tel" value={data.emergencyContactPhone ?? ''} onChange={f('emergencyContactPhone')} placeholder="Phone number" className={inputCls} /></Field>
-          <Field label="Email"><input type="email" value={data.emergencyContactEmail ?? ''} onChange={f('emergencyContactEmail')} placeholder="Email address" className={inputCls} /></Field>
+          <Field label="Full Name *"><input value={data.emergencyContactName ?? ''} onChange={f('emergencyContactName')} placeholder="Full name" className={inputCls} /></Field>
+          <Field label="Relationship *"><input value={data.emergencyContactRelationship ?? ''} onChange={f('emergencyContactRelationship')} placeholder="e.g. Spouse, Parent" className={inputCls} /></Field>
+          <Field label="Phone *"><input type="tel" value={data.emergencyContactPhone ?? ''} onChange={f('emergencyContactPhone')} placeholder="Phone number" className={inputCls} /></Field>
+          <Field label="Email *"><input type="email" value={data.emergencyContactEmail ?? ''} onChange={f('emergencyContactEmail')} placeholder="Email address" className={inputCls} /></Field>
         </div>
       </div>
     </div>
@@ -176,7 +241,7 @@ function FoodSection({ data, onChange }: { data: any; onChange: (k: string, v: s
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Dietary Type"><input value={data.dietaryType ?? ''} onChange={f('dietaryType')} placeholder="e.g. Vegan, Vegetarian" className={inputCls} /></Field>
-        <Field label="Allergy">
+        <Field label="Allergy *">
           <select value={data.allergy ?? ''} onChange={e => onChange('allergy', e.target.value)} className={selectCls}>
             <option value="">Select</option>
             <option value="none">None</option>
@@ -194,7 +259,7 @@ function FoodSection({ data, onChange }: { data: any; onChange: (k: string, v: s
         <Field label="Snack Preference"><input value={data.snackPreference ?? ''} onChange={f('snackPreference')} placeholder="e.g. Fruit, Nuts, Cookies" className={inputCls} /></Field>
       </div>
       <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Dietary Restrictions</p>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Dietary Restrictions *</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {restrictions.map(([lbl, k]) => (
             <Field key={k} label={lbl}>{yn(k)}</Field>
@@ -209,7 +274,7 @@ function DrinksSection({ data, onChange }: { data: any; onChange: (k: string, v:
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(k, e.target.value)
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label="Drinks Alcohol"><YesNo value={data.drinksAlcohol ?? ''} onChange={v => onChange('drinksAlcohol', v)} /></Field>
+      <Field label="Drinks Alcohol *"><YesNo value={data.drinksAlcohol ?? ''} onChange={v => onChange('drinksAlcohol', v)} /></Field>
       <Field label="Wine Preference"><input value={data.winePreference ?? ''} onChange={f('winePreference')} placeholder="e.g. Red, White, Rosé" className={inputCls} /></Field>
       <Field label="Spirits Preference"><input value={data.spiritsPreference ?? ''} onChange={f('spiritsPreference')} placeholder="e.g. Vodka, Whiskey, Rum" className={inputCls} /></Field>
       <Field label="Cocktail Preference"><input value={data.cocktailPreference ?? ''} onChange={f('cocktailPreference')} placeholder="e.g. Mojito, Margarita" className={inputCls} /></Field>
@@ -223,39 +288,97 @@ function DrinksSection({ data, onChange }: { data: any; onChange: (k: string, v:
   )
 }
 
-function DivingSection({ data, onChange }: { data: any; onChange: (k: string, v: string) => void }) {
+function EquipmentTable({ items, onChange }: { items: any[]; onChange: (items: any[]) => void }) {
+  const rows: any[] = Array.isArray(items) && items.length > 0 ? items : [{ item: '', size: '', qty: '' }]
+  const update = (i: number, key: string, val: string) => onChange(rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r))
+  const addRow = () => onChange([...rows, { item: '', size: '', qty: '' }])
+  const removeRow = (i: number) => onChange(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : [{ item: '', size: '', qty: '' }])
+  return (
+    <div className="space-y-2">
+      <div className="hidden sm:grid grid-cols-[1fr_110px_80px_28px] gap-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
+        <span>Equipment</span><span>Size</span><span>Qty</span><span />
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
+          <input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className={inputCls} />
+          <input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className={inputCls} />
+          <input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className={inputCls} />
+          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
+        </div>
+      ))}
+      <button type="button" onClick={addRow} className="text-xs font-semibold" style={{ color: TEAL }}>+ Add Item</button>
+    </div>
+  )
+}
+
+function DivingSection({ data, onChange }: { data: any; onChange: (k: string, v: any) => void }) {
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(k, e.target.value)
   const yn = (k: string) => <YesNo value={data[k] ?? ''} onChange={v => onChange(k, v)} />
+  const today = new Date().toISOString().split('T')[0]
+  const isNotDiver = data.isDiver === 'no'
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label="Is Diver">{yn('isDiver')}</Field>
-      <Field label="Dive Level">
-        <select value={data.diveLevel ?? ''} onChange={e => onChange('diveLevel', e.target.value)} className={selectCls}>
-          <option value="">Select</option>
-          <option value="beginner">Beginner</option>
-          <option value="open_water">Open Water</option>
-          <option value="advanced">Advanced</option>
-          <option value="rescue">Rescue Diver</option>
-          <option value="divemaster">Divemaster</option>
-          <option value="instructor">Instructor</option>
-        </select>
-      </Field>
-      <Field label="Certification Agency"><input value={data.certAgency ?? ''} onChange={f('certAgency')} placeholder="e.g. PADI, SSI, NAUI" className={inputCls} /></Field>
-      <Field label="Number of Dives"><input type="number" value={data.diveCount ?? ''} onChange={f('diveCount')} placeholder="Total logged dives" className={inputCls} /></Field>
-      <Field label="Last Dive Date"><input type="date" value={data.lastDiveDate ?? ''} onChange={f('lastDiveDate')} className={inputCls} /></Field>
-      <Field label="Equipment Rental Required">{yn('diveRentalRequired')}</Field>
-      <Field label="Wetsuit Size"><input value={data.wetsuitSize ?? ''} onChange={f('wetsuitSize')} placeholder="e.g. S, M, L, XL" className={inputCls} /></Field>
-      <Field label="BCD Size"><input value={data.bcdSize ?? ''} onChange={f('bcdSize')} placeholder="e.g. S, M, L, XL" className={inputCls} /></Field>
-      <Field label="Fins Size"><input value={data.finsSize ?? ''} onChange={f('finsSize')} placeholder="e.g. 40-41, 42-43" className={inputCls} /></Field>
-      <Field label="Mask Size"><input value={data.maskSize ?? ''} onChange={f('maskSize')} placeholder="e.g. Small, Medium" className={inputCls} /></Field>
-      <Field label="Diving Notes" full><textarea rows={3} value={data.divingNotes ?? ''} onChange={f('divingNotes')} placeholder="Preferred dive conditions, interests…" className={textCls} /></Field>
-      <div className="col-span-1 sm:col-span-2 pt-2 border-t border-gray-100">
-        <ImageUpload
-          label="Diving Certificate / License"
-          hint="Upload a photo of your dive certification card (PADI, SSI, NAUI, etc.)"
-          value={data.certImage ?? ''}
-          onChange={v => onChange('certImage', v)}
-        />
+      <Field label="Is Diver *">{yn('isDiver')}</Field>
+
+      <div className={`sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 ${isNotDiver ? 'opacity-40 pointer-events-none select-none' : ''}`}>
+        <Field label="Dive Level *">
+          <select value={data.diveLevel ?? ''} onChange={e => onChange('diveLevel', e.target.value)} className={selectCls} disabled={isNotDiver}>
+            <option value="">Select</option>
+            <option value="beginner">Beginner</option>
+            <option value="open_water">Open Water</option>
+            <option value="advanced">Advanced</option>
+            <option value="rescue">Rescue Diver</option>
+            <option value="divemaster">Divemaster</option>
+            <option value="instructor">Instructor</option>
+          </select>
+        </Field>
+        <Field label="Certification Agency *"><input value={data.certAgency ?? ''} onChange={f('certAgency')} placeholder="e.g. PADI, SSI, NAUI" className={inputCls} disabled={isNotDiver} /></Field>
+        <Field label="Number of Dives *"><input type="number" value={data.diveCount ?? ''} onChange={f('diveCount')} placeholder="Total logged dives" className={inputCls} disabled={isNotDiver} /></Field>
+        <Field label="Last Dive Date *"><input type="date" max={today} value={data.lastDiveDate ?? ''} onChange={f('lastDiveDate')} className={inputCls} disabled={isNotDiver} /></Field>
+
+        <Field label="Nitrox Request *">{yn('nitroxRequest')}</Field>
+        {data.nitroxRequest === 'yes' && (
+          <div className="sm:col-span-2">
+            <FileUpload
+              label="Nitrox Certificate *"
+              hint="Required — please attach your Nitrox certification (photo or PDF, multiple files allowed)"
+              values={data.nitroxCertImages ?? []}
+              onChange={v => onChange('nitroxCertImages', v)}
+            />
+          </div>
+        )}
+
+        <Field label="Experience with Strong Current *">{yn('strongCurrentExperience')}</Field>
+
+        <div className="sm:col-span-2 pt-2 border-t border-gray-100">
+          <FileUpload
+            label="Diving Insurance (Mandatory) *"
+            hint="Required — please attach your diving insurance (photo or PDF, multiple files allowed)"
+            values={data.divingInsuranceImages ?? []}
+            onChange={v => onChange('divingInsuranceImages', v)}
+          />
+        </div>
+
+        <Field label="Medical Condition We Must Know *" full>
+          <textarea rows={2} value={data.diveMedicalConditions ?? ''} onChange={f('diveMedicalConditions')} placeholder="e.g. Asthma, Hypertension, Thyroid" className={textCls} disabled={isNotDiver} />
+        </Field>
+
+        <Field label="Additional Equipment Required *">{yn('diveRentalRequired')}</Field>
+        {data.diveRentalRequired === 'yes' && (
+          <div className="sm:col-span-2">
+            <EquipmentTable items={data.equipmentList ?? []} onChange={v => onChange('equipmentList', v)} />
+          </div>
+        )}
+
+        <Field label="Diving Notes" full><textarea rows={3} value={data.divingNotes ?? ''} onChange={f('divingNotes')} placeholder="Preferred dive conditions, interests…" className={textCls} disabled={isNotDiver} /></Field>
+        <div className="col-span-1 sm:col-span-2 pt-2 border-t border-gray-100">
+          <FileUpload
+            label="Diving Certificate / License *"
+            hint="Attach your dive certification card — photo or PDF, multiple files allowed"
+            values={data.certImages ?? []}
+            onChange={v => onChange('certImages', v)}
+          />
+        </div>
       </div>
     </div>
   )
@@ -309,6 +432,60 @@ function fmtDate(d: string | null | undefined) {
 }
 
 /* ── Main Page ── */
+function validateSection(section: Section, data: any): string | null {
+  const req = (v: any) => v !== undefined && v !== null && String(v).trim() !== ''
+  const hasFiles = (v: any) => Array.isArray(v) && v.length > 0
+
+  if (section === 'profile') {
+    const fields: [string, string][] = [
+      ['firstName', 'First Name'], ['lastName', 'Last Name'], ['gender', 'Gender'],
+      ['dateOfBirth', 'Date of Birth'], ['nationality', 'Nationality'], ['email', 'Email'],
+      ['phone', 'Phone'], ['address', 'Address'], ['passport', 'Passport / ID Number'], ['passportExpiry', 'Passport Expiry'],
+    ]
+    for (const [k, label] of fields) if (!req(data[k])) return `Please fill in ${label}`
+    if (!req(data.passportImage)) return 'Please upload your Passport / ID photo'
+    return null
+  }
+  if (section === 'medical') {
+    const fields: [string, string][] = [
+      ['emergencyContactName', 'Emergency Contact Name'], ['emergencyContactRelationship', 'Emergency Contact Relationship'],
+      ['emergencyContactPhone', 'Emergency Contact Phone'], ['emergencyContactEmail', 'Emergency Contact Email'],
+    ]
+    for (const [k, label] of fields) if (!req(data[k])) return `Please fill in ${label}`
+    return null
+  }
+  if (section === 'food') {
+    if (!req(data.allergy)) return 'Please select an Allergy option'
+    const restrictions = ['halal', 'vegetarian', 'vegan', 'pescatarian', 'glutenFree', 'lactoseIntolerant', 'kosher']
+    if (restrictions.some(k => !req(data[k]))) return 'Please answer all Dietary Restriction questions'
+    return null
+  }
+  if (section === 'drinks') {
+    if (!req(data.drinksAlcohol)) return 'Please answer Drinks Alcohol'
+    return null
+  }
+  if (section === 'diving') {
+    if (!req(data.isDiver)) return 'Please answer Is Diver'
+    if (data.isDiver === 'yes') {
+      if (!req(data.diveLevel)) return 'Please select your Dive Level'
+      if (!req(data.certAgency)) return 'Please fill in Certification Agency'
+      if (!req(data.diveCount)) return 'Please fill in Number of Dives'
+      if (!req(data.lastDiveDate)) return 'Please fill in Last Dive Date'
+      if (!req(data.nitroxRequest)) return 'Please answer Nitrox Request'
+      if (data.nitroxRequest === 'yes' && !hasFiles(data.nitroxCertImages)) return 'Please attach your Nitrox Certificate'
+      if (!req(data.strongCurrentExperience)) return 'Please answer Experience with Strong Current'
+      if (!hasFiles(data.divingInsuranceImages)) return 'Please attach your Diving Insurance'
+      if (!req(data.diveMedicalConditions)) return 'Please fill in Medical Condition We Must Know (write "None" if not applicable)'
+      if (!req(data.diveRentalRequired)) return 'Please answer Additional Equipment Required'
+      if (data.diveRentalRequired === 'yes' && !(Array.isArray(data.equipmentList) && data.equipmentList.some((r: any) => r.item?.trim())))
+        return 'Please fill in at least one item in the equipment table'
+      if (!hasFiles(data.certImages)) return 'Please attach your Diving Certificate / License'
+    }
+    return null
+  }
+  return null
+}
+
 function GuestFormInner() {
   const params       = useParams<{ token: string }>()
   const token        = params.token
@@ -335,7 +512,7 @@ function GuestFormInner() {
     profile: profileData, medical: medicalData, food: foodData,
     drinks: drinksData,  diving: divingData, surfing: surfingData,
   }
-  const setterMap: Record<Section, (k: string, v: string) => void> = {
+  const setterMap: Record<Section, (k: string, v: any) => void> = {
     profile: (k, v) => setProfileData((p: any) => ({ ...p, [k]: v })),
     medical: (k, v) => setMedicalData((p: any) => ({ ...p, [k]: v })),
     food:    (k, v) => setFoodData((p: any) => ({ ...p, [k]: v })),
@@ -383,9 +560,11 @@ function GuestFormInner() {
   const isLast = stepIdx === STEPS.length - 1
 
   const handleSave = async (andNext: boolean) => {
+    const section = currentStep.id
+    const validationError = validateSection(section, dataMap[section])
+    if (validationError) { toast.error(validationError); return }
     setSaving(true)
     try {
-      const section = currentStep.id
       const res = await fetch(`/api/guest-form/${token}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

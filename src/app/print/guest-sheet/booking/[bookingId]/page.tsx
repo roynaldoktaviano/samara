@@ -208,8 +208,6 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
                   <Field label="Medications"          value={v(med,'medications')} />
                   <Field label="Motion Sickness"      value={v(med,'motionSickness')} />
                   <Field label="Special Assistance"   value={v(med,'specialAssistance')} />
-                  <Field label="Food Allergy"         value={v(med,'foodAllergy')} />
-                  <Field label="Food Allergy Details" value={v(med,'foodAllergyDetails')} />
                   <Field label="Other Allergies"      value={v(med,'otherAllergies')} />
                   <Field label="Physical Limitations" value={v(med,'physicalLimitations')} />
                 </div>
@@ -269,13 +267,39 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
                     <Field label="Cert. Agency"     value={v(div,'certAgency')} />
                     <Field label="No. of Dives"     value={v(div,'diveCount')} />
                     <Field label="Last Dive Date"   value={v(div,'lastDiveDate')} />
-                    <Field label="Equipment Rental" value={v(div,'diveRentalRequired')} />
-                    <Field label="Wetsuit Size"     value={v(div,'wetsuitSize')} />
-                    <Field label="BCD Size"         value={v(div,'bcdSize')} />
-                    <Field label="Fins Size"        value={v(div,'finsSize')} />
-                    <Field label="Mask Size"        value={v(div,'maskSize')} />
+                    <Field label="Nitrox Request"   value={v(div,'nitroxRequest')} />
+                    {div?.nitroxRequest === 'yes' && (
+                      <Field label="Nitrox Certificate" value={Array.isArray((div as any)?.nitroxCertImages) && (div as any).nitroxCertImages.length > 0 ? 'Attached' : 'Not attached'} />
+                    )}
+                    <Field label="Strong Current Experience" value={v(div,'strongCurrentExperience')} />
+                    <Field label="Diving Insurance" value={Array.isArray((div as any)?.divingInsuranceImages) && (div as any).divingInsuranceImages.length > 0 ? 'Attached' : 'Not attached'} />
+                    <Field label="Medical Condition" value={v(div,'diveMedicalConditions')} />
+                    <Field label="Additional Equipment Required" value={v(div,'diveRentalRequired')} />
                     <Field label="Diving Notes"     value={v(div,'divingNotes')} />
                   </div>
+                  {div?.diveRentalRequired === 'yes' && Array.isArray((div as any)?.equipmentList) && (div as any).equipmentList.length > 0 && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee' }}>
+                      <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#999', fontWeight: 700, margin: '0 0 4px' }}>Additional Equipment</p>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Equipment</th>
+                            <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Size</th>
+                            <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(div as any).equipmentList.map((row: any, i: number) => (
+                            <tr key={i}>
+                              <td style={{ padding: '2px 0' }}>{row.item || '—'}</td>
+                              <td style={{ padding: '2px 0' }}>{row.size || '—'}</td>
+                              <td style={{ padding: '2px 0' }}>{row.qty || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </Sec>
               )}
 

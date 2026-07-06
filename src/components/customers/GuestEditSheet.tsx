@@ -187,6 +187,77 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
   )
 }
 
+function EquipmentTable({ items, onChange }: { items: any[]; onChange: (items: any[]) => void }) {
+  const rows: any[] = Array.isArray(items) && items.length > 0 ? items : [{ item: '', size: '', qty: '' }]
+  const update = (i: number, key: string, val: string) => onChange(rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r))
+  const addRow = () => onChange([...rows, { item: '', size: '', qty: '' }])
+  const removeRow = (i: number) => onChange(rows.length > 1 ? rows.filter((_, idx) => idx !== i) : [{ item: '', size: '', qty: '' }])
+  return (
+    <div className="space-y-2">
+      <div className="hidden sm:grid grid-cols-[1fr_110px_80px_28px] gap-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-1">
+        <span>Equipment</span><span>Size</span><span>Qty</span><span />
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
+          <Input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className="h-8 text-sm" />
+          <Input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className="h-8 text-sm" />
+          <Input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className="h-8 text-sm" />
+          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-red-400 hover:text-red-600 text-base leading-none">✕</button>
+        </div>
+      ))}
+      <button type="button" onClick={addRow} className="text-xs font-semibold text-primary">+ Add Item</button>
+    </div>
+  )
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  if (file.type === 'application/pdf') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+  return compressImage(file)
+}
+
+function MultiFileUpload({ label, values, onChange }: { label: string; values: string[]; onChange: (files: string[]) => void }) {
+  const list = values ?? []
+  function handleFiles(fileList: FileList) {
+    Promise.all(Array.from(fileList).map(readFileAsDataUrl)).then(newOnes => onChange([...list, ...newOnes]))
+  }
+  function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
+  const isPdf = (v: string) => v.startsWith('data:application/pdf')
+  return (
+    <div>
+      <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <div className="mt-1.5 grid grid-cols-4 gap-2">
+        {list.map((v, i) => (
+          <div key={i} className="relative group aspect-square rounded-lg border bg-muted/20 overflow-hidden flex items-center justify-center">
+            {isPdf(v) ? (
+              <div className="flex flex-col items-center gap-0.5 text-muted-foreground">
+                <span className="text-lg">📄</span>
+                <span className="text-[9px] font-medium">PDF</span>
+              </div>
+            ) : (
+              <img src={v} alt={label} className="w-full h-full object-cover" />
+            )}
+            <button type="button" onClick={() => removeAt(i)}
+              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+          </div>
+        ))}
+        <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors">
+          <span className="text-sm text-muted-foreground">＋</span>
+          <span className="text-[9px] text-muted-foreground/60">Add</span>
+          <input type="file" multiple className="hidden" accept="image/*,.pdf"
+            onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
+        </label>
+      </div>
+    </div>
+  )
+}
+
 /* ── Section components ── */
 function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
   form: GuestFormState
@@ -309,8 +380,6 @@ function JsonTab({ data, onChange, fields }: {
 const MEDICAL_FIELDS = [
   { key: 'medicalConditions',            label: 'Medical Conditions',          hint: 'Any diagnosed conditions the crew should be aware of',         rows: 2 },
   { key: 'medications',                  label: 'Medications',                 hint: 'Current medications including name and dosage',                rows: 2 },
-  { key: 'foodAllergy',                  label: 'Food Allergy',                hint: 'Does the guest have any food allergies?',                      type: 'yesno' },
-  { key: 'foodAllergyDetails',           label: 'Food Allergy Details',        hint: 'Describe the allergy and severity',                            rows: 2 },
   { key: 'otherAllergies',               label: 'Other Allergies',             hint: 'e.g. latex, sunscreen, insect bites',                          rows: 2 },
   { key: 'motionSickness',               label: 'Motion Sickness',             hint: 'Is the guest prone to seasickness?',                           type: 'yesno' },
   { key: 'physicalLimitations',          label: 'Physical Limitations',        hint: 'Any mobility or physical restrictions the crew should know',   rows: 2 },
@@ -367,17 +436,16 @@ const SURFING_FIELDS = [
 ]
 
 const DIVING_FIELDS = [
-  { key: 'isDiver',            label: 'Is Diver',              hint: 'Is the guest a certified diver?',                                     type: 'yesno' },
-  { key: 'diveLevel',          label: 'Dive Level',            hint: 'Highest certification level achieved',                                options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
-  { key: 'certAgency',         label: 'Certification Agency',  hint: 'e.g. PADI, SSI, NAUI, CMAS' },
-  { key: 'diveCount',          label: 'Number of Dives',       hint: 'Total number of logged dives',                                        type: 'number' },
-  { key: 'lastDiveDate',       label: 'Last Dive Date',        hint: 'Date of most recent dive',                                            type: 'date' },
-  { key: 'diveRentalRequired', label: 'Equipment Rental',      hint: 'Does the guest need to rent dive equipment on board?',                type: 'yesno' },
-  { key: 'wetsuitSize',        label: 'Wetsuit Size',          hint: 'e.g. XS, S, M, L, XL' },
-  { key: 'bcdSize',            label: 'BCD Size',              hint: 'e.g. XS, S, M, L, XL' },
-  { key: 'finsSize',           label: 'Fins Size',             hint: 'Foot size or fin size (EU / US)' },
-  { key: 'maskSize',           label: 'Mask Size',             hint: 'Standard or wide-face' },
-  { key: 'divingNotes',        label: 'Diving Notes',          hint: 'Any special diving requirements or requests',                         rows: 2, col2: true },
+  { key: 'isDiver',                  label: 'Is Diver',                        hint: 'Is the guest a certified diver?',                                     type: 'yesno' },
+  { key: 'diveLevel',                label: 'Dive Level',                      hint: 'Highest certification level achieved',                                options: ['Beginner','Open Water','Advanced','Rescue Diver','Divemaster','Instructor'] },
+  { key: 'certAgency',               label: 'Certification Agency',            hint: 'e.g. PADI, SSI, NAUI, CMAS' },
+  { key: 'diveCount',                label: 'Number of Dives',                 hint: 'Total number of logged dives',                                        type: 'number' },
+  { key: 'lastDiveDate',             label: 'Last Dive Date',                  hint: 'Date of most recent dive',                                            type: 'date' },
+  { key: 'nitroxRequest',            label: 'Nitrox Request',                  hint: 'Does the guest request Nitrox?',                                      type: 'yesno' },
+  { key: 'strongCurrentExperience',  label: 'Experience with Strong Current',  hint: 'Has the guest dived in strong current before?',                       type: 'yesno' },
+  { key: 'diveMedicalConditions',    label: 'Medical Condition We Must Know',  hint: 'e.g. Asthma, Hypertension, Thyroid',                                  rows: 2, col2: true },
+  { key: 'diveRentalRequired',       label: 'Additional Equipment Required',   hint: 'Does the guest need additional dive equipment on board?',            type: 'yesno' },
+  { key: 'divingNotes',              label: 'Diving Notes',                    hint: 'Any special diving requirements or requests',                         rows: 2, col2: true },
 ]
 
 interface Props {
@@ -551,12 +619,45 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
                 </div>
                 <div className={divData.isDiver === 'no' ? 'opacity-40 pointer-events-none select-none' : ''}>
                   <JsonTab data={divData} onChange={jsonSetter(setDivData)} fields={DIVING_FIELDS.filter(f => f.key !== 'isDiver')} />
+
+                  {divData.nitroxRequest === 'yes' && (
+                    <div className="mt-6">
+                      <SectionTitle>Nitrox Certificate</SectionTitle>
+                      <MultiFileUpload
+                        label="Upload Nitrox Certificate"
+                        values={divData.nitroxCertImages ?? []}
+                        onChange={v => setDivData((prev: any) => ({ ...prev, nitroxCertImages: v }))}
+                      />
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Required — guest requested Nitrox</p>
+                    </div>
+                  )}
+
+                  <div className="mt-6">
+                    <SectionTitle>Diving Insurance (Mandatory)</SectionTitle>
+                    <MultiFileUpload
+                      label="Upload Diving Insurance"
+                      values={divData.divingInsuranceImages ?? []}
+                      onChange={v => setDivData((prev: any) => ({ ...prev, divingInsuranceImages: v }))}
+                    />
+                    <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Required for all divers</p>
+                  </div>
+
+                  {divData.diveRentalRequired === 'yes' && (
+                    <div className="mt-6">
+                      <SectionTitle>Additional Equipment</SectionTitle>
+                      <EquipmentTable
+                        items={divData.equipmentList ?? []}
+                        onChange={v => setDivData((prev: any) => ({ ...prev, equipmentList: v }))}
+                      />
+                    </div>
+                  )}
+
                   <div className="mt-6">
                     <SectionTitle>Diving Certificate</SectionTitle>
-                    <ImageUpload
+                    <MultiFileUpload
                       label="Upload Certificate"
-                      value={divData.certImage ?? ''}
-                      onChange={v => setDivData((prev: any) => ({ ...prev, certImage: v }))}
+                      values={divData.certImages ?? []}
+                      onChange={v => setDivData((prev: any) => ({ ...prev, certImages: v }))}
                     />
                     <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Upload a photo or scan of the guest's dive certification card</p>
                   </div>

@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +24,7 @@ import OpenTrips from '@/components/open-trips/OpenTrips'
 import UsersPage from '@/components/users/Users'
 import Payments from '@/components/payments/Payments'
 import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
+import POReimbursements from '@/components/finance/POReimbursements'
 import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
@@ -75,7 +76,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements'
 
 type NavItem = {
   id: View
@@ -106,6 +107,7 @@ const navigationItems: NavItem[] = [
   { id: 'payments',      label: 'Payments',        icon: CreditCard, roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'banks',         label: 'Bank Accounts',   icon: Building2,  roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'finance-po-payments', label: 'PO Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],                       group: 'finance', feature: 'purchasing' },
+  { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
@@ -175,6 +177,8 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PO_PAYMENT_REQUESTED:   Wallet,
   PO_PAYMENT_PAID:        CheckCircle2,
   PO_PAID_BY_PURCHASING: CheckCircle2,
+  PO_REIMBURSEMENT_REQUESTED: Banknote,
+  PO_REIMBURSEMENT_PAID:      CheckCircle2,
 }
 const NOTIF_COLOR: Record<string, string> = {
   PAYMENT_SUBMITTED: 'text-amber-600',
@@ -188,6 +192,8 @@ const NOTIF_COLOR: Record<string, string> = {
   PO_PAYMENT_REQUESTED: 'text-amber-600',
   PO_PAYMENT_PAID: 'text-green-600',
   PO_PAID_BY_PURCHASING: 'text-green-600',
+  PO_REIMBURSEMENT_REQUESTED: 'text-amber-600',
+  PO_REIMBURSEMENT_PAID: 'text-green-600',
 }
 
 function fmtRelative(d: string) {
@@ -430,6 +436,8 @@ export default function Home() {
     setNotifOpen(false)
     if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')
+    } else if (n.type === 'PO_REIMBURSEMENT_REQUESTED' && isFinance) {
+      setCurrentView('finance-po-reimbursements')
     } else if (n.orderId || n.requestId || n.type.startsWith('PO_') || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
     } else if (n.paymentId && isFinance) {
@@ -507,6 +515,7 @@ export default function Home() {
       case 'agents':       return <Agents />
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments />
+      case 'finance-po-reimbursements': return <POReimbursements />
       case 'vouchers':      return <Vouchers />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />

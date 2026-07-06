@@ -376,8 +376,6 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                 <Field label="Medications"          value={g.medicalData?.medications || undefined} />
                 <Field label="Motion Sickness"      value={g.medicalData?.motionSickness || undefined} />
                 <Field label="Special Assistance"   value={g.medicalData?.specialAssistance || undefined} />
-                <Field label="Food Allergy"         value={g.medicalData?.foodAllergy || undefined} />
-                <Field label="Food Allergy Details" value={g.medicalData?.foodAllergyDetails || undefined} />
                 <Field label="Other Allergies"      value={g.medicalData?.otherAllergies || undefined} />
                 <Field label="Physical Limitations" value={g.medicalData?.physicalLimitations || undefined} />
               </div>
@@ -437,13 +435,39 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                   <Field label="Cert. Agency"     value={g.divingData?.certAgency || undefined} />
                   <Field label="No. of Dives"     value={g.divingData?.diveCount || undefined} />
                   <Field label="Last Dive Date"   value={g.divingData?.lastDiveDate || undefined} />
-                  <Field label="Equipment Rental" value={g.divingData?.diveRentalRequired || undefined} />
-                  <Field label="Wetsuit Size"     value={g.divingData?.wetsuitSize || undefined} />
-                  <Field label="BCD Size"         value={g.divingData?.bcdSize || undefined} />
-                  <Field label="Fins Size"        value={g.divingData?.finsSize || undefined} />
-                  <Field label="Mask Size"        value={g.divingData?.maskSize || undefined} />
+                  <Field label="Nitrox Request"   value={g.divingData?.nitroxRequest || undefined} />
+                  {g.divingData?.nitroxRequest === 'yes' && (
+                    <Field label="Nitrox Certificate" value={Array.isArray(g.divingData?.nitroxCertImages) && g.divingData.nitroxCertImages.length > 0 ? 'Attached' : 'Not attached'} />
+                  )}
+                  <Field label="Strong Current Experience" value={g.divingData?.strongCurrentExperience || undefined} />
+                  <Field label="Diving Insurance" value={Array.isArray(g.divingData?.divingInsuranceImages) && g.divingData.divingInsuranceImages.length > 0 ? 'Attached' : 'Not attached'} />
+                  <Field label="Medical Condition" value={g.divingData?.diveMedicalConditions || undefined} />
+                  <Field label="Additional Equipment Required" value={g.divingData?.diveRentalRequired || undefined} />
                   <Field label="Diving Notes"     value={g.divingData?.divingNotes || undefined} />
                 </div>
+                {g.divingData?.diveRentalRequired === 'yes' && Array.isArray(g.divingData?.equipmentList) && g.divingData.equipmentList.length > 0 && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee' }}>
+                    <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#999', fontWeight: 700, margin: '0 0 4px' }}>Additional Equipment</p>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Equipment</th>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Size</th>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.divingData.equipmentList.map((row: any, i: number) => (
+                          <tr key={i}>
+                            <td style={{ padding: '2px 0' }}>{row.item || '—'}</td>
+                            <td style={{ padding: '2px 0' }}>{row.size || '—'}</td>
+                            <td style={{ padding: '2px 0' }}>{row.qty || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Sec>
             )}
 

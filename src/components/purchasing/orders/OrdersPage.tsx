@@ -2,13 +2,19 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2 } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote } from 'lucide-react'
 import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview } from '@/components/ui/file-preview'
 
 
 interface PaymentRequest {
   id: string; amount: number; notePhotoKey: string; notes: string | null; status: string; paymentMethod: string
+  createdAt: string; requestedBy: { name: string } | null
+  paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
+}
+interface Reimbursement {
+  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string
+  requesterName: string; bankName: string; accountNumber: string; accountHolderName: string
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
 }
@@ -38,6 +44,7 @@ interface OrderDetail extends PurchaseOrder {
   items: OrderItem[]
   receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
   paymentRequests: PaymentRequest[]
+  reimbursements: Reimbursement[]
 }
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
@@ -344,6 +351,19 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [paymentError, setPaymentError] = useState('')
   const paymentFileInputRef = useRef<HTMLInputElement>(null)
   const [paymentPhotoView, setPaymentPhotoView] = useState<string | null>(null)
+
+  // reimburse modal
+  const [reimburseModal, setReimburseModal] = useState(false)
+  const [reimburseAmount, setReimburseAmount] = useState('')
+  const [reimbursePhoto, setReimbursePhoto] = useState<string | null>(null)
+  const [reimburseNotes, setReimburseNotes] = useState('')
+  const [reimburseRequesterName, setReimburseRequesterName] = useState('')
+  const [reimburseBankName, setReimburseBankName] = useState('')
+  const [reimburseAccountNumber, setReimburseAccountNumber] = useState('')
+  const [reimburseAccountHolderName, setReimburseAccountHolderName] = useState('')
+  const [reimburseSaving, setReimburseSaving] = useState(false)
+  const [reimburseError, setReimburseError] = useState('')
+  const reimburseFileInputRef = useRef<HTMLInputElement>(null)
 
   // receive form
   const [receiveModal, setReceiveModal] = useState(false)
@@ -854,6 +874,35 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     openDetail(detail); load()
   }
 
+  function handleReimbursePhotoFile(file: File) {
+    readUploadFile(file).then(setReimbursePhoto).catch(() => setReimburseError('Failed to read file'))
+  }
+
+  async function submitReimbursement() {
+    if (!detail) return
+    if (!reimburseAmount || Number(reimburseAmount) <= 0) { setReimburseError('Amount must be greater than 0'); return }
+    if (!reimbursePhoto) { setReimburseError('Receipt/nota photo is required'); return }
+    if (!reimburseRequesterName.trim()) { setReimburseError('Name is required'); return }
+    if (!reimburseBankName.trim()) { setReimburseError('Bank name is required'); return }
+    if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
+    if (!reimburseAccountHolderName.trim()) { setReimburseError('Account holder name is required'); return }
+    setReimburseSaving(true); setReimburseError('')
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/reimbursement`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: Number(reimburseAmount), notePhotoKey: reimbursePhoto, notes: reimburseNotes || undefined,
+        requesterName: reimburseRequesterName, bankName: reimburseBankName,
+        accountNumber: reimburseAccountNumber, accountHolderName: reimburseAccountHolderName,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setReimburseError(data.error ?? 'Failed'); setReimburseSaving(false); return }
+    setReimburseSaving(false); setReimburseModal(false)
+    setReimburseAmount(''); setReimbursePhoto(null); setReimburseNotes('')
+    setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
+    openDetail(detail); load()
+  }
+
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -894,6 +943,17 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
               </>
+            )}
+            {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && (
+              <button onClick={() => {
+                setReimburseAmount(''); setReimbursePhoto(null); setReimburseNotes('')
+                setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
+                setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
+                setReimburseError(''); setReimburseModal(true)
+              }}
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                <Banknote className="h-3.5 w-3.5" /> Reimburse
+              </button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
@@ -1116,6 +1176,53 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               })}
             </div>
           )}
+
+          {detail.reimbursements.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Reimbursements</h3>
+              {detail.reimbursements.map(r => (
+                <div key={r.id} className="rounded-xl border overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
+                    <div>
+                      <p className="font-semibold text-base">{fmtMoney(r.amount)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Requested {fmtDate(r.createdAt)}{r.requestedBy?.name && ` · by ${r.requestedBy.name}`}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[r.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
+                      {PAYMENT_STATUS_LABEL[r.status === 'PAID' ? 'PAID' : 'PENDING']}
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{r.requesterName}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Bank Name</p><p className="font-medium">{r.bankName}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Account Number</p><p className="font-medium font-mono">{r.accountNumber}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium">{r.accountHolderName}</p></div>
+                    </div>
+                    {r.notes && <p className="text-sm text-muted-foreground">{r.notes}</p>}
+                    <div className={r.status === 'PAID' && r.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
+                        <FilePreview src={r.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(r.notePhotoKey)}
+                          className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                      </div>
+                      {r.status === 'PAID' && r.transferProofKey && (
+                        <div>
+                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
+                          <FilePreview src={r.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(r.transferProofKey)}
+                            className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          <p className="text-xs text-green-700 mt-1.5">
+                            Paid {r.paidAt && fmtDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           </div>{/* end left column */}
 
           {/* Right column — Timeline */}
@@ -1295,6 +1402,111 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
       {paymentPhotoView && (
         <PhotoLightbox photoKey={paymentPhotoView} onClose={() => setPaymentPhotoView(null)} />
+      )}
+
+      {/* Reimbursement Modal */}
+      {reimburseModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setReimburseModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">Reimburse</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
+                </div>
+                <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {reimburseError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{reimburseError}</div>}
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <input type="number" min={0} autoFocus
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="e.g. 1500000"
+                    value={reimburseAmount} onChange={e => setReimburseAmount(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <input
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Requester's full name"
+                    value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Bank Name <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. BCA, Mandiri"
+                      value={reimburseBankName} onChange={e => setReimburseBankName(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Account Number <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. 1234567890"
+                      value={reimburseAccountNumber} onChange={e => setReimburseAccountNumber(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Account Holder Name <span className="text-red-500">*</span></label>
+                  <input
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Name on the bank account"
+                    value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <input ref={reimburseFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleReimbursePhotoFile(f) }} />
+                  {reimbursePhoto ? (
+                    <div className="space-y-2">
+                      <FilePreview src={reimbursePhoto} alt="Nota" className="w-full h-40 rounded-xl object-cover border" />
+                      <button onClick={() => { setReimbursePhoto(null); reimburseFileInputRef.current?.click() }}
+                        className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
+                        Replace file
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => reimburseFileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
+                      <Camera className="h-6 w-6 text-amber-500" />
+                      <p className="text-sm font-medium">Take a photo or upload photo/PDF</p>
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Notes</label>
+                  <textarea rows={2}
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="What is this reimbursement for? (optional)"
+                    value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Requested by <span className="font-medium text-foreground">{session?.user?.name ?? 'You'}</span>
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={submitReimbursement}
+                  disabled={!reimburseAmount || !reimbursePhoto || !reimburseRequesterName.trim() || !reimburseBankName.trim() || !reimburseAccountNumber.trim() || !reimburseAccountHolderName.trim() || reimburseSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  {reimburseSaving
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    : <><Banknote className="h-3.5 w-3.5" />Send to Finance</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Receive Modal */}

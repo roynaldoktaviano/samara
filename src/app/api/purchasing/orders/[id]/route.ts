@@ -35,6 +35,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           paidBy: { select: { name: true } },
         },
       },
+      reimbursements: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          requestedBy: { select: { name: true } },
+          paidBy: { select: { name: true } },
+        },
+      },
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })

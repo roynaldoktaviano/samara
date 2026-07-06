@@ -110,6 +110,8 @@ model User {
   stockCountsApproved StockCount[]   @relation("StockCountApprove")
   poPaymentRequestsMade POPaymentRequest[] @relation("POPaymentRequestedBy")
   poPaymentRequestsPaid POPaymentRequest[] @relation("POPaymentPaidBy")
+  poReimbursementsMade  POReimbursement[]  @relation("POReimbursementRequestedBy")
+  poReimbursementsPaid  POReimbursement[]  @relation("POReimbursementPaidBy")
 }
 
 model Customer {
@@ -936,6 +938,7 @@ model PurchaseOrder {
   receipts         GoodsReceipt[]
   notifications    Notification[]
   paymentRequests  POPaymentRequest[]
+  reimbursements   POReimbursement[]
 
   @@index([createdById])
 
@@ -968,6 +971,38 @@ model POPaymentRequest {
   order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   requestedBy User          @relation("POPaymentRequestedBy", fields: [requestedById], references: [id])
   paidBy      User?         @relation("POPaymentPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+enum POReimbursementStatus {
+  PENDING
+  PAID
+}
+
+model POReimbursement {
+  id                String                @id @default(cuid())
+  orderId           String
+  requestedById     String
+  amount            Float
+  notePhotoKey      String
+  notes             String?
+  requesterName     String
+  bankName          String
+  accountNumber     String
+  accountHolderName String
+  status            POReimbursementStatus @default(PENDING)
+  paidAt            DateTime?
+  paidById          String?
+  transferProofKey  String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedBy User          @relation("POReimbursementRequestedBy", fields: [requestedById], references: [id])
+  paidBy      User?         @relation("POReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([status])
