@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils'
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
+const AGENT_PASSWORD = 'agentsamara123'
+
 const SAMARA_LOGO = '/agent-portal/logoo.png'
 
 const DUMMY_PHOTO_A = '/agent-portal/samara1.webp'
@@ -26,14 +28,33 @@ interface YachtOption {
   tagline: string
   type: string
   cabins: number
+  maxGuests: number
+  length: number
+  description: string
   image: string
 }
 
 const YACHTS: YachtOption[] = [
-  { id: 'samara-1', name: 'Samara I', tagline: 'Komodo · Raja Ampat', type: 'Phinisi', cabins: 10, image: DUMMY_PHOTO_A },
-  { id: 'samara-2', name: 'Samara II', tagline: 'Komodo · Banda Sea', type: 'Phinisi', cabins: 8, image: SAMARA_2_PHOTO },
-  { id: 'mischief', name: 'Mischief', tagline: 'Komodo', type: 'Phinisi', cabins: 6, image: MISCHIEF_PHOTO },
-  { id: 'otium', name: 'Otium', tagline: 'Komodo · Raja Ampat', type: 'Schooner', cabins: 7, image: DUMMY_PHOTO_B },
+  {
+    id: 'samara-1', name: 'Samara I', tagline: 'Komodo · Raja Ampat', type: 'Phinisi', cabins: 10, maxGuests: 20, length: 30,
+    description: 'Traditional luxury Phinisi built for immersive, intimate liveaboard voyages through Komodo and Raja Ampat.',
+    image: DUMMY_PHOTO_A,
+  },
+  {
+    id: 'samara-2', name: 'Samara II', tagline: 'Komodo · Banda Sea', type: 'Phinisi', cabins: 8, maxGuests: 16, length: 26,
+    description: 'Boutique Phinisi tailored for unforgettable diving expeditions and relaxed island-hopping.',
+    image: SAMARA_2_PHOTO,
+  },
+  {
+    id: 'mischief', name: 'Mischief', tagline: 'Komodo', type: 'Phinisi', cabins: 6, maxGuests: 12, length: 30,
+    description: 'Eco-conscious luxury yacht blending traditional Phinisi lines with striking contemporary design.',
+    image: MISCHIEF_PHOTO,
+  },
+  {
+    id: 'otium', name: 'Otium', tagline: 'Komodo · Raja Ampat', type: 'Schooner', cabins: 7, maxGuests: 14, length: 35,
+    description: 'Premium modern schooner offering refined comfort for the ultimate Komodo & Raja Ampat getaway.',
+    image: DUMMY_PHOTO_B,
+  },
 ]
 
 interface MediaFile {
@@ -269,6 +290,10 @@ export default function AgentPortalPage() {
       setLoginError('Enter the password provided to you')
       return
     }
+    if (password !== AGENT_PASSWORD) {
+      setLoginError('Incorrect password')
+      return
+    }
     setLoginError('')
     setStep('yacht')
   }
@@ -381,7 +406,7 @@ function LoginScreen({ password, setPassword, error, onSubmit }: {
           Continue
         </button>
 
-        <p className="text-[11px] text-muted-foreground text-center mt-6">Preview only — password is not yet verified against real accounts</p>
+        <p className="text-[11px] text-muted-foreground text-center mt-6">Preview only — shared password, not yet per-agent accounts</p>
       </div>
     </div>
   )
@@ -427,7 +452,13 @@ function YachtScreen({ onSelect, onLogout }: { onSelect: (id: string, target: 'm
           {active.name}
         </h1>
         <p className="text-white/80 text-sm sm:text-base mt-5 max-w-sm">
-          {active.type} · {active.cabins} cabins · {active.tagline}
+          {active.type} · {active.cabins} Cabins · {active.maxGuests} Guests · {active.length}m
+        </p>
+        <p className="text-white/70 text-sm mt-3 max-w-sm leading-relaxed">
+          {active.description}
+        </p>
+        <p className="flex items-center gap-1.5 text-[#d9cda3] text-xs sm:text-sm mt-4">
+          <MapPin className="h-3.5 w-3.5 shrink-0" /> {active.tagline}
         </p>
         <div className="flex items-center flex-wrap gap-3 mt-8">
           <button
