@@ -12,6 +12,9 @@ const PUBLIC_PATHS = [
   // Internal Request Order page — used by staff without an ERP login (crew, field staff, etc.)
   '/request-order',
   '/api/hr/request-orders',
+  // Agent Portal preview — has its own password login, separate from staff NextAuth
+  '/agent-portal',
+  '/media-kit',
 ]
 
 function isPublic(pathname: string) {
