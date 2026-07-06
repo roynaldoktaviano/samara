@@ -11,11 +11,12 @@ import { cn } from '@/lib/utils'
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
-const SAMARA_LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp'
+const SAMARA_LOGO = '/agent-portal/logoo.png'
 
-// Dummy stand-in photography — real per-yacht photos to be dropped in later.
-const DUMMY_PHOTO_A = 'https://samaraliveaboard.com/wp-content/uploads/2025/07/samara-1-main-deck-4.webp'
-const DUMMY_PHOTO_B = 'https://otiumyacht.com/wp-content/uploads/2026/01/otium-2-1.webp'
+const DUMMY_PHOTO_A = '/agent-portal/samara1.webp'
+const DUMMY_PHOTO_B = '/agent-portal/lounge-otium.webp'
+const MISCHIEF_PHOTO = '/agent-portal/mischief-yacht-komodo.jpg'
+const SAMARA_2_PHOTO = '/agent-portal/samara-II.webp'
 
 type Step = 'login' | 'yacht' | 'media' | 'calendar'
 
@@ -30,8 +31,8 @@ interface YachtOption {
 
 const YACHTS: YachtOption[] = [
   { id: 'samara-1', name: 'Samara I', tagline: 'Komodo · Raja Ampat', type: 'Phinisi', cabins: 10, image: DUMMY_PHOTO_A },
-  { id: 'samara-2', name: 'Samara II', tagline: 'Komodo · Banda Sea', type: 'Phinisi', cabins: 8, image: DUMMY_PHOTO_B },
-  { id: 'mischief', name: 'Mischief', tagline: 'Komodo', type: 'Phinisi', cabins: 6, image: DUMMY_PHOTO_A },
+  { id: 'samara-2', name: 'Samara II', tagline: 'Komodo · Banda Sea', type: 'Phinisi', cabins: 8, image: SAMARA_2_PHOTO },
+  { id: 'mischief', name: 'Mischief', tagline: 'Komodo', type: 'Phinisi', cabins: 6, image: MISCHIEF_PHOTO },
   { id: 'otium', name: 'Otium', tagline: 'Komodo · Raja Ampat', type: 'Schooner', cabins: 7, image: DUMMY_PHOTO_B },
 ]
 
@@ -593,7 +594,9 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
 
       <div className="text-center mb-10">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/60">What's Included</p>
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2" style={{ fontFamily: "'Merriweather', serif" }}>Media Kit</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2" style={{ fontFamily: "'Merriweather', serif" }}>
+          <span style={{ color: GOLD_DARK }}>{yacht.name}</span> Media Kit
+        </h2>
         <p className="text-muted-foreground text-sm mt-3 max-w-md mx-auto">
           Everything you need to present and sell {yacht.name} to your clients
         </p>
