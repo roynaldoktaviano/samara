@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, Save, Calendar, MapPin, Ship, Anchor, Lock } from 'lucide-react'
-import { toast, Toaster } from 'sonner'
+import { toast } from 'sonner'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const TEAL = '#1a5f6e'
@@ -685,7 +685,6 @@ function GuestFormInner() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <div className="min-h-screen bg-[#f0f4f5]">
 
         {/* ── Brand header ── */}

@@ -71,7 +71,7 @@ interface HistoryEntry {
 interface StockEntry { locationId: string; locationName: string; locationType: string; qty: number; costPerUnit: number }
 interface LotEntry { id: string; locationId: string; locationName: string; quantity: number; costPerUnit: number; batch: string | null; expiresAt: string | null; createdAt: string }
 
-const CSV_HEADERS = ['SKU', 'Name', 'Type', 'Category', 'Base Unit', 'Purchase Unit', 'Conversion', 'Standard Cost', 'Selling Price', 'Valuation Method', 'Min Stock', 'Reorder Qty']
+const CSV_HEADERS = ['SKU', 'Name', 'Type', 'Category', 'Base Unit', 'Purchase Unit', 'Conversion', 'Standard Cost', 'Selling Price', 'Valuation Method', 'Min Stock', 'Reorder Qty', 'Stock', 'Location']
 
 function fmt(n: number) {
   return new Intl.NumberFormat('id-ID').format(n)
@@ -189,13 +189,34 @@ export default function ItemsPage() {
     load()
   }
 
-  function exportCSV() {
-    const rows = items.map(i => [i.sku, i.name, i.type, i.category, i.baseUnit, i.purchaseUnit, String(i.conversionFactor), String(i.standardCost), String(i.sellingPrice), i.valuationMethod, String(i.minStock), String(i.reorderQty)])
+  async function exportCSV() {
+    // Per-location stock breakdown, so items with stock split across multiple locations export as one row per location
+    const stockRes = await fetch('/api/purchasing/stock')
+    const stockData = stockRes.ok ? await stockRes.json() : { locations: [] }
+    const byItem = new Map<string, { locationName: string; qty: number }[]>()
+    for (const loc of stockData.locations ?? []) {
+      for (const row of loc.rows ?? []) {
+        const list = byItem.get(row.item.id) ?? []
+        list.push({ locationName: loc.location.name, qty: row.qty })
+        byItem.set(row.item.id, list)
+      }
+    }
+
+    const rows: string[][] = []
+    for (const i of items) {
+      const base = [i.sku, i.name, i.type, i.category, i.baseUnit, i.purchaseUnit, String(i.conversionFactor), String(i.standardCost), String(i.sellingPrice), i.valuationMethod, String(i.minStock), String(i.reorderQty)]
+      const stockRows = byItem.get(i.id) ?? []
+      if (stockRows.length === 0) {
+        rows.push([...base, '0', ''])
+      } else {
+        for (const s of stockRows) rows.push([...base, String(s.qty), s.locationName])
+      }
+    }
     downloadFile(buildCSV([CSV_HEADERS, ...rows]), `item-master-${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
   function downloadTemplate() {
-    const sample = ['FOOD-001', 'Premium Rice', 'FOOD', 'Dry Food', 'kg', 'sack', '25', '22000', '0', 'FIFO', '12', '50']
+    const sample = ['FOOD-001', 'Premium Rice', 'FOOD', 'Dry Food', 'kg', 'sack', '25', '22000', '0', 'FIFO', '12', '50', '100', 'Bajo Central Gudang']
     downloadFile(buildCSV([CSV_HEADERS, sample]), 'template-item-master.csv')
   }
 
@@ -233,7 +254,7 @@ export default function ItemsPage() {
           <button
             onClick={downloadTemplate}
             className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted transition-colors"
-            title="Download template CSV"
+            title="Download template CSV — includes Stock + Location columns for setting initial stock on new items"
           >
             <FileDown className="h-4 w-4" /> Template
           </button>
@@ -241,6 +262,7 @@ export default function ItemsPage() {
             onClick={exportCSV}
             disabled={items.length === 0}
             className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+            title="Export current items — one row per item per location with stock"
           >
             <Download className="h-4 w-4" /> Export CSV
           </button>
@@ -248,6 +270,7 @@ export default function ItemsPage() {
             onClick={() => importRef.current?.click()}
             disabled={importing}
             className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+            title="Import CSV — Stock/Location columns only set initial stock for newly created items (SKUs that don't exist yet); existing items' stock is untouched"
           >
             <Upload className="h-4 w-4" /> {importing ? 'Importing...' : 'Import CSV'}
           </button>
@@ -657,7 +680,7 @@ export default function ItemsPage() {
                 </div>
                 <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
                   <p className="text-2xl font-bold text-red-700">{importResult.errors.length}</p>
-                  <p className="text-xs text-red-600 mt-0.5">Error</p>
+                  <p className="text-xs text-red-600 mt-0.5">Issues</p>
                 </div>
               </div>
 
@@ -670,7 +693,7 @@ export default function ItemsPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-3">
                     <AlertCircle className="h-4 w-4 shrink-0" />
-                    <p className="text-sm">{importResult.total} succeeded, {importResult.errors.length} rows failed:</p>
+                    <p className="text-sm">{importResult.total} succeeded, {importResult.errors.length} row(s) had issues (see below — row may have still been imported):</p>
                   </div>
                   <div className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
                     {importResult.errors.map((e, i) => (

@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -128,6 +128,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(hasPhotoPackage  !== undefined && { hasPhotoPackage:  Boolean(hasPhotoPackage) }),
         ...(agentContactId  !== undefined && { agentContactId:  agentContactId || null }),
         ...(holdUntil       !== undefined && { holdUntil:       holdUntil ? new Date(holdUntil) : null }),
+        ...(currency        !== undefined && {
+          currency:     currency || 'USD',
+          exchangeRate: (currency && currency !== 'USD' && exchangeRate) ? parseFloat(String(exchangeRate)) : null,
+        }),
         status: computedStatus,
       },
       select: { id: true, bookingCode: true, status: true },

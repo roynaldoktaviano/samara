@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, Save, Calendar, MapPin, Ship, Anchor, Lock, User, Users } from 'lucide-react'
-import { toast, Toaster } from 'sonner'
+import { toast } from 'sonner'
 
 function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (b64: string) => void }) {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -674,7 +674,6 @@ function BookingFormInner() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <div className="min-h-screen bg-[#f0f4f5]">
 
         {/* ── Brand header ── */}

@@ -149,6 +149,14 @@ const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
 
 const ACCENT = '#bdac7e'
 
+/* ─── Currency (mirrors BookingWizard) ───────────────────────────────────── */
+type CurrencyCode = 'USD' | 'EUR' | 'IDR'
+const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUSD: number; step: number; decimals: number }> = {
+  USD: { symbol: '$',  label: 'USD — US Dollar',          rateToUSD: 1,        step: 100,    decimals: 2 },
+  EUR: { symbol: '€',  label: 'EUR — Euro',                rateToUSD: 1.09,     step: 100,    decimals: 2 },
+  IDR: { symbol: 'Rp', label: 'IDR — Indonesian Rupiah',   rateToUSD: 0.000063, step: 100000, decimals: 0 },
+}
+
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
 const fmtDateInput = (d?: string | null) =>
@@ -181,6 +189,8 @@ export default function Bookings() {
   const [editTotal,    setEditTotal]   = useState('')
   const [editDeposit,  setEditDeposit] = useState('')
   const [editDiscount, setEditDiscount]= useState('')
+  const [editCurrency,     setEditCurrency]     = useState<CurrencyCode>('USD')
+  const [editExchangeRate, setEditExchangeRate] = useState(1)
   const [editDepDue,   setEditDepDue]  = useState('')
   const [editFinalDue, setEditFinalDue]= useState('')
   const [editNotes,    setEditNotes]   = useState('')
@@ -369,6 +379,8 @@ export default function Bookings() {
     setEditDepDue(fmtDateInput(b.depositDueDate))
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
+    setEditCurrency((b.currency as CurrencyCode) || 'USD')
+    setEditExchangeRate(b.exchangeRate || 1)
     setRescheduleMode(false); setRescheduleStart(''); setRescheduleEnd(''); setRescheduleReason('')
     setRescheduleOTId(''); setRescheduleOpenTrips([]); setRescheduleNewCabinId('')
     setRescheduleYachtId(''); setRescheduleYachts([])
@@ -412,6 +424,8 @@ export default function Bookings() {
         discount: editDiscount, depositDueDate: editDepDue || null,
         finalDueDate: editFinalDue || null, notes: editNotes,
         services: editServices.filter(s => s.name.trim()),
+        currency: editCurrency,
+        exchangeRate: editCurrency !== 'USD' ? editExchangeRate : undefined,
       }
       if (canEditTrip) {
         if (editStartDate) body.startDate = editStartDate
@@ -1811,6 +1825,52 @@ export default function Bookings() {
                 return (
                   <>
                     <Separator />
+
+                    {/* ── Invoice Currency ── */}
+                    <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="shrink-0 mr-1">
+                          <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
+                          <p className="text-[10px] text-muted-foreground">All prices stored in USD</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => {
+                                const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
+                                setEditExchangeRate(newRateFromUSD)
+                                setEditCurrency(c)
+                              }}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${editCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              style={editCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
+                            >
+                              {CURRENCIES[c].symbol} {c}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {editCurrency !== 'USD' && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">1 USD =</span>
+                          <input
+                            type="number"
+                            min="0.000001"
+                            step={editCurrency === 'IDR' ? 100 : 0.0001}
+                            value={editExchangeRate}
+                            onChange={e => {
+                              const r = parseFloat(e.target.value)
+                              if (r > 0) setEditExchangeRate(r)
+                            }}
+                            className="w-28 text-xs border rounded px-2 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
+                            style={{ borderColor: `${ACCENT}60` }}
+                          />
+                          <span className="text-xs text-muted-foreground font-medium">{editCurrency}</span>
+                        </div>
+                      )}
+                    </div>
+
                     {/* ── Additional Services ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -1861,10 +1921,20 @@ export default function Bookings() {
                             </span>
                           )}
                         </div>
+                        {editCurrency !== 'USD' && (
+                          <p className="text-xs text-muted-foreground">
+                            ≈ {CURRENCIES[editCurrency].symbol}{(autoTotal * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>Amount Paid (USD)</Label>
                         <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
+                        {editCurrency !== 'USD' && (
+                          <p className="text-xs text-muted-foreground">
+                            ≈ {CURRENCIES[editCurrency].symbol}{((parseFloat(editDeposit) || 0) * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>Payment Due Date</Label>

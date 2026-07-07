@@ -64,10 +64,15 @@ export async function POST(req: NextRequest) {
   const iCost     = col(headers, 'Harga Standar', 'standardCost', 'harga standar', 'harga')
   const iMin      = col(headers, 'Min Stok', 'minStock', 'min stok')
   const iReorder  = col(headers, 'Qty Reorder', 'reorderQty', 'reorder')
+  const iStock    = col(headers, 'Stock', 'Stok', 'stock', 'stok')
+  const iLoc      = col(headers, 'Location', 'Lokasi', 'location', 'lokasi')
 
   if (iSKU < 0 || iName < 0) {
     return NextResponse.json({ error: 'Kolom SKU dan Nama wajib ada di header CSV' }, { status: 400 })
   }
+
+  const locations = await db.stockLocation.findMany({ where: { isActive: true }, select: { id: true, name: true } })
+  const locationByName = new Map(locations.map(l => [l.name.trim().toLowerCase(), l.id]))
 
   let imported = 0
   let updated = 0
@@ -94,6 +99,8 @@ export async function POST(req: NextRequest) {
     const standardCost     = parseFloat(iCost >= 0   ? row[iCost]   : '') || 0
     const minStock         = parseFloat(iMin >= 0    ? row[iMin]    : '') || 0
     const reorderQty       = parseFloat(iReorder >= 0 ? row[iReorder] : '') || 0
+    const stockQty         = parseFloat(iStock >= 0  ? row[iStock]  : '') || 0
+    const locationName     = (iLoc >= 0 ? row[iLoc] : '')?.trim() ?? ''
 
     try {
       const existing = await db.purchaseItem.findUnique({ where: { sku } })
@@ -104,10 +111,27 @@ export async function POST(req: NextRequest) {
         })
         updated++
       } else {
-        await db.purchaseItem.create({
+        const item = await db.purchaseItem.create({
           data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
         })
         imported++
+
+        if (stockQty > 0) {
+          const locationId = locationName ? locationByName.get(locationName.toLowerCase()) : undefined
+          if (!locationId) {
+            errors.push({ row: i + 1, sku, error: `Item created, but stock not added — location "${locationName || '(blank)'}" not found` })
+          } else {
+            const lot = await db.stockLot.findFirst({ where: { itemId: item.id, locationId } })
+            if (lot) {
+              await db.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: stockQty }, updatedAt: new Date() } })
+            } else {
+              await db.stockLot.create({ data: { id: crypto.randomUUID(), itemId: item.id, locationId, quantity: stockQty, costPerUnit: standardCost, updatedAt: new Date() } })
+            }
+            await db.stockMovement.create({
+              data: { id: crypto.randomUUID(), itemId: item.id, toLocationId: locationId, quantity: stockQty, type: 'ADJUSTMENT', referenceType: 'ItemImport', notes: 'Initial stock from CSV import', createdById: session.user.id },
+            })
+          }
+        }
       }
     } catch (e) {
       errors.push({ row: i + 1, sku, error: (e as Error).message })

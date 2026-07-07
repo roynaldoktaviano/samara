@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
+import { Loader2, User, Check, ChevronsUpDown, Search, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { compressImage } from '@/lib/compressImage'
+import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 
 /* ── Types ── */
 export interface GuestFormState {
@@ -171,7 +172,14 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
             <img src={value} alt={label} className="w-full max-h-48 object-contain rounded-lg border bg-muted/20" />
             <button
               type="button"
+              onClick={() => downloadDataUrl(value, `${label.replace(/\s+/g, '-')}.${extFromDataUrl(value)}`)}
+              title="Download"
+              className="absolute top-1.5 right-8 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            ><Download className="h-3 w-3" /></button>
+            <button
+              type="button"
               onClick={() => onChange('')}
+              title="Remove"
               className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
             >✕</button>
           </div>
@@ -243,7 +251,13 @@ function MultiFileUpload({ label, values, onChange }: { label: string; values: s
             ) : (
               <img src={v} alt={label} className="w-full h-full object-cover" />
             )}
-            <button type="button" onClick={() => removeAt(i)}
+            <button type="button"
+              onClick={() => downloadDataUrl(v, `${label.replace(/\s+/g, '-')}-${i + 1}.${extFromDataUrl(v)}`)}
+              title="Download"
+              className="absolute top-1 left-1 bg-black/60 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Download className="h-2.5 w-2.5" />
+            </button>
+            <button type="button" onClick={() => removeAt(i)} title="Remove"
               className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
           </div>
         ))}
