@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, Save, Calendar, MapPin, Ship, Anchor, Lock } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
@@ -160,11 +160,37 @@ function FileUpload({ label, hint, values, onChange }: { label: string; hint?: s
 
 function YesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
-      <option value="">Select</option>
-      <option value="yes">Yes</option>
-      <option value="no">No</option>
-    </select>
+    <div className="flex gap-2">
+      <button
+        type="button"
+        onClick={() => onChange('yes')}
+        className="flex-1 h-11 rounded-xl text-sm font-semibold border-2 transition-all"
+        style={value === 'yes'
+          ? { background: TEAL, borderColor: TEAL, color: 'white' }
+          : { background: 'white', borderColor: '#e5e7eb', color: '#9ca3af' }}
+      >
+        Yes
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('no')}
+        className="flex-1 h-11 rounded-xl text-sm font-semibold border-2 transition-all"
+        style={value === 'no'
+          ? { background: '#f43f5e', borderColor: '#f43f5e', color: 'white' }
+          : { background: 'white', borderColor: '#e5e7eb', color: '#9ca3af' }}
+      >
+        No
+      </button>
+    </div>
+  )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5 mb-3">
+      <span className="text-xs font-bold uppercase tracking-widest whitespace-nowrap" style={{ color: TEAL }}>{children}</span>
+      <div className="h-px flex-1 bg-gray-100" />
+    </div>
   )
 }
 
@@ -192,7 +218,8 @@ function ProfileSection({ data, onChange }: { data: any; onChange: (k: string, v
         <Field label="Passport / ID Number *"><input value={data.passport ?? ''} onChange={f('passport')} placeholder="A1234567" className={inputCls} /></Field>
         <Field label="Passport Expiry *"><input type="date" value={data.passportExpiry ?? ''} onChange={f('passportExpiry')} className={inputCls} /></Field>
       </div>
-      <div className="pt-2 border-t border-gray-100">
+      <div className="pt-4 border-t border-gray-100">
+        <SectionTitle>Identity Verification</SectionTitle>
         <ImageUpload
           label="Passport / ID Photo *"
           hint="Take a photo of your passport data page or ID card. This helps us prepare your documents in advance."
@@ -216,8 +243,8 @@ function MedicalSection({ data, onChange }: { data: any; onChange: (k: string, v
         <Field label="Physical Limitations"><textarea rows={2} value={data.physicalLimitations ?? ''} onChange={f('physicalLimitations')} placeholder="e.g. Mobility issues, Back pain" className={textCls} /></Field>
         <Field label="Special Assistance Required"><YesNo value={data.specialAssistance ?? ''} onChange={v => onChange('specialAssistance', v)} /></Field>
       </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Emergency Contact *</p>
+      <div className="pt-4 border-t border-gray-100">
+        <SectionTitle>Emergency Contact *</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Full Name *"><input value={data.emergencyContactName ?? ''} onChange={f('emergencyContactName')} placeholder="Full name" className={inputCls} /></Field>
           <Field label="Relationship *"><input value={data.emergencyContactRelationship ?? ''} onChange={f('emergencyContactRelationship')} placeholder="e.g. Spouse, Parent" className={inputCls} /></Field>
@@ -258,8 +285,8 @@ function FoodSection({ data, onChange }: { data: any; onChange: (k: string, v: s
         <Field label="Breakfast Preference"><input value={data.breakfastPreference ?? ''} onChange={f('breakfastPreference')} placeholder="e.g. Continental, Full English" className={inputCls} /></Field>
         <Field label="Snack Preference"><input value={data.snackPreference ?? ''} onChange={f('snackPreference')} placeholder="e.g. Fruit, Nuts, Cookies" className={inputCls} /></Field>
       </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Dietary Restrictions *</p>
+      <div className="pt-4 border-t border-gray-100">
+        <SectionTitle>Dietary Restrictions *</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {restrictions.map(([lbl, k]) => (
             <Field key={k} label={lbl}>{yn(k)}</Field>
@@ -500,6 +527,7 @@ function GuestFormInner() {
   const [saved,        setSaved]        = useState<Set<Section>>(new Set())
   const [allDone,      setAllDone]      = useState(false)
   const [maxUnlocked,  setMaxUnlocked]  = useState(0) // highest step index the user can access
+  const savingRef = useRef(false) // guards against double-tap firing two saves before `saving` state re-renders
 
   const [profileData, setProfileData] = useState<any>({})
   const [medicalData, setMedicalData] = useState<any>({})
@@ -560,9 +588,11 @@ function GuestFormInner() {
   const isLast = stepIdx === STEPS.length - 1
 
   const handleSave = async (andNext: boolean) => {
+    if (savingRef.current) return
     const section = currentStep.id
     const validationError = validateSection(section, dataMap[section])
-    if (validationError) { toast.error(validationError); return }
+    if (validationError) { toast.error(validationError, { id: 'guest-form-toast' }); return }
+    savingRef.current = true
     setSaving(true)
     try {
       const res = await fetch(`/api/guest-form/${token}`, {
@@ -572,7 +602,11 @@ function GuestFormInner() {
       })
       if (!res.ok) throw new Error()
       setSaved(prev => new Set([...prev, section]))
-      toast.success('Saved!')
+      toast.success('Saved!', {
+        id: 'guest-form-toast',
+        icon: <CheckCircle className="w-4 h-4" style={{ color: '#9ca3af' }} />,
+        style: { background: 'white', border: `1px solid ${GOLD}`, color: '#374151' },
+      })
       if (andNext) {
         if (isLast) {
           setAllDone(true)
@@ -583,8 +617,9 @@ function GuestFormInner() {
         }
       }
     } catch {
-      toast.error('Failed to save. Please try again.')
+      toast.error('Failed to save. Please try again.', { id: 'guest-form-toast' })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
