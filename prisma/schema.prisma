@@ -930,10 +930,20 @@ model PurchaseOrder {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  request          PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  deliveryLocation StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  createdBy        User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  // Requester snapshot — captured at PO creation time (direct create, or auto-created from an
+  // approved PR) so department/office/role stay historically accurate even if the employee's
+  // record changes later.
+  requestedByEmployeeId String?
+  requestedByName       String?
+  requestedByOffice     String?
+  requestedByDepartment String?
+  requestedByRole       String?
+
+  request            PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  deliveryLocation   StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  createdBy          User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  requestedByEmployee Employee?          @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
   items            PurchaseOrderItem[]
   receipts         GoodsReceipt[]
   notifications    Notification[]
@@ -946,6 +956,7 @@ model PurchaseOrder {
   @@index([createdAt])
   @@index([requestId])
   @@index([deliveryLocationId])
+  @@index([requestedByEmployeeId])
 }
 
 enum POPaymentRequestStatus {
@@ -958,13 +969,13 @@ model POPaymentRequest {
   orderId          String
   requestedById    String
   amount           Float
-  notePhotoKey     String
+  notePhotoKeys    String[]               @default([])
   notes            String?
   status           POPaymentRequestStatus @default(PENDING)
   paymentMethod    String                 @default("TRANSFER")
   paidAt           DateTime?
   paidById         String?
-  transferProofKey String?
+  transferProofKeys String[]              @default([])
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
@@ -987,7 +998,7 @@ model POReimbursement {
   orderId           String
   requestedById     String
   amount            Float
-  notePhotoKey      String
+  notePhotoKeys     String[]              @default([])
   notes             String?
   requesterName     String
   bankName          String
@@ -996,7 +1007,7 @@ model POReimbursement {
   status            POReimbursementStatus @default(PENDING)
   paidAt            DateTime?
   paidById          String?
-  transferProofKey  String?
+  transferProofKeys String[]              @default([])
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
@@ -1258,6 +1269,7 @@ model Employee {
   role           EmployeeRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   purchaseRequests PurchaseRequest[]
+  purchaseOrdersRequested PurchaseOrder[]
 
   @@index([legalEntityId])
   @@index([locationId])

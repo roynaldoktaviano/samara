@@ -17,9 +17,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
 
   const body = await req.json()
-  const { amount, notePhotoKey, notes, paidByPurchasing } = body
+  const { amount, notePhotoKeys, notes, paidByPurchasing } = body
   if (!amount || Number(amount) <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
-  if (!notePhotoKey) return NextResponse.json({ error: 'Receipt/nota photo is required' }, { status: 400 })
+  if (!Array.isArray(notePhotoKeys) || notePhotoKeys.length === 0) return NextResponse.json({ error: 'At least one receipt/nota photo is required' }, { status: 400 })
 
   const isDirect = !!paidByPurchasing
   const amountFormatted = `Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))}`
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       orderId: id,
       requestedById: session.user.id,
       amount: Number(amount),
-      notePhotoKey,
+      notePhotoKeys,
       notes: notes?.trim() || null,
       updatedAt: new Date(),
       ...(isDirect && {

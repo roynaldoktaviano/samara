@@ -17,9 +17,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
 
   const body = await req.json()
-  const { amount, notePhotoKey, notes, requesterName, bankName, accountNumber, accountHolderName } = body
+  const { amount, notePhotoKeys, notes, requesterName, bankName, accountNumber, accountHolderName } = body
   if (!amount || Number(amount) <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
-  if (!notePhotoKey) return NextResponse.json({ error: 'Receipt/nota photo is required' }, { status: 400 })
+  if (!Array.isArray(notePhotoKeys) || notePhotoKeys.length === 0) return NextResponse.json({ error: 'At least one receipt/nota photo is required' }, { status: 400 })
   if (!requesterName?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
   if (!bankName?.trim()) return NextResponse.json({ error: 'Bank name is required' }, { status: 400 })
   if (!accountNumber?.trim()) return NextResponse.json({ error: 'Account number is required' }, { status: 400 })
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       orderId: id,
       requestedById: session.user.id,
       amount: Number(amount),
-      notePhotoKey,
+      notePhotoKeys,
       notes: notes?.trim() || null,
       requesterName: requesterName.trim(),
       bankName: bankName.trim(),

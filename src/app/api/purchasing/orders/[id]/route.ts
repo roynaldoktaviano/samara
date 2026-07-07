@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           prNumber: true,
           createdAt: true,
           requestedBy: { select: { name: true } },
-          requestedByEmployee: { select: { fullName: true, employeeNumber: true } },
+          requestedByEmployee: { select: { fullName: true, employeeNumber: true, department: true, location: { select: { name: true } } } },
         },
       },
       paymentRequests: {
@@ -46,9 +46,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const requestedByName = order.request?.requestedByEmployee
-    ? `${order.request.requestedByEmployee.fullName} (${order.request.requestedByEmployee.employeeNumber})`
-    : order.request?.requestedBy?.name ?? order.createdBy?.name ?? null
+  const createdByName = order.createdBy?.name ?? null
+  const requestedByName = order.requestedByName ?? order.request?.requestedByEmployee?.fullName ?? null
+  const requestedByOffice = order.requestedByOffice ?? order.request?.requestedByEmployee?.location?.name ?? null
+  const requestedByDepartment = order.requestedByDepartment ?? order.request?.requestedByEmployee?.department ?? null
+  const requestedByRole = order.requestedByRole ?? null
 
   const receipts = await db.goodsReceipt.findMany({
     where: { orderId: id },
@@ -58,7 +60,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     ...order,
     receipts,
+    createdByName,
     requestedByName,
+    requestedByOffice,
+    requestedByDepartment,
+    requestedByRole,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
   })

@@ -26,7 +26,7 @@ export async function GET() {
       request: {
         select: {
           requestedBy: { select: { name: true } },
-          requestedByEmployee: { select: { fullName: true, employeeNumber: true } },
+          requestedByEmployee: { select: { fullName: true, employeeNumber: true, department: true, location: { select: { name: true } } } },
         },
       },
       receipts: {
@@ -56,9 +56,11 @@ export async function GET() {
       receipts: undefined,
       paymentStatus,
       paymentRequests: undefined,
-      requestedByName: o.request?.requestedByEmployee
-        ? `${o.request.requestedByEmployee.fullName} (${o.request.requestedByEmployee.employeeNumber})`
-        : o.request?.requestedBy?.name ?? o.createdBy?.name ?? null,
+      createdByName: o.createdBy?.name ?? null,
+      requestedByName: o.requestedByName ?? o.request?.requestedByEmployee?.fullName ?? null,
+      requestedByOffice: o.requestedByOffice ?? o.request?.requestedByEmployee?.location?.name ?? null,
+      requestedByDepartment: o.requestedByDepartment ?? o.request?.requestedByEmployee?.department ?? null,
+      requestedByRole: o.requestedByRole ?? null,
       request: undefined,
       createdBy: undefined,
     }
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId } = body
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
@@ -80,6 +82,16 @@ export async function POST(req: NextRequest) {
   if (!resolvedSupplierId) {
     const matched = await db.supplier.findFirst({ where: { name: { equals: supplierName.trim(), mode: 'insensitive' } }, select: { id: true } })
     resolvedSupplierId = matched?.id ?? null
+  }
+
+  // Snapshot requester's department/office/role at creation time — stays accurate even if the
+  // employee's record changes later.
+  let requester: { fullName: string; department: string | null; location: { name: string } | null; role: { title: string } | null } | null = null
+  if (requestedByEmployeeId) {
+    requester = await db.employee.findUnique({
+      where: { id: requestedByEmployeeId },
+      select: { fullName: true, department: true, location: { select: { name: true } }, role: { select: { title: true } } },
+    })
   }
 
   const [poNumber, actingUser] = await Promise.all([
@@ -99,6 +111,13 @@ export async function POST(req: NextRequest) {
       notes: notes?.trim() || null,
       createdById: session.user.id,
       updatedAt: new Date(),
+      ...(requester && {
+        requestedByEmployeeId,
+        requestedByName: requester.fullName,
+        requestedByOffice: requester.location?.name ?? null,
+        requestedByDepartment: requester.department ?? null,
+        requestedByRole: requester.role?.title ?? null,
+      }),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string }) => ({
           id: crypto.randomUUID(),

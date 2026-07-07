@@ -2,21 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote } from 'lucide-react'
-import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
-import { FilePreview } from '@/components/ui/file-preview'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users } from 'lucide-react'
+import { isPdfDataUrl } from '@/lib/fileUpload'
+import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
 
 
 interface PaymentRequest {
-  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string; paymentMethod: string
+  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; status: string; paymentMethod: string
   createdAt: string; requestedBy: { name: string } | null
-  paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
+  paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
 interface Reimbursement {
-  id: string; amount: number; notePhotoKey: string; notes: string | null; status: string
+  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; status: string
   requesterName: string; bankName: string; accountNumber: string; accountHolderName: string
   createdAt: string; requestedBy: { name: string } | null
-  paidAt: string | null; paidBy: { name: string } | null; transferProofKey: string | null
+  paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
 interface PurchaseOrder {
@@ -25,10 +25,12 @@ interface PurchaseOrder {
   itemCount: number; totalOrdered: number; totalReceived: number; fullyReceivedCount: number
   notes: string | null; orderedAt: string; expectedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
-  requestedByName: string | null
+  createdByName: string | null
+  requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
   paymentStatus: string
 }
 interface SupplierOption { id: string; name: string }
+interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
 interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
@@ -51,7 +53,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
   const [viewPhoto, setViewPhoto] = useState<string | null>(null)
   const fmt = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  type Step = { key: string; done: boolean; label: string; date: string | null; sub: (string | null | undefined)[]; photo?: string | null; photoLabel?: string; cancelled?: boolean }
+  type Step = { key: string; done: boolean; label: string; date: string | null; sub: (string | null | undefined)[]; photos?: string[]; photoLabel?: string; cancelled?: boolean }
 
   const steps: Step[] = [
     ...(detail.request ? [{
@@ -59,7 +61,11 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       done: true,
       label: 'PR Submitted',
       date: fmt(detail.request.createdAt),
-      sub: [detail.requestedByName, detail.request.prNumber],
+      sub: [
+        detail.requestedByName,
+        [detail.requestedByOffice, detail.requestedByDepartment, detail.requestedByRole].filter(Boolean).join(' · ') || null,
+        detail.request.prNumber,
+      ],
     }] : []),
     {
       key: 'ordered',
@@ -81,7 +87,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
           label: 'Debit Paid',
           date: latest.paidAt ? fmt(latest.paidAt) : fmt(latest.createdAt),
           sub: [fmtMoney(latest.amount), 'Debit Paid', (latest.paidBy?.name ?? latest.requestedBy?.name) ? `by ${latest.paidBy?.name ?? latest.requestedBy?.name}` : null],
-          photo: latest.notePhotoKey,
+          photos: latest.notePhotoKeys,
           photoLabel: 'View nota',
         }]
       }
@@ -92,7 +98,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
           label: 'Payment Requested',
           date: fmt(latest.createdAt),
           sub: [fmtMoney(latest.amount), latest.requestedBy?.name ? `by ${latest.requestedBy.name}` : null],
-          photo: latest.notePhotoKey,
+          photos: latest.notePhotoKeys,
           photoLabel: 'View nota',
         },
         {
@@ -101,7 +107,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
           label: 'Payment Confirmed',
           date: paid && latest.paidAt ? fmt(latest.paidAt) : null,
           sub: paid ? [latest.paidBy?.name ? `by ${latest.paidBy.name}` : null] : [],
-          photo: paid ? latest.transferProofKey : null,
+          photos: paid ? latest.transferProofKeys : [],
           photoLabel: 'View transfer proof',
         },
       ]
@@ -112,7 +118,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       label: 'In Transit',
       date: detail.dispatchedAt ? fmt(detail.dispatchedAt) : null,
       sub: [detail.dispatchedByName],
-      photo: detail.dispatchPhotoKey,
+      photos: detail.dispatchPhotoKey ? [detail.dispatchPhotoKey] : [],
       photoLabel: 'View dispatch photo',
     },
     ...detail.receipts.map((r, i) => ({
@@ -121,7 +127,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       label: detail.receipts.length === 1 ? 'Received' : `Receipt ${i + 1}`,
       date: fmt(r.receivedAt),
       sub: [r.receiverName, `${r.items.length} item${r.items.length !== 1 ? 's' : ''}`],
-      photo: r.receivePhotoKey,
+      photos: r.receivePhotoKey ? [r.receivePhotoKey] : [],
       photoLabel: 'View receipt photo',
     })),
     ...(!['RECEIVED', 'CANCELLED'].includes(detail.status) && detail.receipts.length === 0 ? [{
@@ -165,10 +171,14 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
               {step.sub.filter(Boolean).map((s, i) => (
                 <p key={i} className="text-xs text-muted-foreground/70 truncate">{s}</p>
               ))}
-              {step.photo && (
-                <button onClick={() => setViewPhoto(step.photo!)} className="mt-1 text-xs text-green-600 hover:text-green-700 font-medium underline underline-offset-2">
-                  {step.photoLabel ?? 'View photo'}
-                </button>
+              {step.photos && step.photos.length > 0 && (
+                <div className="flex flex-wrap gap-x-2">
+                  {step.photos.map((p, i) => (
+                    <button key={i} onClick={() => setViewPhoto(p)} className="mt-1 text-xs text-green-600 hover:text-green-700 font-medium underline underline-offset-2">
+                      {step.photos!.length > 1 ? `${step.photoLabel ?? 'View photo'} ${i + 1}` : (step.photoLabel ?? 'View photo')}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -266,6 +276,63 @@ function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
   )
 }
 
+function EmployeeCombobox({ value, employees, onChange }: {
+  value: string; employees: EmployeeOption[]; onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? employees.filter(e => e.fullName.toLowerCase().includes(q) || e.employeeNumber.toLowerCase().includes(q)) : employees
+  const selected = employees.find(e => e.id === value)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? selected.fullName : 'Select employee (optional)...'}</span>
+        <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {value && (
+                <button type="button" onClick={() => { onChange(''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  Clear selection
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No employees found</p>
+              )}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-start gap-2 transition-colors">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="block truncate">{e.fullName}</span>
+                    {(e.office || e.department) && (
+                      <span className="block text-[11px] text-muted-foreground truncate">{[e.office, e.department].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   const isPdf = isPdfDataUrl(photoKey)
   return (
@@ -309,10 +376,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [locations, setLocations] = useState<StockLocation[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
 
   // create form
   const [supplier, setSupplier] = useState('')
   const [supplierId, setSupplierId] = useState('')
+  const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
@@ -345,17 +414,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [paymentModal, setPaymentModal] = useState(false)
   const [paymentMode, setPaymentMode] = useState<'REQUEST' | 'DIRECT'>('REQUEST')
   const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null)
+  const [paymentPhotos, setPaymentPhotos] = useState<string[]>([])
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentError, setPaymentError] = useState('')
-  const paymentFileInputRef = useRef<HTMLInputElement>(null)
   const [paymentPhotoView, setPaymentPhotoView] = useState<string | null>(null)
 
   // reimburse modal
   const [reimburseModal, setReimburseModal] = useState(false)
   const [reimburseAmount, setReimburseAmount] = useState('')
-  const [reimbursePhoto, setReimbursePhoto] = useState<string | null>(null)
+  const [reimbursePhotos, setReimbursePhotos] = useState<string[]>([])
   const [reimburseNotes, setReimburseNotes] = useState('')
   const [reimburseRequesterName, setReimburseRequesterName] = useState('')
   const [reimburseBankName, setReimburseBankName] = useState('')
@@ -363,7 +431,6 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [reimburseAccountHolderName, setReimburseAccountHolderName] = useState('')
   const [reimburseSaving, setReimburseSaving] = useState(false)
   const [reimburseError, setReimburseError] = useState('')
-  const reimburseFileInputRef = useRef<HTMLInputElement>(null)
 
   // receive form
   const [receiveModal, setReceiveModal] = useState(false)
@@ -379,12 +446,13 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, iRes, sRes, lRes, tRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team')])
+    const [oRes, iRes, sRes, lRes, tRes, eRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees')])
     if (oRes.ok) setOrders(await oRes.json())
     if (iRes.ok) setPurchaseItems((await iRes.json()).filter((i: PurchaseItem) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive !== false))
     if (tRes.ok) setTeam(await tRes.json())
+    if (eRes.ok) setEmployees(await eRes.json())
     setLoading(false)
   }, [])
 
@@ -433,13 +501,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes,
+        requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
       }),
     })
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false); setView('list')
-    setSupplier(''); setSupplierId(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
+    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
     setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
     load()
   }
@@ -517,6 +586,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
               <th className="text-left px-4 py-3 font-medium">Supplier</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
+              <th className="text-left px-4 py-3 font-medium">PO Created By</th>
               <th className="text-left px-4 py-3 font-medium">Requested By</th>
               <th className="text-center px-4 py-3 font-medium">Items</th>
               <th className="text-left px-4 py-3 font-medium">Received</th>
@@ -534,6 +604,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
@@ -543,7 +614,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
               : visibleOrders.map(o => {
                 const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
@@ -555,7 +626,19 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
                       ) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.requestedByName ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.createdByName ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {o.requestedByName ? (
+                        <div>
+                          <p>{o.requestedByName}</p>
+                          {(o.requestedByOffice || o.requestedByDepartment) && (
+                            <p className="text-[10px] text-muted-foreground/70">
+                              {[o.requestedByOffice, o.requestedByDepartment].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3 text-center text-muted-foreground">{o.itemCount}</td>
                     <td className="px-4 py-3 min-w-[120px]">
                       {o.itemCount === 0 || o.status === 'DRAFT' ? (
@@ -642,6 +725,18 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-muted-foreground">Expected Arrival <span className="font-normal">(optional)</span></label>
                 <input type="date" className={inp} value={expectedAt} onChange={e => setExpectedAt(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">Requested By <span className="font-normal">(optional)</span></label>
+                <EmployeeCombobox value={requestedByEmployeeId} employees={employees} onChange={setRequestedByEmployeeId} />
+                {requestedByEmployeeId && (() => {
+                  const emp = employees.find(e => e.id === requestedByEmployeeId)
+                  return emp && (emp.office || emp.department || emp.role) ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {[emp.office, emp.department, emp.role].filter(Boolean).join(' · ')}
+                    </p>
+                  ) : null
+                })()}
               </div>
             </div>
             <div className="space-y-1.5">
@@ -854,34 +949,26 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     openDetail(detail); load()
   }
 
-  function handlePaymentPhotoFile(file: File) {
-    readUploadFile(file).then(setPaymentPhoto).catch(() => setPaymentError('Failed to read file'))
-  }
-
   async function submitPaymentRequest() {
     if (!detail) return
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
-    if (!paymentPhoto) { setPaymentError('Receipt/nota photo is required'); return }
+    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt/nota photo is required'); return }
     setPaymentSaving(true); setPaymentError('')
     const res = await fetch(`/api/purchasing/orders/${detail.id}/payment-request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKey: paymentPhoto, notes: paymentNotes || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
+      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKeys: paymentPhotos, notes: paymentNotes || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
     })
     const data = await res.json()
     if (!res.ok) { setPaymentError(data.error ?? 'Failed'); setPaymentSaving(false); return }
     setPaymentSaving(false); setPaymentModal(false)
-    setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes('')
+    setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes('')
     openDetail(detail); load()
-  }
-
-  function handleReimbursePhotoFile(file: File) {
-    readUploadFile(file).then(setReimbursePhoto).catch(() => setReimburseError('Failed to read file'))
   }
 
   async function submitReimbursement() {
     if (!detail) return
     if (!reimburseAmount || Number(reimburseAmount) <= 0) { setReimburseError('Amount must be greater than 0'); return }
-    if (!reimbursePhoto) { setReimburseError('Receipt/nota photo is required'); return }
+    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt/nota photo is required'); return }
     if (!reimburseRequesterName.trim()) { setReimburseError('Name is required'); return }
     if (!reimburseBankName.trim()) { setReimburseError('Bank name is required'); return }
     if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
@@ -890,7 +977,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     const res = await fetch(`/api/purchasing/orders/${detail.id}/reimbursement`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        amount: Number(reimburseAmount), notePhotoKey: reimbursePhoto, notes: reimburseNotes || undefined,
+        amount: Number(reimburseAmount), notePhotoKeys: reimbursePhotos, notes: reimburseNotes || undefined,
         requesterName: reimburseRequesterName, bankName: reimburseBankName,
         accountNumber: reimburseAccountNumber, accountHolderName: reimburseAccountHolderName,
       }),
@@ -898,7 +985,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     const data = await res.json()
     if (!res.ok) { setReimburseError(data.error ?? 'Failed'); setReimburseSaving(false); return }
     setReimburseSaving(false); setReimburseModal(false)
-    setReimburseAmount(''); setReimbursePhoto(null); setReimburseNotes('')
+    setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
     setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
     openDetail(detail); load()
   }
@@ -922,8 +1009,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               </span>
             </p>
             <p className="text-muted-foreground text-xs mt-1">
-              Requested by <span className="font-medium text-foreground">{detail.requestedByName ?? 'Unknown'}</span>
+              PO Created By <span className="font-medium text-foreground">{detail.createdByName ?? 'Unknown'}</span>
             </p>
+            {detail.requestedByName && (
+              <p className="text-muted-foreground text-xs mt-0.5">
+                Requested By <span className="font-medium text-foreground">{detail.requestedByName}</span>
+                {(detail.requestedByOffice || detail.requestedByDepartment) && (
+                  <span> — {[detail.requestedByOffice, detail.requestedByDepartment, detail.requestedByRole].filter(Boolean).join(' · ')}</span>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {detail.status !== 'DRAFT' && (
@@ -934,11 +1029,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             )}
             {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && detail.paymentRequests.length === 0 && (
               <>
-                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <Wallet className="h-3.5 w-3.5" /> Request Payment
                 </button>
-                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhoto(null); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
@@ -946,7 +1041,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             )}
             {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && (
               <button onClick={() => {
-                setReimburseAmount(''); setReimbursePhoto(null); setReimburseNotes('')
+                setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
                 setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
                 setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
                 setReimburseError(''); setReimburseModal(true)
@@ -1148,17 +1243,25 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   </div>
                   <div className="p-4 space-y-3">
                     {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
-                    <div className={p.status === 'PAID' && p.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
+                    <div className={p.status === 'PAID' && p.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
-                        <FilePreview src={p.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(p.notePhotoKey)}
-                          className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{p.notePhotoKeys.length > 1 ? ` (${p.notePhotoKeys.length})` : ''}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {p.notePhotoKeys.map((k, i) => (
+                            <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                              className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          ))}
+                        </div>
                       </div>
-                      {p.status === 'PAID' && p.transferProofKey && (
+                      {p.status === 'PAID' && p.transferProofKeys.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
-                          <FilePreview src={p.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(p.transferProofKey)}
-                            className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{p.transferProofKeys.length > 1 ? ` (${p.transferProofKeys.length})` : ''}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {p.transferProofKeys.map((k, i) => (
+                              <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                                className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                            ))}
+                          </div>
                           <p className="text-xs text-green-700 mt-1.5">
                             Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
                           </p>
@@ -1201,17 +1304,25 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                       <div><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium">{r.accountHolderName}</p></div>
                     </div>
                     {r.notes && <p className="text-sm text-muted-foreground">{r.notes}</p>}
-                    <div className={r.status === 'PAID' && r.transferProofKey ? 'grid grid-cols-2 gap-4' : ''}>
+                    <div className={r.status === 'PAID' && r.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota</p>
-                        <FilePreview src={r.notePhotoKey} alt="Nota" onClick={() => setPaymentPhotoView(r.notePhotoKey)}
-                          className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{r.notePhotoKeys.length > 1 ? ` (${r.notePhotoKeys.length})` : ''}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {r.notePhotoKeys.map((k, i) => (
+                            <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                              className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          ))}
+                        </div>
                       </div>
-                      {r.status === 'PAID' && r.transferProofKey && (
+                      {r.status === 'PAID' && r.transferProofKeys.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof</p>
-                          <FilePreview src={r.transferProofKey} alt="Transfer proof" onClick={() => setPaymentPhotoView(r.transferProofKey)}
-                            className="w-full h-56 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{r.transferProofKeys.length > 1 ? ` (${r.transferProofKeys.length})` : ''}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {r.transferProofKeys.map((k, i) => (
+                              <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                                className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                            ))}
+                          </div>
                           <p className="text-xs text-green-700 mt-1.5">
                             Paid {r.paidAt && fmtDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
                           </p>
@@ -1355,23 +1466,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
-                  <input ref={paymentFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handlePaymentPhotoFile(f) }} />
-                  {paymentPhoto ? (
-                    <div className="space-y-2">
-                      <FilePreview src={paymentPhoto} alt="Nota" className="w-full h-40 rounded-xl object-cover border" />
-                      <button onClick={() => { setPaymentPhoto(null); paymentFileInputRef.current?.click() }}
-                        className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
-                        Replace file
-                      </button>
-                    </div>
-                  ) : (
-                    <button onClick={() => paymentFileInputRef.current?.click()}
-                      className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
-                      <Camera className="h-6 w-6 text-amber-500" />
-                      <p className="text-sm font-medium">Take a photo or upload photo/PDF</p>
-                    </button>
-                  )}
+                  <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
+                  <MultiFilePicker files={paymentPhotos} onChange={setPaymentPhotos} />
                 </div>
 
                 <div className="space-y-1.5">
@@ -1388,7 +1484,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-                <button onClick={submitPaymentRequest} disabled={!paymentAmount || !paymentPhoto || paymentSaving}
+                <button onClick={submitPaymentRequest} disabled={!paymentAmount || paymentPhotos.length === 0 || paymentSaving}
                   className={`flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
                   {paymentSaving
                     ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
@@ -1463,23 +1559,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
-                  <input ref={reimburseFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleReimbursePhotoFile(f) }} />
-                  {reimbursePhoto ? (
-                    <div className="space-y-2">
-                      <FilePreview src={reimbursePhoto} alt="Nota" className="w-full h-40 rounded-xl object-cover border" />
-                      <button onClick={() => { setReimbursePhoto(null); reimburseFileInputRef.current?.click() }}
-                        className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
-                        Replace file
-                      </button>
-                    </div>
-                  ) : (
-                    <button onClick={() => reimburseFileInputRef.current?.click()}
-                      className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
-                      <Camera className="h-6 w-6 text-amber-500" />
-                      <p className="text-sm font-medium">Take a photo or upload photo/PDF</p>
-                    </button>
-                  )}
+                  <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
+                  <MultiFilePicker files={reimbursePhotos} onChange={setReimbursePhotos} />
                 </div>
 
                 <div className="space-y-1.5">
@@ -1497,7 +1578,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitReimbursement}
-                  disabled={!reimburseAmount || !reimbursePhoto || !reimburseRequesterName.trim() || !reimburseBankName.trim() || !reimburseAccountNumber.trim() || !reimburseAccountHolderName.trim() || reimburseSaving}
+                  disabled={!reimburseAmount || reimbursePhotos.length === 0 || !reimburseRequesterName.trim() || !reimburseBankName.trim() || !reimburseAccountNumber.trim() || !reimburseAccountHolderName.trim() || reimburseSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
                   {reimburseSaving
                     ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>

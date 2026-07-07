@@ -38,8 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (existing.status === 'PAID') return NextResponse.json({ error: 'This reimbursement has already been marked as paid' }, { status: 409 })
 
   const body = await req.json()
-  const { transferProofKey } = body
-  if (!transferProofKey) return NextResponse.json({ error: 'Transfer proof photo is required' }, { status: 400 })
+  const { transferProofKeys } = body
+  if (!Array.isArray(transferProofKeys) || transferProofKeys.length === 0) return NextResponse.json({ error: 'At least one transfer proof photo is required' }, { status: 400 })
 
   const updated = await db.pOReimbursement.update({
     where: { id },
@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       status: 'PAID',
       paidAt: new Date(),
       paidById: session.user.id,
-      transferProofKey,
+      transferProofKeys,
       updatedAt: new Date(),
     },
     include: { order: { select: { poNumber: true, supplierName: true } } },

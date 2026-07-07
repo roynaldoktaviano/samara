@@ -80,6 +80,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (status === 'APPROVED') {
     const existingDrafts = await db.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT' } })
     if (!existingDrafts) {
+      const requester = request.requestedByEmployeeId
+        ? await db.employee.findUnique({
+            where: { id: request.requestedByEmployeeId },
+            select: { fullName: true, department: true, location: { select: { name: true } }, role: { select: { title: true } } },
+          })
+        : null
+
       const prefix = `PO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
 
       const groups = new Map<string, typeof request.items>()
@@ -106,6 +113,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             status: 'DRAFT',
             createdById: request.requestedById,
             updatedAt: new Date(),
+            ...(requester && {
+              requestedByEmployeeId: request.requestedByEmployeeId,
+              requestedByName: requester.fullName,
+              requestedByOffice: requester.location?.name ?? null,
+              requestedByDepartment: requester.department ?? null,
+              requestedByRole: requester.role?.title ?? null,
+            }),
             items: {
               create: groupItems.map((it) => ({
                 id: crypto.randomUUID(),
