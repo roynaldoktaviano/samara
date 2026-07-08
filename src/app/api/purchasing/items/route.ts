@@ -40,11 +40,11 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, imageKey } = body
+  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, imageKey, isSoldInPos } = body
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
     return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
   }
-  if (!['FOOD', 'BEVERAGE', 'SPAREPART'].includes(type)) {
+  if (!['FOOD', 'BEVERAGE', 'MAINTENANCE', 'MATERIAL', 'DIVING', 'HOUSEKEEPING'].includes(type)) {
     return NextResponse.json({ error: 'type tidak valid' }, { status: 400 })
   }
   const existing = await db.purchaseItem.findUnique({ where: { sku } })
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       minStock: Number(minStock) || 0,
       reorderQty: Number(reorderQty) || 0,
       imageKey: imageKey || null,
+      isSoldInPos: isSoldInPos !== undefined ? Boolean(isSoldInPos) : true,
       updatedAt: new Date(),
     },
   })

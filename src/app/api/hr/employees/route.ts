@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, employeeNumber, legalEntityId, locationId, department, roleId } = await req.json()
+  const { fullName, employeeNumber, legalEntityId, locationId, department, roleId, gender, employmentStatus, leaveBalance, joinDate } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
   const number = employeeNumber?.trim() || await generateEmployeeNumber(db)
@@ -45,6 +45,10 @@ export async function POST(req: NextRequest) {
       legalEntityId: legalEntityId || null,
       locationId: locationId || null,
       roleId: roleId || null,
+      gender: gender?.trim() || null,
+      employmentStatus: employmentStatus?.trim() || null,
+      leaveBalance: leaveBalance !== undefined && leaveBalance !== '' ? parseInt(leaveBalance) : null,
+      joinDate: joinDate ? new Date(joinDate) : null,
       updatedAt: new Date(),
     },
     include: { legalEntity: true, location: { select: { id: true, name: true, type: true } }, role: true },

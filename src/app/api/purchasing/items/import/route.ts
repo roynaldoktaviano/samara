@@ -91,7 +91,8 @@ export async function POST(req: NextRequest) {
     }
 
     const typeRaw        = ((iType >= 0   ? row[iType]   : '') || '').trim().toUpperCase()
-    const type           = (['FOOD', 'BEVERAGE', 'SPAREPART'].includes(typeRaw) ? typeRaw : 'SPAREPART') as 'FOOD' | 'BEVERAGE' | 'SPAREPART'
+    const ALLOWED_TYPES  = ['FOOD', 'BEVERAGE', 'MAINTENANCE', 'MATERIAL', 'DIVING', 'HOUSEKEEPING']
+    const type           = (ALLOWED_TYPES.includes(typeRaw) ? typeRaw : 'MAINTENANCE') as 'FOOD' | 'BEVERAGE' | 'MAINTENANCE' | 'MATERIAL' | 'DIVING' | 'HOUSEKEEPING'
     const category       = (iCat >= 0     ? row[iCat]    : '') || 'Other'
     const baseUnit       = (iBase >= 0    ? row[iBase]   : '') || 'pcs'
     const purchaseUnit   = (iPurch >= 0   ? row[iPurch]  : '') || baseUnit

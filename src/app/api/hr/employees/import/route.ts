@@ -54,12 +54,16 @@ export async function POST(req: NextRequest) {
   if (rows.length < 2) return NextResponse.json({ error: 'CSV file is empty or invalid' }, { status: 400 })
 
   const headers = rows[0]
-  const iNumber = col(headers, 'Employee Number', 'employeeNumber')
-  const iName   = col(headers, 'Full Name', 'fullName', 'name')
-  const iEntity = col(headers, 'Legal Entity', 'legalEntity')
-  const iLoc    = col(headers, 'Work Location', 'location')
-  const iDept   = col(headers, 'Department', 'department')
-  const iRole   = col(headers, 'Role', 'role')
+  const iNumber = col(headers, 'Employee Number', 'employeeNumber', 'Employee No', 'Employee No.')
+  const iName   = col(headers, 'Full Name', 'fullName', 'name', 'Employee Name')
+  const iEntity = col(headers, 'Legal Entity', 'legalEntity', 'Company')
+  const iLoc    = col(headers, 'Work Location', 'location', 'Location')
+  const iDept   = col(headers, 'Department', 'department', 'Vessel', 'Vessel / Department')
+  const iRole   = col(headers, 'Role', 'role', 'Job Position', 'Position')
+  const iGender = col(headers, 'Gender', 'gender')
+  const iJoin   = col(headers, 'Join', 'Join Date', 'joinDate')
+  const iLeave  = col(headers, 'Leave', 'leaveBalance')
+  const iEmpStatus = col(headers, 'Employment Status', 'employmentStatus')
   const iStatus = col(headers, 'Status', 'isActive')
 
   if (iName < 0) {
@@ -97,6 +101,13 @@ export async function POST(req: NextRequest) {
     const roleTitle         = (iRole >= 0   ? row[iRole]   : '')?.trim()
     const statusRaw         = (iStatus >= 0 ? row[iStatus] : '')?.trim().toLowerCase()
     const isActive          = statusRaw ? !['inactive', 'no', 'false', '0'].includes(statusRaw) : true
+    const gender            = (iGender >= 0 ? row[iGender] : '')?.trim()
+    const employmentStatus  = (iEmpStatus >= 0 ? row[iEmpStatus] : '')?.trim()
+    const leaveRaw          = (iLeave >= 0 ? row[iLeave] : '')?.trim()
+    const leaveBalance      = leaveRaw ? (parseInt(leaveRaw) || null) : null
+    const joinDateRaw       = (iJoin >= 0 ? row[iJoin] : '')?.trim()
+    const joinDateParsed    = joinDateRaw ? new Date(joinDateRaw) : null
+    const joinDate          = joinDateParsed && !isNaN(joinDateParsed.getTime()) ? joinDateParsed : null
 
     const legalEntityId = legalEntityName ? findByName(entities, legalEntityName)?.id ?? null : null
     const locationId    = locationName ? findByName(locations, locationName)?.id ?? null : null
@@ -109,7 +120,7 @@ export async function POST(req: NextRequest) {
       if (existing) {
         await db.employee.update({
           where: { employeeNumber },
-          data: { fullName, department: department || null, legalEntityId, locationId, roleId, isActive, updatedAt: new Date() },
+          data: { fullName, department: department || null, legalEntityId, locationId, roleId, isActive, gender: gender || null, employmentStatus: employmentStatus || null, leaveBalance, joinDate, updatedAt: new Date() },
         })
         updated++
       } else {
@@ -120,7 +131,7 @@ export async function POST(req: NextRequest) {
           employeeNumber = `${prefix}${String(seq).padStart(4, '0')}`
         }
         await db.employee.create({
-          data: { id: crypto.randomUUID(), employeeNumber, fullName, department: department || null, legalEntityId, locationId, roleId, isActive, updatedAt: new Date() },
+          data: { id: crypto.randomUUID(), employeeNumber, fullName, department: department || null, legalEntityId, locationId, roleId, isActive, gender: gender || null, employmentStatus: employmentStatus || null, leaveBalance, joinDate, updatedAt: new Date() },
         })
         imported++
       }

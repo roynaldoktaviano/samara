@@ -649,7 +649,10 @@ enum StockLocationType {
 enum PurchaseItemType {
   FOOD
   BEVERAGE
-  SPAREPART
+  MAINTENANCE
+  MATERIAL
+  DIVING
+  HOUSEKEEPING
 }
 
 enum PurchaseRequestStatus {
@@ -698,7 +701,7 @@ model PurchaseItem {
   id               String           @id @default(cuid())
   sku              String           @unique
   name             String
-  type             PurchaseItemType @default(SPAREPART)
+  type             PurchaseItemType @default(MAINTENANCE)
   category         String
   baseUnit         String
   purchaseUnit     String
@@ -710,6 +713,7 @@ model PurchaseItem {
   reorderQty       Float    @default(0)
   imageKey         String?
   isActive         Boolean  @default(true)
+  isSoldInPos      Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -1252,6 +1256,10 @@ model Employee {
   employeeNumber String    @unique
   fullName       String
   department     String?
+  gender         String?
+  employmentStatus String? // e.g. Permanent | Contract | Probation | Intern
+  leaveBalance   Int?
+  joinDate       DateTime?
   isActive       Boolean   @default(true)
   resignedAt     DateTime?
   resignStatus   String?   // RESIGNED | TERMINATED | CONTRACT_ENDED | OTHER

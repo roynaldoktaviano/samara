@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const [items, lots] = await Promise.all([
     withRetry(() => db.purchaseItem.findMany({
-      where: { isActive: true, type: { in: ['FOOD', 'BEVERAGE'] } },
+      where: { isActive: true, isSoldInPos: true, type: { in: ['FOOD', 'BEVERAGE'] } },
       select: { id: true, name: true, type: true, category: true, baseUnit: true, sellingPrice: true, imageKey: true },
       orderBy: [{ type: 'asc' }, { category: 'asc' }, { name: 'asc' }],
     })),

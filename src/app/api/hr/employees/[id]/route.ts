@@ -11,7 +11,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, employeeNumber, legalEntityId, locationId, department, roleId, isActive, resignedAt, resignStatus, resignReason } = await req.json()
+  const { fullName, employeeNumber, legalEntityId, locationId, department, roleId, isActive, resignedAt, resignStatus, resignReason, gender, employmentStatus, leaveBalance, joinDate } = await req.json()
 
   if (employeeNumber) {
     const dup = await db.employee.findFirst({ where: { employeeNumber: employeeNumber.trim(), NOT: { id } } })
@@ -27,6 +27,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(legalEntityId !== undefined && { legalEntityId: legalEntityId || null }),
       ...(locationId !== undefined && { locationId: locationId || null }),
       ...(roleId !== undefined && { roleId: roleId || null }),
+      ...(gender !== undefined && { gender: gender?.trim() || null }),
+      ...(employmentStatus !== undefined && { employmentStatus: employmentStatus?.trim() || null }),
+      ...(leaveBalance !== undefined && { leaveBalance: leaveBalance !== '' ? parseInt(leaveBalance) : null }),
+      ...(joinDate !== undefined && { joinDate: joinDate ? new Date(joinDate) : null }),
       ...(isActive !== undefined && {
         isActive,
         // Reactivating clears any prior resignation record; deactivating records it from the payload.

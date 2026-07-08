@@ -9,10 +9,34 @@ interface Location { id: string; name: string; type: string }
 interface Employee {
   id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
   resignedAt: string | null; resignStatus: string | null; resignReason: string | null
+  gender: string | null; employmentStatus: string | null; leaveBalance: number | null; joinDate: string | null
   legalEntity: LegalEntity | null; location: Location | null; role: EmployeeRole | null
 }
 
-const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '' }
+const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '' }
+
+const GENDERS = ['Male', 'Female']
+const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation', 'Intern']
+
+function formatServiceYear(joinDate: string | null, endDate: string | null): string {
+  if (!joinDate) return '—'
+  const start = new Date(joinDate)
+  const end = endDate ? new Date(endDate) : new Date()
+  if (isNaN(start.getTime()) || end < start) return '—'
+
+  let years = end.getFullYear() - start.getFullYear()
+  let months = end.getMonth() - start.getMonth()
+  let days = end.getDate() - start.getDate()
+  if (days < 0) {
+    months -= 1
+    days += new Date(end.getFullYear(), end.getMonth(), 0).getDate()
+  }
+  if (months < 0) {
+    years -= 1
+    months += 12
+  }
+  return `${years}Year${months}Months${days}Days`
+}
 
 const RESIGN_STATUSES = [
   { value: 'RESIGNED', label: 'Resigned' },
@@ -24,7 +48,7 @@ const RESIGN_STATUS_LABEL: Record<string, string> = Object.fromEntries(RESIGN_ST
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const RESIGN_BLANK = { resignedAt: todayISO(), resignStatus: 'RESIGNED', resignReason: '' }
 
-const CSV_HEADERS = ['Employee Number', 'Full Name', 'Legal Entity', 'Work Location', 'Department', 'Role', 'Status']
+const CSV_HEADERS = ['Employee No.', 'Employee Name', 'Job Position', 'Company', 'Leave', 'Gender', 'Location', 'Vessel / Department', 'Employment Status', 'Join', 'Service Year', 'Status']
 
 function buildCSV(rows: string[][]): string {
   return rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -89,6 +113,9 @@ export default function EmployeesPage() {
       fullName: emp.fullName, employeeNumber: emp.employeeNumber,
       legalEntityId: emp.legalEntity?.id ?? '', locationId: emp.location?.id ?? '',
       department: emp.department ?? '', roleId: emp.role?.id ?? '',
+      gender: emp.gender ?? '', employmentStatus: emp.employmentStatus ?? '',
+      leaveBalance: emp.leaveBalance != null ? String(emp.leaveBalance) : '',
+      joinDate: emp.joinDate ? emp.joinDate.slice(0, 10) : '',
     })
     setEditing(emp); setFormError(''); setModal(true)
   }
@@ -137,14 +164,16 @@ export default function EmployeesPage() {
 
   function exportCSV() {
     const rows = filtered.map(e => [
-      e.employeeNumber, e.fullName, e.legalEntity?.name ?? '', e.location?.name ?? '',
-      e.department ?? '', e.role?.title ?? '', e.isActive ? 'Active' : 'Inactive',
+      e.employeeNumber, e.fullName, e.role?.title ?? '', e.legalEntity?.name ?? '',
+      e.leaveBalance != null ? String(e.leaveBalance) : '', e.gender ?? '', e.location?.name ?? '',
+      e.department ?? '', e.employmentStatus ?? '', e.joinDate ? e.joinDate.slice(0, 10) : '',
+      formatServiceYear(e.joinDate, e.resignedAt), e.isActive ? 'Active' : 'Inactive',
     ])
     downloadFile(buildCSV([CSV_HEADERS, ...rows]), `employees-${new Date().toISOString().slice(0, 10)}.csv`)
   }
 
   function downloadTemplate() {
-    const sample = ['EMP-0001', 'Made Ari', 'PT Samara Wisata Bahari', 'Samara I', 'F&B', 'Bartender / Service', 'Active']
+    const sample = ['EMP-0001', 'Made Ari', 'Bartender / Service', 'PT Samara Wisata Bahari', '12', 'Male', 'Samara I', 'F&B', 'Permanent', '2020-01-15', '', 'Active']
     downloadFile(buildCSV([CSV_HEADERS, sample]), 'template-employees.csv')
   }
 
@@ -278,13 +307,18 @@ export default function EmployeesPage() {
                 <th className="text-left px-4 py-3 font-medium">Work Location</th>
                 <th className="text-left px-4 py-3 font-medium">Department</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
+                <th className="text-left px-4 py-3 font-medium">Gender</th>
+                <th className="text-left px-4 py-3 font-medium">Employment Status</th>
+                <th className="text-center px-4 py-3 font-medium">Leave</th>
+                <th className="text-left px-4 py-3 font-medium">Join</th>
+                <th className="text-left px-4 py-3 font-medium">Service Year</th>
                 <th className="text-center px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
                   <IdCard className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
                 </td></tr>
@@ -298,6 +332,11 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.location?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.department ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.role?.title ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.gender ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.employmentStatus ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs text-center">{emp.leaveBalance ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatServiceYear(emp.joinDate, emp.resignedAt)}</td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => toggleActive(emp)} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
                       {emp.isActive

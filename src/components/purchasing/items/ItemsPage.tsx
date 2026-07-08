@@ -1,14 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Search, Pencil, Trash2, ToggleLeft, ToggleRight, X, Download, Upload, FileDown, CheckCircle2, AlertCircle, History, ArrowRight, ArrowLeft, Package, ChevronRight, Layers, UtensilsCrossed, Wine, Wrench, type LucideIcon } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, ToggleLeft, ToggleRight, X, Download, Upload, FileDown, CheckCircle2, AlertCircle, History, ArrowRight, ArrowLeft, Package, ChevronRight, ChevronLeft, Layers, UtensilsCrossed, Wine, Wrench, Boxes, Waves, SprayCan, type LucideIcon } from 'lucide-react'
 import { sortByMethod, computeStockValue, methodLabel, type ValuationMethod } from '@/lib/valuation'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, SKU_PREFIX, type PurchaseItemType } from '@/lib/purchase-item-types'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const ITEM_TYPE_ICON: Record<PurchaseItemType, LucideIcon> = {
   FOOD: UtensilsCrossed,
   BEVERAGE: Wine,
-  SPAREPART: Wrench,
+  MAINTENANCE: Wrench,
+  MATERIAL: Boxes,
+  DIVING: Waves,
+  HOUSEKEEPING: SprayCan,
 }
 
 interface PurchaseItem {
@@ -27,6 +31,7 @@ interface PurchaseItem {
   reorderQty: number
   imageKey: string | null
   isActive: boolean
+  isSoldInPos: boolean
   totalQty: number
   avgPrice: number
 }
@@ -48,10 +53,11 @@ function generateSku(type: PurchaseItemType, existingItems: PurchaseItem[]): str
 }
 
 const EMPTY_FORM = {
-  sku: '', name: '', type: 'SPAREPART' as PurchaseItemType, category: TYPE_CATEGORIES.SPAREPART[0],
+  sku: '', name: '', type: 'FOOD' as PurchaseItemType, category: TYPE_CATEGORIES.FOOD[0],
   baseUnit: 'pcs', purchaseUnit: 'pcs', conversionFactor: 1,
   standardCost: 0, sellingPrice: 0, valuationMethod: 'FIFO',
   minStock: 0, reorderQty: 0, imageKey: null as string | null,
+  isSoldInPos: true,
 }
 
 function calcMargin(cost: number, price: number) {
@@ -95,6 +101,8 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'All' | PurchaseItemType>('All')
   const [catFilter, setCatFilter] = useState('All')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [modal, setModal] = useState<{ open: boolean; editing: PurchaseItem | null }>({ open: false, editing: null })
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -152,6 +160,7 @@ export default function ItemsPage() {
       minStock: item.minStock,
       reorderQty: item.reorderQty,
       imageKey: item.imageKey,
+      isSoldInPos: item.isSoldInPos,
     })
     setError('')
     setModal({ open: true, editing: item })
@@ -242,6 +251,12 @@ export default function ItemsPage() {
     const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase())
     return matchType && matchCat && matchSearch
   })
+
+  useEffect(() => { setPage(0) }, [search, typeFilter, catFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(page, totalPages - 1)
+  const paginated = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
 
   return (
     <div className="space-y-4">
@@ -373,7 +388,7 @@ export default function ItemsPage() {
               <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">
                 {search || catFilter !== 'All' ? 'No results found' : 'No items yet. Click "Add" to get started.'}
               </td></tr>
-            ) : filtered.map(item => {
+            ) : paginated.map(item => {
               const margin = calcMargin(item.standardCost, item.sellingPrice)
               return (
                 <tr key={item.id} onClick={() => openHistory(item)} className={`hover:bg-amber-50/40 cursor-pointer transition-colors ${!item.isActive ? 'opacity-50' : ''}`}>
@@ -448,7 +463,62 @@ export default function ItemsPage() {
         </table>
       </div>
 
-      <p className="text-xs text-muted-foreground">{filtered.length} of {items.length} items</p>
+      {/* Pagination */}
+      {!loading && filtered.length > 0 && (
+        <div className="flex items-center justify-between pt-1 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Rows per page</span>
+            <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(0) }}>
+              <SelectTrigger className="h-7 w-16 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map(n => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <span className="text-xs">
+            {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filtered.length)} of {filtered.length}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(0)}
+              disabled={safePage === 0}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              title="First page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-xs px-1">Page {safePage + 1} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={safePage >= totalPages - 1}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Last page"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {modal.open && (
@@ -578,7 +648,19 @@ export default function ItemsPage() {
                   </div>
                   {/* Pricing section */}
                   <div className="border-t pt-4">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pricing & Valuation</p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pricing & Valuation</p>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, isSoldInPos: !f.isSoldInPos }))}
+                        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Sold in POS
+                        {form.isSoldInPos
+                          ? <ToggleRight className="h-5 w-5 text-green-600" />
+                          : <ToggleLeft className="h-5 w-5" />}
+                      </button>
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-sm font-medium">Standard Cost <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
@@ -588,26 +670,30 @@ export default function ItemsPage() {
                           value={form.standardCost || ''} placeholder="—" />
                         <p className="text-xs text-muted-foreground">Auto-updated from actual received price (GR)</p>
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Selling Price <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
-                        <input type="number" min={0} className={num} placeholder="0"
-                          value={form.sellingPrice}
-                          onChange={e => {
-                            const sellingPrice = Number(e.target.value)
-                            setForm(f => ({ ...f, sellingPrice }))
-                          }} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Gross Margin %</label>
-                        <input type="number" step="0.1" min={0} max={99.9} className={num} placeholder="0"
-                          value={form.sellingPrice > 0 ? +calcMargin(form.standardCost, form.sellingPrice).toFixed(1) : ''}
-                          onChange={e => {
-                            const margin = Number(e.target.value)
-                            const sellingPrice = calcPriceFromMargin(form.standardCost, margin)
-                            setForm(f => ({ ...f, sellingPrice: Math.round(sellingPrice) }))
-                          }} />
-                        <p className="text-xs text-muted-foreground">Auto-synced with Selling Price</p>
-                      </div>
+                      {form.isSoldInPos && (
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Selling Price <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
+                          <input type="number" min={0} className={num} placeholder="0"
+                            value={form.sellingPrice}
+                            onChange={e => {
+                              const sellingPrice = Number(e.target.value)
+                              setForm(f => ({ ...f, sellingPrice }))
+                            }} />
+                        </div>
+                      )}
+                      {form.isSoldInPos && (
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Gross Margin %</label>
+                          <input type="number" step="0.1" min={0} max={99.9} className={num} placeholder="0"
+                            value={form.sellingPrice > 0 ? +calcMargin(form.standardCost, form.sellingPrice).toFixed(1) : ''}
+                            onChange={e => {
+                              const margin = Number(e.target.value)
+                              const sellingPrice = calcPriceFromMargin(form.standardCost, margin)
+                              setForm(f => ({ ...f, sellingPrice: Math.round(sellingPrice) }))
+                            }} />
+                          <p className="text-xs text-muted-foreground">Auto-synced with Selling Price</p>
+                        </div>
+                      )}
                       <div className="space-y-1.5">
                         <label className="text-sm font-medium">Valuation Method</label>
                         <select className={f2} value={form.valuationMethod} onChange={e => setForm(f => ({ ...f, valuationMethod: e.target.value }))}>
