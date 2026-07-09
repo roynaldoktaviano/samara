@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface EmployeeRole { id: string; title: string }
@@ -74,6 +75,8 @@ export default function EmployeesPage() {
   const [locationFilter, setLocationFilter] = useState('All')
   const [roleFilter, setRoleFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
 
   const [modal, setModal] = useState(false)
   const [editing, setEditing] = useState<Employee | null>(null)
@@ -205,6 +208,12 @@ export default function EmployeesPage() {
   const hasActiveFilters = search || entityFilter !== 'All' || locationFilter !== 'All' || roleFilter !== 'All' || statusFilter !== 'All'
   function resetFilters() { setSearch(''); setEntityFilter('All'); setLocationFilter('All'); setRoleFilter('All'); setStatusFilter('All') }
 
+  useEffect(() => { setPage(0) }, [search, entityFilter, locationFilter, roleFilter, statusFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(page, totalPages - 1)
+  const paginated = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -322,7 +331,7 @@ export default function EmployeesPage() {
                   <IdCard className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
                 </td></tr>
-              ) : filtered.map(emp => (
+              ) : paginated.map(emp => (
                 <tr key={emp.id} className={`hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium">{emp.fullName}</p>
@@ -366,7 +375,62 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">{filtered.length} of {employees.length} employees</p>
+      {/* Pagination */}
+      {!loading && filtered.length > 0 && (
+        <div className="flex items-center justify-between pt-1 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Rows per page</span>
+            <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(0) }}>
+              <SelectTrigger className="h-7 w-16 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map(n => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <span className="text-xs">
+            {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, filtered.length)} of {filtered.length}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(0)}
+              disabled={safePage === 0}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              title="First page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-xs px-1">Page {safePage + 1} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={safePage >= totalPages - 1}
+              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Last page"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Add/Edit Modal ── */}
       {modal && (

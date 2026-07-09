@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 
-const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile'] as const
+const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile', 'travel'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -26,6 +26,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
         select: {
           id: true,
           isLead: true,
+          arrivalPickupTime: true, arrivalHotel: true, arrivalFlight: true,
+          departurePickupTime: true, departureHotel: true, departureFlight: true,
           customer: {
             select: {
               id: true, name: true, firstName: true, lastName: true,
@@ -67,7 +69,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     ...g.customer,
   }))
 
-  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, expiresAt: booking.masterFormExpiresAt })
+  const leadGuest = booking.guests.find((g: any) => g.isLead) ?? booking.guests[0]
+  const travel = leadGuest ? {
+    arrivalPickupTime:   leadGuest.arrivalPickupTime   ?? '',
+    arrivalHotel:        leadGuest.arrivalHotel         ?? '',
+    arrivalFlight:       leadGuest.arrivalFlight        ?? '',
+    departurePickupTime: leadGuest.departurePickupTime ?? '',
+    departureHotel:      leadGuest.departureHotel       ?? '',
+    departureFlight:     leadGuest.departureFlight      ?? '',
+  } : null
+
+  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, expiresAt: booking.masterFormExpiresAt })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -93,6 +105,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (!ALLOWED_SECTIONS.includes(section)) {
     return NextResponse.json({ error: 'Invalid section' }, { status: 400 })
+  }
+
+  // Travel details are shared across the whole booking, not tied to one customer
+  if (section === 'travel') {
+    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight } =
+      data as Record<string, string | null | undefined>
+    await db.bookingGuest.updateMany({
+      where: { bookingId: booking.id },
+      data: {
+        arrivalPickupTime:   arrivalPickupTime   || null,
+        arrivalHotel:        arrivalHotel         || null,
+        arrivalFlight:       arrivalFlight        || null,
+        departurePickupTime: departurePickupTime || null,
+        departureHotel:      departureHotel       || null,
+        departureFlight:     departureFlight      || null,
+      },
+    })
+    return NextResponse.json({ ok: true })
   }
 
   const isGuestOfBooking = booking.guests.some((g: any) => g.customerId === customerId)

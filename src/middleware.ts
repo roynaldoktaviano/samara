@@ -18,6 +18,7 @@ const PUBLIC_PATHS = [
   // Guest-facing form — access controlled by its own per-guest token, not staff login
   '/guest-form',
   '/api/guest-form',
+  '/api/booking-form',
 ]
 
 function isPublic(pathname: string) {

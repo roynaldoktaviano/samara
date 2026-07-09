@@ -52,7 +52,7 @@ const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samar
 const TEAL = '#1a5f6e'
 const GOLD = '#bdac7e'
 
-type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving'
+type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'travel'
 
 interface TripInfo {
   bookingCode: string
@@ -86,10 +86,20 @@ interface GuestRecord {
   divingData: any
 }
 
+interface TravelData {
+  arrivalPickupTime: string
+  arrivalHotel: string
+  arrivalFlight: string
+  departurePickupTime: string
+  departureHotel: string
+  departureFlight: string
+}
+
 interface BookingFormData {
   tripInfo: TripInfo
   hasDiving: boolean
   guests: GuestRecord[]
+  travel: TravelData | null
   expiresAt: string
 }
 
@@ -399,12 +409,50 @@ function DivingSection({ data, onChange }: { data: any; onChange: (k: string, v:
   )
 }
 
+function TravelSection({ data, onChange }: { data: TravelData; onChange: (k: keyof TravelData, v: string) => void }) {
+  const f = (k: keyof TravelData) => (e: React.ChangeEvent<HTMLInputElement>) => onChange(k, e.target.value)
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+        <div className="space-y-4">
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: TEAL }}>Arrival</p>
+          <Field label="Pick-up Date & Time *"><input type="datetime-local" value={data.arrivalPickupTime} onChange={f('arrivalPickupTime')} className={inputCls} /></Field>
+          <Field label="Hotel / Airport *"><input value={data.arrivalHotel} onChange={f('arrivalHotel')} placeholder="Hotel or airport name" className={inputCls} /></Field>
+        </div>
+        <div className="space-y-4">
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: TEAL }}>Departure</p>
+          <Field label="Pick-up Date & Time *"><input type="datetime-local" value={data.departurePickupTime} onChange={f('departurePickupTime')} className={inputCls} /></Field>
+          <Field label="Hotel / Airport *"><input value={data.departureHotel} onChange={f('departureHotel')} placeholder="Hotel or airport name" className={inputCls} /></Field>
+        </div>
+      </div>
+      <div className="pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+        <Field label="Arrival Flight Number"><input value={data.arrivalFlight} onChange={f('arrivalFlight')} placeholder="e.g. GA123" className={inputCls} /></Field>
+        <Field label="Departure Flight Number"><input value={data.departureFlight} onChange={f('departureFlight')} placeholder="e.g. GA456" className={inputCls} /></Field>
+      </div>
+    </div>
+  )
+}
+
+function validateTravel(data: TravelData): string | null {
+  if (!data.arrivalPickupTime?.trim())   return 'Please fill in Arrival pick-up time'
+  if (!data.arrivalHotel?.trim())        return 'Please fill in Arrival hotel/airport'
+  if (!data.departurePickupTime?.trim()) return 'Please fill in Departure pick-up time'
+  if (!data.departureHotel?.trim())      return 'Please fill in Departure hotel/airport'
+  return null
+}
+
+const EMPTY_TRAVEL: TravelData = {
+  arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '',
+  departurePickupTime: '', departureHotel: '', departureFlight: '',
+}
+
 const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'profile', title: 'Personal Details',   subtitle: 'Identity & contact info' },
   { id: 'medical', title: 'Medical & Health',   subtitle: 'Health info & emergency contact' },
   { id: 'food',    title: 'Food Preferences',   subtitle: 'Dietary needs & meal preferences' },
   { id: 'drinks',  title: 'Drink Preferences',  subtitle: 'Beverages you enjoy on board' },
   { id: 'diving',  title: 'Diving Information', subtitle: 'Certification & equipment sizing' },
+  { id: 'travel',  title: 'Travel Arrangements', subtitle: 'Arrival & departure pick-up details for the group' },
 ]
 
 function fmtDate(d: string | null | undefined) {
@@ -518,17 +566,24 @@ function BookingFormInner() {
   // Per-guest state, keyed by customerId
   const [guestStates, setGuestStates] = useState<Record<string, GuestState>>({})
 
+  // Shared travel details (one set for the whole booking) — filled as the final step for whichever guest reaches it first
+  const [travelData, setTravelData] = useState<TravelData>(EMPTY_TRAVEL)
+
   useEffect(() => {
     fetch(`/api/booking-form/${token}`)
       .then(r => r.json())
       .then(data => {
         if (data.error) { setError(data.error); return }
         setFormData(data)
+        const travelAlreadyDone = !!(data.travel && (data.travel.arrivalPickupTime || data.travel.departurePickupTime))
         const states: Record<string, GuestState> = {}
         data.guests.forEach((g: GuestRecord) => {
-          states[g.id] = initGuestState(g)
+          const s = initGuestState(g)
+          if (travelAlreadyDone) s.saved.add('travel')
+          states[g.id] = s
         })
         setGuestStates(states)
+        if (data.travel) setTravelData(data.travel)
       })
       .catch(() => setError('Failed to load form'))
       .finally(() => setLoading(false))
@@ -556,27 +611,34 @@ function BookingFormInner() {
   const handleSave = async (andNext: boolean) => {
     if (!currentGuest || !gs || !currentStep) return
     const section = currentStep.id
-    const validationError = validateSection(section, gs[section])
+    const isTravel = section === 'travel'
+    const sectionData = isTravel ? travelData : gs[section]
+    const validationError = isTravel ? validateTravel(travelData) : validateSection(section, sectionData)
     if (validationError) { toast.error(validationError); return }
     setSaving(true)
     try {
       const res = await fetch(`/api/booking-form/${token}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: currentGuest.id, section, data: gs[section] }),
+        body: JSON.stringify(isTravel ? { section, data: sectionData } : { customerId: currentGuest.id, section, data: sectionData }),
       })
       if (!res.ok) throw new Error()
 
-      const newSaved = new Set([...gs.saved, section])
+      // Travel is shared across the whole booking — once saved, mark it done for every guest
+      const baseStates: Record<string, GuestState> = isTravel
+        ? Object.fromEntries(Object.entries(guestStates).map(([id, s]) => [id, { ...s, saved: new Set([...s.saved, 'travel' as Section]) }]))
+        : guestStates
+
+      const newSaved = new Set([...baseStates[currentGuest.id].saved, section])
       if (andNext) {
         if (isLast) {
           // Check if ALL guests have completed ALL sections
           const allGuestsDone = guests.every((g, i) => {
             if (i === guestIdx) return true // current guest just finished
-            const s = guestStates[g.id]
+            const s = baseStates[g.id]
             return STEPS.every(step => s?.saved.has(step.id))
           })
-          updateGs(currentGuest.id, { saved: newSaved })
+          setGuestStates({ ...baseStates, [currentGuest.id]: { ...baseStates[currentGuest.id], saved: newSaved } })
           if (allGuestsDone) {
             setAllDone(true)
           } else {
@@ -584,15 +646,19 @@ function BookingFormInner() {
           }
         } else {
           const nextIdx = gs.stepIdx + 1
-          updateGs(currentGuest.id, {
-            saved: newSaved,
-            stepIdx: nextIdx,
-            maxUnlocked: Math.max(gs.maxUnlocked, nextIdx),
+          setGuestStates({
+            ...baseStates,
+            [currentGuest.id]: {
+              ...baseStates[currentGuest.id],
+              saved: newSaved,
+              stepIdx: nextIdx,
+              maxUnlocked: Math.max(gs.maxUnlocked, nextIdx),
+            },
           })
           toast.success('Saved!')
         }
       } else {
-        updateGs(currentGuest.id, { saved: newSaved })
+        setGuestStates({ ...baseStates, [currentGuest.id]: { ...baseStates[currentGuest.id], saved: newSaved } })
         toast.success('Saved!')
       }
     } catch {
@@ -662,6 +728,9 @@ function BookingFormInner() {
 
   const renderSection = () => {
     if (!currentStep || !gs) return null
+    if (currentStep.id === 'travel') {
+      return <TravelSection data={travelData} onChange={(k, v) => setTravelData(prev => ({ ...prev, [k]: v }))} />
+    }
     const onChange = (k: string, v: any) => setData(currentGuest.id, currentStep.id, k, v)
     switch (currentStep.id) {
       case 'profile': return <ProfileSection data={gs.profile} onChange={onChange} />
