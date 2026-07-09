@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import HTMLFlipBook from 'react-pageflip'
 import {
   Lock, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, MapPin, FileStack,
   CalendarDays, LogOut, CheckCircle2, FileSpreadsheet, Newspaper, Quote, Check, X,
-  FolderOpen, Video, Clapperboard, Play,
+  FolderOpen, Video, Clapperboard, Play, BookOpen, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -527,6 +528,94 @@ function YachtScreen({ onSelect, onLogout }: { onSelect: (id: string, target: 'm
 }
 
 
+// ── Flipbook demo — proof of concept for a page-turning brochure viewer (à la fliphtml5) ──
+function FlipbookDemo({ onClose }: { onClose: () => void }) {
+  type FlipPage = { kind: 'cover' } | { kind: 'yacht'; yacht: YachtOption } | { kind: 'back' }
+  const pages: FlipPage[] = [
+    { kind: 'cover' },
+    ...YACHTS.map(y => ({ kind: 'yacht' as const, yacht: y })),
+    { kind: 'back' },
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-neutral-950/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
+
+      <button onClick={onClose} aria-label="Close" className="absolute top-5 right-5 text-white/70 hover:text-white transition-colors">
+        <X className="h-6 w-6" />
+      </button>
+      <p className="text-white/50 text-xs mb-4 uppercase tracking-widest flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5" /> Flipbook Preview — Demo
+      </p>
+
+      <HTMLFlipBook
+        width={340}
+        height={480}
+        minWidth={280}
+        maxWidth={500}
+        minHeight={400}
+        maxHeight={700}
+        size="stretch"
+        startPage={0}
+        drawShadow
+        flippingTime={600}
+        usePortrait
+        startZIndex={0}
+        autoSize
+        maxShadowOpacity={0.5}
+        showCover
+        mobileScrollSupport={false}
+        clickEventForward
+        useMouseEvents
+        swipeDistance={30}
+        showPageCorners
+        disableFlipByClick={false}
+        className="shadow-2xl"
+        style={{}}
+      >
+        {pages.map((p, i) => (
+          <div key={i} className="w-full h-full bg-white overflow-hidden">
+            {p.kind === 'cover' && (
+              <div className="relative w-full h-full">
+                <img src={DUMMY_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40" />
+                <div className="relative h-full flex flex-col items-center justify-center text-center px-6">
+                  <img src={SAMARA_LOGO} alt="Samara" className="h-8 w-auto object-contain brightness-0 invert mb-6" />
+                  <p className="text-[#d9cda3] text-[10px] font-semibold uppercase tracking-[0.3em] mb-3">Fleet Brochure</p>
+                  <h1 className="text-white font-black text-3xl leading-tight" style={{ fontFamily: "'Merriweather', serif" }}>
+                    Samara Liveaboard
+                  </h1>
+                </div>
+              </div>
+            )}
+            {p.kind === 'yacht' && (
+              <div className="relative w-full h-full">
+                <img src={p.yacht.image} alt={p.yacht.name} className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+                <div className="relative h-full flex flex-col justify-end p-6">
+                  <p className="text-[#d9cda3] text-[10px] font-semibold uppercase tracking-widest mb-1.5">{p.yacht.tagline}</p>
+                  <h2 className="text-white font-black text-2xl" style={{ fontFamily: "'Merriweather', serif" }}>{p.yacht.name}</h2>
+                  <p className="text-white/70 text-xs mt-2">{p.yacht.type} · {p.yacht.cabins} Cabins · {p.yacht.maxGuests} Guests · {p.yacht.length}m</p>
+                  <p className="text-white/60 text-[11px] mt-3 leading-relaxed">{p.yacht.description}</p>
+                </div>
+              </div>
+            )}
+            {p.kind === 'back' && (
+              <div className="w-full h-full bg-neutral-900 flex flex-col items-center justify-center text-center px-6">
+                <img src={SAMARA_LOGO} alt="Samara" className="h-7 w-auto object-contain brightness-0 invert mb-5" />
+                <p className="text-white/70 text-sm">Thank you for sailing with us</p>
+                <p className="text-white/40 text-xs mt-2">samaraliveaboard.com</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </HTMLFlipBook>
+
+      <p className="text-white/40 text-[11px] mt-4">Drag a corner or click the edges to turn pages</p>
+    </div>
+  )
+}
+
 type PreviewKind = 'document' | 'image' | 'video'
 interface PreviewState { file: MediaFile; kind: PreviewKind }
 
@@ -536,6 +625,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
   const [preview, setPreview] = useState<PreviewState | null>(null)
   const [contentSectionId, setContentSectionId] = useState<string | null>(null)
   const [contentFolderId, setContentFolderId] = useState<string | null>(null)
+  const [showFlipbookDemo, setShowFlipbookDemo] = useState(false)
 
   const category = MEDIA_CATEGORIES.find(c => c.id === activeCat)!
   const activeSection = contentSectionId ? CONTENT_SECTIONS.find(s => s.id === contentSectionId) ?? null : null
@@ -631,7 +721,16 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
         <p className="text-muted-foreground text-sm mt-3 max-w-md mx-auto">
           Everything you need to present and sell {yacht.name} to your clients
         </p>
+        <button
+          onClick={() => setShowFlipbookDemo(true)}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold mt-4 px-4 py-2 rounded-full border transition-colors hover:bg-neutral-50"
+          style={{ color: GOLD_DARK, borderColor: `${GOLD}55` }}
+        >
+          <BookOpen className="h-3.5 w-3.5" /> Try Flipbook Preview (Demo)
+        </button>
       </div>
+
+      {showFlipbookDemo && <FlipbookDemo onClose={() => setShowFlipbookDemo(false)} />}
 
       <div className="flex justify-between gap-x-6 gap-y-2 flex-wrap border-b mb-8 max-w-3xl mx-auto">
         {MEDIA_CATEGORIES.map(c => (

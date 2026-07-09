@@ -151,22 +151,25 @@ export default function OpenTrips() {
         arrivalPort:   form.arrivalPort,
         pricePerCabin: form.pricePerCabin,
       }
-      if (editTrip) {
-        await fetch(`/api/open-trips/${editTrip.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await fetch('/api/open-trips', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+      const res = editTrip
+        ? await fetch(`/api/open-trips/${editTrip.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await fetch('/api/open-trips', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error ?? 'Failed to save trip')
+        return
       }
       await fetchTrips()
       setDialogOpen(false)
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e); alert('Network error — failed to save trip') }
     finally { setSubmitting(false) }
   }
 
@@ -174,10 +177,15 @@ export default function OpenTrips() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await fetch(`/api/open-trips/${deleteTarget.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/open-trips/${deleteTarget.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error ?? 'Failed to delete trip')
+        return
+      }
       await fetchTrips()
       setDeleteTarget(null)
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error(e); alert('Network error — failed to delete trip') }
     finally { setDeleting(false) }
   }
 
