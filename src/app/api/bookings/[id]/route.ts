@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
+    const { status, totalPrice, depositPaid, discount, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -113,6 +113,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(discount       !== undefined && { discount:       parseFloat(discount) }),
         ...(notes          !== undefined && { notes:          notes || null }),
         ...(destination    !== undefined && { destination:    destination || null }),
+        ...(destinationId  !== undefined && { destinationId:  destinationId || null }),
         ...(depositDueDate !== undefined && { depositDueDate: depositDueDate ? new Date(depositDueDate) : null }),
         ...(finalDueDate   !== undefined && { finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null }),
         ...(depositDueDateInvoiceOverride !== undefined && { depositDueDateInvoiceOverride }),

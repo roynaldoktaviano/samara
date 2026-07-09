@@ -8,13 +8,14 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
+import Destinations from '@/components/destinations/Destinations'
 import Bookings from '@/components/bookings/Bookings'
 import Customers from '@/components/customers/Customers'
 import CalendarView from '@/components/calendar/CalendarViewFixed'
@@ -32,6 +33,7 @@ import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
 import PurchasingOverview from '@/components/purchasing/PurchasingOverview'
 import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
+import PurchasingItemTypesPage from '@/components/purchasing/item-types/ItemTypesPage'
 import PurchasingLocationsPage from '@/components/purchasing/locations/LocationsPage'
 import PurchasingRequestsPage from '@/components/purchasing/RequestsAndOrders'
 import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
@@ -76,7 +78,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements'
 
 type NavItem = {
   id: View
@@ -104,6 +106,7 @@ const navigationItems: NavItem[] = [
   { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },
   { id: 'customers',     label: 'Guests',          icon: Users,      roles: ['ADMIN', 'SALES', 'MARKETING'],            group: 'operations' },
   { id: 'yachts',        label: 'Yachts',          icon: Anchor,     roles: ['ADMIN'],                                  group: 'operations' },
+  { id: 'destinations',  label: 'Destinations',    icon: Compass,    roles: ['ADMIN'],                                  group: 'operations' },
   { id: 'payments',      label: 'Payments',        icon: CreditCard, roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'banks',         label: 'Bank Accounts',   icon: Building2,  roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'finance-po-payments', label: 'PO Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],                       group: 'finance', feature: 'purchasing' },
@@ -121,6 +124,7 @@ const navigationItems: NavItem[] = [
   { id: 'purchasing-stock',     label: 'Stock by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-item-types',   label: 'Item Types',       icon: Tag,         roles: ['ADMIN'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-locations',    label: 'Locations',        icon: MapPin,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-stock-counts', label: 'Stock Counts',     icon: Shield,      roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-suppliers',     label: 'Suppliers',        icon: Building2,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
@@ -504,6 +508,7 @@ export default function Home() {
     switch (activeView) {
       case 'dashboard':    return <Dashboard />
       case 'yachts':       return <Yachts />
+      case 'destinations': return <Destinations />
       case 'bookings':     return <Bookings />
       case 'customers':    return <Customers />
       case 'calendar':     return <CalendarView />
@@ -524,6 +529,7 @@ export default function Home() {
       case 'purchasing-overview':   return <PurchasingOverview />
       case 'purchasing-requests':  return <PurchasingRequestsPage />
       case 'purchasing-items':     return <PurchasingItemsPage />
+      case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />
       case 'purchasing-stock':     return <PurchasingStockPage />
       case 'purchasing-transfers':    return <PurchasingTransfersPage />

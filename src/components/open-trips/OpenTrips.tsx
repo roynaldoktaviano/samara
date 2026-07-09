@@ -15,6 +15,7 @@ import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigati
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
+interface DestinationOption { id: string; name: string; region: string | null }
 interface OpenTripRecord {
   id: string
   title: string
@@ -23,6 +24,7 @@ interface OpenTripRecord {
   startDate: string
   endDate: string
   destination: string
+  destinationId?: string | null
   region?: string
   departurePort?: string
   arrivalPort?: string
@@ -53,12 +55,13 @@ const getDays = (s: string, e: string) =>
 
 const emptyForm = () => ({
   title: '', description: '', yachtId: '', startDate: '', endDate: '',
-  destination: '', region: '', departurePort: '', arrivalPort: '', pricePerCabin: '',
+  destination: '', destinationId: '', region: '', departurePort: '', arrivalPort: '', pricePerCabin: '',
 })
 
 export default function OpenTrips() {
   const [trips,        setTrips]       = useState<OpenTripRecord[]>([])
   const [yachts,       setYachts]      = useState<YachtOption[]>([])
+  const [destinations, setDestinations] = useState<DestinationOption[]>([])
   const [loading,      setLoading]     = useState(true)
   const [searchTerm,   setSearch]      = useState('')
   const [statusFilter, setStatus]      = useState('all')
@@ -98,6 +101,7 @@ export default function OpenTrips() {
   useEffect(() => {
     fetchTrips()
     fetch('/api/yachts').then(r => r.json()).then(d => setYachts(Array.isArray(d) ? d : []))
+    fetch('/api/destinations').then(r => r.json()).then(d => setDestinations(Array.isArray(d) ? d : []))
     fetch('/api/bookings?status=cancelled&tripType=OPEN_TRIP')
       .then(r => r.json())
       .then((d: any[]) => Array.isArray(d) && setCancelledCabins(d.reduce((s, b) => s + (b.guestCount ?? 1), 0)))
@@ -121,6 +125,7 @@ export default function OpenTrips() {
       startDate:     t.startDate.split('T')[0],
       endDate:       t.endDate.split('T')[0],
       destination:   t.destination,
+      destinationId: t.destinationId ?? '',
       region:        t.region ?? '',
       departurePort: t.departurePort ?? '',
       arrivalPort:   t.arrivalPort ?? '',
@@ -140,6 +145,7 @@ export default function OpenTrips() {
         startDate:     form.startDate,
         endDate:       form.endDate,
         destination:   form.destination,
+        destinationId: form.destinationId,
         region:        form.region,
         departurePort: form.departurePort,
         arrivalPort:   form.arrivalPort,
@@ -691,7 +697,20 @@ export default function OpenTrips() {
 
               <div className="space-y-1.5">
                 <Label>Destination <span className="text-destructive">*</span></Label>
-                <Input placeholder="e.g. Komodo National Park" value={form.destination} onChange={e => set('destination', e.target.value)} />
+                <Select
+                  value={form.destinationId}
+                  onValueChange={v => {
+                    set('destinationId', v)
+                    set('destination', destinations.find(d => d.id === v)?.name ?? '')
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger>
+                  <SelectContent>
+                    {destinations.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}{d.region ? ` — ${d.region}` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-1.5">

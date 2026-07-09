@@ -23,6 +23,7 @@ export async function GET() {
           },
           orderBy: { name: 'asc' },
         },
+        destinationPrices: { select: { destinationId: true, price: true, relocationFee: true } },
         _count: { select: { bookings: true, crew: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, canSurfing, description, image, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, canSurfing, description, image, rooms, destinationPrices } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -95,6 +96,18 @@ export async function POST(request: NextRequest) {
       await db.cabinPricingTier.createMany({ data: tierInserts })
     }
 
+    // Step 3: create per-destination price overrides
+    const destPrices: { destinationId: string; price: number; relocationFee?: number }[] = (destinationPrices ?? [])
+      .filter((d: { destinationId?: string; price?: number }) => d.destinationId && d.price && d.price > 0)
+    if (destPrices.length > 0) {
+      await db.yachtDestinationPrice.createMany({
+        data: destPrices.map(d => ({
+          yachtId: yacht.id, destinationId: d.destinationId, price: d.price,
+          relocationFee: d.relocationFee && d.relocationFee > 0 ? d.relocationFee : null,
+        })),
+      })
+    }
+
     logActivity({
       userId:   session?.user?.id   ?? '',
       userName: session?.user?.name ?? session?.user?.email ?? 'Unknown',
@@ -105,7 +118,10 @@ export async function POST(request: NextRequest) {
 
     const result = await db.yacht.findUnique({
       where: { id: yacht.id },
-      include: { cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } } },
+      include: {
+        cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } },
+        destinationPrices: { select: { destinationId: true, price: true, relocationFee: true } },
+      },
     })
     return NextResponse.json(result, { status: 201 })
   } catch (error) {

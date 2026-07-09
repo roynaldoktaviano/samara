@@ -146,7 +146,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body = await request.json()
-    const { title, description, destination, region, departurePort, arrivalPort, status, pricePerCabin, startDate, endDate, yachtId } = body
+    const { title, description, destination, destinationId, region, departurePort, arrivalPort, status, pricePerCabin, startDate, endDate, yachtId } = body
 
     const trip = await db.openTrip.update({
       where: { id },
@@ -154,6 +154,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(title         !== undefined && { title }),
         ...(description   !== undefined && { description: description || null }),
         ...(destination   !== undefined && { destination }),
+        ...(destinationId !== undefined && { destinationId: destinationId || null }),
         ...(region        !== undefined && { region: region || null }),
         ...(departurePort !== undefined && { departurePort: departurePort || null }),
         ...(arrivalPort   !== undefined && { arrivalPort: arrivalPort || null }),

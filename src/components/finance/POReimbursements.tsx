@@ -20,7 +20,10 @@ interface Reimbursement {
   transferProofKeys: string[]
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
-  order: { poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null }
+  order: {
+    poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null
+    requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
+  }
 }
 
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -185,6 +188,15 @@ export default function POReimbursements() {
                 <div className="text-sm text-muted-foreground">
                   Requested {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
                 </div>
+
+                {selected.order.requestedByName && (
+                  <div className="text-sm text-muted-foreground">
+                    PO Requested By <span className="font-medium text-foreground">{selected.order.requestedByName}</span>
+                    {(selected.order.requestedByOffice || selected.order.requestedByDepartment) && (
+                      <span> — {[selected.order.requestedByOffice, selected.order.requestedByDepartment, selected.order.requestedByRole].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </div>
+                )}
 
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{selected.requesterName}</p></div>

@@ -12,7 +12,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     const { id } = await params
     const yacht = await db.yacht.findUnique({
       where: { id },
-      include: { cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } } },
+      include: {
+        cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } },
+        destinationPrices: { select: { destinationId: true, price: true, relocationFee: true } },
+      },
     })
     if (!yacht) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(yacht)
@@ -29,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, canSurfing, description, status, rooms } = body
+    const { name, model, year, capacity, length, hourlyRate, dailyRate, extraBedTiers, canDiving, canSurfing, description, status, rooms, destinationPrices } = body
 
     if (!name || !capacity || !hourlyRate || !dailyRate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -103,6 +106,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
+      // replace all destination price overrides for this yacht
+      const destPrices: { destinationId: string; price: number; relocationFee?: number }[] = (destinationPrices ?? [])
+        .filter((d: { destinationId?: string; price?: number }) => d.destinationId && d.price && d.price > 0)
+      await tx.yachtDestinationPrice.deleteMany({ where: { yachtId: id } })
+      if (destPrices.length > 0) {
+        await tx.yachtDestinationPrice.createMany({
+          data: destPrices.map(d => ({
+            yachtId: id, destinationId: d.destinationId, price: d.price,
+            relocationFee: d.relocationFee && d.relocationFee > 0 ? d.relocationFee : null,
+          })),
+        })
+      }
+
       return updated
     })
 
@@ -110,6 +126,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       where: { id: yacht.id },
       include: {
         cabins: { include: { pricingTiers: { orderBy: { nights: 'asc' } } }, orderBy: { name: 'asc' } },
+        destinationPrices: { select: { destinationId: true, price: true, relocationFee: true } },
         _count: { select: { bookings: true, crew: true } },
       },
     })

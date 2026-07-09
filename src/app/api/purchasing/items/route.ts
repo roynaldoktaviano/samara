@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
     return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
   }
-  if (!['FOOD', 'BEVERAGE', 'MAINTENANCE', 'MATERIAL', 'DIVING', 'HOUSEKEEPING'].includes(type)) {
+  const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
+  if (!typeConfig || !typeConfig.isActive) {
     return NextResponse.json({ error: 'type tidak valid' }, { status: 400 })
   }
   const existing = await db.purchaseItem.findUnique({ where: { sku } })

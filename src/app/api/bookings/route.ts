@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true,
         depositDueDate: true, finalDueDate: true, holdUntil: true,
-        guestCount: true, destination: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
+        guestCount: true, destination: true, destinationId: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
         salespersonUser: { select: { name: true } },
@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
           holdUntil: null,
           guestCount: b.guestCount,
           destination: null,
+          destinationId: null,
           notes: null,
           salesperson: b.salesperson,
           salespersonUser: b.salespersonUser,
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       tripType, source, agentId, agentContactId, yachtId, openTripId,
-      startDate, endDate, destination,
+      startDate, endDate, destination, destinationId,
       totalPrice, depositPaid, discount, voucherCode,
       currency, exchangeRate,
       depositDueDate, finalDueDate,
@@ -306,6 +307,7 @@ export async function POST(request: NextRequest) {
         startDate:     new Date(startDate),
         endDate:       new Date(endDate),
         destination:   destination || null,
+        destinationId: destinationId || null,
         totalPrice:    isOnHold ? 0 : total,
         depositPaid:   isOnHold ? 0 : paid,
         discount:      parseFloat(discount) || 0,

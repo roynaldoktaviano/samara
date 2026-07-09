@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { title, description, yachtId, startDate, endDate, destination, region, departurePort, arrivalPort, pricePerCabin } = body
+    const { title, description, yachtId, startDate, endDate, destination, destinationId, region, departurePort, arrivalPort, pricePerCabin } = body
 
     if (!title || !yachtId || !startDate || !endDate || !destination) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -149,6 +149,7 @@ export async function POST(request: NextRequest) {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         destination,
+        destinationId: destinationId || null,
         region: region || null,
         departurePort: departurePort || null,
         arrivalPort: arrivalPort || null,

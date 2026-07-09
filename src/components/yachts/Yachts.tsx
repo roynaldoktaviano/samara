@@ -39,6 +39,8 @@ interface CabinRecord {
   pricingTiers: PricingTier[]
 }
 
+interface YachtDestinationPrice { destinationId: string; price: number; relocationFee: number | null }
+
 interface YachtRecord {
   id: string
   name: string
@@ -55,8 +57,11 @@ interface YachtRecord {
   status: string
   description?: string
   cabins: CabinRecord[]
+  destinationPrices: YachtDestinationPrice[]
   _count: { bookings: number; crew: number }
 }
+
+interface DestinationOpt { id: string; name: string; region: string | null; isActive: boolean }
 
 interface TierInput { nights: number; price: string }
 
@@ -77,7 +82,7 @@ const DECKS     = ['Upper Deck', 'Main Deck', 'Lower Deck', 'Flybridge']
 
 
 const ACCENT = '#bdac7e'
-const STEPS  = ['Boat Info', 'Rooms & Cabins']
+const STEPS  = ['Boat Info', 'Rooms & Cabins', 'Destinations & Pricing']
 
 export default function Yachts() {
   const { data: session } = useSession()
@@ -111,6 +116,8 @@ export default function Yachts() {
   const [formTiers,      setFormTiers]    = useState<number[]>([2, 3, 4])
   const [addingTier,     setAddingTier]   = useState(false)
   const [newTierDays,    setNewTierDays]  = useState('')
+  const [destinations,   setDestinations] = useState<DestinationOpt[]>([])
+  const [destPriceByDest, setDestPriceByDest] = useState<Record<string, { price: string; relocationFee: string }>>({})
 
   const fetchYachts = useCallback(async () => {
     setLoading(true)
@@ -121,7 +128,14 @@ export default function Yachts() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchYachts() }, [fetchYachts])
+  const fetchDestinations = useCallback(async () => {
+    try {
+      const data = await fetch('/api/destinations').then(r => r.json())
+      setDestinations(Array.isArray(data) ? data.filter((d: DestinationOpt) => d.isActive) : [])
+    } catch (e) { console.error(e) }
+  }, [])
+
+  useEffect(() => { fetchYachts(); fetchDestinations() }, [fetchYachts, fetchDestinations])
 
   const resetForm = () => {
     setName(''); setModel(''); setYear(''); setCap(''); setLen('')
@@ -130,6 +144,7 @@ export default function Yachts() {
     setExtraBedTiers([{ nights: 2, price: '' }, { nights: 3, price: '' }, { nights: 4, price: '' }])
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
     setAddingTier(false); setNewTierDays('')
+    setDestPriceByDest({})
   }
 
   const addTier = () => {
@@ -204,6 +219,10 @@ export default function Yachts() {
         price: (c.pricingTiers?.find(t => t.nights === n)?.price ?? 0).toString(),
       })),
     })))
+    setDestPriceByDest(Object.fromEntries((y.destinationPrices ?? []).map(p => [
+      p.destinationId,
+      { price: p.price.toString(), relocationFee: p.relocationFee ? p.relocationFee.toString() : '' },
+    ])))
     setFormStep(1)
     setError('')
     setDialogOpen(true)
@@ -243,6 +262,13 @@ export default function Yachts() {
             .filter(t => t.price && parseFloat(t.price) > 0)
             .map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
         })),
+        destinationPrices: Object.entries(destPriceByDest)
+          .filter(([, v]) => v.price && parseFloat(v.price) > 0)
+          .map(([destinationId, v]) => ({
+            destinationId,
+            price: parseFloat(v.price),
+            relocationFee: v.relocationFee && parseFloat(v.relocationFee) > 0 ? parseFloat(v.relocationFee) : undefined,
+          })),
       }
       const url    = editTarget ? `/api/yachts/${editTarget.id}` : '/api/yachts'
       const method = editTarget ? 'PUT' : 'POST'
@@ -368,7 +394,7 @@ export default function Yachts() {
                     <Input type="number" placeholder="12" value={capacity} onChange={e => setCap(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Private Charter Rate (USD/day) <span className="text-destructive">*</span></Label>
+                    <Label>Private Charter Rate (USD/night) <span className="text-destructive">*</span></Label>
                     <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
                   </div>
                   <div className="col-span-2 space-y-1.5">
@@ -547,6 +573,66 @@ export default function Yachts() {
                 )
               })()}
 
+              {/* ── Step 3: Destinations & Pricing ── */}
+              {formStep === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">Destinations &amp; Pricing</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Optional — set a special Private Charter rate (USD/night) for specific destinations.
+                      Leave blank to use the default rate of <span className="font-semibold">${dailyRate || 0}/night</span>.
+                    </p>
+                  </div>
+
+                  {destinations.length === 0 ? (
+                    <div className="border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 text-muted-foreground">
+                      <p className="text-sm">No destinations set up yet. Add some in the Destinations module first.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border overflow-hidden">
+                      <div className="grid grid-cols-[1fr_120px_120px] gap-0 bg-muted/40 border-b px-4 py-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Destination</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Price / Night</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Relocation Fee</span>
+                      </div>
+                      <div className="divide-y">
+                        {destinations.map(d => {
+                          const entry = destPriceByDest[d.id] ?? { price: '', relocationFee: '' }
+                          return (
+                            <div key={d.id} className="grid grid-cols-[1fr_120px_120px] items-center gap-3 px-4 py-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium">{d.name}</p>
+                                {d.region && <p className="text-xs text-muted-foreground">{d.region}</p>}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground">$</span>
+                                <Input
+                                  className="h-8 text-sm"
+                                  type="number" min="0" step="50"
+                                  placeholder={dailyRate || '0'}
+                                  value={entry.price}
+                                  onChange={e => setDestPriceByDest(prev => ({ ...prev, [d.id]: { ...entry, price: e.target.value } }))}
+                                />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground">$</span>
+                                <Input
+                                  className="h-8 text-sm"
+                                  type="number" min="0" step="50"
+                                  placeholder="N/A"
+                                  value={entry.relocationFee}
+                                  onChange={e => setDestPriceByDest(prev => ({ ...prev, [d.id]: { ...entry, relocationFee: e.target.value } }))}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </ScrollArea>
 
@@ -557,7 +643,7 @@ export default function Yachts() {
           <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-muted/20">
             <Button
               variant="outline"
-              onClick={() => { if (formStep === 1) { setDialogOpen(false); resetForm() } else { setFormStep(1) } }}
+              onClick={() => { if (formStep === 1) { setDialogOpen(false); resetForm() } else { setFormStep(formStep === 3 ? 2 : 1) } }}
             >
               {formStep === 1 ? 'Cancel' : '← Back'}
             </Button>
@@ -569,6 +655,14 @@ export default function Yachts() {
                 className="hover:opacity-90 min-w-32"
               >
                 Next: Rooms →
+              </Button>
+            ) : formStep === 2 ? (
+              <Button
+                onClick={() => setFormStep(3)}
+                style={{ backgroundColor: ACCENT, color: 'white' }}
+                className="hover:opacity-90 min-w-32"
+              >
+                Next: Destinations →
               </Button>
             ) : (
               <Button
@@ -672,7 +766,7 @@ export default function Yachts() {
                         <TableCell className="text-sm">{y.year ?? '—'}</TableCell>
                         <TableCell className="text-sm">{y.capacity} pax</TableCell>
                         <TableCell className="text-sm">{y.cabinCount}</TableCell>
-                        <TableCell className="text-sm">${y.dailyRate.toLocaleString()}/day</TableCell>
+                        <TableCell className="text-sm">${y.dailyRate.toLocaleString()}/night</TableCell>
                         <TableCell className="text-sm">{y._count.bookings}</TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">

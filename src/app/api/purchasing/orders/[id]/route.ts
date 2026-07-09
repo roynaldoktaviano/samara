@@ -79,26 +79,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const { status, supplierName, expectedAt, notes, dispatchPhotoKey, cancellationReason } = body
 
-  const valid = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
-  if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+  // status is optional — when omitted, this just patches supplierName/expectedAt/notes
+  // in place without touching status or triggering any status-transition side effects below
+  if (status !== undefined) {
+    const valid = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
+    if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
-  if (status === 'ORDERED' && !supplierName?.trim())
-    return NextResponse.json({ error: 'Supplier name is required to confirm PO' }, { status: 400 })
+    if (status === 'ORDERED' && !supplierName?.trim())
+      return NextResponse.json({ error: 'Supplier name is required to confirm PO' }, { status: 400 })
 
-  if (status === 'IN_TRANSIT' && !TRANSIT_ALLOWED.includes(role))
-    return NextResponse.json({ error: 'Only purchasing team can mark as In Transit' }, { status: 403 })
+    if (status === 'IN_TRANSIT' && !TRANSIT_ALLOWED.includes(role))
+      return NextResponse.json({ error: 'Only purchasing team can mark as In Transit' }, { status: 403 })
 
-  if (status === 'IN_TRANSIT' && !dispatchPhotoKey)
-    return NextResponse.json({ error: 'Dispatch photo is required before marking In Transit' }, { status: 400 })
+    if (status === 'IN_TRANSIT' && !dispatchPhotoKey)
+      return NextResponse.json({ error: 'Dispatch photo is required before marking In Transit' }, { status: 400 })
 
-  if (status === 'CANCELLED') {
-    if (!TRANSIT_ALLOWED.includes(role))
-      return NextResponse.json({ error: 'Only purchasing team can cancel a PO' }, { status: 403 })
-    if (!cancellationReason?.trim())
-      return NextResponse.json({ error: 'Cancellation reason is required' }, { status: 400 })
-    const existing = await db.purchaseOrder.findUnique({ where: { id }, select: { status: true } })
-    if (existing && ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(existing.status))
-      return NextResponse.json({ error: 'Cannot cancel a PO that is already in transit or received' }, { status: 400 })
+    if (status === 'CANCELLED') {
+      if (!TRANSIT_ALLOWED.includes(role))
+        return NextResponse.json({ error: 'Only purchasing team can cancel a PO' }, { status: 403 })
+      if (!cancellationReason?.trim())
+        return NextResponse.json({ error: 'Cancellation reason is required' }, { status: 400 })
+      const existing = await db.purchaseOrder.findUnique({ where: { id }, select: { status: true } })
+      if (existing && ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(existing.status))
+        return NextResponse.json({ error: 'Cannot cancel a PO that is already in transit or received' }, { status: 400 })
+    }
   }
 
   // Receive permission: based on delivery location's managedBy field
@@ -122,7 +126,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const order = await db.purchaseOrder.update({
     where: { id },
     data: {
-      status,
+      ...(status !== undefined && { status }),
       ...(supplierName !== undefined && { supplierName: supplierName.trim() || null }),
       ...(expectedAt !== undefined && { expectedAt: expectedAt ? new Date(expectedAt) : null }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),

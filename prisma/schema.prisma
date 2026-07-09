@@ -249,6 +249,33 @@ model Yacht {
   stockLocations   StockLocation[]
   crewRequests     CrewRequest[]
   cashierSales     CashierSale[]
+  destinationPrices YachtDestinationPrice[]
+}
+
+model Destination {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  region    String?
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  yachtPrices YachtDestinationPrice[]
+  openTrips   OpenTrip[]
+  bookings    Booking[]
+}
+
+model YachtDestinationPrice {
+  id            String      @id @default(cuid())
+  yachtId       String
+  destinationId String
+  price         Float
+  relocationFee Float?
+  yacht         Yacht       @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@unique([yachtId, destinationId])
 }
 
 model Cabin {
@@ -286,6 +313,7 @@ model OpenTrip {
   startDate     DateTime
   endDate       DateTime
   destination   String
+  destinationId String?
   region        String?
   departurePort String?
   arrivalPort   String?
@@ -296,12 +324,14 @@ model OpenTrip {
   bookings         Booking[]
   waitingListItems WaitingList[]
   yacht            Yacht    @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  destinationRef   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([yachtId])
   @@index([status])
   @@index([startDate, endDate])
+  @@index([destinationId])
 }
 
 model Booking {
@@ -317,6 +347,7 @@ model Booking {
   startDate      DateTime
   endDate        DateTime
   destination    String?
+  destinationId  String?
   status         BookingStatus   @default(pending)
   totalPrice     Float
   depositPaid    Float           @default(0)
@@ -355,6 +386,7 @@ model Booking {
   agentContact    AgentContact?   @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
   yacht           Yacht?          @relation(fields: [yachtId], references: [id])
   openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id], onDelete: SetNull)
+  destinationRef  Destination?    @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   salespersonUser User?           @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
   guests          BookingGuest[]
   services        BookingService[]
@@ -374,6 +406,7 @@ model Booking {
   @@index([yachtId])
   @@index([agentId])
   @@index([agentContactId])
+  @@index([destinationId])
   @@index([salespersonId])
   @@index([createdAt])
 }
@@ -646,13 +679,29 @@ enum StockLocationType {
   ADJUSTMENT
 }
 
-enum PurchaseItemType {
-  FOOD
-  BEVERAGE
-  MAINTENANCE
-  MATERIAL
-  DIVING
-  HOUSEKEEPING
+model PurchaseItemTypeConfig {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  label      String
+  isLocked   Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  categories PurchaseItemCategory[]
+}
+
+model PurchaseItemCategory {
+  id        String                 @id @default(cuid())
+  typeCode  String
+  type      PurchaseItemTypeConfig @relation(fields: [typeCode], references: [code], onDelete: Cascade)
+  name      String
+  skuPrefix String                 @default("")
+  isActive  Boolean                @default(true)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@unique([typeCode, name])
 }
 
 enum PurchaseRequestStatus {
@@ -701,7 +750,7 @@ model PurchaseItem {
   id               String           @id @default(cuid())
   sku              String           @unique
   name             String
-  type             PurchaseItemType @default(MAINTENANCE)
+  type             String   @default("MAINTENANCE")
   category         String
   baseUnit         String
   purchaseUnit     String

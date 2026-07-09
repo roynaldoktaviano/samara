@@ -34,7 +34,8 @@ type Source  = 'AGENT' | 'DIRECT'
 type TripType = 'PRIVATE_CHARTER' | 'OPEN_TRIP'
 type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
-interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; canSurfing?: boolean; extraBedTiers?: { nights: number; price: number }[] }
+interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; canSurfing?: boolean; extraBedTiers?: { nights: number; price: number }[]; destinationPrices?: { destinationId: string; price: number; relocationFee: number | null }[] }
+interface DestinationOpt { id: string; name: string; region?: string | null }
 interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number }
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
@@ -42,7 +43,7 @@ interface CabinOpt   { id: string; name: string; capacity: number; price: number
 interface OpenTripOpt{
   id: string; title: string; description?: string
   yachtId: string; startDate: string; endDate: string
-  destination: string; pricePerCabin: number
+  destination: string; destinationId?: string | null; pricePerCabin: number
   maxCapacity: number; spotsAvailable: number; status: string
   yacht: { name: string }
   _count?: { bookings: number }
@@ -131,6 +132,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [startDate,  setStart]      = useState(preselectedDate ?? '')
   const [endDate,    setEnd]        = useState('')
   const [destination,setDest]       = useState('')
+  const [destinationId, setDestId]  = useState('')
   const [notes,      setNotes]      = useState('')
 
   /* step-1 OT */
@@ -182,6 +184,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [customers, setCustomers] = useState<CustomerOpt[]>([])
   const [cabins,    setCabins]    = useState<CabinOpt[]>([])
   const [openTrips, setOpenTrips] = useState<OpenTripOpt[]>([])
+  const [destinations, setDestinations] = useState<DestinationOpt[]>([])
   const [openTripsLoading, setOpenTripsLoading] = useState(false)
   const [tripSearch,   setTripSearch]   = useState('')
   const [tripPage,     setTripPage]     = useState(1)
@@ -266,6 +269,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setStart(b.startDate?.split('T')[0] ?? '')
         setEnd(b.endDate?.split('T')[0] ?? '')
         setDest(b.destination ?? '')
+        setDestId(b.destinationId ?? '')
         setNotes(b.notes ?? '')
         setAgentId(b.agentId ?? '')
         setAgentContactId(b.agentContactId ?? '')
@@ -348,12 +352,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       fetch('/api/customers').then(r => r.json()),
       fetch('/api/open-trips').then(r => r.json()),
       fetch('/api/vouchers').then(r => r.json()),
-    ]).then(([y, a, c, ot, v]) => {
+      fetch('/api/destinations').then(r => r.json()),
+    ]).then(([y, a, c, ot, v, d]) => {
       if (y.status  === 'fulfilled') setYachts(Array.isArray(y.value)  ? y.value  : [])
       if (a.status  === 'fulfilled') setAgents(Array.isArray(a.value)  ? a.value  : [])
       if (c.status  === 'fulfilled') setCustomers(Array.isArray(c.value)? c.value : [])
       if (ot.status === 'fulfilled') setOpenTrips(Array.isArray(ot.value)? ot.value: [])
       if (v.status  === 'fulfilled') setActiveVouchers(Array.isArray(v.value) ? v.value.filter((x: any) => x.isActive) : [])
+      if (d.status  === 'fulfilled') setDestinations(Array.isArray(d.value) ? d.value : [])
       setOpenTripsLoading(false)
     })
   }, [open])
@@ -532,7 +538,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         const days = Math.max(1, Math.ceil(
           (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000
         ))
-        usdPrice = y.dailyRate * days
+        const destPrice = y.destinationPrices?.find(p => p.destinationId === destinationId)
+        usdPrice = (destPrice?.price ?? y.dailyRate) * days
+        if (destPrice?.relocationFee) usdPrice += destPrice.relocationFee
         // add extra bed cost for private charter
         const nights = Math.max(1, days - 1)
         const extraTier = y.extraBedTiers?.find(t => t.nights === nights)
@@ -548,7 +556,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     if (usdPrice > 0) {
       setBase(usdPrice.toFixed(2))
     }
-  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips, cabinExtraBeds])
+  }, [tripType, openTripId, yachtId, startDate, endDate, guests, cabins, yachts, openTrips, cabinExtraBeds, destinationId])
 
   /* sync start date whenever wizard opens */
   useEffect(() => {
@@ -562,7 +570,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     if (open) return
     setPhase('source'); setSource(null); setTrip(null); setStep(1)
     setAgentId('')
-    setYachtId(''); setStart(''); setEnd(''); setDest(''); setNotes('')
+    setYachtId(''); setStart(''); setEnd(''); setDest(''); setDestId(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false); setHasSurfing(false); setHasPhotoPackage(false)
     setCurrency('USD'); setBase(''); setDisc('0'); setDiscMode('percent'); setDiscFixed(''); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
@@ -735,6 +743,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
         endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
         destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
+        destinationId: tripType === 'OPEN_TRIP' ? ot?.destinationId : destinationId,
         totalPrice: 0,
         depositPaid: 0,
         isOnHold: true,
@@ -834,6 +843,7 @@ notes:         resolvedNotes,
         startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
         endDate:   tripType === 'OPEN_TRIP' ? ot?.endDate   : endDate,
         destination: tripType === 'OPEN_TRIP' ? ot?.destination : destination,
+        destinationId: tripType === 'OPEN_TRIP' ? ot?.destinationId : destinationId,
         totalPrice:    total,
         depositPaid:   parseFloat(deposit) || 0,
         discount:      discountAmt,
@@ -1254,7 +1264,7 @@ notes:         resolvedNotes,
               {y.model && <span className="text-xs text-muted-foreground">{y.model}</span>}
               <div className="flex gap-3 mt-0.5">
                 <span className="text-xs text-muted-foreground">Cap. {y.capacity}</span>
-                <span className="text-xs font-medium" style={{ color: '#bdac7e' }}>${y.dailyRate.toLocaleString()}/day</span>
+                <span className="text-xs font-medium" style={{ color: '#bdac7e' }}>${y.dailyRate.toLocaleString()}/night</span>
               </div>
             </button>
           ))}
@@ -1372,7 +1382,20 @@ notes:         resolvedNotes,
 
       <div className="space-y-1.5">
         <Label>Destination</Label>
-        <Input placeholder="e.g. Raja Ampat, Komodo..." value={destination} onChange={e => setDest(e.target.value)} />
+        <Select
+          value={destinationId}
+          onValueChange={v => {
+            setDestId(v)
+            setDest(destinations.find(d => d.id === v)?.name ?? '')
+          }}
+        >
+          <SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger>
+          <SelectContent>
+            {destinations.map(d => (
+              <SelectItem key={d.id} value={d.id}>{d.name}{d.region ? ` — ${d.region}` : ''}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1.5">
@@ -2555,7 +2578,7 @@ notes:         resolvedNotes,
                 <p className="text-xs text-muted-foreground">
                   {tripType === 'OPEN_TRIP'
                     ? `Cabin price × ${tripNights + 1} day${tripNights + 1 !== 1 ? 's' : ''} per assigned cabin`
-                    : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day × trip duration`}
+                    : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/night × trip duration`}
                 </p>
               )}
             </div>

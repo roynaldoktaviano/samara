@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
   const locations = await db.stockLocation.findMany({ where: { isActive: true }, select: { id: true, name: true } })
   const locationByName = new Map(locations.map(l => [l.name.trim().toLowerCase(), l.id]))
 
+  const activeTypes = await db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true } })
+  const activeTypeCodes = new Set(activeTypes.map(t => t.code))
+
   let imported = 0
   let updated = 0
   const errors: { row: number; sku: string; error: string }[] = []
@@ -91,8 +94,7 @@ export async function POST(req: NextRequest) {
     }
 
     const typeRaw        = ((iType >= 0   ? row[iType]   : '') || '').trim().toUpperCase()
-    const ALLOWED_TYPES  = ['FOOD', 'BEVERAGE', 'MAINTENANCE', 'MATERIAL', 'DIVING', 'HOUSEKEEPING']
-    const type           = (ALLOWED_TYPES.includes(typeRaw) ? typeRaw : 'MAINTENANCE') as 'FOOD' | 'BEVERAGE' | 'MAINTENANCE' | 'MATERIAL' | 'DIVING' | 'HOUSEKEEPING'
+    const type           = activeTypeCodes.has(typeRaw) ? typeRaw : 'MAINTENANCE'
     const category       = (iCat >= 0     ? row[iCat]    : '') || 'Other'
     const baseUnit       = (iBase >= 0    ? row[iBase]   : '') || 'pcs'
     const purchaseUnit   = (iPurch >= 0   ? row[iPurch]  : '') || baseUnit

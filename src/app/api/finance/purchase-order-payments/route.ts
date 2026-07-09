@@ -14,7 +14,7 @@ export async function GET() {
   const requests = await db.pOPaymentRequest.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
-      order: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } },
+      order: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } }, requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true } },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
     },

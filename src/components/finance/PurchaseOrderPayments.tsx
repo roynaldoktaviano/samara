@@ -17,7 +17,10 @@ interface PaymentRequest {
   transferProofKeys: string[]
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
-  order: { poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null }
+  order: {
+    poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null
+    requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
+  }
 }
 
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -190,6 +193,15 @@ export default function PurchaseOrderPayments() {
                 <div className="text-sm text-muted-foreground">
                   {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
                 </div>
+
+                {selected.order.requestedByName && (
+                  <div className="text-sm text-muted-foreground">
+                    PO Requested By <span className="font-medium text-foreground">{selected.order.requestedByName}</span>
+                    {(selected.order.requestedByOffice || selected.order.requestedByDepartment) && (
+                      <span> — {[selected.order.requestedByOffice, selected.order.requestedByDepartment, selected.order.requestedByRole].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </div>
+                )}
 
                 {selected.paymentMethod === 'CARD' && (
                   <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
 
@@ -410,8 +410,17 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [cancelSaving, setCancelSaving] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
+  // edit PO (general fields) modal
+  const [editPOModal, setEditPOModal] = useState(false)
+  const [editPOSupplier, setEditPOSupplier] = useState('')
+  const [editPOExpectedAt, setEditPOExpectedAt] = useState('')
+  const [editPONotes, setEditPONotes] = useState('')
+  const [editPOSaving, setEditPOSaving] = useState(false)
+  const [editPOError, setEditPOError] = useState('')
+
   // request payment modal
   const [paymentModal, setPaymentModal] = useState(false)
+  const [paymentEditId, setPaymentEditId] = useState<string | null>(null)
   const [paymentMode, setPaymentMode] = useState<'REQUEST' | 'DIRECT'>('REQUEST')
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([])
@@ -422,6 +431,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // reimburse modal
   const [reimburseModal, setReimburseModal] = useState(false)
+  const [reimburseEditId, setReimburseEditId] = useState<string | null>(null)
   const [reimburseAmount, setReimburseAmount] = useState('')
   const [reimbursePhotos, setReimbursePhotos] = useState<string[]>([])
   const [reimburseNotes, setReimburseNotes] = useState('')
@@ -954,14 +964,17 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
     if (paymentPhotos.length === 0) { setPaymentError('At least one receipt/nota photo is required'); return }
     setPaymentSaving(true); setPaymentError('')
-    const res = await fetch(`/api/purchasing/orders/${detail.id}/payment-request`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const url = paymentEditId
+      ? `/api/purchasing/orders/${detail.id}/payment-request/${paymentEditId}`
+      : `/api/purchasing/orders/${detail.id}/payment-request`
+    const res = await fetch(url, {
+      method: paymentEditId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKeys: paymentPhotos, notes: paymentNotes || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
     })
     const data = await res.json()
     if (!res.ok) { setPaymentError(data.error ?? 'Failed'); setPaymentSaving(false); return }
     setPaymentSaving(false); setPaymentModal(false)
-    setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes('')
+    setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentEditId(null)
     openDetail(detail); load()
   }
 
@@ -974,8 +987,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
     if (!reimburseAccountHolderName.trim()) { setReimburseError('Account holder name is required'); return }
     setReimburseSaving(true); setReimburseError('')
-    const res = await fetch(`/api/purchasing/orders/${detail.id}/reimbursement`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const url = reimburseEditId
+      ? `/api/purchasing/orders/${detail.id}/reimbursement/${reimburseEditId}`
+      : `/api/purchasing/orders/${detail.id}/reimbursement`
+    const res = await fetch(url, {
+      method: reimburseEditId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: Number(reimburseAmount), notePhotoKeys: reimbursePhotos, notes: reimburseNotes || undefined,
         requesterName: reimburseRequesterName, bankName: reimburseBankName,
@@ -986,7 +1002,54 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     if (!res.ok) { setReimburseError(data.error ?? 'Failed'); setReimburseSaving(false); return }
     setReimburseSaving(false); setReimburseModal(false)
     setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
-    setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
+    setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName(''); setReimburseEditId(null)
+    openDetail(detail); load()
+  }
+
+  const actionTaken = !!detail && (
+    detail.status === 'CANCELLED' || detail.paymentRequests.length > 0 || detail.reimbursements.length > 0
+  )
+
+  function openEditAction() {
+    if (!detail) return
+    if (detail.status === 'CANCELLED') {
+      setCancelReason(detail.cancellationReason ?? ''); setCancelError(''); setCancelModal(true)
+      return
+    }
+    if (detail.paymentRequests.length > 0) {
+      const p = detail.paymentRequests[0]
+      setPaymentMode(p.paymentMethod === 'CARD' ? 'DIRECT' : 'REQUEST')
+      setPaymentAmount(String(p.amount)); setPaymentPhotos(p.notePhotoKeys); setPaymentNotes(p.notes ?? '')
+      setPaymentError(''); setPaymentEditId(p.id); setPaymentModal(true)
+      return
+    }
+    if (detail.reimbursements.length > 0) {
+      const r = detail.reimbursements[0]
+      setReimburseAmount(String(r.amount)); setReimbursePhotos(r.notePhotoKeys); setReimburseNotes(r.notes ?? '')
+      setReimburseRequesterName(r.requesterName); setReimburseBankName(r.bankName)
+      setReimburseAccountNumber(r.accountNumber); setReimburseAccountHolderName(r.accountHolderName)
+      setReimburseError(''); setReimburseEditId(r.id); setReimburseModal(true)
+    }
+  }
+
+  function openEditPO() {
+    if (!detail) return
+    setEditPOSupplier(detail.supplierName ?? '')
+    setEditPOExpectedAt(detail.expectedAt ? detail.expectedAt.split('T')[0] : '')
+    setEditPONotes(detail.notes ?? '')
+    setEditPOError(''); setEditPOModal(true)
+  }
+
+  async function submitEditPO() {
+    if (!detail) return
+    setEditPOSaving(true); setEditPOError('')
+    const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supplierName: editPOSupplier, expectedAt: editPOExpectedAt || undefined, notes: editPONotes }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setEditPOError(data.error ?? 'Failed'); setEditPOSaving(false); return }
+    setEditPOSaving(false); setEditPOModal(false)
     openDetail(detail); load()
   }
 
@@ -1027,27 +1090,36 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 <FileDown className="h-3.5 w-3.5" /> Download PDF
               </button>
             )}
-            {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && detail.paymentRequests.length === 0 && (
+            {canTransit && detail.status !== 'DRAFT' && (
+              <button onClick={openEditPO} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                <Pencil className="h-3.5 w-3.5" /> Edit PO
+              </button>
+            )}
+            {canTransit && detail.status !== 'DRAFT' && !actionTaken && (
               <>
-                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <Wallet className="h-3.5 w-3.5" /> Request Payment
                 </button>
-                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
+                <button onClick={() => {
+                  setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
+                  setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
+                  setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
+                  setReimburseError(''); setReimburseEditId(null); setReimburseModal(true)
+                }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                  <Banknote className="h-3.5 w-3.5" /> Reimburse
+                </button>
               </>
             )}
-            {canTransit && detail.status !== 'DRAFT' && detail.status !== 'CANCELLED' && (
-              <button onClick={() => {
-                setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
-                setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
-                setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
-                setReimburseError(''); setReimburseModal(true)
-              }}
-                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                <Banknote className="h-3.5 w-3.5" /> Reimburse
+            {canTransit && detail.status !== 'DRAFT' && actionTaken && (
+              <button onClick={openEditAction} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                <Pencil className="h-3.5 w-3.5" />
+                {detail.status === 'CANCELLED' ? 'Edit Cancellation' : detail.paymentRequests.length > 0 ? 'Edit Payment' : 'Edit Reimbursement'}
               </button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
@@ -1063,7 +1135,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 <Camera className="h-3.5 w-3.5" /> Mark In Transit
               </button>
             )}
-            {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && (
+            {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !actionTaken && (
               <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }}
                 className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
                 Cancel PO
@@ -1435,6 +1507,55 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         </>
       )}
 
+      {/* Edit PO Modal */}
+      {editPOModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setEditPOModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">Edit PO</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
+                </div>
+                <button onClick={() => setEditPOModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {editPOError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{editPOError}</div>}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Supplier</label>
+                  <input
+                    className="w-full h-9 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={editPOSupplier} onChange={e => setEditPOSupplier(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Expected Arrival</label>
+                  <input
+                    type="date"
+                    className="w-full h-9 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={editPOExpectedAt} onChange={e => setEditPOExpectedAt(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Notes</label>
+                  <textarea
+                    rows={3}
+                    className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="Payment terms, delivery instructions..."
+                    value={editPONotes} onChange={e => setEditPONotes(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setEditPOModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={submitEditPO} disabled={editPOSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  {editPOSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Request Payment Modal */}
       {paymentModal && detail && (
         <>
@@ -1443,7 +1564,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
-                  <h3 className="font-semibold">{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
+                  <h3 className="font-semibold">{paymentEditId ? 'Edit ' : ''}{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
                 </div>
                 <button onClick={() => setPaymentModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
@@ -1508,7 +1629,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
-                  <h3 className="font-semibold">Reimburse</h3>
+                  <h3 className="font-semibold">{reimburseEditId ? 'Edit Reimbursement' : 'Reimburse'}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
                 </div>
                 <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
