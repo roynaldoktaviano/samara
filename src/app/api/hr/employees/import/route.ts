@@ -30,6 +30,19 @@ function parseCSV(text: string): string[][] {
   return rows
 }
 
+/** Parses DD/MM/YYYY (or DD-MM-YYYY / DD.MM.YYYY) explicitly — `new Date(str)` would otherwise
+ *  read ambiguous slash dates as US-style MM/DD/YYYY. ISO `YYYY-MM-DD` strings pass through as-is. */
+function parseDate(raw: string): Date | null {
+  const dmy = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/)
+  if (dmy) {
+    const [, d, m, y] = dmy
+    const date = new Date(Number(y), Number(m) - 1, Number(d))
+    return isNaN(date.getTime()) ? null : date
+  }
+  const parsed = new Date(raw)
+  return isNaN(parsed.getTime()) ? null : parsed
+}
+
 function col(headers: string[], ...names: string[]): number {
   const clean = (s: string) => s.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '')
   for (const name of names) {
@@ -106,8 +119,7 @@ export async function POST(req: NextRequest) {
     const leaveRaw          = (iLeave >= 0 ? row[iLeave] : '')?.trim()
     const leaveBalance      = leaveRaw ? (parseInt(leaveRaw) || null) : null
     const joinDateRaw       = (iJoin >= 0 ? row[iJoin] : '')?.trim()
-    const joinDateParsed    = joinDateRaw ? new Date(joinDateRaw) : null
-    const joinDate          = joinDateParsed && !isNaN(joinDateParsed.getTime()) ? joinDateParsed : null
+    const joinDate          = joinDateRaw ? parseDate(joinDateRaw) : null
 
     const legalEntityId = legalEntityName ? findByName(entities, legalEntityName)?.id ?? null : null
     const locationId    = locationName ? findByName(locations, locationName)?.id ?? null : null
