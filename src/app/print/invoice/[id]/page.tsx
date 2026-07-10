@@ -35,6 +35,7 @@ interface PaymentDetail {
   previouslyPaid: number
   amount: number
   currency: string
+  exchangeRate?: number | null
   status: string
   notes?: string
   createdAt: string
@@ -84,12 +85,14 @@ const salutation = (gender?: string | null) => {
   const g = gender?.toLowerCase()
   return g === 'female' ? 'Mrs.' : g === 'male' ? 'Mr.' : ''
 }
-const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp' }
+const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', IDR: 'Rp', SGD: 'S$', AUD: 'A$', GBP: '£' }
 
 export default function InvoicePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const currencyOverride = searchParams.get('currency')?.toUpperCase() ?? null
+  const rateParam = searchParams.get('rate')
+  const rateOverride = rateParam ? parseFloat(rateParam) || null : null
   const showNetParam = searchParams.get('showNet')
   const showNetOverride = showNetParam === null ? null : showNetParam === 'true'
   const showNoteParam = searchParams.get('showNote')
@@ -131,7 +134,7 @@ export default function InvoicePage() {
   )
 
   const co = company ?? {
-    name:    'Samara Liveaboard',
+    name:    'Samara Yachting',
     logoUrl: 'https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png',
     tagline: 'PREMIUM YACHT EXPERIENCES',
     address: 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234',
@@ -152,8 +155,11 @@ export default function InvoicePage() {
   const days           = nights + 1
   const packageLabel   = `${b.tripType === 'OPEN_TRIP' ? 'Shared Trip' : 'Private Charter'} – ${days} Days / ${nights} Nights ${vesselName}`
 
-  const invoiceCurrency = currencyOverride ?? b.currency ?? 'USD'
-  const rate            = (invoiceCurrency !== 'USD' && b.exchangeRate) ? b.exchangeRate : 1
+  const invoiceCurrency = currencyOverride ?? (payment.currency !== 'USD' ? payment.currency : null) ?? b.currency ?? 'USD'
+  const rate             = invoiceCurrency === 'USD' ? 1
+    : rateOverride
+      ?? ((payment.currency === invoiceCurrency && payment.exchangeRate) ? payment.exchangeRate : null)
+      ?? ((b.currency === invoiceCurrency && b.exchangeRate) ? b.exchangeRate : 1)
   const currSymbol      = CURRENCY_SYMBOLS[invoiceCurrency] || '$'
   const isIDR           = invoiceCurrency === 'IDR'
 

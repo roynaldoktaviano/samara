@@ -15,11 +15,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DialogFooter } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   FileText, Search, X, Loader2, CheckCircle2, XCircle, Clock,
   TrendingUp, AlertCircle, Check, Ban,
   Receipt, Building2, User, Ship, Calendar, Download, UserCheck, RotateCw,
-  FilePlus, Eye, CreditCard,
+  FilePlus, Eye, CreditCard, ArrowLeftRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
@@ -46,6 +47,7 @@ interface Payment {
   amount: number
   previouslyPaid: number
   currency: string
+  exchangeRate: number | null
   status: string
   notes: string | null
   proofOfTransfer: string | null
@@ -91,6 +93,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   refunded:             { label: 'Refunded',         color: 'bg-blue-100 text-blue-700 border-blue-200',       icon: XCircle },
 }
 
+
+const CONVERT_CURRENCIES = ['EUR', 'IDR', 'SGD', 'AUD', 'GBP'] as const
 
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -142,6 +146,12 @@ export default function Payments() {
   const [genInvShowNet,      setGenInvShowNet]     = useState(false)
   const [genInvShowNote,     setGenInvShowNote]    = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
+
+  // ── Ad-hoc currency conversion for invoice download ──
+  const [convertOpen,     setConvertOpen]     = useState(false)
+  const [convertCurrency, setConvertCurrency] = useState<string>('EUR')
+  const [convertRate,     setConvertRate]     = useState('')
+  const [convertSaving,   setConvertSaving]   = useState(false)
 
   /* refund decisions */
   interface RefundBooking {
@@ -280,6 +290,28 @@ export default function Payments() {
     }
   }
 
+  const handleSetCurrency = async (currency: string, rate: number | null) => {
+    if (!selected) return false
+    setConvertSaving(true)
+    try {
+      const res = await fetch(`/api/payments/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_currency', currency, exchangeRate: rate }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setSelected(prev => prev ? { ...prev, currency, exchangeRate: rate } : prev)
+      setPayments(prev => prev.map(p => p.id === selected.id ? { ...p, currency, exchangeRate: rate } : p))
+      return true
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to save currency')
+      return false
+    } finally {
+      setConvertSaving(false)
+    }
+  }
+
   const handleAction = async (action: 'confirm' | 'reject') => {
     if (!selected) return
     setActing(true)
@@ -370,6 +402,10 @@ export default function Payments() {
     setGenInvShowNote(p.showCommissionNote ?? false)
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
+    setConvertOpen(false)
+    const savedCurrency = p.currency !== 'USD' ? p.currency : (p.booking.currency !== 'USD' ? p.booking.currency : 'EUR')
+    setConvertCurrency(savedCurrency)
+    setConvertRate(p.currency !== 'USD' && p.exchangeRate ? String(p.exchangeRate) : '')
     if (p.status === 'pending_confirmation' || p.status === 'invoice_ready' || p.status === 'confirmed') {
       setProofLoading(true)
       try {
@@ -830,23 +866,85 @@ export default function Payments() {
                     const params = [currency && `currency=${currency}`, netParam, noteParam].filter(Boolean)
                     return `/print/invoice/${selected.id}${params.length ? `?${params.join('&')}` : ''}`
                   }
-                  return selected.booking.currency === 'IDR' && selected.booking.exchangeRate ? (
-                    <div className="flex gap-1.5">
+                  const hasConverted = selected.currency !== 'USD' && !!selected.exchangeRate
+                  const rateNum = parseFloat(convertRate) || 0
+                  return (
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
-                        onClick={() => window.open(invoiceUrl('USD'), '_blank')}>
-                        <Download className="h-3.5 w-3.5" /> USD
+                        onClick={() => window.open(invoiceUrl(hasConverted ? 'USD' : undefined), '_blank')}>
+                        <Download className="h-3.5 w-3.5" /> {hasConverted ? 'USD' : 'Download Invoice'}
                       </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
-                        onClick={() => window.open(invoiceUrl('IDR'), '_blank')}>
-                        <Download className="h-3.5 w-3.5" /> IDR
-                      </Button>
+                      {hasConverted && (
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                          onClick={() => window.open(invoiceUrl(selected.currency), '_blank')}>
+                          <Download className="h-3.5 w-3.5" /> {selected.currency}
+                        </Button>
+                      )}
+                      <Popover open={convertOpen} onOpenChange={setConvertOpen}>
+                        <PopoverTrigger asChild>
+                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
+                            <ArrowLeftRight className="h-3.5 w-3.5" /> Convert Currency
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 space-y-3" align="end">
+                          <p className="text-xs text-muted-foreground">
+                            Customer paying in a different currency? Save the conversion rate here — it's stored on this invoice, so it stays the currency going forward.
+                          </p>
+                          {hasConverted && (
+                            <div className="flex items-center justify-between rounded-md bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-[11px]">
+                              <span className="text-amber-700 font-medium">Saved: {selected.currency} @ {selected.exchangeRate!.toLocaleString('en-US')}</span>
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground underline"
+                                disabled={convertSaving}
+                                onClick={async () => { await handleSetCurrency('USD', null); setConvertRate('') }}
+                              >
+                                Reset to USD
+                              </button>
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Currency</Label>
+                              <Select value={convertCurrency} onValueChange={setConvertCurrency}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {CONVERT_CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">1 USD =</Label>
+                              <Input
+                                type="text" inputMode="decimal" className="h-8 text-xs"
+                                placeholder="rate"
+                                value={convertRate}
+                                onChange={e => setConvertRate(e.target.value.replace(/[^0-9.]/g, ''))}
+                              />
+                            </div>
+                          </div>
+                          {rateNum > 0 && selected.amount > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              ≈ {(selected.amount * rateNum).toLocaleString('en-US', { maximumFractionDigits: convertCurrency === 'IDR' ? 0 : 2 })} {convertCurrency}
+                            </p>
+                          )}
+                          <Button
+                            size="sm" className="w-full h-8 text-xs"
+                            disabled={rateNum <= 0 || convertSaving}
+                            onClick={async () => {
+                              const ok = await handleSetCurrency(convertCurrency, rateNum)
+                              if (ok) {
+                                window.open(invoiceUrl(convertCurrency), '_blank')
+                                setConvertOpen(false)
+                              }
+                            }}
+                          >
+                            {convertSaving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                            Save &amp; Generate {convertCurrency} Invoice
+                          </Button>
+                        </PopoverContent>
+                      </Popover>
                     </div>
-                  ) : (
-                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
-                      onClick={() => window.open(invoiceUrl(), '_blank')}>
-                      <Download className="h-3.5 w-3.5" />
-                      Download Invoice
-                    </Button>
                   )
                 })()}
               </div>

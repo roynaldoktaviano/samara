@@ -24,6 +24,7 @@ import Maintenance from '@/components/maintenance/Maintenance'
 import OpenTrips from '@/components/open-trips/OpenTrips'
 import UsersPage from '@/components/users/Users'
 import Payments from '@/components/payments/Payments'
+import TripSheet from '@/components/payments/TripSheet'
 import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
 import POReimbursements from '@/components/finance/POReimbursements'
 import Agents from '@/components/agents/Agents'
@@ -78,7 +79,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'trip-sheet'
 
 type NavItem = {
   id: View
@@ -108,6 +109,7 @@ const navigationItems: NavItem[] = [
   { id: 'yachts',        label: 'Yachts',          icon: Anchor,     roles: ['ADMIN'],                                  group: 'operations' },
   { id: 'destinations',  label: 'Destinations',    icon: Compass,    roles: ['ADMIN'],                                  group: 'operations' },
   { id: 'payments',      label: 'Payments',        icon: CreditCard, roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
+  { id: 'trip-sheet',    label: 'Trip Sheet',      icon: Ship,       roles: ['ADMIN', 'FINANCE', 'PURCHASING', 'HR'],   group: 'operations' },
   { id: 'banks',         label: 'Bank Accounts',   icon: Building2,  roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'finance-po-payments', label: 'PO Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],                       group: 'finance', feature: 'purchasing' },
   { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
@@ -141,6 +143,7 @@ const roleBadgeColor: Record<string, string> = {
   MARKETING:  'bg-orange-100 text-orange-700',
   PURCHASING: 'bg-amber-100 text-amber-700',
   WAREHOUSE:  'bg-teal-100 text-teal-700',
+  HR:         'bg-pink-100 text-pink-700',
 }
 
 const roleLabel: Record<string, string> = {
@@ -150,6 +153,7 @@ const roleLabel: Record<string, string> = {
   MARKETING:  'Marketing',
   PURCHASING: 'Purchasing',
   WAREHOUSE:  'Warehouse',
+  HR:         'HR',
 }
 
 interface Notification {
@@ -517,6 +521,7 @@ export default function Home() {
       case 'maintenance':  return <Maintenance />
       case 'users':        return <UsersPage />
       case 'payments':     return <Payments />
+      case 'trip-sheet':   return <TripSheet />
       case 'agents':       return <Agents />
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments />

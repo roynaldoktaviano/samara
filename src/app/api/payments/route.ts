@@ -29,6 +29,7 @@ export async function GET(_: NextRequest) {
         previouslyPaid: true,
         amount: true,
         currency: true,
+        exchangeRate: true,
         status: true,
         notes: true,
         proofOfTransfer: true,

@@ -92,7 +92,7 @@ export default function PurchaseOrderPrintPage() {
   )
 
   const co = company ?? {
-    name:    'Samara Liveaboard',
+    name:    'Samara Yachting',
     logoUrl: 'https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png',
     tagline: 'PREMIUM YACHT EXPERIENCES',
     address: 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234',

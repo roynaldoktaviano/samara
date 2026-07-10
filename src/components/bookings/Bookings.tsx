@@ -17,7 +17,7 @@ import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, Clock, Users,
-  Link2, Copy, Check, ExternalLink, Crown,
+  Link2, Copy, Check, ExternalLink, Crown, FileCheck,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -2826,6 +2826,11 @@ export default function Bookings() {
                       {db_.guests.length > 0 && (
                         <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 bg-sky-50 border border-sky-200 rounded-full px-3 py-1.5 hover:bg-sky-100 transition-colors" onClick={() => { setDetailBooking(null); openTravel(db_) }}>
                           <PlaneTakeoff className="h-3.5 w-3.5" /> Travel Details
+                        </button>
+                      )}
+                      {db_.status !== 'cancelled' && (
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1.5 hover:bg-indigo-100 transition-colors" onClick={() => window.open(`/print/booking-confirmation/${db_.id}`, '_blank')}>
+                          <FileCheck className="h-3.5 w-3.5" /> Confirmation Letter
                         </button>
                       )}
                       {(db_.status === 'on_hold' || db_.status === 'pending' || db_.status === 'partially_paid' || db_.status === 'fully_paid') && (

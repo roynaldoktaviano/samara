@@ -235,7 +235,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                 ['Drones are NOT allowed above Komodo National Park area.', ' Advance permit + IDR 1,000,000 fee required.'],
               ].map(([b, r], i) => <li key={i}><em><strong>{b}</strong></em>{r}</li>)}
             </ul>
-            <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>Samara Liveaboard Team</p>
+            <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>Samara Yachting Team</p>
           </div>
         </div>
       )}

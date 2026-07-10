@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
+import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { BookingStatus } from '@prisma/client'
 
 function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
@@ -161,7 +162,49 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         })
         .catch(() => {})
 
+      scheduleTripSheetSync(db)
       return NextResponse.json({ ok: true, invoiceNumber })
+    }
+
+    // ── Finance: set / clear the invoice's payout currency conversion ─────────
+    if (action === 'set_currency') {
+      if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const { currency, exchangeRate } = body
+      if (!currency || typeof currency !== 'string') {
+        return NextResponse.json({ error: 'Currency is required' }, { status: 400 })
+      }
+      const currencyCode = currency.toUpperCase()
+      const isUSD = currencyCode === 'USD'
+      if (!isUSD && (typeof exchangeRate !== 'number' || exchangeRate <= 0)) {
+        return NextResponse.json({ error: 'A valid exchange rate is required for non-USD currency' }, { status: 400 })
+      }
+
+      const existing = await withRetry(() => db.payment.findUnique({
+        where: { id },
+        include: { booking: { select: { bookingCode: true } } },
+      }))
+      if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+      await withRetry(() => db.payment.update({
+        where: { id },
+        data: {
+          currency: currencyCode,
+          exchangeRate: isUSD ? null : exchangeRate,
+        },
+      }))
+
+      logActivity({
+        userId: actorId, userName: actorName, userRole: actorRole,
+        action: 'UPDATE', entity: 'Payment', entityId: id,
+        detail: isUSD
+          ? `Reset invoice ${existing.invoiceNumber} (${existing.booking.bookingCode}) to USD`
+          : `Set invoice ${existing.invoiceNumber} (${existing.booking.bookingCode}) currency to ${currencyCode} @ ${exchangeRate}`,
+      }, db).catch(() => {})
+
+      scheduleTripSheetSync(db)
+      return NextResponse.json({ ok: true })
     }
 
     // ── Sales: submit proof of transfer ───────────────────────────────────────
@@ -213,6 +256,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         })
         .catch(() => {})
 
+      scheduleTripSheetSync(db)
       return NextResponse.json({ ok: true })
     }
 
@@ -314,6 +358,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
 
+      scheduleTripSheetSync(db)
       return NextResponse.json({ ok: true })
     }
 

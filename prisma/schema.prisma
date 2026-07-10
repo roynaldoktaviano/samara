@@ -18,6 +18,7 @@ enum Role {
   MARKETING
   PURCHASING
   WAREHOUSE
+  HR
 }
 
 enum BookingSource {
@@ -520,6 +521,7 @@ model Payment {
   amount            Float
   previouslyPaid    Float     @default(0)
   currency          String    @default("USD")
+  exchangeRate      Float?
   status            PaymentStatus @default(pending_confirmation)
   notes             String?
   proofOfTransfer     String?

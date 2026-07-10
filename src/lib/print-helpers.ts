@@ -15,7 +15,7 @@ export interface CompanyInfo {
 }
 
 const DEFAULTS: CompanyInfo = {
-  name:    'Samara Liveaboard',
+  name:    'Samara Yachting',
   logoUrl: 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png',
   tagline: 'PREMIUM YACHT EXPERIENCES',
   address: 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234',

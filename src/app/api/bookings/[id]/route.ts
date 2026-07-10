@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
+import { scheduleTripSheetSync } from '@/lib/google-sheets'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -171,6 +172,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
     }, db).catch(() => {})
 
+    scheduleTripSheetSync(db)
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error updating booking:', error)
@@ -267,6 +269,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Complete booking ${existing.bookingCode} — ${guests.length} guest(s), total: ${total}`,
       }, db).catch(() => {})
 
+      scheduleTripSheetSync(db)
       return NextResponse.json({ id, bookingCode: existing.bookingCode, status: paymentStatus(paid, total) })
     }
 
@@ -324,6 +327,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           detail: `Cancel booking ${booking.bookingCode} with confirmed payment → pending refund decision`,
         }, db).catch(() => {})
 
+        scheduleTripSheetSync(db)
         return NextResponse.json({ ...booking, requiresRefundDecision: true })
       }
     }
@@ -352,6 +356,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${cancelReason ? ` (alasan: ${cancelReason})` : ''}`,
     }, db).catch(() => {})
 
+    scheduleTripSheetSync(db)
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error patching booking:', error)

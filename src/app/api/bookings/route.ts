@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
+import { scheduleTripSheetSync } from '@/lib/google-sheets'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -384,6 +385,7 @@ export async function POST(request: NextRequest) {
       detail: `New booking ${booking.bookingCode}`,
     }, db).catch(() => {})
 
+    scheduleTripSheetSync(db)
     return NextResponse.json(booking, { status: 201 })
   } catch (error) {
     console.error('Error creating booking:', error)

@@ -5,7 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ExternalLink, Ship, Calendar, Users, ChevronRight, ClipboardList, FileText } from 'lucide-react'
+import { ExternalLink, Ship, Calendar, Users, ChevronRight, ClipboardList, FileText, RefreshCw, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface TripRow {
   bookingId: string
@@ -92,6 +93,21 @@ export default function TripSheet() {
   const [yearFilter, setYearFilter]   = useState('')
   const [vesselFilter, setVesselFilter] = useState('')
   const [selectedTrip, setSelectedTrip] = useState<TripGroup | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/payments/trip-sheet/sync', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Sync failed')
+      toast.success(`Synced ${data.rows} row(s) to Google Sheets`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -153,6 +169,10 @@ export default function TripSheet() {
             <option value="">All Vessels</option>
             {vessels.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
+          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" disabled={syncing} onClick={handleSync}>
+            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Sync to Sheets
+          </Button>
         </div>
       </div>
 
@@ -170,7 +190,6 @@ export default function TripSheet() {
                 <TableHead className="text-center">Guest</TableHead>
                 <TableHead className="text-center">Agent / Sales</TableHead>
                 <TableHead className="text-center">Cabin</TableHead>
-                <TableHead className="text-center">Pax</TableHead>
                 <TableHead className="text-center">Invoice</TableHead>
                 <TableHead className="text-center border-l">Publish</TableHead>
                 <TableHead className="text-center">Disc.</TableHead>
@@ -187,7 +206,15 @@ export default function TripSheet() {
                 const totalGroupRows = g.rows.length
                 let printedGroupHeader = false
                 const zebra = gIdx % 2 === 1 ? 'bg-muted/10' : ''
-                return g.rows.map((r, idx) => {
+                const prevGroup = filteredGroups[gIdx - 1]
+                const monthKey = (d: string) => { const dt = new Date(d); return `${dt.getFullYear()}-${dt.getMonth()}` }
+                const showMonthGap = gIdx > 0 && prevGroup && monthKey(g.startDate) !== monthKey(prevGroup.startDate)
+                const monthGapRow = showMonthGap && (
+                  <TableRow key={`gap-${g.id}`} className="hover:bg-transparent">
+                    <TableCell colSpan={14} className="h-4 p-0 border-0 bg-transparent" />
+                  </TableRow>
+                )
+                const groupRows = g.rows.map((r, idx) => {
                   const isFirstOfBooking = r.guestRowIndex === 0
                   const isFirstOfGroup = !printedGroupHeader
                   if (isFirstOfGroup) printedGroupHeader = true
@@ -225,7 +252,6 @@ export default function TripSheet() {
                         <div className="text-[10px]">{r.salesperson}</div>
                       </TableCell>
                       <TableCell>{r.cabin}</TableCell>
-                      <TableCell className="text-center">{r.pax}</TableCell>
 
                       {isFirstOfBooking && (
                         <>
@@ -258,6 +284,7 @@ export default function TripSheet() {
                     </TableRow>
                   )
                 })
+                return monthGapRow ? [monthGapRow, ...groupRows] : groupRows
               })}
             </TableBody>
           </Table>
