@@ -147,6 +147,12 @@ export default function Payments() {
   const [genInvShowNote,     setGenInvShowNote]    = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
 
+  // ── Convert a foreign-currency amount received into the USD figure for Amount (USD) ──
+  const [amtConvertOpen,     setAmtConvertOpen]     = useState(false)
+  const [amtConvertCurrency, setAmtConvertCurrency] = useState<string>('EUR')
+  const [amtConvertForeign,  setAmtConvertForeign]  = useState('')
+  const [amtConvertRate,     setAmtConvertRate]     = useState('')
+
   // ── Ad-hoc currency conversion for invoice download ──
   const [convertOpen,     setConvertOpen]     = useState(false)
   const [convertCurrency, setConvertCurrency] = useState<string>('EUR')
@@ -253,7 +259,7 @@ export default function Payments() {
     .filter(p => p.status === 'confirmed')
     .reduce((s, p) => s + p.amount, 0)
 
-  const handleGenerateInvoice = async () => {
+  const handleGenerateInvoice = async (silent = false) => {
     if (!selected) return
     const amount = parseFloat(genInvAmount.replace(/,/g, '')) || 0
     if (amount <= 0) return
@@ -274,10 +280,11 @@ export default function Payments() {
           showCommissionNote: genInvShowNet && genInvShowNote,
           bankId: genInvUsePayLink ? null : (genInvBankId || null),
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
+          silent: silent && !isFirstGeneration,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
-      toast.success(isFirstGeneration ? 'Invoice generated successfully' : 'Invoice updated — Sales has been notified')
+      toast.success(isFirstGeneration ? 'Invoice generated successfully' : silent ? 'Invoice saved' : 'Invoice updated — Sales has been notified')
       setSelected(null)
       setGenInvAmount(''); setGenInvType('DP'); setGenInvMethod('Transfer Bank'); setGenInvNotes(''); setGenInvBillTo('CUSTOMER'); setGenInvBankId(null); setGenInvUsePayLink(false); setGenInvPayLink(''); setGenInvEditing(false); setGenInvConfirmEdit(false)
       fetchPayments()
@@ -406,6 +413,10 @@ export default function Payments() {
     const savedCurrency = p.currency !== 'USD' ? p.currency : (p.booking.currency !== 'USD' ? p.booking.currency : 'EUR')
     setConvertCurrency(savedCurrency)
     setConvertRate(p.currency !== 'USD' && p.exchangeRate ? String(p.exchangeRate) : '')
+    setAmtConvertOpen(false)
+    setAmtConvertCurrency(savedCurrency)
+    setAmtConvertForeign('')
+    setAmtConvertRate(p.currency !== 'USD' && p.exchangeRate ? String(p.exchangeRate) : '')
     if (p.status === 'pending_confirmation' || p.status === 'invoice_ready' || p.status === 'confirmed') {
       setProofLoading(true)
       try {
@@ -1187,6 +1198,56 @@ export default function Payments() {
                           <span className="font-semibold text-amber-700">Rp {Math.round(rawNum * bRate).toLocaleString('id-ID')}</span>
                         </div>
                       )}
+
+                      {genInvEditing && (
+                        <div className="rounded-md border border-dashed p-2.5 space-y-2">
+                          <button
+                            type="button"
+                            className="text-[11px] font-medium text-blue-700 hover:underline"
+                            onClick={() => setAmtConvertOpen(v => !v)}
+                          >
+                            {amtConvertOpen ? 'Hide' : 'Customer paid in a different currency? Convert to USD'}
+                          </button>
+                          {amtConvertOpen && (() => {
+                            const foreignNum = parseFloat(amtConvertForeign) || 0
+                            const rateNum2 = parseFloat(amtConvertRate) || 0
+                            const computedUsd = rateNum2 > 0 ? foreignNum / rateNum2 : 0
+                            return (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <Select value={amtConvertCurrency} onValueChange={setAmtConvertCurrency}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      {CONVERT_CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    type="text" inputMode="decimal" className="h-8 text-xs"
+                                    placeholder="Amount received"
+                                    value={amtConvertForeign}
+                                    onChange={e => setAmtConvertForeign(e.target.value.replace(/[^0-9.]/g, ''))}
+                                  />
+                                  <Input
+                                    type="text" inputMode="decimal" className="h-8 text-xs"
+                                    placeholder="1 USD ="
+                                    value={amtConvertRate}
+                                    onChange={e => setAmtConvertRate(e.target.value.replace(/[^0-9.]/g, ''))}
+                                  />
+                                </div>
+                                <Button
+                                  type="button" size="sm" variant="outline" className="w-full h-7 text-xs"
+                                  disabled={computedUsd <= 0}
+                                  onClick={() => { setGenInvAmount(computedUsd.toFixed(2)); setAmtConvertOpen(false) }}
+                                >
+                                  {computedUsd > 0
+                                    ? `Use $${computedUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${foreignNum.toLocaleString('en-US')} ${amtConvertCurrency} ÷ ${rateNum2})`
+                                    : 'Enter amount & rate'}
+                                </Button>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
                     </div>
                       )
                     })()}
@@ -1360,15 +1421,26 @@ export default function Payments() {
                       </>
                     )}
 
-                    <DialogFooter>
+                    <DialogFooter className="flex-col gap-2 sm:flex-col">
                       <Button
                         className="bg-blue-600 hover:bg-blue-700 text-white w-full"
                         disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0}
-                        onClick={handleGenerateInvoice}
+                        onClick={() => handleGenerateInvoice(false)}
                       >
                         {genInvSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FilePlus className="h-4 w-4 mr-1.5" />}
                         {isFirstGeneration ? 'Generate & Notify Sales' : 'Save Changes & Notify Sales'}
                       </Button>
+                      {!isFirstGeneration && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0}
+                          onClick={() => handleGenerateInvoice(true)}
+                        >
+                          {genInvSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FilePlus className="h-4 w-4 mr-1.5" />}
+                          Save Only (No Notification)
+                        </Button>
+                      )}
                     </DialogFooter>
                   </div>
                 </>

@@ -1,15 +1,20 @@
 import { sheets, auth, sheets_v4 } from '@googleapis/sheets'
 import type { PrismaClient } from '@prisma/client'
-import { getTripSheetGroups } from '@/lib/trip-sheet'
-
-const SHEET_TAB = 'Trip Sheet'
+import { getTripSheetGroups, type TripSheetGroup } from '@/lib/trip-sheet'
 
 const HEADER = [
-  'Trip Date', 'Yacht', 'Trip', 'Type', 'Status',
+  'Month', 'Trip Date', 'Trip', 'Type', 'Status',
   'Guest', 'Agent', 'Sales', 'Cabin', 'Invoice',
   'Publish (USD)', 'Disc %', 'Agent Com (USD)', 'Total (USD)', 'Total (IDR)',
   'DP (USD)', '2nd DP / Payment (USD)', 'Balance (USD)', 'Payment Status',
 ]
+
+const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+
+// Column blocks that get merged across rows, mirroring the rowSpan cells in the in-app table.
+const TRIP_BLOCK    = { start: 1, end: 5 }   // B:E — Trip Date, Trip, Type, Status
+const BOOKING_BLOCK = { start: 9, end: 19 }  // J:S — Invoice ... Payment Status
+const MONTH_COL = 0
 
 function fmtRange(start: Date, end: Date) {
   const s = new Date(start), e = new Date(end)
@@ -32,40 +37,37 @@ function getSheetsClient(): sheets_v4.Sheets | null {
   return sheets({ version: 'v4', auth: jwt })
 }
 
-// Column blocks that get merged across rows, mirroring the rowSpan cells in the in-app table.
-const TRIP_BLOCK    = { start: 0, end: 5 }  // A:E — Trip Date, Yacht, Trip, Type, Status
-const BOOKING_BLOCK = { start: 9, end: 19 } // J:S — Invoice ... Payment Status
+/** Sheet tab names can't contain certain punctuation and max out at 100 chars. */
+function sanitizeTabName(name: string) {
+  return name.replace(/[[\]*/\\?:]/g, ' ').trim().slice(0, 100) || 'Unassigned'
+}
 
-/** Ensures the target tab exists in the spreadsheet, creating it if this is the first sync. Returns its numeric sheetId. */
-async function ensureSheetTabExists(sheetsClient: sheets_v4.Sheets, sheetId: string): Promise<number> {
-  const meta = await sheetsClient.spreadsheets.get({ spreadsheetId: sheetId })
-  const existing = meta.data.sheets?.find(s => s.properties?.title === SHEET_TAB)
-  if (existing) return existing.properties!.sheetId!
+/** Ensures a tab with this name exists in the spreadsheet, creating it if missing. Returns its numeric sheetId. */
+async function ensureSheetTabExists(sheetsClient: sheets_v4.Sheets, sheetId: string, tabName: string, existingTabs: Map<string, number>): Promise<number> {
+  const existing = existingTabs.get(tabName)
+  if (existing !== undefined) return existing
 
   const res = await sheetsClient.spreadsheets.batchUpdate({
     spreadsheetId: sheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title: SHEET_TAB } } }] },
+    requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
   })
-  return res.data.replies![0].addSheet!.properties!.sheetId!
+  const newId = res.data.replies![0].addSheet!.properties!.sheetId!
+  existingTabs.set(tabName, newId)
+  return newId
 }
 
-/** Full-refresh rebuild of the Trip Sheet Google Sheet mirror. Idempotent — always overwrites the whole tab. */
-export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
-  const sheetId = process.env.TRIP_SHEET_GOOGLE_SHEET_ID
-  const sheetsClient = getSheetsClient()
-  if (!sheetId || !sheetsClient) return { ok: false as const, reason: 'not_configured' }
+interface MergeRange { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }
 
-  const tabId = await ensureSheetTabExists(sheetsClient, sheetId)
-
-  const groups = await getTripSheetGroups(db)
-
+/** Builds the row values + merge ranges for one vessel's tab. */
+function buildVesselSheet(groups: TripSheetGroup[]) {
   const rows: (string | number)[][] = [HEADER]
-  const merges: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }[] = []
+  const merges: MergeRange[] = []
   let prevMonthKey: string | null = null
 
   for (const g of groups) {
     const monthKey = `${g.startDate.getFullYear()}-${g.startDate.getMonth()}`
-    if (prevMonthKey !== null && monthKey !== prevMonthKey) rows.push([])
+    const isNewMonth = monthKey !== prevMonthKey
+    if (prevMonthKey !== null && isNewMonth) rows.push([])
     prevMonthKey = monthKey
 
     const groupStartRow = rows.length
@@ -75,14 +77,13 @@ export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
       const guestRowCount = g.rows[i].guestRowCount
       for (let k = 0; k < guestRowCount; k++) {
         const r = g.rows[i + k]
-        // Only write the trip/booking block's value on the block's first row — the rest stay
-        // blank and get merged on top, so a merge-range bug can only ever show blanks, never
-        // hide or relocate real data.
+        // Only write each block's value on the block's first row — the rest stay blank and get
+        // merged on top, so a merge-range bug can only ever show blanks, never hide/relocate data.
         const isFirstOfGroup   = i === 0 && k === 0
         const isFirstOfBooking = k === 0
         rows.push([
+          (isFirstOfGroup && isNewMonth) ? MONTH_NAMES[g.startDate.getMonth()] : '',
           isFirstOfGroup ? fmtRange(g.startDate, g.endDate) : '',
-          isFirstOfGroup ? g.yachtName : '',
           isFirstOfGroup ? g.tripLabel : '',
           isFirstOfGroup ? g.tripType : '',
           isFirstOfGroup ? g.status : '',
@@ -118,34 +119,76 @@ export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
     }
   }
 
-  // Unmerge everything FIRST — writing into a cell that's still part of an old merged range
-  // silently drops the write for any non-anchor cell, which is what caused stale/blank values.
-  await sheetsClient.spreadsheets.batchUpdate({
-    spreadsheetId: sheetId,
-    requestBody: { requests: [{ unmergeCells: { range: { sheetId: tabId, startRowIndex: 0, endRowIndex: 20000 } } }] },
-  })
+  return { rows, merges }
+}
 
-  const lastCol = String.fromCharCode('A'.charCodeAt(0) + HEADER.length - 1)
-  await sheetsClient.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${SHEET_TAB}!A1:${lastCol}20000` })
-  await sheetsClient.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: `${SHEET_TAB}!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: rows },
-  })
+/** Full-refresh rebuild of the Trip Sheet Google Sheet mirror — one tab per vessel. Idempotent — always overwrites each tab. */
+export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
+  const sheetId = process.env.TRIP_SHEET_GOOGLE_SHEET_ID
+  const sheetsClient = getSheetsClient()
+  if (!sheetId || !sheetsClient) return { ok: false as const, reason: 'not_configured' }
 
-  if (merges.length > 0) {
-    await sheetsClient.spreadsheets.batchUpdate({
-      spreadsheetId: sheetId,
-      requestBody: {
-        requests: merges.map(m => ({
-          mergeCells: { mergeType: 'MERGE_ALL', range: { sheetId: tabId, ...m } },
-        })),
-      },
-    })
+  const groups = await getTripSheetGroups(db)
+
+  const byVessel = new Map<string, TripSheetGroup[]>()
+  for (const g of groups) {
+    const vessel = g.yachtName && g.yachtName !== '—' ? g.yachtName : 'Unassigned'
+    const list = byVessel.get(vessel) ?? []
+    list.push(g)
+    byVessel.set(vessel, list)
   }
 
-  return { ok: true as const, rows: rows.length - 1 }
+  const meta = await sheetsClient.spreadsheets.get({ spreadsheetId: sheetId })
+  const existingTabs = new Map<string, number>(
+    (meta.data.sheets ?? []).map(s => [s.properties!.title!, s.properties!.sheetId!])
+  )
+
+  let totalRows = 0
+  for (const [vessel, vesselGroups] of byVessel) {
+    const tabName = sanitizeTabName(vessel)
+    const tabId = await ensureSheetTabExists(sheetsClient, sheetId, tabName, existingTabs)
+    const { rows, merges } = buildVesselSheet(vesselGroups)
+    totalRows += rows.length - 1
+
+    // Unmerge everything FIRST — writing into a cell that's still part of an old merged range
+    // silently drops the write for any non-anchor cell, which caused stale/blank values before.
+    await sheetsClient.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: { requests: [{ unmergeCells: { range: { sheetId: tabId, startRowIndex: 0, endRowIndex: 20000 } } }] },
+    })
+
+    const lastCol = String.fromCharCode('A'.charCodeAt(0) + HEADER.length - 1)
+    await sheetsClient.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${tabName}!A1:${lastCol}20000` })
+    await sheetsClient.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${tabName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rows },
+    })
+
+    const requests = [
+      // Header row: bold.
+      {
+        repeatCell: {
+          range: { sheetId: tabId, startRowIndex: 0, endRowIndex: 1 },
+          cell: { userEnteredFormat: { textFormat: { bold: true } } },
+          fields: 'userEnteredFormat.textFormat',
+        },
+      },
+      // Month column: bold + colored, matching the reference sheet's style.
+      {
+        repeatCell: {
+          range: { sheetId: tabId, startColumnIndex: MONTH_COL, endColumnIndex: MONTH_COL + 1 },
+          cell: { userEnteredFormat: { textFormat: { bold: true, foregroundColor: { red: 0.85, green: 0.1, blue: 0.55 } } } },
+          fields: 'userEnteredFormat.textFormat',
+        },
+      },
+      ...merges.map(m => ({ mergeCells: { mergeType: 'MERGE_ALL', range: { sheetId: tabId, ...m } } })),
+    ]
+    await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests } })
+  }
+
+  return { ok: true as const, rows: totalRows, tabs: byVessel.size }
 }
 
 /** Fire-and-forget trigger for mutation routes — safe to call without awaiting. No-op if not configured. */

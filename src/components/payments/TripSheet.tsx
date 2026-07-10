@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -71,7 +71,8 @@ function buildYachtColorMap(yachtNames: string[]): Record<string, string> {
   return map
 }
 
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const ACCENT = '#bdac7e'
 
 const PAYMENT_STATUS_STYLE: Record<string, string> = {
   PAID:                 'bg-green-100 text-green-700 border-green-200',
@@ -154,25 +155,58 @@ export default function TripSheet() {
           />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-            <option value="">All Months</option>
-            {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
-          </select>
-          <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-            <option value="">All Years</option>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select value={vesselFilter} onChange={e => setVesselFilter(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-            <option value="">All Vessels</option>
-            {vessels.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" disabled={syncing} onClick={handleSync}>
             {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Sync to Sheets
           </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 px-1 overflow-x-auto scrollbar-none divide-x divide-border">
+        <div className="flex items-center gap-1.5 pr-3 shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0">Year</span>
+          <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
+            className="h-7 rounded-full border-0 bg-muted px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
+            <option value="">All</option>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1 pl-3 pr-3 shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0 mr-1">Month</span>
+          <button onClick={() => setMonthFilter('')}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${!monthFilter ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+            style={!monthFilter ? { backgroundColor: ACCENT } : {}}>
+            All
+          </button>
+          {MONTH_SHORT.map((m, i) => (
+            <button key={m} onClick={() => setMonthFilter(String(i))}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${monthFilter === String(i) ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+              style={monthFilter === String(i) ? { backgroundColor: ACCENT } : {}}>
+              {m}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1.5 pl-3 shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0 mr-1">Vessel</span>
+          <button onClick={() => setVesselFilter('')}
+            className={`h-6 flex items-center px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${!vesselFilter ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+            style={!vesselFilter ? { backgroundColor: ACCENT } : {}}>
+            All
+          </button>
+          {vessels.map(v => {
+            const color = yachtColorMap[v] ?? '#64748b'
+            const active = vesselFilter === v
+            return (
+              <button key={v} onClick={() => setVesselFilter(v)}
+                className={`h-6 flex items-center gap-1 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${active ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+                style={active ? { backgroundColor: color } : {}}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }} />
+                {v}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -208,10 +242,19 @@ export default function TripSheet() {
                 const zebra = gIdx % 2 === 1 ? 'bg-muted/10' : ''
                 const prevGroup = filteredGroups[gIdx - 1]
                 const monthKey = (d: string) => { const dt = new Date(d); return `${dt.getFullYear()}-${dt.getMonth()}` }
-                const showMonthGap = gIdx > 0 && prevGroup && monthKey(g.startDate) !== monthKey(prevGroup.startDate)
-                const monthGapRow = showMonthGap && (
+                const isNewMonth = gIdx === 0 || monthKey(g.startDate) !== monthKey(prevGroup.startDate)
+                const monthGapRow = isNewMonth && gIdx > 0 && (
                   <TableRow key={`gap-${g.id}`} className="hover:bg-transparent">
                     <TableCell colSpan={14} className="h-4 p-0 border-0 bg-transparent" />
+                  </TableRow>
+                )
+                const monthLabelRow = isNewMonth && (
+                  <TableRow key={`month-${g.id}`} className="hover:bg-transparent">
+                    <TableCell colSpan={14} className="py-1.5 px-3 bg-muted/60 border-y">
+                      <span className="text-xs font-bold tracking-wide text-foreground">
+                        {new Date(g.startDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase()}
+                      </span>
+                    </TableCell>
                   </TableRow>
                 )
                 const groupRows = g.rows.map((r, idx) => {
@@ -284,7 +327,7 @@ export default function TripSheet() {
                     </TableRow>
                   )
                 })
-                return monthGapRow ? [monthGapRow, ...groupRows] : groupRows
+                return [monthGapRow, monthLabelRow, ...groupRows].filter(Boolean) as ReactNode[]
               })}
             </TableBody>
           </Table>
