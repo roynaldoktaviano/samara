@@ -15,7 +15,7 @@ export async function GET() {
   // Dynamic import prevents Turbopack from statically analyzing the spawn arguments
   const { spawnSync } = await import('child_process')
   const scriptParts = ['scripts', 'render-pdf-pages.js']
-  const scriptPath = path.resolve(process.cwd(), ...scriptParts)
+  const scriptPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), ...scriptParts)
   const b64 = Buffer.from(setting.blobValue).toString('base64')
 
   const result = spawnSync('node', [scriptPath, b64], {
