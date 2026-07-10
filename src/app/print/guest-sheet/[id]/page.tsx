@@ -14,7 +14,7 @@ function Banner({ sub, name, logo }: { sub?: string; name: string; logo: string 
         {sub && <p style={{ color: GOLD, fontSize: 11, margin: '4px 0 0' }}>{sub}</p>}
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logo} alt={name} style={{ width: 44, height: 44, opacity: 0.9 }} />
+      <img src={logo} alt={name} style={{ height: 34, width: 'auto', objectFit: 'contain', opacity: 0.9, filter: 'brightness(0) invert(1)' }} />
     </div>
   )
 }

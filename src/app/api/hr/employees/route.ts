@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
 async function generateEmployeeNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const prefix = 'EMP-'

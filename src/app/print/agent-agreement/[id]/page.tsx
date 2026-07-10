@@ -568,7 +568,7 @@ export default function AgentAgreementPrint() {
             </div>
             <div className="cover-title">
               <h1>COMMISSION AND<br />PAYMENT TERMS (C&amp;P)<br />
-                <span style={{fontSize:'22pt',letterSpacing:'0.18em'}}>2026</span>
+                <span style={{fontSize:'22pt',letterSpacing:'0.18em'}}>2026 - v1.1</span>
               </h1>
             </div>
             <div className="cover-url">www.samaraliveaboard.com</div>
@@ -745,7 +745,9 @@ export default function AgentAgreementPrint() {
               />
             </div>
             <div className="cover-title">
-              <h1>TERMS &amp; CONDITIONS</h1>
+              <h1>TERMS &amp; CONDITIONS<br />
+                <span style={{fontSize:'22pt',letterSpacing:'0.18em'}}>v2.2</span>
+              </h1>
             </div>
             <div className="cover-url">www.samaraliveaboard.com</div>
           </div>

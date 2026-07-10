@@ -2545,7 +2545,7 @@ export default function Bookings() {
                             </Button>
                           ) : null
                         })()}
-                      {canManageBookings && db_.status !== 'cancelled' && db_.guests.length > 1 && (
+                      {canManageBookings && db_.status !== 'cancelled' && (db_.guests.length > 1 || db_.tripType === 'PRIVATE_CHARTER') && (
                         <div className="flex items-center gap-1.5">
                           {masterLinks[db_.id] ? (
                             <>

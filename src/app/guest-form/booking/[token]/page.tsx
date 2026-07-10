@@ -62,6 +62,7 @@ interface TripInfo {
   yachtName: string
   tripTitle: string | null
   tripType: string
+  capacity: number | null
 }
 
 interface GuestRecord {
@@ -569,6 +570,11 @@ function BookingFormInner() {
   // Shared travel details (one set for the whole booking) — filled as the final step for whichever guest reaches it first
   const [travelData, setTravelData] = useState<TravelData>(EMPTY_TRAVEL)
 
+  // Self-service "add guest" — private charters only, the whole vessel is already theirs
+  const [showAddGuestForm, setShowAddGuestForm] = useState(false)
+  const [newGuestName, setNewGuestName] = useState('')
+  const [addingGuest, setAddingGuest] = useState(false)
+
   useEffect(() => {
     fetch(`/api/booking-form/${token}`)
       .then(r => r.json())
@@ -665,6 +671,30 @@ function BookingFormInner() {
       toast.error('Failed to save. Please try again.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleAddGuest = async () => {
+    if (!newGuestName.trim()) { toast.error('Please enter the guest’s name'); return }
+    setAddingGuest(true)
+    try {
+      const res = await fetch(`/api/booking-form/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGuestName.trim() }),
+      })
+      const newGuest = await res.json()
+      if (!res.ok) throw new Error(newGuest.error || 'Failed to add guest')
+      setFormData(prev => prev ? { ...prev, guests: [...prev.guests, newGuest] } : prev)
+      setGuestStates(prev => ({ ...prev, [newGuest.id]: initGuestState(newGuest) }))
+      setGuestIdx(guests.length)
+      setShowAddGuestForm(false)
+      setNewGuestName('')
+      toast.success('Guest added!')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add guest')
+    } finally {
+      setAddingGuest(false)
     }
   }
 
@@ -850,9 +880,57 @@ function BookingFormInner() {
                   </button>
                 )
               })}
+
+              {trip?.tripType === 'PRIVATE_CHARTER' && (trip.capacity == null || guests.length < trip.capacity) && (
+                <button
+                  onClick={() => setShowAddGuestForm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed shrink-0 text-xs font-semibold"
+                  style={{ borderColor: TEAL, color: TEAL }}
+                >
+                  <span className="text-base leading-none">＋</span> Add Guest
+                </button>
+              )}
             </div>
           </div>
         </div>
+
+        {/* ── Add guest modal ── */}
+        {showAddGuestForm && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => !addingGuest && setShowAddGuestForm(false)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-gray-800 mb-1">Add a Guest</h3>
+              <p className="text-xs text-gray-400 mb-4">This charter is all yours — add anyone joining your group. They can fill in their own details once added.</p>
+              <Field label="Guest Full Name *">
+                <input
+                  autoFocus
+                  value={newGuestName}
+                  onChange={e => setNewGuestName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddGuest()}
+                  placeholder="e.g. Jane Doe"
+                  className={inputCls}
+                />
+              </Field>
+              <div className="flex items-center gap-2 mt-4">
+                <button
+                  onClick={() => { setShowAddGuestForm(false); setNewGuestName('') }}
+                  disabled={addingGuest}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-500 bg-white hover:bg-gray-50 disabled:opacity-60 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddGuest}
+                  disabled={addingGuest}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-all shadow-sm"
+                  style={{ background: `linear-gradient(135deg, ${TEAL} 0%, #0d3d47 100%)` }}
+                >
+                  {addingGuest ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Add Guest
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Step progress (per selected guest) ── */}
         <div className="bg-white border-b">

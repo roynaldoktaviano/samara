@@ -866,7 +866,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                       )}
                     </td>
                     <td className="px-2 py-2.5">
-                      <input type="number" min={0} step="any" className={numInp} value={line.unitCost}
+                      <input type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0.00"
                         onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">

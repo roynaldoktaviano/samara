@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       hasSurfing: true,
       tripType: true,
       masterFormExpiresAt: true,
-      yacht:    { select: { name: true, canDiving: true, canSurfing: true } },
+      yacht:    { select: { name: true, canDiving: true, canSurfing: true, capacity: true } },
       openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
       guests: {
         select: {
@@ -61,6 +61,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     yachtName:   isOpenTrip ? booking.openTrip?.yacht?.name : booking.yacht?.name,
     tripTitle:   isOpenTrip ? booking.openTrip?.title : null,
     tripType:    booking.tripType,
+    // Private charters have the whole vessel — guests can add their travel companions themselves, up to capacity.
+    capacity:    booking.tripType === 'PRIVATE_CHARTER' ? (booking.yacht?.capacity ?? null) : null,
   }
 
   const guests = booking.guests.map((g: any) => ({
@@ -163,4 +165,51 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
   }
 
   return NextResponse.json({ ok: true })
+}
+
+/** Self-service guest add — private charters only, since the whole vessel is already theirs. */
+export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
+  const { token } = await params
+
+  const booking = await db.booking.findUnique({
+    where: { masterFormToken: token },
+    select: {
+      id: true,
+      tripType: true,
+      masterFormExpiresAt: true,
+      yacht: { select: { capacity: true } },
+      guests: { select: { id: true } },
+    },
+  })
+
+  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
+    return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
+  }
+  if (booking.tripType !== 'PRIVATE_CHARTER') {
+    return NextResponse.json({ error: 'Adding guests is only available for private charter bookings' }, { status: 400 })
+  }
+  if (booking.yacht?.capacity != null && booking.guests.length >= booking.yacht.capacity) {
+    return NextResponse.json({ error: 'This charter is already at full capacity' }, { status: 400 })
+  }
+
+  const body = await req.json()
+  const name = (body?.name as string | undefined)?.trim()
+  if (!name) return NextResponse.json({ error: 'Guest name is required' }, { status: 400 })
+
+  const customer = await db.customer.create({ data: { name } })
+  const guest = await db.bookingGuest.create({
+    data: { bookingId: booking.id, customerId: customer.id, isLead: false },
+  })
+
+  return NextResponse.json({
+    bookingGuestId: guest.id,
+    isLead: false,
+    id: customer.id,
+    name: customer.name,
+    firstName: '', lastName: '', gender: '', email: '', phone: '', passport: '',
+    dateOfBirth: '', address: '', nationality: '', passportExpiry: '', passportImage: '',
+    medicalData: null, foodData: null, drinksData: null, divingData: null, surfingData: null,
+  })
 }

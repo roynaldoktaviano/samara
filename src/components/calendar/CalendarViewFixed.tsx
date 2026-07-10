@@ -1092,6 +1092,7 @@ export default function CalendarView() {
   }
 
   const handleDateClick = (dateStr: string) => {
+    if (!canEdit) return
     const today = new Date(); today.setHours(0,0,0,0)
     if (new Date(dateStr) <= today) return
 
