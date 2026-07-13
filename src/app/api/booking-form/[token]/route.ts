@@ -1,8 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
+import type { PrismaClient } from '@prisma/client'
 
 const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile', 'travel'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
+
+/** Max guests this booking can self-register — the whole vessel for a private charter,
+ *  or the combined capacity of whichever cabin(s) this booking has already reserved for an open trip. */
+async function computeCapacity(db: PrismaClient, bookingId: string, tripType: string): Promise<number | null> {
+  if (tripType === 'PRIVATE_CHARTER') {
+    const booking = await db.booking.findUnique({ where: { id: bookingId }, select: { yacht: { select: { capacity: true } } } })
+    return booking?.yacht?.capacity ?? null
+  }
+  if (tripType === 'OPEN_TRIP') {
+    const guests = await db.bookingGuest.findMany({
+      where: { bookingId },
+      select: { cabinId: true, cabin: { select: { capacity: true } } },
+    })
+    const seen = new Set<string>()
+    let sum = 0
+    for (const g of guests) {
+      if (g.cabinId && g.cabin && !seen.has(g.cabinId)) {
+        seen.add(g.cabinId)
+        sum += g.cabin.capacity
+      }
+    }
+    return sum > 0 ? sum : null
+  }
+  return null
+}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const db = await getDb()
@@ -26,6 +52,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
         select: {
           id: true,
           isLead: true,
+          cabinId: true,
+          cabin: { select: { capacity: true } },
           arrivalPickupTime: true, arrivalHotel: true, arrivalFlight: true,
           departurePickupTime: true, departureHotel: true, departureFlight: true,
           customer: {
@@ -53,6 +81,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   const hasDiving  = (booking.hasDiving ?? false) && (booking.yacht?.canDiving ?? false) && !isOpenTrip
   const hasSurfing = (booking.hasSurfing ?? false) && (booking.yacht?.canSurfing ?? false) && !isOpenTrip
 
+  let capacity: number | null = null
+  if (booking.tripType === 'PRIVATE_CHARTER') {
+    capacity = booking.yacht?.capacity ?? null
+  } else if (booking.tripType === 'OPEN_TRIP') {
+    const seen = new Set<string>()
+    let sum = 0
+    for (const g of booking.guests) {
+      if (g.cabinId && g.cabin && !seen.has(g.cabinId)) {
+        seen.add(g.cabinId)
+        sum += g.cabin.capacity
+      }
+    }
+    capacity = sum > 0 ? sum : null
+  }
+
   const tripInfo = {
     bookingCode: booking.bookingCode,
     startDate:   isOpenTrip ? booking.openTrip?.startDate : booking.startDate,
@@ -61,8 +104,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     yachtName:   isOpenTrip ? booking.openTrip?.yacht?.name : booking.yacht?.name,
     tripTitle:   isOpenTrip ? booking.openTrip?.title : null,
     tripType:    booking.tripType,
-    // Private charters have the whole vessel — guests can add their travel companions themselves, up to capacity.
-    capacity:    booking.tripType === 'PRIVATE_CHARTER' ? (booking.yacht?.capacity ?? null) : null,
+    // Private charters have the whole vessel; open trips are capped by whichever cabin(s) this booking reserved.
+    capacity,
   }
 
   const guests = booking.guests.map((g: any) => ({
@@ -81,7 +124,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     departureFlight:     leadGuest.departureFlight      ?? '',
   } : null
 
-  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, expiresAt: booking.masterFormExpiresAt })
+  // Medical/food/drinks are answered once for the whole booking (mirrors travel) — sourced from
+  // the lead guest's record, which is where shared PUTs below write the answers to every guest.
+  const medical = leadGuest?.customer.medicalData ?? {}
+  const food    = leadGuest?.customer.foodData    ?? {}
+  const drinks  = leadGuest?.customer.drinksData  ?? {}
+
+  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, medical, food, drinks, expiresAt: booking.masterFormExpiresAt })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -127,6 +176,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     return NextResponse.json({ ok: true })
   }
 
+  // Medical/food/drinks are answered once for the whole booking (mirrors travel) — the same
+  // answer is written to every guest's record rather than tracked per person.
+  if (section === 'medical' || section === 'food' || section === 'drinks') {
+    const fieldMap: Record<string, string> = { medical: 'medicalData', food: 'foodData', drinks: 'drinksData' }
+    await db.customer.updateMany({
+      where: { id: { in: booking.guests.map((g: any) => g.customerId) } },
+      data: { [fieldMap[section]]: data },
+    })
+    return NextResponse.json({ ok: true })
+  }
+
   const isGuestOfBooking = booking.guests.some((g: any) => g.customerId === customerId)
   if (!isGuestOfBooking) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -152,9 +212,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     })
   } else {
     const fieldMap: Record<string, string> = {
-      medical: 'medicalData',
-      food:    'foodData',
-      drinks:  'drinksData',
       diving:   'divingData',
       surfing:  'surfingData',
     }
@@ -167,7 +224,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
   return NextResponse.json({ ok: true })
 }
 
-/** Self-service guest add — private charters only, since the whole vessel is already theirs. */
+/** Self-service guest add — private charters (whole vessel already theirs) and open trips
+ *  (capped to whichever cabin(s) this booking has reserved). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const db = await getDb()
   const { token } = await params
@@ -178,7 +236,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       id: true,
       tripType: true,
       masterFormExpiresAt: true,
-      yacht: { select: { capacity: true } },
       guests: { select: { id: true } },
     },
   })
@@ -187,29 +244,84 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
-  if (booking.tripType !== 'PRIVATE_CHARTER') {
-    return NextResponse.json({ error: 'Adding guests is only available for private charter bookings' }, { status: 400 })
+  if (booking.tripType !== 'PRIVATE_CHARTER' && booking.tripType !== 'OPEN_TRIP') {
+    return NextResponse.json({ error: 'Adding guests is not available for this booking' }, { status: 400 })
   }
-  if (booking.yacht?.capacity != null && booking.guests.length >= booking.yacht.capacity) {
-    return NextResponse.json({ error: 'This charter is already at full capacity' }, { status: 400 })
+
+  const capacity = await computeCapacity(db, booking.id, booking.tripType)
+  if (capacity != null && booking.guests.length >= capacity) {
+    return NextResponse.json({ error: 'This booking is already at full capacity' }, { status: 400 })
   }
 
   const body = await req.json()
   const name = (body?.name as string | undefined)?.trim()
   if (!name) return NextResponse.json({ error: 'Guest name is required' }, { status: 400 })
 
-  const customer = await db.customer.create({ data: { name } })
+  // A draft guest submits their full Personal Details in this same call — that's the moment
+  // they become a real, official guest on the booking (see the group form's "Add Guest" flow).
+  const { firstName, lastName, gender, email, phone, passport,
+    dateOfBirth, address, nationality, passportExpiry, passportImage } = body as Record<string, string | null | undefined>
+
+  const customer = await db.customer.create({
+    data: {
+      name,
+      firstName: firstName || null,
+      lastName:  lastName  || null,
+      gender:    gender    || null,
+      email:     email     || null,
+      phone:     phone     || null,
+      passport:  passport  || null,
+      dateOfBirth:    dateOfBirth    ? new Date(dateOfBirth)    : null,
+      address:        address        || null,
+      nationality:    nationality    || null,
+      passportExpiry: passportExpiry ? new Date(passportExpiry) : null,
+      passportImage:  passportImage  || null,
+    },
+  })
   const guest = await db.bookingGuest.create({
     data: { bookingId: booking.id, customerId: customer.id, isLead: false },
   })
+  await db.booking.update({ where: { id: booking.id }, data: { guestCount: { increment: 1 } } })
 
   return NextResponse.json({
     bookingGuestId: guest.id,
     isLead: false,
     id: customer.id,
     name: customer.name,
-    firstName: '', lastName: '', gender: '', email: '', phone: '', passport: '',
-    dateOfBirth: '', address: '', nationality: '', passportExpiry: '', passportImage: '',
+    firstName: customer.firstName ?? '', lastName: customer.lastName ?? '', gender: customer.gender ?? '',
+    email: customer.email ?? '', phone: customer.phone ?? '', passport: customer.passport ?? '',
+    dateOfBirth: customer.dateOfBirth ? customer.dateOfBirth.toISOString() : '',
+    address: customer.address ?? '', nationality: customer.nationality ?? '',
+    passportExpiry: customer.passportExpiry ? customer.passportExpiry.toISOString() : '',
+    passportImage: customer.passportImage ?? '',
     medicalData: null, foodData: null, drinksData: null, divingData: null, surfingData: null,
   })
+}
+
+/** Self-service guest removal — the Group Leader can't be removed. */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const db = await getDb()
+  const { token } = await params
+
+  const booking = await db.booking.findUnique({
+    where: { masterFormToken: token },
+    select: { id: true, masterFormExpiresAt: true },
+  })
+  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
+    return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
+  }
+
+  const body = await req.json()
+  const bookingGuestId = body?.bookingGuestId as string | undefined
+  if (!bookingGuestId) return NextResponse.json({ error: 'bookingGuestId is required' }, { status: 400 })
+
+  const guest = await db.bookingGuest.findUnique({ where: { id: bookingGuestId }, select: { bookingId: true, isLead: true } })
+  if (!guest || guest.bookingId !== booking.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (guest.isLead) return NextResponse.json({ error: 'The Group Leader can’t be removed' }, { status: 400 })
+
+  await db.bookingGuest.delete({ where: { id: bookingGuestId } })
+  await db.booking.update({ where: { id: booking.id }, data: { guestCount: { decrement: 1 } } })
+
+  return NextResponse.json({ ok: true })
 }
