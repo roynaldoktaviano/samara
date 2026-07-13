@@ -536,17 +536,24 @@ model Payment {
   invoiceGeneratedAt  DateTime?
   confirmedBy         String?
   confirmedAt         DateTime?
+  // hasDocument=false: an additional DP tacked onto parentPayment's invoice — no new invoice
+  // document was generated, sales attaches proof of transfer directly at creation.
+  hasDocument         Boolean   @default(true)
+  parentPaymentId     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   booking           Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   bank              Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
   notifications     Notification[]
+  parentPayment     Payment?       @relation("PaymentParent", fields: [parentPaymentId], references: [id], onDelete: SetNull)
+  childPayments     Payment[]      @relation("PaymentParent")
 
   @@index([bookingId])
   @@index([status])
   @@index([status, bookingId])
   @@index([bankId])
   @@index([createdAt])
+  @@index([parentPaymentId])
 }
 
 model Voucher {

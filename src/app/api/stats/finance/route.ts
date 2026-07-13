@@ -43,10 +43,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Pre-compute net per booking once (avoids recomputing commission/discount 4× per booking)
+    // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
     function calcNet(b: typeof bookings[0]) {
       const svcTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-      const basePrice = b.totalPrice - svcTotal
-      const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
+      const afterDisc = Math.max(0, b.totalPrice - svcTotal)
       const commPct   = b.source === 'AGENT'
         ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
         : 0

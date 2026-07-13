@@ -31,12 +31,13 @@ function bookingFinancials(booking: {
   services: { price: number; quantity: number }[]
   payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date }[]
 }) {
-  // totalPrice = TRIP (before discount) + TNK (services), quoted in USD baseline
+  // totalPrice is already net of discount + TNK (services), quoted in USD baseline
+  // (see BookingWizard: total = max(0, base - discountAmt) + services)
   const tnk = booking.services.reduce((s, sv) => s + sv.price * sv.quantity, 0)
-  const publish = booking.totalPrice - tnk
+  const baseAfterDiscount = booking.totalPrice - tnk
   const discount = booking.discount
+  const publish = baseAfterDiscount + discount // reconstructed pre-discount price, for display only
   const discountPct = publish > 0 ? (discount / publish) * 100 : 0
-  const baseAfterDiscount = publish - discount
 
   const commPct = booking.source === 'AGENT'
     ? (booking.tripType === 'OPEN_TRIP' ? (booking.agent?.commissionOpenTrip ?? 0) : (booking.agent?.commissionPrivateCharter ?? 0))

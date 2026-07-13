@@ -302,8 +302,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           : 0
         const commPctSafe = Math.max(0, Math.min(commPct, 100))
         // Commission applies only to the TRIP portion (price excl. additional services), not the whole total.
+        // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
         const svcTotal = payment.booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-        const trip = Math.max(0, (payment.booking.totalPrice - svcTotal) - (payment.booking.discount ?? 0))
+        const trip = Math.max(0, payment.booking.totalPrice - svcTotal)
         const effectiveTotal = (trip - trip * commPctSafe / 100) + svcTotal
         const paymentAmount  = payment.amount
 

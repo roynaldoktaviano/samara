@@ -39,6 +39,7 @@ interface PaymentDetail {
   status: string
   notes?: string
   createdAt: string
+  hasDocument?: boolean
   bank?: BankDetail | null
   paymentLink?: string | null
   booking: {
@@ -132,6 +133,11 @@ export default function InvoicePage() {
       Invoice not found.
     </div>
   )
+  if (payment.hasDocument === false) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#9ca3af', fontSize: 14 }}>
+      This payment has no invoice document — it&apos;s an additional DP recorded against an earlier invoice.
+    </div>
+  )
 
   const co = company ?? {
     name:    'Samara Yachting',
@@ -177,10 +183,11 @@ export default function InvoicePage() {
   const commissionPct  = isAgentBooking && showNet
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
     : 0
-  const baseRaw        = b.totalPrice - servicesTotal
-  const baseAfterDisc  = baseRaw - discountAmt
+  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
+  const baseAfterDisc  = b.totalPrice - servicesTotal
+  const baseRaw        = baseAfterDisc + discountAmt // reconstructed pre-discount price, for display only
   const commissionAmt  = baseAfterDisc * commissionPct / 100
-  const afterDiscount  = b.totalPrice - discountAmt - commissionAmt
+  const afterDiscount  = b.totalPrice - commissionAmt
   const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
   const displayBase    = baseAfterDisc - commissionAmt
 

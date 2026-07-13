@@ -60,6 +60,9 @@ interface Payment {
   confirmedBy: string | null
   confirmedAt: string | null
   createdAt: string
+  hasDocument?: boolean
+  parentPaymentId?: string | null
+  parentPayment?: { invoiceNumber: string } | null
   booking: {
     bookingCode: string
     totalPrice: number
@@ -107,7 +110,8 @@ function netOfCommission(booking: {
   agent: { commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
 }, commPct: number) {
   const svcTotal = booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const trip = Math.max(0, (booking.totalPrice - svcTotal) - (booking.discount ?? 0))
+  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
+  const trip = Math.max(0, booking.totalPrice - svcTotal)
   return (trip - trip * commPct / 100) + svcTotal
 }
 
@@ -870,7 +874,11 @@ export default function Payments() {
                     </div>
                   )
                 })()}
-                {(() => {
+                {selected.hasDocument === false ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    No invoice document — additional DP linked to {selected.parentPayment?.invoiceNumber ?? 'a previous invoice'}
+                  </p>
+                ) : (() => {
                   const netParam = selected.booking.source === 'AGENT' ? `showNet=${genInvShowNet}` : null
                   const noteParam = selected.booking.source === 'AGENT' ? `showNote=${genInvShowNet && genInvShowNote}` : null
                   const invoiceUrl = (currency?: string) => {
@@ -1098,8 +1106,9 @@ export default function Payments() {
                 </div>
               )}
 
-              {/* Generate / Edit Invoice (Finance only) — editable while requested, invoice_ready, or pending_confirmation */}
-              {isFinance && ['requested', 'invoice_ready', 'pending_confirmation'].includes(selected.status) && (() => {
+              {/* Generate / Edit Invoice (Finance only) — editable while requested, invoice_ready, or pending_confirmation.
+                  Not applicable to hasDocument:false records — those are additional DPs with no invoice of their own. */}
+              {isFinance && selected.hasDocument !== false && ['requested', 'invoice_ready', 'pending_confirmation'].includes(selected.status) && (() => {
                 const isFirstGeneration = selected.status === 'requested'
                 return (
                 <>
@@ -1283,7 +1292,7 @@ export default function Payments() {
                       const commPct   = selected.booking.tripType === 'OPEN_TRIP'
                         ? (selected.booking.agent?.commissionOpenTrip ?? 0)
                         : (selected.booking.agent?.commissionPrivateCharter ?? 0)
-                      const grossAmt  = selected.booking.totalPrice - (selected.booking.discount ?? 0)
+                      const grossAmt  = selected.booking.totalPrice // already net of discount
                       const netAmt    = netOfCommission(selected.booking, commPct)
                       const fmtN = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       return (

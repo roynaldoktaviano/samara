@@ -11,9 +11,9 @@ function netBooking(b: {
   agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
   services: { price: number; quantity: number }[]
 }) {
+  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
   const svc     = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const base    = b.totalPrice - svc
-  const disc    = Math.max(0, base - (b.discount ?? 0))
+  const disc    = Math.max(0, b.totalPrice - svc)
   const commPct = b.source === 'AGENT'
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
     : 0

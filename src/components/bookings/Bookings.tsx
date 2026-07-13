@@ -91,6 +91,9 @@ interface PaymentRecord {
   confirmedBy?: string
   confirmedAt?: string
   createdAt: string
+  hasDocument?: boolean
+  parentPaymentId?: string | null
+  parentPayment?: { invoiceNumber: string } | null
   booking: {
     bookingCode: string
     tripType: string
@@ -111,8 +114,8 @@ interface PaymentRecord {
 
 const netBook = (b: BookingRecord) => {
   const svcTotal  = b.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
-  const basePrice = b.totalPrice - svcTotal
-  const afterDisc = Math.max(0, basePrice - (b.discount ?? 0))
+  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
+  const afterDisc = Math.max(0, b.totalPrice - svcTotal)
   const commPct   = b.source === 'AGENT'
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
     : 0
@@ -210,6 +213,9 @@ export default function Bookings() {
   const [payMethod,       setPayMethod]       = useState('Transfer Bank')
   const [payShowNet,      setPayShowNet]      = useState(false)
   const [payShowNote,     setPayShowNote]     = useState(false)
+  const [payMode,         setPayMode]         = useState<'new' | 'existing'>('new')
+  const [payLinkedId,     setPayLinkedId]     = useState('')
+  const [payProof,        setPayProof]        = useState<string | null>(null)
 
   /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -218,6 +224,7 @@ export default function Bookings() {
   const [proofUploading, setProofUploading] = useState(false)
   const [proofFetching,  setProofFetching]  = useState(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
+  const payProofInputRef = useRef<HTMLInputElement>(null)
 
   /* payments list (for payment column context) */
   const [payments,        setPayments]        = useState<PaymentRecord[]>([])
@@ -603,6 +610,9 @@ export default function Bookings() {
   }
 
   /* ── request invoice ── */
+  const eligibleParentInvoices = (bookingId: string) =>
+    payments.filter(p => p.bookingId === bookingId && p.hasDocument !== false && ['invoice_ready', 'pending_confirmation', 'confirmed'].includes(p.status))
+
   const openPayment = (b: BookingRecord) => {
     setPaymentBooking(b)
     setPaymentNotes('')
@@ -613,6 +623,20 @@ export default function Bookings() {
     setPayMethod('Transfer Bank')
     setPayShowNet(false)
     setPayShowNote(false)
+    setPayMode('new')
+    setPayLinkedId('')
+    setPayProof(null)
+  }
+  const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png']
+    if (!allowed.includes(file.type)) {
+      toast.error('Only JPG and PNG files are allowed')
+      e.target.value = ''
+      return
+    }
+    compressImage(file).then(setPayProof).catch(() => toast.error('Failed to process image'))
   }
   const submitPayment = async () => {
     if (!paymentBooking) return
@@ -629,19 +653,29 @@ export default function Bookings() {
       amount = Math.round(remaining * pct / 100 * 100) / 100
     }
     if (amount <= 0 || amount > remaining) { setPaymentSaving(false); return }
+    if (payMode === 'existing' && (!payLinkedId || !payProof)) { setPaymentSaving(false); return }
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bookingId: paymentBooking.id,
-          notes: paymentNotes,
-          amount: amount > 0 ? amount : undefined,
-          billToType: payBillTo,
-          paymentMethod: payMethod || undefined,
-          showNetAmount: paymentBooking.source === 'AGENT' ? payShowNet : undefined,
-          showCommissionNote: paymentBooking.source === 'AGENT' ? (payShowNet && payShowNote) : undefined,
-        }),
+        body: payMode === 'existing'
+          ? JSON.stringify({
+              bookingId: paymentBooking.id,
+              notes: paymentNotes,
+              amount,
+              linkedPaymentId: payLinkedId,
+              proofOfTransfer: payProof,
+              paymentMethod: payMethod || undefined,
+            })
+          : JSON.stringify({
+              bookingId: paymentBooking.id,
+              notes: paymentNotes,
+              amount: amount > 0 ? amount : undefined,
+              billToType: payBillTo,
+              paymentMethod: payMethod || undefined,
+              showNetAmount: paymentBooking.source === 'AGENT' ? payShowNet : undefined,
+              showCommissionNote: paymentBooking.source === 'AGENT' ? (payShowNet && payShowNote) : undefined,
+            }),
       })
       if (res.ok) {
         setPaymentBooking(null)
@@ -1212,9 +1246,46 @@ export default function Bookings() {
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <CreditCard className="h-4 w-4" style={{ color: ACCENT }} />
-                    Request Invoice
+                    {payMode === 'existing' ? 'Add Payment (No New Invoice)' : 'Request Invoice'}
                   </DialogTitle>
                 </DialogHeader>
+
+                {/* New invoice vs. additional DP on an existing invoice */}
+                {eligibleParentInvoices(paymentBooking.id).length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Invoice</Label>
+                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                      {([{ v: 'new', l: 'New Invoice' }, { v: 'existing', l: 'Add to Existing Invoice' }] as const).map(opt => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => { setPayMode(opt.v); setPayLinkedId(''); setPayProof(null) }}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payMode === opt.v ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          style={payMode === opt.v ? { backgroundColor: ACCENT } : {}}
+                        >
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                    {payMode === 'existing' && (
+                      <>
+                        <p className="text-[11px] text-muted-foreground">
+                          No new invoice document is generated — attach proof of transfer now, Finance confirms it like any other payment.
+                        </p>
+                        <Select value={payLinkedId} onValueChange={setPayLinkedId}>
+                          <SelectTrigger className="text-sm">
+                            <SelectValue placeholder="Select invoice to add this DP to..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {eligibleParentInvoices(paymentBooking.id).map(p => (
+                              <SelectItem key={p.id} value={p.id}>{p.invoiceNumber} — {p.paymentType} (${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Booking summary */}
                 <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1.5">
@@ -1356,8 +1427,8 @@ export default function Bookings() {
                   )}
                 </div>
 
-                {/* Bill To — AGENT bookings only */}
-                {paymentBooking.source === 'AGENT' && paymentBooking.agent && (
+                {/* Bill To — AGENT bookings only, only relevant when an actual invoice doc is produced */}
+                {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
                   <div className="space-y-2">
                     <Label>Bill To</Label>
                     <div className="flex rounded-lg border overflow-hidden text-xs">
@@ -1383,8 +1454,8 @@ export default function Bookings() {
                   </div>
                 )}
 
-                {/* Show Agent Commission — AGENT bookings only */}
-                {paymentBooking.source === 'AGENT' && paymentBooking.agent && (
+                {/* Show Agent Commission — AGENT bookings only, only relevant when an actual invoice doc is produced */}
+                {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
                   <div className="space-y-2">
                     <Label>Agent Commission on Invoice</Label>
                     <div className="flex rounded-lg border overflow-hidden text-xs">
@@ -1445,6 +1516,33 @@ export default function Bookings() {
                   </Select>
                 </div>
 
+                {payMode === 'existing' && (
+                  <div className="space-y-1.5">
+                    <Label>Transfer Proof <span className="text-red-500">*</span></Label>
+                    <div
+                      className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer hover:border-primary/50"
+                      onClick={() => payProofInputRef.current?.click()}
+                    >
+                      {payProof ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={payProof} alt="Transfer proof" className="w-full max-h-72 object-contain" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                          <ImageIcon className="h-10 w-10 opacity-30" />
+                          <p className="text-sm">Click to select image</p>
+                          <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
+                        </div>
+                      )}
+                    </div>
+                    <input ref={payProofInputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" className="hidden" onChange={handlePayProofFile} />
+                    {payProof && (
+                      <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => payProofInputRef.current?.click()}>
+                        Change image
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                   <Textarea
@@ -1459,12 +1557,12 @@ export default function Bookings() {
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
                   <Button
-                    disabled={paymentSaving || previewAmt <= 0}
+                    disabled={paymentSaving || previewAmt <= 0 || (payMode === 'existing' && (!payLinkedId || !payProof))}
                     onClick={submitPayment}
                     style={{ backgroundColor: ACCENT, color: 'white' }}
                     className="hover:opacity-90"
                   >
-                    {paymentSaving ? 'Submitting…' : 'Request Invoice'}
+                    {paymentSaving ? 'Submitting…' : payMode === 'existing' ? 'Submit Payment' : 'Request Invoice'}
                   </Button>
                 </DialogFooter>
               </>
@@ -2160,12 +2258,14 @@ export default function Bookings() {
           {detailBooking && (() => {
             const db_ = detailBooking
             const svcTotal   = (db_.services ?? []).reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-            const basePrice  = db_.totalPrice - svcTotal
+            // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
+            const afterDisc  = Math.max(0, db_.totalPrice - svcTotal)
+            const basePrice  = afterDisc + db_.discount // reconstructed pre-discount price, for display only
             const commPct    = db_.source === 'AGENT'
               ? (db_.tripType === 'OPEN_TRIP' ? (db_.agent?.commissionOpenTrip ?? 0) : (db_.agent?.commissionPrivateCharter ?? 0))
               : 0
-            const commAmt    = commPct > 0 ? Math.max(0, basePrice - db_.discount) * commPct / 100 : 0
-            const net        = Math.max(0, basePrice - db_.discount) + svcTotal - commAmt
+            const commAmt    = commPct > 0 ? afterDisc * commPct / 100 : 0
+            const net        = afterDisc + svcTotal - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)
             const bdrRate    = (db_.currency === 'IDR' && db_.exchangeRate && db_.exchangeRate > 1) ? db_.exchangeRate : 0
             const hasDetailIDR = bdrRate > 0

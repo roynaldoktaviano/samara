@@ -26,8 +26,9 @@ function netBooking(b: {
   if (commPct <= 0) return b.confirmedAmount
 
   // Commission only applies to the TRIP portion (price excl. additional services), not the whole amount paid.
+  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
   const svc   = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-  const trip  = Math.max(0, (b.totalPrice - svc) - (b.discount ?? 0))
+  const trip  = Math.max(0, b.totalPrice - svc)
   const total = trip + svc
   if (total <= 0) return b.confirmedAmount
 

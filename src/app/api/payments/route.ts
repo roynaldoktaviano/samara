@@ -41,6 +41,9 @@ export async function GET(_: NextRequest) {
         confirmedBy: true,
         confirmedAt: true,
         createdAt: true,
+        hasDocument: true,
+        parentPaymentId: true,
+        parentPayment: { select: { invoiceNumber: true } },
         booking: {
           select: {
             bookingCode: true,
@@ -87,7 +90,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer } = body
 
     if (!bookingId) {
       return NextResponse.json({ error: 'Missing bookingId' }, { status: 400 })
@@ -110,6 +113,70 @@ export async function POST(request: NextRequest) {
     const submittedByUserId = session?.user?.id ?? null
     const submittedByName   = session?.user?.name ?? session?.user?.email ?? null
     const previouslyPaid    = booking.depositPaid
+    const actorRole         = (session?.user as { role?: string })?.role ?? ''
+
+    // ── Additional DP tacked onto an already-issued invoice — no new invoice document.
+    // Sales supplies the amount + proof of transfer directly (there's no customer-facing link
+    // to collect it through), and it goes straight to Finance for confirmation. ──
+    if (linkedPaymentId) {
+      if (!proofOfTransfer) {
+        return NextResponse.json({ error: 'Payment proof must be attached' }, { status: 400 })
+      }
+      const amount = (typeof requestedAmount === 'number' && requestedAmount > 0) ? requestedAmount : 0
+      if (amount <= 0) {
+        return NextResponse.json({ error: 'Amount is required' }, { status: 400 })
+      }
+      const parent = await db.payment.findFirst({ where: { id: linkedPaymentId, bookingId, hasDocument: true } })
+      if (!parent) return NextResponse.json({ error: 'Original invoice not found for this booking' }, { status: 404 })
+
+      const siblingCount  = await db.payment.count({ where: { parentPaymentId: parent.id } })
+      const invoiceNumber = `${parent.invoiceNumber}-${siblingCount + 2}` // parent is implicitly "-1"
+
+      const payment = await db.payment.create({
+        data: {
+          bookingId,
+          invoiceNumber,
+          paymentType: 'DP',
+          previouslyPaid,
+          amount,
+          currency: 'USD',
+          notes: notes || null,
+          status: 'pending_confirmation',
+          proofOfTransfer,
+          hasDocument: false,
+          parentPaymentId: parent.id,
+          submittedByUserId,
+          submittedByName,
+          ...(paymentMethod && { paymentMethod }),
+        },
+      })
+
+      db.user.findMany({ where: { role: { in: ['FINANCE', 'ADMIN'] } }, select: { id: true } })
+        .then(financeUsers => {
+          if (!financeUsers.length) return
+          return db.notification.createMany({
+            data: financeUsers.map(u => ({
+              userId: u.id,
+              type: 'PROOF_SUBMITTED',
+              title: 'Payment proof received',
+              body: `${invoiceNumber} (${booking.bookingCode}) is awaiting payment confirmation`,
+              paymentId: payment.id,
+              bookingId,
+            })),
+            skipDuplicates: true,
+          })
+        })
+        .catch(() => {})
+
+      logActivity({
+        userId: submittedByUserId ?? '', userName: submittedByName ?? 'Unknown', userRole: actorRole,
+        action: 'CREATE', entity: 'Payment', entityId: payment.id,
+        detail: `Additional DP ${invoiceNumber} (${booking.bookingCode}) — ${amount}, linked to ${parent.invoiceNumber}, no new invoice`,
+      }, db).catch(() => {})
+
+      return NextResponse.json(payment, { status: 201 })
+    }
+
     const paymentType       = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
     const { nextVal } = await import('@/lib/counter')
     const reqNum      = await nextVal(`payment_req:${booking.bookingCode}`)
