@@ -90,7 +90,8 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, paymentDate } = body
+    const parsedPaymentDate = paymentDate ? new Date(paymentDate) : new Date()
 
     if (!bookingId) {
       return NextResponse.json({ error: 'Missing bookingId' }, { status: 400 })
@@ -139,6 +140,7 @@ export async function POST(request: NextRequest) {
           paymentType: 'DP',
           previouslyPaid,
           amount,
+          paymentDate: parsedPaymentDate,
           currency: 'USD',
           notes: notes || null,
           status: 'pending_confirmation',
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
         paymentType,
         previouslyPaid,
         amount,
+        paymentDate: parsedPaymentDate,
         currency: 'USD',
         notes: notes || null,
         status: 'requested',

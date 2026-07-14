@@ -39,9 +39,11 @@ interface PaymentDetail {
   status: string
   notes?: string
   createdAt: string
+  paymentDate?: string | null
   hasDocument?: boolean
   bank?: BankDetail | null
   paymentLink?: string | null
+  history?: Array<{ id: string; amount: number; paymentDate: string | null; createdAt: string; status: string }>
   booking: {
     bookingCode: string
     tripType: string
@@ -190,6 +192,20 @@ export default function InvoicePage() {
   const afterDiscount  = b.totalPrice - commissionAmt
   const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
   const displayBase    = baseAfterDisc - commissionAmt
+
+  // Itemized payment history — "Deposit Payment", "Second Payment", ... in chronological
+  // order, with the invoice being printed relabeled "Balance Payment" when it closes out
+  // the package total.
+  const ORDINALS = ['Deposit', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
+  const ordinalPayment = (n: number) => `${ORDINALS[n - 1] ?? `${n}th`} Payment`
+  let cumulative = 0
+  const historyRows = (payment.history ?? []).map((h, i) => {
+    cumulative += h.amount
+    return { ...h, ordinal: i + 1, cumAfter: cumulative }
+  })
+  const currentRow      = historyRows.find(h => h.id === payment.id)
+  const isClosingPayment = !!currentRow && currentRow.cumAfter >= afterDiscount - 0.01
+  const priorRows        = historyRows.filter(h => h.id !== payment.id)
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
@@ -480,28 +496,38 @@ export default function InvoicePage() {
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 
-            {payment.previouslyPaid > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ color: '#6b7280', fontSize: 10 }}>Previously Paid</span>
-                <span style={{ color: '#059669', fontSize: 10, fontWeight: 600 }}>−{fmtAmt(payment.previouslyPaid)}</span>
+            {priorRows.map(h => (
+              <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ color: '#6b7280', fontSize: 10, fontStyle: 'italic' }}>
+                  {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}
+                </span>
+                <span style={{ color: '#059669', fontSize: 10, fontWeight: 600 }}>{fmtAmt(h.amount)}</span>
+              </div>
+            ))}
+
+            {isClosingPayment && (
+              <div style={{ marginBottom: 4 }}>
+                <span style={{ color: '#374151', fontSize: 10, fontStyle: 'italic' }}>Balance Payment</span>
               </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 5, padding: '8px 10px', marginBottom: 6 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>
-                Amount Due — This Invoice
+                {isClosingPayment ? 'Balance Due' : 'Amount Due — This Invoice'}
               </div>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(payment.amount)}</div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 600 }}>
-                {remaining > 0 ? 'Balance Due' : 'Remaining'}
-              </span>
-              <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 700 }}>
-                {fmtAmt(remaining)}
-              </span>
-            </div>
+            {!isClosingPayment && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 600 }}>
+                  {remaining > 0 ? 'Balance Due' : 'Remaining'}
+                </span>
+                <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 700 }}>
+                  {fmtAmt(remaining)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

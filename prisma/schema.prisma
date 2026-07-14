@@ -520,6 +520,7 @@ model Payment {
   paymentMethod     String?
   amount            Float
   previouslyPaid    Float     @default(0)
+  paymentDate       DateTime?
   currency          String    @default("USD")
   exchangeRate      Float?
   status            PaymentStatus @default(pending_confirmation)

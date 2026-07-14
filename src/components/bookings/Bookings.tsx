@@ -244,6 +244,7 @@ export default function Bookings() {
   const [payMode,         setPayMode]         = useState<'new' | 'existing'>('new')
   const [payLinkedId,     setPayLinkedId]     = useState('')
   const [payProof,        setPayProof]        = useState<string | null>(null)
+  const [payDate,         setPayDate]         = useState('')
 
   /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -654,6 +655,7 @@ export default function Bookings() {
     setPayMode('new')
     setPayLinkedId('')
     setPayProof(null)
+    setPayDate(new Date().toISOString().slice(0, 10))
   }
   const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -681,6 +683,7 @@ export default function Bookings() {
       amount = Math.round(remaining * pct / 100 * 100) / 100
     }
     if (amount <= 0 || amount > remaining) { setPaymentSaving(false); return }
+    if (!payDate) { setPaymentSaving(false); return }
     if (payMode === 'existing' && (!payLinkedId || !payProof)) { setPaymentSaving(false); return }
     try {
       const res = await fetch('/api/payments', {
@@ -694,6 +697,7 @@ export default function Bookings() {
               linkedPaymentId: payLinkedId,
               proofOfTransfer: payProof,
               paymentMethod: payMethod || undefined,
+              paymentDate: payDate || undefined,
             })
           : JSON.stringify({
               bookingId: paymentBooking.id,
@@ -703,6 +707,7 @@ export default function Bookings() {
               paymentMethod: payMethod || undefined,
               showNetAmount: paymentBooking.source === 'AGENT' ? payShowNet : undefined,
               showCommissionNote: paymentBooking.source === 'AGENT' ? (payShowNet && payShowNote) : undefined,
+              paymentDate: payDate || undefined,
             }),
       })
       if (res.ok) {
@@ -1344,7 +1349,7 @@ export default function Bookings() {
 
       {/* ════ Request Invoice Dialog ════ */}
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
-        <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
+        <DialogContent className="sm:max-w-xl w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
           {paymentBooking && (() => {
             const rate      = paymentBooking.exchangeRate ?? 1
             const hasIDR    = paymentBooking.currency === 'IDR' && rate > 1
@@ -1450,9 +1455,9 @@ export default function Bookings() {
 
                 {/* Amount input with mode toggle */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <Label>Invoice Amount <span className="text-red-500">*</span></Label>
-                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                    <div className="flex rounded-lg border overflow-hidden text-xs shrink-0">
                       {(['amount', 'percent'] as const).map(m => (
                         <button
                           key={m}
@@ -1543,8 +1548,9 @@ export default function Bookings() {
                   )}
                 </div>
 
-                {/* Bill To — AGENT bookings only, only relevant when an actual invoice doc is produced */}
+                {/* Bill To + Agent Commission — AGENT bookings only, only relevant when an actual invoice doc is produced */}
                 {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Bill To</Label>
                     <div className="flex rounded-lg border overflow-hidden text-xs">
@@ -1568,10 +1574,7 @@ export default function Bookings() {
                       {payBillTo === 'AGENT' ? 'Invoice will be addressed to the agent company.' : 'Invoice will be addressed directly to the guest.'}
                     </p>
                   </div>
-                )}
 
-                {/* Show Agent Commission — AGENT bookings only, only relevant when an actual invoice doc is produced */}
-                {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
                   <div className="space-y-2">
                     <Label>Agent Commission on Invoice</Label>
                     <div className="flex rounded-lg border overflow-hidden text-xs">
@@ -1609,27 +1612,39 @@ export default function Bookings() {
                       </div>
                     )}
                   </div>
+                </div>
                 )}
 
-                {/* Payment Method */}
-                <div className="space-y-1.5">
-                  <Label>Payment Method</Label>
-                  <Select value={payMethod} onValueChange={setPayMethod}>
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder="Select method..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                      <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
-                      <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
-                      <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
-                      <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
-                      <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Credit Card">Credit Card</SelectItem>
-                      <SelectItem value="PayPal">PayPal</SelectItem>
-                    </SelectContent>
-                  </Select>
+                {/* Payment Date + Payment Method side by side — both compact single-line fields */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Payment Date <span className="text-red-500">*</span></Label>
+                    <Input
+                      type="date"
+                      value={payDate}
+                      onChange={e => setPayDate(e.target.value)}
+                      max={new Date().toISOString().slice(0, 10)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Payment Method</Label>
+                    <Select value={payMethod} onValueChange={setPayMethod}>
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder="Select method..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
+                        <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
+                        <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
+                        <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
+                        <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                        <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Credit Card">Credit Card</SelectItem>
+                        <SelectItem value="PayPal">PayPal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {payMode === 'existing' && (
@@ -1673,7 +1688,7 @@ export default function Bookings() {
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
                   <Button
-                    disabled={paymentSaving || previewAmt <= 0 || (payMode === 'existing' && (!payLinkedId || !payProof))}
+                    disabled={paymentSaving || previewAmt <= 0 || !payDate || (payMode === 'existing' && (!payLinkedId || !payProof))}
                     onClick={submitPayment}
                     style={{ backgroundColor: ACCENT, color: 'white' }}
                     className="hover:opacity-90"

@@ -43,7 +43,22 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       },
     }))
     if (!payment) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json(payment)
+
+    // Sibling payments on the same booking — confirmed ones (plus this one) form the
+    // itemized "Deposit / Second / Balance Payment" history shown on the invoice.
+    // Sorted in JS (not SQL) since older rows predate paymentDate and would otherwise
+    // be shoved to one end by Postgres' NULLS LAST/FIRST default.
+    const siblings = await withRetry(db, () => db.payment.findMany({
+      where: {
+        bookingId: payment.bookingId,
+        OR: [{ status: 'confirmed' }, { id: payment.id }],
+      },
+      select: { id: true, amount: true, paymentDate: true, createdAt: true, status: true },
+    }))
+    const history = siblings.sort((a, b) =>
+      (a.paymentDate ?? a.createdAt).getTime() - (b.paymentDate ?? b.createdAt).getTime())
+
+    return NextResponse.json({ ...payment, history })
   } catch (error) {
     console.error('Error fetching payment:', error)
     return NextResponse.json({ error: 'Failed to fetch payment' }, { status: 500 })
