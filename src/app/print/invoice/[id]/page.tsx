@@ -43,7 +43,7 @@ interface PaymentDetail {
   hasDocument?: boolean
   bank?: BankDetail | null
   paymentLink?: string | null
-  history?: Array<{ id: string; amount: number; paymentDate: string | null; createdAt: string; status: string }>
+  history?: Array<{ id: string; amount: number; paymentDate: string | null; createdAt: string; status: string; currency: string; exchangeRate: number | null }>
   booking: {
     bookingCode: string
     tripType: string
@@ -177,6 +177,20 @@ export default function InvoicePage() {
     if (isIDR) return `Rp ${local.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
     return `${currSymbol} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
+  // Plain USD — used for history rows that never had their own conversion rate recorded.
+  const fmtUSD = (usd: number) => `$ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  // Each history row keeps its OWN currency/rate (every payment on a booking can be received
+  // in a different currency) — only convert a row if it actually has that rate recorded;
+  // otherwise show it plain in USD rather than borrowing this invoice's currency/rate.
+  const fmtHistoryAmt = (h: { amount: number; currency: string; exchangeRate: number | null }) => {
+    if (h.currency && h.currency !== 'USD' && h.exchangeRate) {
+      const sym = CURRENCY_SYMBOLS[h.currency] || h.currency
+      const local = h.amount * h.exchangeRate
+      if (h.currency === 'IDR') return `Rp ${local.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
+      return `${sym} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }
+    return fmtUSD(h.amount)
+  }
 
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount
@@ -198,11 +212,12 @@ export default function InvoicePage() {
   // the package total.
   const ORDINALS = ['Deposit', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
   const ordinalPayment = (n: number) => `${ORDINALS[n - 1] ?? `${n}th`} Payment`
-  let cumulative = 0
-  const historyRows = (payment.history ?? []).map((h, i) => {
-    cumulative += h.amount
-    return { ...h, ordinal: i + 1, cumAfter: cumulative }
-  })
+  type HistoryEntry = NonNullable<PaymentDetail['history']>[number] & { ordinal: number; cumAfter: number }
+  const historyRows = (payment.history ?? []).reduce<HistoryEntry[]>((acc, h, i) => {
+    const cumAfter = (acc[i - 1]?.cumAfter ?? 0) + h.amount
+    acc.push({ ...h, ordinal: i + 1, cumAfter })
+    return acc
+  }, [])
   const currentRow      = historyRows.find(h => h.id === payment.id)
   const isClosingPayment = !!currentRow && currentRow.cumAfter >= afterDiscount - 0.01
   const priorRows        = historyRows.filter(h => h.id !== payment.id)
@@ -501,7 +516,7 @@ export default function InvoicePage() {
                 <span style={{ color: '#6b7280', fontSize: 10, fontStyle: 'italic' }}>
                   {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}
                 </span>
-                <span style={{ color: '#059669', fontSize: 10, fontWeight: 600 }}>{fmtAmt(h.amount)}</span>
+                <span style={{ color: '#059669', fontSize: 10, fontWeight: 600 }}>{fmtHistoryAmt(h)}</span>
               </div>
             ))}
 

@@ -86,6 +86,7 @@ interface PaymentRecord {
   previouslyPaid: number
   amount: number
   currency: string
+  exchangeRate?: number | null
   status: string
   notes?: string
   hasProof?: boolean
@@ -245,6 +246,12 @@ export default function Bookings() {
   const [payLinkedId,     setPayLinkedId]     = useState('')
   const [payProof,        setPayProof]        = useState<string | null>(null)
   const [payDate,         setPayDate]         = useState('')
+  const [payCurrency,     setPayCurrency]     = useState<CurrencyCode>('USD')
+  const [payExchangeRate, setPayExchangeRate] = useState(1)
+  // The linked invoice's own currency/rate — kept aside so "existing" mode can still offer
+  // "type it in USD instead" without losing the invoice's rate when toggled back.
+  const [payLinkedCurrency,     setPayLinkedCurrency]     = useState<CurrencyCode>('USD')
+  const [payLinkedExchangeRate, setPayLinkedExchangeRate] = useState(1)
 
   /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
@@ -642,6 +649,13 @@ export default function Bookings() {
   const eligibleParentInvoices = (bookingId: string) =>
     payments.filter(p => p.bookingId === bookingId && p.hasDocument !== false && ['invoice_ready', 'pending_confirmation', 'confirmed'].includes(p.status))
 
+  const bookingDefaultCurrency = (b: BookingRecord): [CurrencyCode, number] => {
+    const curRaw = b.currency ?? 'USD'
+    const cur: CurrencyCode = curRaw in CURRENCIES ? (curRaw as CurrencyCode) : 'USD'
+    const rate = cur === 'USD' ? 1 : (b.exchangeRate && b.exchangeRate > 0 ? b.exchangeRate : parseFloat((1 / CURRENCIES[cur].rateToUSD).toFixed(cur === 'IDR' ? 0 : 4)))
+    return [cur, rate]
+  }
+
   const openPayment = (b: BookingRecord) => {
     setPaymentBooking(b)
     setPaymentNotes('')
@@ -656,6 +670,11 @@ export default function Bookings() {
     setPayLinkedId('')
     setPayProof(null)
     setPayDate(new Date().toISOString().slice(0, 10))
+    const [bCur, bRate] = bookingDefaultCurrency(b)
+    setPayCurrency(bCur)
+    setPayExchangeRate(bRate)
+    setPayLinkedCurrency('USD')
+    setPayLinkedExchangeRate(1)
   }
   const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -671,19 +690,20 @@ export default function Bookings() {
   const submitPayment = async () => {
     if (!paymentBooking) return
     setPaymentSaving(true)
-    const rate = paymentBooking.exchangeRate ?? 1
-    const hasIDR = paymentBooking.currency === 'IDR' && rate > 1
     const remaining = Math.max(0, netBook(paymentBooking) - paymentBooking.depositPaid)
     let amount = 0
     if (payAmtMode === 'amount') {
       const raw = parseFloat(payAmtValue.replace(/,/g, '')) || 0
-      amount = raw
+      // Nominal is entered in payCurrency — convert to USD, the currency every stored
+      // balance figure (remaining, depositPaid, amount) is denominated in.
+      amount = payCurrency !== 'USD' ? (payExchangeRate > 0 ? raw / payExchangeRate : 0) : raw
     } else {
       const pct = Math.min(100, Math.max(0, parseFloat(payPctValue) || 0))
       amount = Math.round(remaining * pct / 100 * 100) / 100
     }
     if (amount <= 0 || amount > remaining) { setPaymentSaving(false); return }
     if (!payDate) { setPaymentSaving(false); return }
+    if (payCurrency !== 'USD' && payExchangeRate <= 0) { setPaymentSaving(false); return }
     if (payMode === 'existing' && (!payLinkedId || !payProof)) { setPaymentSaving(false); return }
     try {
       const res = await fetch('/api/payments', {
@@ -698,6 +718,8 @@ export default function Bookings() {
               proofOfTransfer: payProof,
               paymentMethod: payMethod || undefined,
               paymentDate: payDate || undefined,
+              currency: payCurrency,
+              exchangeRate: payCurrency !== 'USD' ? payExchangeRate : undefined,
             })
           : JSON.stringify({
               bookingId: paymentBooking.id,
@@ -708,6 +730,8 @@ export default function Bookings() {
               showNetAmount: paymentBooking.source === 'AGENT' ? payShowNet : undefined,
               showCommissionNote: paymentBooking.source === 'AGENT' ? (payShowNet && payShowNote) : undefined,
               paymentDate: payDate || undefined,
+              currency: payCurrency,
+              exchangeRate: payCurrency !== 'USD' ? payExchangeRate : undefined,
             }),
       })
       if (res.ok) {
@@ -1358,10 +1382,15 @@ export default function Bookings() {
             const pct       = parseFloat(payPctValue) || 0
             const amtFromPct = Math.round(remaining * pct / 100 * 100) / 100
             const rawInput   = parseFloat(payAmtValue.replace(/,/g, '')) || 0
-            const amtDirect  = rawInput
+            // Amount mode: rawInput is denominated in payCurrency — convert to USD (the currency
+            // every internal balance figure — remaining, depositPaid, totalPrice — is stored in).
+            const amtDirect  = payCurrency !== 'USD'
+              ? (payExchangeRate > 0 ? rawInput / payExchangeRate : 0)
+              : rawInput
             const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
             const fmtD  = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             const fmtIDR = (n: number) => `Rp ${Math.round(n * rate).toLocaleString('id-ID')}`
+            const payCurr = CURRENCIES[payCurrency]
             return (
               <>
                 <DialogHeader>
@@ -1380,7 +1409,14 @@ export default function Bookings() {
                         <button
                           key={opt.v}
                           type="button"
-                          onClick={() => { setPayMode(opt.v); setPayLinkedId(''); setPayProof(null) }}
+                          onClick={() => {
+                            setPayMode(opt.v)
+                            setPayLinkedId('')
+                            setPayProof(null)
+                            const [bCur, bRate] = bookingDefaultCurrency(paymentBooking)
+                            setPayCurrency(bCur)
+                            setPayExchangeRate(bRate)
+                          }}
                           className={`flex-1 py-2 px-3 font-medium transition-colors ${payMode === opt.v ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
                           style={payMode === opt.v ? { backgroundColor: ACCENT } : {}}
                         >
@@ -1393,7 +1429,23 @@ export default function Bookings() {
                         <p className="text-[11px] text-muted-foreground">
                           No new invoice document is generated — attach proof of transfer now, Finance confirms it like any other payment.
                         </p>
-                        <Select value={payLinkedId} onValueChange={setPayLinkedId}>
+                        <Select
+                          value={payLinkedId}
+                          onValueChange={id => {
+                            setPayLinkedId(id)
+                            // Inherit currency + rate from the invoice this DP is attached to —
+                            // it doesn't make sense to record it in a different currency.
+                            const inv = eligibleParentInvoices(paymentBooking.id).find(p => p.id === id)
+                            const curRaw = inv?.currency ?? 'USD'
+                            const cur: CurrencyCode = curRaw in CURRENCIES ? (curRaw as CurrencyCode) : 'USD'
+                            const rate = cur === 'USD' ? 1 : (inv?.exchangeRate && inv.exchangeRate > 0 ? inv.exchangeRate : parseFloat((1 / CURRENCIES[cur].rateToUSD).toFixed(cur === 'IDR' ? 0 : 4)))
+                            setPayLinkedCurrency(cur)
+                            setPayLinkedExchangeRate(rate)
+                            setPayCurrency(cur)
+                            setPayExchangeRate(rate)
+                            setPayAmtValue('')
+                          }}
+                        >
                           <SelectTrigger className="text-sm">
                             <SelectValue placeholder="Select invoice to add this DP to..." />
                           </SelectTrigger>
@@ -1474,8 +1526,74 @@ export default function Bookings() {
 
                   {payAmtMode === 'amount' ? (
                     <div className="space-y-1.5">
+                      {/* Currency the payment was actually received in.
+                          "existing" mode inherits it from the invoice being added to (set by the
+                          Select above) — sales shouldn't record a DP in a different currency than
+                          the invoice it's attached to, so no manual picker there. */}
+                      {payMode === 'new' ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => {
+                                const newRate = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
+                                setPayExchangeRate(newRate)
+                                setPayCurrency(c)
+                                setPayAmtValue('')
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              style={payCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
+                            >
+                              {CURRENCIES[c].symbol} {c}
+                            </button>
+                          ))}
+                          {payCurrency !== 'USD' && (
+                            <div className="flex items-center gap-1 ml-1">
+                              <span className="text-[11px] text-muted-foreground">1 USD =</span>
+                              <input
+                                type="number"
+                                min="0.000001"
+                                step={payCurrency === 'IDR' ? 100 : 0.0001}
+                                value={payExchangeRate}
+                                onChange={e => {
+                                  const r = parseFloat(e.target.value)
+                                  if (r > 0) setPayExchangeRate(r)
+                                }}
+                                className="w-24 text-[11px] border rounded px-1.5 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
+                                style={{ borderColor: `${ACCENT}60` }}
+                              />
+                              <span className="text-[11px] text-muted-foreground font-medium">{payCurrency}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : payLinkedCurrency !== 'USD' && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {([payLinkedCurrency, 'USD'] as CurrencyCode[]).map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => {
+                                setPayCurrency(c)
+                                setPayExchangeRate(c === payLinkedCurrency ? payLinkedExchangeRate : 1)
+                                setPayAmtValue('')
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              style={payCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
+                            >
+                              {CURRENCIES[c].symbol} {c}
+                            </button>
+                          ))}
+                          <span className="text-[11px] text-muted-foreground">
+                            {payCurrency !== 'USD'
+                              ? `1 USD = ${payExchangeRate.toLocaleString('en-US')} ${payCurrency} — from the selected invoice`
+                              : 'typed directly in USD'}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                        <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">{payCurr.symbol}</span>
                         <Input
                           type="text"
                           inputMode="decimal"
@@ -1484,12 +1602,19 @@ export default function Bookings() {
                           onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, '')
                             const val = parseFloat(raw) || 0
-                            setPayAmtValue(val > remaining ? String(remaining) : raw)
+                            const maxLocal = payCurrency !== 'USD' ? remaining * payExchangeRate : remaining
+                            setPayAmtValue(val > maxLocal ? String(Math.round(maxLocal * 100) / 100) : raw)
                           }}
-                          className="pl-7"
+                          className="pl-8"
                         />
                       </div>
-                      {hasIDR && rawInput > 0 && (
+                      {payCurrency !== 'USD' && rawInput > 0 && (
+                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">≈ USD equivalent</span>
+                          <span className="font-semibold text-amber-700">{fmtD(amtDirect)}</span>
+                        </div>
+                      )}
+                      {payCurrency === 'USD' && hasIDR && rawInput > 0 && (
                         <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
                           <span className="text-muted-foreground">Equivalent (IDR)</span>
                           <span className="font-semibold text-amber-700">{fmtIDR(rawInput)}</span>

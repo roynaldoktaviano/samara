@@ -53,7 +53,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         bookingId: payment.bookingId,
         OR: [{ status: 'confirmed' }, { id: payment.id }],
       },
-      select: { id: true, amount: true, paymentDate: true, createdAt: true, status: true },
+      select: { id: true, amount: true, paymentDate: true, createdAt: true, status: true, currency: true, exchangeRate: true },
     }))
     const history = siblings.sort((a, b) =>
       (a.paymentDate ?? a.createdAt).getTime() - (b.paymentDate ?? b.createdAt).getTime())

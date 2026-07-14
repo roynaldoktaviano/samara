@@ -90,8 +90,15 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, paymentDate } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, paymentDate, currency, exchangeRate } = body
     const parsedPaymentDate = paymentDate ? new Date(paymentDate) : new Date()
+    // Currency the payment was actually received in — amount is always stored in USD;
+    // currency/exchangeRate are display metadata (see print/invoice page's toLocal()).
+    const paymentCurrency = (typeof currency === 'string' && currency) ? currency.toUpperCase() : 'USD'
+    const paymentExchangeRate = paymentCurrency === 'USD' ? null : (typeof exchangeRate === 'number' && exchangeRate > 0 ? exchangeRate : null)
+    if (paymentCurrency !== 'USD' && !paymentExchangeRate) {
+      return NextResponse.json({ error: 'A valid exchange rate is required for non-USD currency' }, { status: 400 })
+    }
 
     if (!bookingId) {
       return NextResponse.json({ error: 'Missing bookingId' }, { status: 400 })
@@ -141,7 +148,8 @@ export async function POST(request: NextRequest) {
           previouslyPaid,
           amount,
           paymentDate: parsedPaymentDate,
-          currency: 'USD',
+          currency: paymentCurrency,
+          exchangeRate: paymentExchangeRate,
           notes: notes || null,
           status: 'pending_confirmation',
           proofOfTransfer,
@@ -194,7 +202,8 @@ export async function POST(request: NextRequest) {
         previouslyPaid,
         amount,
         paymentDate: parsedPaymentDate,
-        currency: 'USD',
+        currency: paymentCurrency,
+        exchangeRate: paymentExchangeRate,
         notes: notes || null,
         status: 'requested',
         submittedByUserId,
