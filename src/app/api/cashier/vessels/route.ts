@@ -9,7 +9,7 @@ export async function GET() {
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const yachts = await withRetry(() => db.yacht.findMany({
+  const yachts = await withRetry(db, () => db.yacht.findMany({
     where: {
       deletedAt: null,
       stockLocations: { some: { type: 'VESSEL', isActive: true } },

@@ -690,14 +690,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }
 
   const addPlaceholderGuest = async () => {
-    const num = guests.length + 1
-    const name = `Tamu ${num} (TBD)`
+    const leadGuest = guests.find(g => g.isLead)
+    if (!leadGuest) return
+    const leadName = leadGuest.name
+    const num = guests.filter(g => g.isPlaceholder).length + 1
+    const name = `${leadName} - TBD ${num}`
     setPlaceholderSaving(true)
     try {
       const res = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, firstName: `Tamu ${num}`, lastName: 'TBD' }),
+        body: JSON.stringify({ name, firstName: leadName, lastName: `TBD ${num}` }),
       })
       if (!res.ok) return
       const created = await res.json() as CustomerOpt
@@ -2007,19 +2010,27 @@ notes:         resolvedNotes,
           )}
 
           {/* Add placeholder guest button */}
-          {!showQuickAdd && (
-            <button
-              type="button"
-              disabled={placeholderSaving}
-              onMouseDown={e => { e.preventDefault(); addPlaceholderGuest() }}
-              className="mt-1 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-1 py-1 rounded transition-colors disabled:opacity-50"
-            >
-              {placeholderSaving
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Plus className="h-3 w-3" />}
-              Tambah tamu (nama belum diketahui)
-            </button>
-          )}
+          {!showQuickAdd && (() => {
+            const hasLead = guests.some(g => g.isLead)
+            return (
+              <div className="mt-1">
+                <button
+                  type="button"
+                  disabled={placeholderSaving || !hasLead}
+                  onMouseDown={e => { e.preventDefault(); addPlaceholderGuest() }}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-1 py-1 rounded transition-colors disabled:opacity-50 disabled:hover:text-muted-foreground"
+                >
+                  {placeholderSaving
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <Plus className="h-3 w-3" />}
+                  Add guest (name unknown)
+                </button>
+                {!hasLead && (
+                  <p className="text-[11px] text-muted-foreground px-1">Add a lead guest first</p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Inline quick-add form */}
           {showQuickAdd && (() => {

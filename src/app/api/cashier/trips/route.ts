@@ -31,14 +31,14 @@ export async function GET(request: NextRequest) {
   }
 
   const [openTrips, charterBookings] = await Promise.all([
-    withRetry(() => db.openTrip.findMany({
+    withRetry(db, () => db.openTrip.findMany({
       where: { yachtId, startDate: { lte: todayEnd }, endDate: { gte: today } },
       include: {
         bookings: { where: { status: { not: 'cancelled' } }, include: guestInclude },
       },
       orderBy: { startDate: 'asc' },
     })),
-    withRetry(() => db.booking.findMany({
+    withRetry(db, () => db.booking.findMany({
       where: { yachtId, tripType: 'PRIVATE_CHARTER', status: { not: 'cancelled' }, startDate: { lte: todayEnd }, endDate: { gte: today } },
       include: guestInclude,
       orderBy: { startDate: 'asc' },

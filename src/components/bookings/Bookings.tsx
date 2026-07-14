@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
@@ -16,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
-  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, Clock, Users,
+  SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, ChevronLeft, Clock, Users,
   Link2, Copy, Check, ExternalLink, Crown, FileCheck,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -129,7 +131,8 @@ const STATUS_STYLES: Record<string, string> = {
   pending:        'bg-yellow-100  text-yellow-700  border-yellow-200',
   partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
   fully_paid:     'bg-red-100     text-red-700     border-red-200',
-  completed:      'bg-purple-100  text-purple-700  border-purple-200',
+  on_trip:        'bg-slate-100   text-slate-600   border-slate-200',
+  completed:      'bg-slate-100   text-slate-600   border-slate-200',
   cancelled:      'bg-slate-100   text-slate-500   border-slate-200',
   confirmed:      'bg-red-100     text-red-700     border-red-200',
 }
@@ -138,6 +141,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending:        'Pending',
   partially_paid: 'Partially Paid',
   fully_paid:     'Fully Paid',
+  on_trip:        'On Trip',
   completed:      'Completed',
   cancelled:      'Cancelled',
   confirmed:      'Confirmed',
@@ -169,6 +173,24 @@ const getDays = (s: string, e: string) =>
 const fmtAmt = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+function FilterDropdown({ value, onValueChange, placeholder, active, activeClass, children }: {
+  value: string
+  onValueChange: (v: string) => void
+  placeholder: string
+  active: boolean
+  activeClass: string
+  children: React.ReactNode
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-full truncate ${active ? activeClass : ''}`}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>{children}</SelectContent>
+    </Select>
+  )
+}
+
 /* ─── Component ─────────────────────────────────────────────────────────── */
 export default function Bookings() {
   const { data: session } = useSession()
@@ -184,6 +206,12 @@ export default function Bookings() {
   const [typeFilter,   setTypeFilter]  = useState('all')
   const [dateFrom,     setDateFrom]    = useState('')
   const [dateTo,       setDateTo]      = useState('')
+  const [yachtFilter,  setYachtFilter] = useState('all')
+  const [yearFilter,   setYearFilter]  = useState('all')
+  const [monthFilter,  setMonthFilter] = useState('all')
+  const [salesFilter,  setSalesFilter] = useState('all')
+  const [currentPage,  setCurrentPage] = useState(1)
+  const PAGE_SIZE = 10
   const [wizardOpen,        setWizardOpen]        = useState(false)
   const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
   const [editBooking,       setEditBooking]       = useState<BookingRecord | null>(null)
@@ -906,8 +934,37 @@ export default function Bookings() {
   }
 
   /* ── filters ── */
-  const hasActiveFilter = statusFilter !== 'all' || sourceFilter !== 'all' || typeFilter !== 'all' || !!dateFrom || !!dateTo || !!searchTerm
-  const clearFilters = () => { setSearchTerm(''); setStatusFilter('all'); setSourceFilter('all'); setTypeFilter('all'); setDateFrom(''); setDateTo('') }
+  const yachtOptions = React.useMemo(() => {
+    const map = new Map<string, string>()
+    bookings.forEach(b => { if (b.yacht?.id) map.set(b.yacht.id, b.yacht.name) })
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [bookings])
+
+  const yearOptions = React.useMemo(() => {
+    const years = new Set<string>()
+    bookings.forEach(b => years.add(new Date(b.startDate).getFullYear().toString()))
+    return Array.from(years).sort((a, b) => Number(b) - Number(a))
+  }, [bookings])
+
+  const salesOptions = React.useMemo(() => {
+    const names = new Set<string>()
+    bookings.forEach(b => { const n = b.salespersonUser?.name ?? b.salesperson; if (n) names.add(n) })
+    return Array.from(names).sort()
+  }, [bookings])
+
+  const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+  const activeFilterCount = [
+    statusFilter !== 'all', sourceFilter !== 'all', typeFilter !== 'all', yachtFilter !== 'all',
+    yearFilter !== 'all', monthFilter !== 'all', salesFilter !== 'all', !!dateFrom, !!dateTo, !!searchTerm,
+  ].filter(Boolean).length
+  const hasActiveFilter = activeFilterCount > 0
+  const clearFilters = () => {
+    setSearchTerm(''); setStatusFilter('all'); setSourceFilter('all'); setTypeFilter('all')
+    setYachtFilter('all'); setYearFilter('all'); setMonthFilter('all'); setSalesFilter('all')
+    setDateFrom(''); setDateTo('')
+    setCurrentPage(1)
+  }
 
   const filtered = bookings.filter(b => {
     const q = searchTerm.toLowerCase()
@@ -920,6 +977,11 @@ export default function Bookings() {
     const matchStatus = statusFilter === 'all' || b.status === statusFilter
     const matchSource = sourceFilter === 'all' || b.source === sourceFilter
     const matchType   = typeFilter   === 'all' || b.tripType === typeFilter
+    const matchYacht  = yachtFilter  === 'all' || b.yacht?.id === yachtFilter
+    const start       = new Date(b.startDate)
+    const matchYear   = yearFilter  === 'all' || start.getFullYear().toString() === yearFilter
+    const matchMonth  = monthFilter === 'all' || (start.getMonth() + 1).toString() === monthFilter
+    const matchSales  = salesFilter === 'all' || (b.salespersonUser?.name ?? b.salesperson) === salesFilter
     const matchDate   = (() => {
       if (!dateFrom && !dateTo) return true
       const s = b.startDate.split('T')[0]
@@ -928,8 +990,14 @@ export default function Bookings() {
       if (dateTo   && s > dateTo)   return false
       return true
     })()
-    return matchSearch && matchStatus && matchSource && matchType && matchDate
+    return matchSearch && matchStatus && matchSource && matchType && matchYacht && matchYear && matchMonth && matchSales && matchDate
   })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage   = Math.min(currentPage, totalPages)
+  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const withPageReset = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setCurrentPage(1) }
 
   const isDepositOverdue = (b: BookingRecord) =>
     b.status === 'pending' && !!b.depositDueDate && new Date(b.depositDueDate) < new Date()
@@ -1010,107 +1078,124 @@ export default function Bookings() {
                 {loading ? 'Loading…' : `${filtered.length} of ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`}
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span className="font-medium">Filters</span>
-              {hasActiveFilter && (
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors text-[11px] font-semibold"
-                >
-                  <X className="h-3 w-3" /> Clear all
-                </button>
-              )}
-            </div>
-          </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: ACCENT }}>
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 sm:w-96 p-4 space-y-3 max-h-[80vh] overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">Filters</span>
+                  {hasActiveFilter && (
+                    <button
+                      onClick={clearFilters}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors text-[11px] font-semibold"
+                    >
+                      <X className="h-3 w-3" /> Clear all
+                    </button>
+                  )}
+                </div>
 
-          {/* Filter row 1: search */}
-          <div className="relative mt-3">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by code, customer, yacht, agent..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
-            {searchTerm && (
-              <button className="absolute right-2.5 top-2.5" onClick={() => setSearchTerm('')}>
-                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-              </button>
-            )}
-          </div>
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by code, customer, yacht, agent..."
+                    value={searchTerm}
+                    onChange={e => withPageReset(setSearchTerm)(e.target.value)}
+                    className="pl-9 h-9 text-sm"
+                  />
+                  {searchTerm && (
+                    <button className="absolute right-2.5 top-2.5" onClick={() => setSearchTerm('')}>
+                      <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  )}
+                </div>
 
-          {/* Filter row 2: dropdowns + date range */}
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {/* Trip Type */}
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-32 sm:w-[148px] ${typeFilter !== 'all' ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : ''}`}>
-                  <SelectValue placeholder="Trip Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="PRIVATE_CHARTER">Private Charter</SelectItem>
-                  <SelectItem value="OPEN_TRIP">Open Trip</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                {/* Dropdown filters */}
+                <div className="grid grid-cols-2 gap-2">
+                  <FilterDropdown value={typeFilter} onValueChange={withPageReset(setTypeFilter)}
+                    placeholder="Trip Type" active={typeFilter !== 'all'} activeClass="border-violet-400 bg-violet-50 text-violet-700 font-semibold">
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="PRIVATE_CHARTER">Private Charter</SelectItem>
+                    <SelectItem value="OPEN_TRIP">Open Trip</SelectItem>
+                  </FilterDropdown>
 
-            {/* Status */}
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-32 sm:w-[148px] ${statusFilter !== 'all' ? 'border-amber-400 bg-amber-50 text-amber-700 font-semibold' : ''}`}>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="partially_paid">Partially Paid</SelectItem>
-                  <SelectItem value="fully_paid">Fully Paid</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                  <FilterDropdown value={statusFilter} onValueChange={withPageReset(setStatusFilter)}
+                    placeholder="Status" active={statusFilter !== 'all'} activeClass="border-amber-400 bg-amber-50 text-amber-700 font-semibold">
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                    <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </FilterDropdown>
 
-            {/* Source */}
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger className={`h-8 text-xs pr-2 border rounded-lg w-28 sm:w-[120px] ${sourceFilter !== 'all' ? 'border-sky-400 bg-sky-50 text-sky-700 font-semibold' : ''}`}>
-                  <SelectValue placeholder="Source" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sources</SelectItem>
-                  <SelectItem value="DIRECT">Direct</SelectItem>
-                  <SelectItem value="AGENT">Agent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                  <FilterDropdown value={sourceFilter} onValueChange={withPageReset(setSourceFilter)}
+                    placeholder="Source" active={sourceFilter !== 'all'} activeClass="border-sky-400 bg-sky-50 text-sky-700 font-semibold">
+                    <SelectItem value="all">All Sources</SelectItem>
+                    <SelectItem value="DIRECT">Direct</SelectItem>
+                    <SelectItem value="AGENT">Agent</SelectItem>
+                  </FilterDropdown>
 
-            {/* Date range */}
-            <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground hidden sm:inline">Trip date</span>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className={`h-8 text-xs w-32 sm:w-36 ${dateFrom ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
-                title="From date"
-              />
-              <span className="text-xs text-muted-foreground">—</span>
-              <Input
-                type="date"
-                value={dateTo}
-                min={dateFrom}
-                onChange={e => setDateTo(e.target.value)}
-                className={`h-8 text-xs w-32 sm:w-36 ${dateTo ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
-                title="To date"
-              />
-            </div>
+                  <FilterDropdown value={yachtFilter} onValueChange={withPageReset(setYachtFilter)}
+                    placeholder="Yacht" active={yachtFilter !== 'all'} activeClass="border-cyan-400 bg-cyan-50 text-cyan-700 font-semibold">
+                    <SelectItem value="all">All Yachts</SelectItem>
+                    {yachtOptions.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}
+                  </FilterDropdown>
+
+                  <FilterDropdown value={yearFilter} onValueChange={withPageReset(setYearFilter)}
+                    placeholder="Year" active={yearFilter !== 'all'} activeClass="border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold">
+                    <SelectItem value="all">All Years</SelectItem>
+                    {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </FilterDropdown>
+
+                  <FilterDropdown value={monthFilter} onValueChange={withPageReset(setMonthFilter)}
+                    placeholder="Month" active={monthFilter !== 'all'} activeClass="border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold">
+                    <SelectItem value="all">All Months</SelectItem>
+                    {MONTH_LABELS.map((m, i) => <SelectItem key={m} value={(i + 1).toString()}>{m}</SelectItem>)}
+                  </FilterDropdown>
+
+                  {userRole === 'ADMIN' && (
+                    <FilterDropdown value={salesFilter} onValueChange={withPageReset(setSalesFilter)}
+                      placeholder="Salesperson" active={salesFilter !== 'all'} activeClass="border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700 font-semibold">
+                      <SelectItem value="all">All Salespeople</SelectItem>
+                      {salesOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </FilterDropdown>
+                  )}
+                </div>
+
+                {/* Trip date range */}
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Trip date</span>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={e => withPageReset(setDateFrom)(e.target.value)}
+                      className={`h-8 text-xs flex-1 ${dateFrom ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                      title="From date"
+                    />
+                    <span className="text-xs text-muted-foreground">—</span>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      min={dateFrom}
+                      onChange={e => withPageReset(setDateTo)(e.target.value)}
+                      className={`h-8 text-xs flex-1 ${dateTo ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                      title="To date"
+                    />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </CardHeader>
         <CardContent>
@@ -1144,7 +1229,7 @@ export default function Bookings() {
                         : 'No bookings match the current filters.'}
                     </TableCell>
                   </TableRow>
-                ) : filtered.map(b => (
+                ) : paginated.map(b => (
                   <TableRow key={b.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(b)}>
                     <TableCell>
                       <div className="font-mono text-xs font-medium">{b.bookingCode}</div>
@@ -1167,7 +1252,7 @@ export default function Bookings() {
                     </TableCell>
                     <TableCell>
                       <div className="text-sm font-medium">
-                        {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : b.yacht?.name ?? '—'}
+                        {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : `Private Charter${b.yacht?.name ? ` - ${b.yacht.name}` : ''}`}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         <span>{fmtDate(b.startDate)}</span>
@@ -1199,9 +1284,14 @@ export default function Bookings() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[b.status] ?? 'bg-muted text-muted-foreground'}`}>
-                        {STATUS_LABELS[b.status] ?? b.status}
-                      </span>
+                      {(() => {
+                        const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+                        return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[effStatus] ?? 'bg-muted text-muted-foreground'}`}>
+                            {STATUS_LABELS[effStatus] ?? effStatus}
+                          </span>
+                        )
+                      })()}
                       {b.status === 'on_hold' && b.holdUntil && (() => {
                         const exp = new Date(b.holdUntil)
                         const expired = exp < new Date()
@@ -1223,6 +1313,32 @@ export default function Bookings() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination */}
+          {!loading && filtered.length > 0 && (
+            <div className="flex items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
+              <span>
+                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline" size="sm" className="h-7 px-2"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="font-medium text-foreground">{safePage} / {totalPages}</span>
+                <Button
+                  variant="outline" size="sm" className="h-7 px-2"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -2295,9 +2411,14 @@ export default function Bookings() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                      <span className={`text-[11px] font-semibold rounded-full px-3 py-1 ${STATUS_STYLES[db_.status] ?? 'bg-muted text-muted-foreground'}`}>
-                        {STATUS_LABELS[db_.status] ?? db_.status}
-                      </span>
+                      {(() => {
+                        const effStatus = getEffectiveBookingStatus(db_.status, db_.startDate, db_.endDate)
+                        return (
+                          <span className={`text-[11px] font-semibold rounded-full px-3 py-1 ${STATUS_STYLES[effStatus] ?? 'bg-muted text-muted-foreground'}`}>
+                            {STATUS_LABELS[effStatus] ?? effStatus}
+                          </span>
+                        )
+                      })()}
                       <button
                         onClick={() => setDetailBooking(null)}
                         className="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"

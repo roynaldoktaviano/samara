@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getSessionDb } from '@/lib/session-db'
+import { getDb } from '@/lib/get-db'
 import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const tenantDb = getSessionDb(session)
+  const tenantDb = await getDb(session)
   const users = await tenantDb.user.findMany({
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
@@ -32,13 +32,16 @@ export async function POST(req: Request) {
   if (!email || !password || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+  }
 
   // Only developer can create SUPER_ADMIN — never through this UI
   if (!ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
   }
 
-  const tenantDb = getSessionDb(session)
+  const tenantDb = await getDb(session)
 
   const normalizedEmail = email.toLowerCase().trim()
   const existing = await tenantDb.user.findUnique({ where: { email: normalizedEmail } })

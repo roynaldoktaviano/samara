@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/get-db'
+import { resolveTenantBySlug } from '@/lib/resolve-tenant'
 import { logActivity } from '@/lib/activity'
 
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
@@ -11,7 +11,6 @@ function pick(data: Record<string, unknown>, ...keys: string[]): string {
 }
 
 export async function POST(request: NextRequest) {
-  const db = await getDb()
   try {
     // ── Verify secret token ──────────────────────────────────────────────────
     const secret   = request.nextUrl.searchParams.get('secret')
@@ -19,6 +18,13 @@ export async function POST(request: NextRequest) {
     if (!expected || secret !== expected) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // ── Resolve which tenant this lead belongs to ────────────────────────────
+    // Each tenant's WordPress site should post to `?secret=...&tenant=<slug>`.
+    // Falls back to 'samara' when omitted, so existing form configs keep working.
+    const tenantSlug = request.nextUrl.searchParams.get('tenant')
+    const db = await resolveTenantBySlug(tenantSlug)
+    if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
 
     // ── Parse body (JSON or form-encoded) ────────────────────────────────────
     const contentType = request.headers.get('content-type') ?? ''

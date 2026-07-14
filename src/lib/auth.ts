@@ -43,6 +43,7 @@ export const authOptions: NextAuthOptions = {
         }).catch(() => null)
 
         if (centralUser?.isSuperAdmin && centralUser.password) {
+          if (!centralUser.isActive) { console.error('[auth] super admin account deactivated:', credentials.email); return null }
           const valid = await bcrypt.compare(credentials.password, centralUser.password)
           if (!valid) return null
           return {
@@ -61,12 +62,14 @@ export const authOptions: NextAuthOptions = {
 
         const userTenant = await centralDb.userTenant.findFirst({
           where: tenantWhere,
-          include: { tenant: { select: { id: true, slug: true, databaseUrl: true, logoUrl: true, features: true } }, user: true },
+          include: { tenant: { select: { id: true, slug: true, databaseUrl: true, logoUrl: true, features: true, isActive: true } }, user: true },
         }).catch((e) => { console.error('[auth] userTenant lookup error:', e.message ?? e); return null })
 
         console.log('[auth] email:', credentials.email, '| userTenant found:', !!userTenant, '| tenant slug:', userTenant?.tenant?.slug)
 
         if (userTenant) {
+          if (!userTenant.tenant.isActive) { console.error('[auth] tenant deactivated:', userTenant.tenant.slug); return null }
+          if (!userTenant.user.isActive) { console.error('[auth] central user deactivated:', credentials.email); return null }
           // Verify against tenant DB
           const tenantDb = getTenantDb(userTenant.tenant.databaseUrl)
           const tenantUser = await tenantDb.user.findUnique({
@@ -100,8 +103,10 @@ export const authOptions: NextAuthOptions = {
         // Resolve Samara tenant from central DB to get proper tenantId + databaseUrl
         const samaraTenant = await centralDb.tenant.findUnique({
           where: { slug: 'samara' },
-          select: { id: true, slug: true, databaseUrl: true, logoUrl: true, features: true },
+          select: { id: true, slug: true, databaseUrl: true, logoUrl: true, features: true, isActive: true },
         }).catch(() => null)
+
+        if (samaraTenant && !samaraTenant.isActive) { console.error('[auth] samara tenant deactivated'); return null }
 
         // Lazy migration: register user into central DB so future logins use tenantId
         if (samaraTenant) {

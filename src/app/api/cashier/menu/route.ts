@@ -13,19 +13,19 @@ export async function GET(request: NextRequest) {
   const yachtId = searchParams.get('yachtId')
   if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
 
-  const location = await withRetry(() => db.stockLocation.findFirst({
+  const location = await withRetry(db, () => db.stockLocation.findFirst({
     where: { yachtId, type: 'VESSEL', isActive: true },
     select: { id: true },
   }))
   if (!location) return NextResponse.json({ error: 'No vessel stock location for this yacht' }, { status: 404 })
 
   const [items, lots] = await Promise.all([
-    withRetry(() => db.purchaseItem.findMany({
+    withRetry(db, () => db.purchaseItem.findMany({
       where: { isActive: true, isSoldInPos: true, type: { in: ['FOOD', 'BEVERAGE'] } },
       select: { id: true, name: true, type: true, category: true, baseUnit: true, sellingPrice: true, imageKey: true },
       orderBy: [{ type: 'asc' }, { category: 'asc' }, { name: 'asc' }],
     })),
-    withRetry(() => db.stockLot.findMany({
+    withRetry(db, () => db.stockLot.findMany({
       where: { locationId: location.id },
       select: { itemId: true, quantity: true },
     })),

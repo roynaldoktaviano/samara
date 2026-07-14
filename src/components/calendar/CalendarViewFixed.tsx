@@ -16,6 +16,7 @@ import { BookingWizard } from '@/components/bookings/BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from '@/components/bookings/WaitingListManager'
 import { cn } from '@/lib/utils'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 
 interface BookingEvent {
   id: string
@@ -61,7 +62,8 @@ const STATUS_CONFIG = {
   on_hold:    { label: 'On Hold',    color: '#f97316' },
   confirmed:  { label: 'Confirmed',  color: '#22c55e' },
   pending:    { label: 'Pending',    color: '#f59e0b' },
-  completed:  { label: 'Completed', color: '#3b82f6' },
+  on_trip:    { label: 'On Trip',    color: '#94a3b8' },
+  completed:  { label: 'Completed', color: '#94a3b8' },
   cancelled:  { label: 'Cancelled', color: '#ef4444' },
 } as const
 
@@ -161,20 +163,24 @@ function MonthGrid({
     }
 
     const bookingBarColor = (status: string) => {
-      if (status === 'on_hold')                                                    return '#22c55e'  // green  — hold
-      if (status === 'pending')                                                    return '#eab308'  // yellow — waiting payment
-      if (['confirmed','partially_paid','fully_paid','completed'].includes(status)) return '#ef4444' // red    — booked/paid
+      if (status === 'on_hold')                                       return '#22c55e'  // green  — hold
+      if (status === 'pending')                                       return '#eab308'  // yellow — waiting payment
+      if (status === 'on_trip' || status === 'completed')              return '#94a3b8'  // grey   — trip underway / finished
+      if (['confirmed','partially_paid','fully_paid'].includes(status)) return '#ef4444' // red    — booked/paid
       return '#94a3b8'  // grey — cancelled / unknown
     }
 
-    bookings.forEach(b => addSegs(
+    bookings.forEach(b => {
+      const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+      addSegs(
       b.id,
-      [b.yachtName, b.customerName, b.salespersonUser?.name || b.salesperson, b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : undefined].filter(Boolean).join('  ·  '),
-      bookingBarColor(b.status), false, false,
+      [b.yachtName, b.customerName, b.salespersonUser?.name || b.salesperson, effStatus.charAt(0).toUpperCase() + effStatus.slice(1)].filter(Boolean).join('  ·  '),
+      bookingBarColor(effStatus), false, false,
       new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
       `[Charter] ${b.yachtName}${b.bookingCode ? ` · ${b.bookingCode}` : ''}${b.customerName ? ` · ${b.customerName}` : ''}${(b.salespersonUser?.name || b.salesperson) ? ` · Sales: ${b.salespersonUser?.name || b.salesperson}` : ''}`,
       b, undefined,
-    ))
+      )
+    })
 
     openTrips.forEach(t => {
       const isClosed    = t.status === 'closed'
@@ -414,10 +420,12 @@ function MonthGrid({
                         confirmed:      { bg: 'rgba(34,197,94,0.85)',  label: 'CONFIRMED' },
                         partially_paid: { bg: 'rgba(59,130,246,0.85)', label: 'PARTIAL'   },
                         fully_paid:     { bg: 'rgba(16,185,129,0.85)', label: 'PAID'      },
-                        completed:      { bg: 'rgba(139,92,246,0.85)', label: 'DONE'      },
+                        on_trip:        { bg: 'rgba(148,163,184,0.85)',label: 'ON TRIP'   },
+                        completed:      { bg: 'rgba(148,163,184,0.85)',label: 'COMPLETED' },
                         cancelled:      { bg: 'rgba(239,68,68,0.85)',  label: 'CANCELLED' },
                       }
-                      const sbadge = STATUS_BADGE[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
+                      const effStatus = getEffectiveBookingStatus(bk.status, bk.startDate, bk.endDate)
+                      const sbadge = STATUS_BADGE[effStatus] ?? { bg: 'rgba(0,0,0,0.25)', label: effStatus.toUpperCase() }
                       return (
                         /* Non-owned booking: show "Booked by [salesperson]" + status — no customer details */
                         <div style={{
@@ -527,10 +535,12 @@ function MonthGrid({
                             confirmed:       { bg: 'rgba(34,197,94,0.85)',   label: 'CONFIRMED' },
                             partially_paid:  { bg: 'rgba(59,130,246,0.85)',  label: 'PARTIAL'   },
                             fully_paid:      { bg: 'rgba(16,185,129,0.85)',  label: 'PAID'      },
-                            completed:       { bg: 'rgba(139,92,246,0.85)',  label: 'DONE'      },
+                            on_trip:         { bg: 'rgba(148,163,184,0.85)', label: 'ON TRIP'   },
+                            completed:       { bg: 'rgba(148,163,184,0.85)', label: 'COMPLETED' },
                             cancelled:       { bg: 'rgba(239,68,68,0.85)',   label: 'CANCELLED' },
                           }
-                          const sbadge = STATUS_BADGE[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
+                          const effStatus = getEffectiveBookingStatus(bk.status, bk.startDate, bk.endDate)
+                          const sbadge = STATUS_BADGE[effStatus] ?? { bg: 'rgba(0,0,0,0.25)', label: effStatus.toUpperCase() }
                           return (
                             <div style={{
                               position: 'absolute', inset: 0,
@@ -1804,7 +1814,9 @@ export default function CalendarView() {
                     : `No bookings in ${MONTH_FULL[leftMonth]} ${leftYear}.`}
                 </div>
               ) : (
-                listItems.map(b => (
+                listItems.map(b => {
+                  const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+                  return (
                   <button
                     key={b.id}
                     onClick={() => {
@@ -1818,7 +1830,7 @@ export default function CalendarView() {
                     }}
                     className="w-full flex items-center gap-3 rounded-lg border border-border px-3 sm:px-4 py-3 hover:bg-muted/40 transition-colors text-left"
                   >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[b.status]?.color ?? '#e8547a' }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color ?? '#e8547a' }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold truncate">{b.yachtName || b.customerName}</span>
@@ -1836,13 +1848,14 @@ export default function CalendarView() {
                       <div className="text-sm font-bold">USD {b.totalPrice?.toLocaleString() ?? '–'}</div>
                       <span
                         className="text-[10px] font-semibold rounded-full px-2 py-0.5 mt-0.5 inline-block"
-                        style={{ backgroundColor: STATUS_CONFIG[b.status]?.color + '22', color: STATUS_CONFIG[b.status]?.color }}
+                        style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color + '22', color: STATUS_CONFIG[effStatus]?.color }}
                       >
-                        {STATUS_CONFIG[b.status]?.label}
+                        {STATUS_CONFIG[effStatus]?.label}
                       </span>
                     </div>
                   </button>
-                ))
+                  )
+                })
               )
               })()}
             </div>
@@ -1862,12 +1875,15 @@ export default function CalendarView() {
                     <p className="text-xl font-semibold">{selectedBooking.yachtName}</p>
                     <DialogDescription>{selectedBooking.bookingCode} · {selectedBooking.customerName}</DialogDescription>
                   </div>
-                  {!isBookingEditing && (
-                    <span className="text-xs font-semibold rounded-full px-3 py-1 shrink-0"
-                      style={{ backgroundColor: STATUS_CONFIG[selectedBooking.status]?.color + '22', color: STATUS_CONFIG[selectedBooking.status]?.color }}>
-                      {STATUS_CONFIG[selectedBooking.status]?.label}
-                    </span>
-                  )}
+                  {!isBookingEditing && (() => {
+                    const effStatus = getEffectiveBookingStatus(selectedBooking.status, selectedBooking.startDate, selectedBooking.endDate)
+                    return (
+                      <span className="text-xs font-semibold rounded-full px-3 py-1 shrink-0"
+                        style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color + '22', color: STATUS_CONFIG[effStatus]?.color }}>
+                        {STATUS_CONFIG[effStatus]?.label}
+                      </span>
+                    )
+                  })()}
                 </div>
               </DialogHeader>
 

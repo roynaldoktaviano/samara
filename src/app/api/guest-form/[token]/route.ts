@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/get-db'
+import { resolveTenantByLookup } from '@/lib/resolve-tenant'
 import type { PrismaClient } from '@prisma/client'
 
 const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile'] as const
@@ -23,10 +23,10 @@ async function getGuest(db: PrismaClient, token: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
-  const customer = await getGuest(db, token)
-  if (!customer) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const found = await resolveTenantByLookup(client => getGuest(client, token))
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { db, record: customer } = found
   if (customer.guestFormExpiresAt && new Date(customer.guestFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
@@ -72,10 +72,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
-  const customer = await getGuest(db, token)
-  if (!customer) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const found = await resolveTenantByLookup(client => getGuest(client, token))
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { db, record: customer } = found
   if (customer.guestFormExpiresAt && new Date(customer.guestFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }

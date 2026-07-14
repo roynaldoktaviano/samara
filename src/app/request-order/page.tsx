@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Search, Plus, Minus, X, Trash2, ChevronsUpDown, Check, Camera,
   Package, ShoppingCart, Send, CheckCircle2, AlertTriangle, ImagePlus,
@@ -52,6 +53,18 @@ function compressImage(file: File): Promise<string> {
 }
 
 export default function RequestOrderPage() {
+  return (
+    <Suspense fallback={null}>
+      <RequestOrderContent />
+    </Suspense>
+  )
+}
+
+function RequestOrderContent() {
+  const searchParams = useSearchParams()
+  const tenantSlug = searchParams.get('tenant')
+  const tenantQS = tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : ''
+
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [employees, setEmployees] = useState<EmployeeLite[]>([])
   const [locations, setLocations] = useState<LocationLite[]>([])
@@ -80,16 +93,16 @@ export default function RequestOrderPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/hr/request-orders/catalog').then(r => r.json()),
-      fetch('/api/hr/request-orders/employees').then(r => r.json()),
-      fetch('/api/hr/request-orders/locations').then(r => r.json()),
+      fetch(`/api/hr/request-orders/catalog${tenantQS}`).then(r => r.json()),
+      fetch(`/api/hr/request-orders/employees${tenantQS}`).then(r => r.json()),
+      fetch(`/api/hr/request-orders/locations${tenantQS}`).then(r => r.json()),
     ]).then(([c, e, l]) => {
       setCatalog(Array.isArray(c) ? c : [])
       setEmployees(Array.isArray(e) ? e : [])
       setLocations(Array.isArray(l) ? l : [])
       setLoading(false)
     })
-  }, [])
+  }, [tenantQS])
 
   const categories = useMemo(() => {
     const inType = activeType === 'All' ? catalog : catalog.filter(i => i.type === activeType)
@@ -158,7 +171,7 @@ export default function RequestOrderPage() {
     if (!employeeId) { setSubmitError('Please select who is requesting'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     setSubmitting(true)
-    const res = await fetch('/api/hr/request-orders', {
+    const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,

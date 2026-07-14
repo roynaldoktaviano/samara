@@ -4,9 +4,15 @@ const clientCache = new Map<string, PrismaClient>()
 const MAX_CLIENTS = 20
 
 export function getTenantDb(databaseUrl: string): PrismaClient {
-  if (clientCache.has(databaseUrl)) return clientCache.get(databaseUrl)!
+  const existing = clientCache.get(databaseUrl)
+  if (existing) {
+    // Re-insert to mark as most-recently-used (Map iteration order = insertion order)
+    clientCache.delete(databaseUrl)
+    clientCache.set(databaseUrl, existing)
+    return existing
+  }
 
-  // Evict oldest client if at capacity
+  // Evict least-recently-used client if at capacity
   if (clientCache.size >= MAX_CLIENTS) {
     const oldest = clientCache.entries().next().value
     if (oldest) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, CalendarSearch, X, RotateCw } from 'lucide-react'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 
 /* ── Types ── */
 interface PublicBooking {
@@ -32,7 +33,8 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
   confirmed:      { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
   partially_paid: { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
   fully_paid:     { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
-  completed:      { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
+  on_trip:        { bg: '#f1f5f9', color: '#64748b', label: 'On Trip'              },
+  completed:      { bg: '#f1f5f9', color: '#64748b', label: 'Completed'            },
   cancelled:      { bg: '#f1f5f9', color: '#64748b', label: 'Cancelled'            },
 }
 const STATUS_BADGE_BAR: Record<string, { bg: string; label: string }> = {
@@ -41,7 +43,8 @@ const STATUS_BADGE_BAR: Record<string, { bg: string; label: string }> = {
   confirmed:      { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
   partially_paid: { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
   fully_paid:     { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
-  completed:      { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
+  on_trip:        { bg: 'rgba(148,163,184,0.85)', label: 'ON TRIP'              },
+  completed:      { bg: 'rgba(148,163,184,0.85)', label: 'COMPLETED'            },
   cancelled:      { bg: 'rgba(148,163,184,0.85)', label: 'CANCELLED'            },
 }
 
@@ -49,7 +52,8 @@ const STATUS_BADGE_BAR: Record<string, { bg: string; label: string }> = {
 function bookingBarColor(status: string) {
   if (status === 'on_hold') return '#22c55e'
   if (status === 'pending') return '#eab308'
-  if (['confirmed','partially_paid','fully_paid','completed'].includes(status)) return '#ef4444'
+  if (status === 'on_trip' || status === 'completed') return '#94a3b8'
+  if (['confirmed','partially_paid','fully_paid'].includes(status)) return '#ef4444'
   return '#94a3b8'
 }
 function buildColorMap(yachts: Yacht[]): Record<string, string> {
@@ -128,7 +132,10 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
       raw.push({ key: `${id}-w${wi}`, weekIdx: wi, startCol, endCol, isRealStart: start.getTime() === sDate.getTime(), isRealEnd: end.getTime() === eDate.getTime(), color, isStripe, label, bookingRef, openTripRef })
     })
   }
-  bookings.filter(b => b.tripType === 'PRIVATE_CHARTER').forEach(b => add(b.id, `${b.yachtName} · ${b.status.toUpperCase()}`, bookingBarColor(b.status), false, new Date(b.startDate.split('T')[0] + 'T00:00:00'), new Date(b.endDate.split('T')[0] + 'T00:00:00'), b, undefined))
+  bookings.filter(b => b.tripType === 'PRIVATE_CHARTER').forEach(b => {
+    const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+    add(b.id, `${b.yachtName} · ${effStatus.toUpperCase()}`, bookingBarColor(effStatus), false, new Date(b.startDate.split('T')[0] + 'T00:00:00'), new Date(b.endDate.split('T')[0] + 'T00:00:00'), b, undefined)
+  })
   openTrips.forEach(t => {
     const isFull  = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
     const otColor = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
@@ -274,14 +281,14 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
       if (allowOverwrite || !map[day]) map[day] = { color, id }
     }
     filteredBookings.filter(b => b.tripType === 'PRIVATE_CHARTER').forEach(b => {
-      const activeColor = bookingBarColor(b.status)
+      const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+      const activeColor = bookingBarColor(effStatus)
       const s = b.startDate.split('T')[0]
       const e = b.endDate.split('T')[0]
       for (let d = 1; d <= daysInMonth; d++) {
         const ds = dateStr(year, month, d)
         if (ds >= s && ds <= e) {
-          const isPast = s < todayDs
-          mark(d, isPast ? '#c8d4de' : activeColor, b.id)
+          mark(d, activeColor, b.id)
         }
       }
     })
@@ -562,23 +569,21 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                 )
               })}
               {eventsForDay.bookings.filter(b => b.tripType === 'PRIVATE_CHARTER').map(b => {
-                const todayDs   = new Date().toISOString().split('T')[0]
-                const isPastBk  = b.startDate.split('T')[0] < todayDs
-                const badge     = isPastBk
-                  ? { bg: '#e2e8f0', color: '#64748b', label: 'PAST' }
-                  : STATUS_BADGE[b.status] ?? { bg: '#f1f5f9', color: '#64748b', label: b.status }
-                const barColor  = isPastBk ? '#c8d4de' : bookingBarColor(b.status)
+                const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+                const isDone    = effStatus === 'on_trip' || effStatus === 'completed'
+                const badge     = STATUS_BADGE[effStatus] ?? { bg: '#f1f5f9', color: '#64748b', label: effStatus }
+                const barColor  = bookingBarColor(effStatus)
                 return (
                   <div key={b.id} style={{
-                    backgroundColor: isPastBk ? '#f8fafc' : 'white',
+                    backgroundColor: isDone ? '#f8fafc' : 'white',
                     borderRadius: 14, padding: '14px 16px', marginBottom: 10,
                     boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
                     borderLeft: `4px solid ${barColor}`,
-                    opacity: isPastBk ? 0.7 : 1,
+                    opacity: isDone ? 0.7 : 1,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <div>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: isPastBk ? '#94a3b8' : '#1e293b' }}>{b.yachtName}</p>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: isDone ? '#94a3b8' : '#1e293b' }}>{b.yachtName}</p>
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>Private Charter</p>
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: badge.color, backgroundColor: badge.bg, borderRadius: 6, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>{badge.label}</span>
@@ -1123,7 +1128,8 @@ export function PublicCalendarView() {
                             </div>
                           )}
                           {seg.showDetails && bk && !ot && (() => {
-                            const badge = STATUS_BADGE_BAR[bk.status] ?? { bg: 'rgba(0,0,0,0.25)', label: bk.status.toUpperCase() }
+                            const effStatus = getEffectiveBookingStatus(bk.status, bk.startDate, bk.endDate)
+                            const badge = STATUS_BADGE_BAR[effStatus] ?? { bg: 'rgba(0,0,0,0.25)', label: effStatus.toUpperCase() }
                             return (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 14px', overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>

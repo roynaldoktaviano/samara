@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { db } from '@/lib/db'
+import type { PrismaClient } from '@prisma/client'
+import { resolveTenantBySlug } from '@/lib/resolve-tenant'
 
 // Public, unauthenticated: internal employees (who may not have an ERP login) submit
 // requests here. Each submission becomes a DRAFT PurchaseRequest that the purchasing
 // team reviews and formally submits through the normal approval flow.
+// `?tenant=<slug>` selects which company this submission belongs to; defaults to 'samara'.
 
 const SYSTEM_REQUESTER_EMAIL = 'system+employee-requests@samara.internal'
 
-async function getSystemRequesterId(): Promise<string> {
+async function getSystemRequesterId(db: PrismaClient): Promise<string> {
   const existing = await db.user.findUnique({ where: { email: SYSTEM_REQUESTER_EMAIL }, select: { id: true } })
   if (existing) return existing.id
   const password = await bcrypt.hash(crypto.randomUUID() + crypto.randomUUID(), 12)
@@ -19,7 +21,7 @@ async function getSystemRequesterId(): Promise<string> {
   return created.id
 }
 
-async function generatePrNumber() {
+async function generatePrNumber(db: PrismaClient) {
   const year = new Date().getFullYear()
   const month = String(new Date().getMonth() + 1).padStart(2, '0')
   const prefix = `PR-${year}${month}-`
@@ -42,6 +44,9 @@ interface RequestItemInput {
 }
 
 export async function POST(req: NextRequest) {
+  const db = await resolveTenantBySlug(req.nextUrl.searchParams.get('tenant'))
+  if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+
   const body = await req.json()
   const { employeeId, locationId, notes, items } = body as {
     employeeId?: string; locationId?: string; notes?: string; items?: RequestItemInput[]
@@ -64,7 +69,7 @@ export async function POST(req: NextRequest) {
     if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
   }
 
-  const [requestedById, prNumber] = await Promise.all([getSystemRequesterId(), generatePrNumber()])
+  const [requestedById, prNumber] = await Promise.all([getSystemRequesterId(db), generatePrNumber(db)])
 
   const request = await db.purchaseRequest.create({
     data: {

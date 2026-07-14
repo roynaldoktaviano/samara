@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
 
   const { tenantId, email, name, password, role } = await req.json()
   if (!tenantId || !email || !password) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  if (password.length < 8) return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
 
   const tenant = await centralDb.tenant.findUnique({ where: { id: tenantId } })
   if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 })

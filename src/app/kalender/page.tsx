@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Ship, SlidersHorizontal, X } from 'lucide-react'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 
 interface PublicBooking {
   id: string; yachtId: string; yachtName: string
@@ -37,8 +38,8 @@ function fmtDate(iso: string): string {
 function bookingStatusColor(status: string): string {
   if (status === 'on_hold')                                                     return '#22c55e'
   if (status === 'pending' || status === 'waiting_for_payment' || status === 'process_payments') return '#eab308'
-  if (status === 'confirmed' || status === 'partially_paid'
-    || status === 'fully_paid' || status === 'completed')                      return '#ef4444'
+  if (status === 'on_trip' || status === 'completed')                          return '#94a3b8'
+  if (status === 'confirmed' || status === 'partially_paid' || status === 'fully_paid') return '#ef4444'
   return '#64748b'
 }
 
@@ -85,8 +86,10 @@ function getAgendaItems(
     if (yachtFilter !== 'all' && b.yachtName !== yachtFilter) continue
     const s = new Date(b.startDate + 'T00:00:00')
     const e = new Date(b.endDate   + 'T00:00:00')
-    if (date >= s && date <= e)
-      items.push({ kind: 'charter', id: b.id, yachtName: b.yachtName, status: b.status, color: bookingStatusColor(b.status), startDate: b.startDate, endDate: b.endDate })
+    if (date >= s && date <= e) {
+      const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+      items.push({ kind: 'charter', id: b.id, yachtName: b.yachtName, status: effStatus, color: bookingStatusColor(effStatus), startDate: b.startDate, endDate: b.endDate })
+    }
   }
 
   for (const t of openTrips) {
@@ -169,12 +172,15 @@ function buildSegments(
   bookings
     .filter(b => b.tripType === 'PRIVATE_CHARTER')
     .filter(b => yachtFilter === 'all' || b.yachtName === yachtFilter)
-    .forEach(b => addSegs(
-      b.id, `Booked · ${b.yachtName}`,
-      bookingStatusColor(b.status), false,
-      new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
-      `${b.yachtName} · Booked`, b.status,
-    ))
+    .forEach(b => {
+      const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+      addSegs(
+        b.id, `Booked · ${b.yachtName}`,
+        bookingStatusColor(effStatus), false,
+        new Date(b.startDate + 'T00:00:00'), new Date(b.endDate + 'T00:00:00'),
+        `${b.yachtName} · Booked`, effStatus,
+      )
+    })
 
   openTrips
     .filter(t => yachtFilter === 'all' || t.yachtName === yachtFilter)

@@ -19,7 +19,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const db = await getDb(session)
   try {
     const { id } = await params
-    const payment = await withRetry(() => db.payment.findUnique({
+    const payment = await withRetry(db, () => db.payment.findUnique({
       where: { id },
       include: {
         bank: true,
@@ -75,7 +75,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Amount is required' }, { status: 400 })
       }
 
-      const existing = await withRetry(() => db.payment.findUnique({
+      const existing = await withRetry(db, () => db.payment.findUnique({
         where: { id },
         include: { booking: { select: { id: true, bookingCode: true, depositPaid: true, totalPrice: true, salespersonId: true } } },
       }))
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         invoiceNumber = `INV-${existing.booking.bookingCode}-${String(invNum).padStart(2, '0')}`
       }
 
-      await withRetry(() => db.payment.update({
+      await withRetry(db, () => db.payment.update({
         where: { id },
         data: {
           invoiceNumber,
@@ -188,13 +188,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'A valid exchange rate is required for non-USD currency' }, { status: 400 })
       }
 
-      const existing = await withRetry(() => db.payment.findUnique({
+      const existing = await withRetry(db, () => db.payment.findUnique({
         where: { id },
         include: { booking: { select: { bookingCode: true } } },
       }))
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-      await withRetry(() => db.payment.update({
+      await withRetry(db, () => db.payment.update({
         where: { id },
         data: {
           currency: currencyCode,
@@ -221,7 +221,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Payment proof must be attached' }, { status: 400 })
       }
 
-      const existing = await withRetry(() => db.payment.findUnique({
+      const existing = await withRetry(db, () => db.payment.findUnique({
         where: { id },
         include: { booking: { select: { id: true, bookingCode: true } } },
       }))
@@ -230,7 +230,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Proof can only be submitted when status is "invoice_ready"' }, { status: 400 })
       }
 
-      await withRetry(() => db.payment.update({
+      await withRetry(db, () => db.payment.update({
         where: { id },
         data: {
           proofOfTransfer,
@@ -273,7 +273,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      const payment = await withRetry(() => db.payment.findUnique({
+      const payment = await withRetry(db, () => db.payment.findUnique({
         where: { id },
         include: {
           booking: {
@@ -310,7 +310,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         // Atomic: update payment only if still pending_confirmation (prevents double-confirm race)
         // If another request already confirmed it, Prisma throws P2025 and we return 409.
-        await withRetry(() => db.$transaction([
+        await withRetry(db, () => db.$transaction([
           db.payment.update({
             where: { id, status: 'pending_confirmation' },
             data: { status: 'confirmed', confirmedBy: actorName, confirmedAt: new Date() },
@@ -344,7 +344,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             ).catch(() => {})
         }
       } else {
-        await withRetry(() => db.payment.update({
+        await withRetry(db, () => db.payment.update({
           where: { id },
           data: { status: 'rejected', confirmedBy: actorName, confirmedAt: new Date() },
         }))

@@ -18,7 +18,7 @@ export async function GET(_: NextRequest) {
       ? { booking: { salespersonId: userId } }
       : {}
 
-    const payments = await withRetry(() => db.payment.findMany({
+    const payments = await withRetry(db, () => db.payment.findMany({
       where,
       select: {
         id: true,

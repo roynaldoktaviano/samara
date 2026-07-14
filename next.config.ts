@@ -1,8 +1,26 @@
 import type { NextConfig } from "next";
 
+const SECURITY_HEADERS = [
+  { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
+  async headers() {
+    return [
+      {
+        // Public trip calendar is designed to be embedded on the marketing site — exempt
+        // it from X-Frame-Options/framing restrictions (it carries no sensitive data).
+        source: '/((?!kalender).*)',
+        headers: SECURITY_HEADERS,
+      },
+    ];
+  },
   // Turbopack (Next.js 16 default): alias canvas/encoding to empty module
   // so pdfjs-dist doesn't pull in Node-only native addons into the browser bundle.
   turbopack: {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getSessionDb } from '@/lib/session-db'
+import { getDb } from '@/lib/get-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
@@ -22,6 +22,9 @@ export async function PUT(
   if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
   }
+  if (password && password.length < 8) {
+    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+  }
 
   const data: Record<string, unknown> = {}
   if (name     !== undefined) data.name     = name || null
@@ -30,7 +33,7 @@ export async function PUT(
   if (password)               data.password = await bcrypt.hash(password, 12)
 
   try {
-    const db = getSessionDb(session)
+    const db = await getDb(session)
     const user = await db.user.update({
       where: { id },
       data,
@@ -68,7 +71,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
   }
 
-  const db = getSessionDb(session!)
+  const db = await getDb(session!)
   const target = await db.user.findUnique({ where: { id }, select: { name: true, email: true } })
   await db.user.delete({ where: { id } })
 

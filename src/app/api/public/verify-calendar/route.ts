@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/get-db'
+import { db as defaultDb } from '@/lib/db'
+import { centralDb } from '@/lib/central-db'
+import { getTenantDb } from '@/lib/tenant-db'
+import { resolveTenantByLookup } from '@/lib/resolve-tenant'
 import { SignJWT, jwtVerify } from 'jose'
+import type { PrismaClient } from '@prisma/client'
 
-const SECRET = new TextEncoder().encode(
-  process.env.SSO_JWT_SECRET ?? 'calendar-fallback-secret'
-)
+// Computed lazily (not at module load) so a missing env var fails the request at runtime
+// with a clear error, rather than silently signing/verifying with a guessable fallback.
+function getSecret(): Uint8Array {
+  const secret = process.env.SSO_JWT_SECRET
+  if (!secret) throw new Error('SSO_JWT_SECRET is not configured')
+  return new TextEncoder().encode(secret)
+}
 const COOKIE = 'cal-access'
 const SUSPICIOUS_BOTS = /bot|crawler|spider|scrape|python|curl|wget|axios|fetch|java|ruby|go-http/i
 
-async function logAccess(db: Awaited<ReturnType<typeof getDb>>, agentId: string, ip: string, userAgent: string, isSuspicious: boolean) {
+async function logAccess(db: PrismaClient, agentId: string, ip: string, userAgent: string, isSuspicious: boolean) {
   db.calendarAccessLog.create({
     data: { agentId, ip, userAgent, isSuspicious },
   }).catch(() => {})
@@ -20,19 +28,36 @@ function getIp(req: NextRequest) {
     ?? 'unknown'
 }
 
+/** Resolves the tenant a stored calendarToken belongs to, alongside its centralDb tenant id
+ *  — the id (not the raw connection string) is what gets embedded in the JWT cookie so GET
+ *  can jump straight back to the right tenant DB without re-scanning every request. */
+async function findAgentTenant(token: string) {
+  const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { id: true, databaseUrl: true } })
+  const defaultUrl = process.env.DATABASE_URL
+  const candidates = [{ id: null as string | null, url: defaultUrl }, ...tenants.map(t => ({ id: t.id, url: t.databaseUrl }))]
+  const seen = new Set<string>()
+  for (const c of candidates) {
+    if (!c.url || seen.has(c.url)) continue
+    seen.add(c.url)
+    const client = c.url === defaultUrl ? defaultDb : getTenantDb(c.url)
+    const agent = await client.agent.findUnique({
+      where: { calendarToken: token },
+      select: { id: true, name: true, calendarActive: true },
+    }).catch(() => null)
+    if (agent) return { db: client, tenantId: c.id, agent }
+  }
+  return null
+}
+
 // POST — verify token, issue cookie, return agent info
 export async function POST(request: NextRequest) {
-  const db = await getDb()
   try {
     const { token } = await request.json()
     if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 })
 
-    const agent = await db.agent.findUnique({
-      where: { calendarToken: token },
-      select: { id: true, name: true, calendarActive: true },
-    })
-
-    if (!agent) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    const found = await findAgentTenant(token)
+    if (!found) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    const { db, tenantId, agent } = found
     if (!agent.calendarActive) return NextResponse.json({ error: 'Access revoked' }, { status: 403 })
 
     const ip        = getIp(request)
@@ -40,10 +65,10 @@ export async function POST(request: NextRequest) {
     const isSuspicious = SUSPICIOUS_BOTS.test(userAgent)
     logAccess(db, agent.id, ip, userAgent, isSuspicious)
 
-    // Issue signed JWT cookie (no expiry)
-    const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name })
+    // Issue signed JWT cookie (no expiry) — tenantId lets GET below skip re-scanning tenants
+    const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name, tenantId })
       .setProtectedHeader({ alg: 'HS256' })
-      .sign(SECRET)
+      .sign(getSecret())
 
     const res = NextResponse.json({ ok: true, agentName: agent.name })
     res.cookies.set(COOKIE, jwt, {
@@ -62,14 +87,27 @@ export async function POST(request: NextRequest) {
 
 // GET — verify existing cookie, log access
 export async function GET(request: NextRequest) {
-  const db = await getDb()
   try {
     const cookie = request.cookies.get('cal-access')?.value
     if (!cookie) return NextResponse.json({ valid: false })
 
-    const { payload } = await jwtVerify(cookie, SECRET)
+    const { payload } = await jwtVerify(cookie, getSecret())
     const agentId   = payload.agentId as string
     const agentName = payload.agentName as string
+    const tenantId  = payload.tenantId as string | null | undefined
+
+    // Resolve the tenant DB this agent lives in. Cookies issued before this field existed
+    // have no tenantId — fall back to scanning by agentId so those sessions keep working.
+    let db: PrismaClient
+    if (tenantId) {
+      const tenant = await centralDb.tenant.findUnique({ where: { id: tenantId }, select: { databaseUrl: true } })
+      if (!tenant) return NextResponse.json({ valid: false })
+      db = tenant.databaseUrl === process.env.DATABASE_URL ? defaultDb : getTenantDb(tenant.databaseUrl)
+    } else {
+      const found = await resolveTenantByLookup(client => client.agent.findUnique({ where: { id: agentId }, select: { id: true } }))
+      if (!found) return NextResponse.json({ valid: false })
+      db = found.db
+    }
 
     // Check agent still active
     const agent = await db.agent.findUnique({

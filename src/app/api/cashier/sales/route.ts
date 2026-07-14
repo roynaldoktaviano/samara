@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const status  = searchParams.get('status')
   if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
 
-  const sales = await withRetry(() => db.cashierSale.findMany({
+  const sales = await withRetry(db, () => db.cashierSale.findMany({
     where: { yachtId, ...(status ? { status } : {}) },
     include: { items: { orderBy: { createdAt: 'asc' } } },
     orderBy: { createdAt: 'desc' },
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (!yachtId || !locationId) return NextResponse.json({ error: 'yachtId and locationId are required' }, { status: 400 })
 
   try {
-    const result = await withRetry(() => db.$transaction(async (tx) => {
+    const result = await withRetry(db, () => db.$transaction(async (tx) => {
       const sale = await tx.cashierSale.create({
         data: {
           id: crypto.randomUUID(), yachtId, locationId,

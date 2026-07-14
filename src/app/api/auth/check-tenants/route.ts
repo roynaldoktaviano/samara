@@ -34,17 +34,21 @@ export async function POST(req: NextRequest) {
   // Super admin check
   const centralUser = await centralDb.centralUser.findUnique({
     where: { email },
-    select: { isSuperAdmin: true, password: true },
+    select: { isSuperAdmin: true, password: true, isActive: true },
   }).catch(() => null)
   if (centralUser?.isSuperAdmin && centralUser.password) {
+    if (!centralUser.isActive) return NextResponse.json({ tenants: [] })
     const valid = await bcrypt.compare(password, centralUser.password)
     if (valid) return NextResponse.json({ tenants: [{ tenantId: null, tenantName: 'Super Admin', tenantSlug: 'super-admin', logoUrl: null }] })
     return NextResponse.json({ tenants: [] })
   }
 
-  // Find all tenants this email belongs to in central DB
+  // Deactivated central users can't log into any tenant
+  if (centralUser && !centralUser.isActive) return NextResponse.json({ tenants: [] })
+
+  // Find all tenants this email belongs to in central DB (active tenants only)
   const userTenants = await centralDb.userTenant.findMany({
-    where: { user: { email } },
+    where: { user: { email }, tenant: { isActive: true } },
     include: { tenant: { select: { id: true, name: true, slug: true, logoUrl: true, databaseUrl: true } } },
   }).catch(() => [])
 
@@ -73,7 +77,9 @@ export async function POST(req: NextRequest) {
         // Find Samara tenant in central DB
         const samaraTenant = await centralDb.tenant.findFirst({ where: { slug: 'samara' } }).catch(() => null)
 
-        if (samaraTenant) {
+        if (samaraTenant && !samaraTenant.isActive) {
+          // Tenant deactivated — do not offer it as a login option
+        } else if (samaraTenant) {
           // Lazy migration: register this user into central DB so future logins use tenantId
           const cu = await centralDb.centralUser.upsert({
             where: { email },

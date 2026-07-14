@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/get-db'
+import { resolveTenantByLookup } from '@/lib/resolve-tenant'
 import type { PrismaClient } from '@prisma/client'
 
 const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile', 'travel'] as const
@@ -31,10 +31,9 @@ async function computeCapacity(db: PrismaClient, bookingId: string, tripType: st
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
 
-  const booking = await db.booking.findUnique({
+  const found = await resolveTenantByLookup(client => client.booking.findUnique({
     where: { masterFormToken: token },
     select: {
       id: true,
@@ -70,9 +69,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
         orderBy: [{ isLead: 'desc' }, { id: 'asc' }],
       },
     },
-  })
+  }))
 
-  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { record: booking } = found
   if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
@@ -134,19 +134,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
 
-  const booking = await db.booking.findUnique({
+  const found = await resolveTenantByLookup(client => client.booking.findUnique({
     where: { masterFormToken: token },
     select: {
       id: true,
       masterFormExpiresAt: true,
       guests: { select: { customerId: true } },
     },
-  })
+  }))
 
-  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { db, record: booking } = found
   if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
@@ -227,10 +227,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 /** Self-service guest add — private charters (whole vessel already theirs) and open trips
  *  (capped to whichever cabin(s) this booking has reserved). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
 
-  const booking = await db.booking.findUnique({
+  const found = await resolveTenantByLookup(client => client.booking.findUnique({
     where: { masterFormToken: token },
     select: {
       id: true,
@@ -238,9 +237,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       masterFormExpiresAt: true,
       guests: { select: { id: true } },
     },
-  })
+  }))
 
-  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { db, record: booking } = found
   if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
@@ -300,14 +300,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
 /** Self-service guest removal — the Group Leader can't be removed. */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const db = await getDb()
   const { token } = await params
 
-  const booking = await db.booking.findUnique({
+  const found = await resolveTenantByLookup(client => client.booking.findUnique({
     where: { masterFormToken: token },
     select: { id: true, masterFormExpiresAt: true },
-  })
-  if (!booking) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  }))
+  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  const { db, record: booking } = found
   if (booking.masterFormExpiresAt && new Date(booking.masterFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }

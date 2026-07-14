@@ -133,7 +133,7 @@ export async function getTripSheetGroups(db: PrismaClient, opts: TripSheetOption
   const salespersonGuard = salespersonId ? { salespersonId } : {}
 
   const [openTrips, charterBookings] = await Promise.all([
-    withRetry(() => db.openTrip.findMany({
+    withRetry(db, () => db.openTrip.findMany({
       where: { ...(dateFilter && { startDate: dateFilter }) },
       include: {
         yacht: { select: { name: true } },
@@ -145,7 +145,7 @@ export async function getTripSheetGroups(db: PrismaClient, opts: TripSheetOption
       },
       orderBy: { startDate: 'asc' },
     })),
-    withRetry(() => db.booking.findMany({
+    withRetry(db, () => db.booking.findMany({
       where: {
         tripType: 'PRIVATE_CHARTER',
         status: { not: 'cancelled' },

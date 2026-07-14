@@ -10,6 +10,7 @@ import {
   Anchor, Calendar, Users, DollarSign, X,
   TrendingUp, AlertCircle, Ship,
 } from 'lucide-react'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 
 /* ── types ── */
 interface BookingRecord {
@@ -47,12 +48,13 @@ const STATUS_STYLES: Record<string, string> = {
   pending:        'bg-amber-100   text-amber-700   border-amber-200',
   partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
   fully_paid:     'bg-emerald-100 text-emerald-700 border-emerald-200',
-  completed:      'bg-purple-100  text-purple-700  border-purple-200',
+  on_trip:        'bg-slate-100   text-slate-600   border-slate-200',
+  completed:      'bg-slate-100   text-slate-600   border-slate-200',
   cancelled:      'bg-red-100     text-red-700     border-red-200',
 }
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending', partially_paid: 'Partially Paid',
-  fully_paid: 'Fully Paid', completed: 'Completed', cancelled: 'Cancelled',
+  fully_paid: 'Fully Paid', on_trip: 'On Trip', completed: 'Completed', cancelled: 'Cancelled',
 }
 
 /* filter: does booking overlap with [from, to]? */
@@ -336,9 +338,14 @@ export default function Dashboard() {
                       {isFullyPaid && (
                         <div className="text-xs text-emerald-600">Settled ✓</div>
                       )}
-                      <Badge variant="outline" className={`text-xs ${STATUS_STYLES[b.status] ?? ''}`}>
-                        {STATUS_LABELS[b.status] ?? b.status}
-                      </Badge>
+                      {(() => {
+                        const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+                        return (
+                          <Badge variant="outline" className={`text-xs ${STATUS_STYLES[effStatus] ?? ''}`}>
+                            {STATUS_LABELS[effStatus] ?? effStatus}
+                          </Badge>
+                        )
+                      })()}
                     </div>
                   </div>
                 )

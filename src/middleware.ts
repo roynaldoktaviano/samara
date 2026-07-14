@@ -1,6 +1,15 @@
 import { withAuth } from 'next-auth/middleware'
+import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+
+// API routes gated behind a tenant feature flag — checked here so the flag can't be
+// bypassed by calling the endpoint directly once the nav item is hidden client-side.
+const FEATURE_GATED_API_PREFIXES = [
+  { prefix: '/api/purchasing', feature: 'purchasing' },
+  { prefix: '/api/finance/purchase-order-payments', feature: 'purchasing' },
+  { prefix: '/api/finance/po-reimbursements', feature: 'purchasing' },
+]
 
 const PUBLIC_PATHS = [
   '/login',
@@ -29,8 +38,21 @@ const authMiddleware = withAuth({
   pages: { signIn: '/login' },
 })
 
-export default function middleware(req: NextRequest) {
+export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+
+  const gated = FEATURE_GATED_API_PREFIXES.find(g => pathname === g.prefix || pathname.startsWith(g.prefix + '/'))
+  if (gated) {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
+    // No token: fall through to the normal auth flow below (401/redirect), not a feature error.
+    if (token) {
+      const isSuperAdmin = token.isSuperAdmin === true
+      const features = (token.tenantFeatures as Record<string, boolean> | undefined) ?? {}
+      if (!isSuperAdmin && !features[gated.feature]) {
+        return NextResponse.json({ error: 'This feature is not enabled for your account' }, { status: 403 })
+      }
+    }
+  }
 
   // ── Agent calendar: allow if token in URL OR cal-access cookie present ──
   if (pathname === '/agent/calendar' || pathname.startsWith('/agent/calendar/')) {
