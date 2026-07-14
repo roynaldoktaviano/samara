@@ -60,9 +60,11 @@ interface Payment {
   confirmedBy: string | null
   confirmedAt: string | null
   createdAt: string
+  paymentDate?: string | null
   hasDocument?: boolean
   parentPaymentId?: string | null
   parentPayment?: { invoiceNumber: string } | null
+  history?: Array<{ id: string; amount: number; paymentDate: string | null; createdAt: string; status: string; currency: string; exchangeRate: number | null }>
   booking: {
     bookingCode: string
     totalPrice: number
@@ -427,7 +429,7 @@ export default function Payments() {
         const res = await fetch(`/api/payments/${p.id}`)
         if (res.ok) {
           const full = await res.json()
-          setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null }) as Payment : prev)
+          setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null, paymentDate: full.paymentDate ?? null, history: full.history ?? [] }) as Payment : prev)
         }
       } catch { /* non-critical */ } finally {
         setProofLoading(false)
@@ -1002,6 +1004,55 @@ export default function Payments() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Payment history — every confirmed payment on this booking, chronological,
+                  so Finance sees the full deposit picture (not just this one invoice) when reviewing. */}
+              {!!selected.history?.length && (() => {
+                const ORDINALS = ['Deposit', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
+                const ordinalPayment = (n: number) => `${ORDINALS[n - 1] ?? `${n}th`} Payment`
+                type HistoryEntry = NonNullable<Payment['history']>[number] & { ordinal: number; cumAfter: number }
+                const historyRows = selected.history!.reduce<HistoryEntry[]>((acc, h, i) => {
+                  const cumAfter = (acc[i - 1]?.cumAfter ?? 0) + h.amount
+                  acc.push({ ...h, ordinal: i + 1, cumAfter })
+                  return acc
+                }, [])
+                const currentRow = historyRows.find(h => h.id === selected.id)
+                const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
+                const commPct = isNet
+                  ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
+                  : 0
+                const packageTotal = netOfCommission(selected.booking, commPct)
+                const isClosingPayment = !!currentRow && currentRow.cumAfter >= packageTotal - 0.01
+                const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : selected.amount
+                const balanceAfterAll = Math.max(0, packageTotal - grandTotal)
+
+                return (
+                  <Card className="bg-muted/40">
+                    <CardContent className="pt-4 pb-3 px-4 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payment History</p>
+                      {historyRows.map(h => (
+                        <div key={h.id} className="flex justify-between items-center text-xs gap-2">
+                          <span className={h.id === selected.id ? 'font-semibold text-[#1a5f6e]' : 'text-muted-foreground italic'}>
+                            {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}{h.id === selected.id ? ' (this payment)' : ''}
+                          </span>
+                          <span className={h.id === selected.id ? 'font-semibold text-[#1a5f6e] shrink-0' : 'font-medium text-emerald-700 shrink-0'}>${fmt(h.amount)}</span>
+                        </div>
+                      ))}
+                      <Separator />
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Balance Due' : 'Total Deposit Paid'}</span>
+                        <span className="font-bold text-sm">${fmt(isClosingPayment ? selected.amount : grandTotal)}</span>
+                      </div>
+                      {!isClosingPayment && (
+                        <div className="flex justify-between items-center text-xs">
+                          <span className={balanceAfterAll > 0 ? 'text-amber-600' : 'text-emerald-600'}>{balanceAfterAll > 0 ? 'Balance Due' : 'Remaining'}</span>
+                          <span className={`font-medium ${balanceAfterAll > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>${fmt(balanceAfterAll)}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })()}
 
               {/* Payment method chip */}
               {selected.paymentMethod && (

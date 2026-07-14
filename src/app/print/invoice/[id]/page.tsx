@@ -177,20 +177,6 @@ export default function InvoicePage() {
     if (isIDR) return `Rp ${local.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
     return `${currSymbol} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
-  // Plain USD — used for history rows that never had their own conversion rate recorded.
-  const fmtUSD = (usd: number) => `$ ${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  // Each history row keeps its OWN currency/rate (every payment on a booking can be received
-  // in a different currency) — only convert a row if it actually has that rate recorded;
-  // otherwise show it plain in USD rather than borrowing this invoice's currency/rate.
-  const fmtHistoryAmt = (h: { amount: number; currency: string; exchangeRate: number | null }) => {
-    if (h.currency && h.currency !== 'USD' && h.exchangeRate) {
-      const sym = CURRENCY_SYMBOLS[h.currency] || h.currency
-      const local = h.amount * h.exchangeRate
-      if (h.currency === 'IDR') return `Rp ${local.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
-      return `${sym} ${local.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    }
-    return fmtUSD(h.amount)
-  }
 
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount
@@ -204,7 +190,6 @@ export default function InvoicePage() {
   const baseRaw        = baseAfterDisc + discountAmt // reconstructed pre-discount price, for display only
   const commissionAmt  = baseAfterDisc * commissionPct / 100
   const afterDiscount  = b.totalPrice - commissionAmt
-  const remaining      = Math.max(0, afterDiscount - payment.previouslyPaid - payment.amount)
   const displayBase    = baseAfterDisc - commissionAmt
 
   // Itemized payment history — "Deposit Payment", "Second Payment", ... in chronological
@@ -219,8 +204,12 @@ export default function InvoicePage() {
     return acc
   }, [])
   const currentRow      = historyRows.find(h => h.id === payment.id)
+  // "Closing" is judged by this invoice's own position in the sequence (does the running total
+  // up through it reach the package total) — separate from grandTotal below, which is everything
+  // recorded for the booking regardless of when it happened relative to this invoice.
   const isClosingPayment = !!currentRow && currentRow.cumAfter >= afterDiscount - 0.01
-  const priorRows        = historyRows.filter(h => h.id !== payment.id)
+  const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : payment.amount
+  const balanceAfterAll = Math.max(0, afterDiscount - grandTotal)
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
@@ -511,12 +500,12 @@ export default function InvoicePage() {
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 
-            {priorRows.map(h => (
+            {historyRows.map(h => (
               <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ color: '#6b7280', fontSize: 10, fontStyle: 'italic' }}>
-                  {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}
+                <span style={{ color: h.id === payment.id ? ACCENT : '#6b7280', fontSize: 10, fontStyle: 'italic', fontWeight: h.id === payment.id ? 700 : 400 }}>
+                  {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}{h.id === payment.id ? ' (this invoice)' : ''}
                 </span>
-                <span style={{ color: '#059669', fontSize: 10, fontWeight: 600 }}>{fmtHistoryAmt(h)}</span>
+                <span style={{ color: h.id === payment.id ? ACCENT : '#059669', fontSize: 10, fontWeight: 600 }}>{fmtAmt(h.amount)}</span>
               </div>
             ))}
 
@@ -528,18 +517,18 @@ export default function InvoicePage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 5, padding: '8px 10px', marginBottom: 6 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>
-                {isClosingPayment ? 'Balance Due' : 'Amount Due — This Invoice'}
+                {isClosingPayment ? 'Balance Due' : 'Total Deposit Paid'}
               </div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(payment.amount)}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(isClosingPayment ? payment.amount : grandTotal)}</div>
             </div>
 
             {!isClosingPayment && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 600 }}>
-                  {remaining > 0 ? 'Balance Due' : 'Remaining'}
+                <span style={{ color: balanceAfterAll > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 600 }}>
+                  {balanceAfterAll > 0 ? 'Balance Due' : 'Remaining'}
                 </span>
-                <span style={{ color: remaining > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 700 }}>
-                  {fmtAmt(remaining)}
+                <span style={{ color: balanceAfterAll > 0 ? '#d97706' : '#059669', fontSize: 10, fontWeight: 700 }}>
+                  {fmtAmt(balanceAfterAll)}
                 </span>
               </div>
             )}

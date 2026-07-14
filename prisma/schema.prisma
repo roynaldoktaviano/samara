@@ -557,6 +557,22 @@ model Payment {
   @@index([parentPaymentId])
 }
 
+model NewsletterEmail {
+  id           String   @id @default(cuid())
+  subject      String
+  bodyHtml     String
+  fromEmail    String
+  recipients   String[] // raw list entered at send time — no contact-list integration yet
+  status       String   @default("sent") // sent | failed | partial
+  resendIds    String[] // Resend message id per successful recipient
+  errorMessage String?
+  sentByUserId String?
+  sentByName   String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model Voucher {
   id          String    @id @default(cuid())
   code        String    @unique
