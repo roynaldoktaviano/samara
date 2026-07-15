@@ -15,7 +15,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const campaign = await db.emailCampaign.findUnique({
     where: { id },
-    include: { recipients: { orderBy: { createdAt: 'desc' }, take: 200 } },
+    include: {
+      recipients: {
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        include: { clicks: { orderBy: { clickedAt: 'desc' } } },
+      },
+    },
   })
   if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(campaign)

@@ -586,11 +586,27 @@ model NewsletterRecipient {
   errorMessage String?
   openedAt     DateTime?
   openCount    Int             @default(0)
+  clickedAt    DateTime?
+  clickCount   Int             @default(0)
+  lastClickUrl String?
+  clicks       NewsletterClickEvent[]
   createdAt    DateTime        @default(now())
 
   @@unique([newsletterId, email])
   @@index([newsletterId])
   @@index([resendId])
+}
+
+// One row per individual link click — lets the detail view show every link
+// clicked (not just the most recent), since one email can have several CTAs.
+model NewsletterClickEvent {
+  id          String              @id @default(cuid())
+  recipientId String
+  recipient   NewsletterRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  url         String
+  clickedAt   DateTime            @default(now())
+
+  @@index([recipientId])
 }
 
 enum CampaignStatus {
@@ -678,11 +694,27 @@ model CampaignRecipient {
   sentAt           DateTime?
   openedAt         DateTime?
   openCount        Int                 @default(0)
+  clickedAt        DateTime?
+  clickCount       Int                 @default(0)
+  lastClickUrl     String?
+  clicks           CampaignClickEvent[]
   createdAt        DateTime            @default(now())
 
   @@unique([campaignId, email])
   @@index([campaignId])
   @@index([unsubscribeToken])
+}
+
+// One row per individual link click — lets the detail view show every link
+// clicked (not just the most recent), since one email can have several CTAs.
+model CampaignClickEvent {
+  id          String            @id @default(cuid())
+  recipientId String
+  recipient   CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  url         String
+  clickedAt   DateTime          @default(now())
+
+  @@index([recipientId])
 }
 
 model EmailUnsubscribe {

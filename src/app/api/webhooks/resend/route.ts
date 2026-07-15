@@ -6,8 +6,17 @@ import { resolveTenantBySlug } from '@/lib/resolve-tenant'
 // a Svix-signed webhook. Configure this URL in the Resend dashboard as
 // `https://<app-domain>/api/webhooks/resend?tenant=<slug>` (defaults to 'samara'
 // when omitted, matching the CF7 webhook convention) and subscribe to at least
-// `email.opened` and `email.bounced`.
-const TRACKED_EVENTS = new Set(['email.opened', 'email.bounced'])
+// `email.opened`, `email.clicked` and `email.bounced`.
+const TRACKED_EVENTS = new Set(['email.opened', 'email.clicked', 'email.bounced'])
+
+type ResendEvent = {
+  type?: string
+  data?: {
+    email_id?: string
+    bounce?: { message?: string }
+    click?: { link?: string }
+  }
+}
 
 export async function POST(request: NextRequest) {
   const secret = process.env.RESEND_WEBHOOK_SECRET
@@ -20,9 +29,9 @@ export async function POST(request: NextRequest) {
     'svix-signature': request.headers.get('svix-signature') ?? '',
   }
 
-  let event: { type?: string; data?: { email_id?: string; bounce?: { message?: string } } }
+  let event: ResendEvent
   try {
-    event = new Webhook(secret).verify(rawBody, svixHeaders) as typeof event
+    event = new Webhook(secret).verify(rawBody, svixHeaders) as ResendEvent
   } catch {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
@@ -36,34 +45,42 @@ export async function POST(request: NextRequest) {
   const db = await resolveTenantBySlug(tenantSlug)
   if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
 
+  const buildUpdate = (prevOpenedAt: Date | null, prevClickedAt: Date | null) => {
+    if (event.type === 'email.opened') {
+      return { openedAt: prevOpenedAt ?? new Date(), openCount: { increment: 1 } }
+    }
+    if (event.type === 'email.clicked') {
+      return {
+        clickedAt: prevClickedAt ?? new Date(),
+        clickCount: { increment: 1 },
+        lastClickUrl: event.data?.click?.link,
+      }
+    }
+    return { status: 'BOUNCED' as const, errorMessage: event.data?.bounce?.message ?? 'Bounced' }
+  }
+
+  const clickedUrl = event.data?.click?.link
+
   const campaignRecipient = await db.campaignRecipient.findFirst({ where: { resendId: emailId } })
   if (campaignRecipient) {
-    if (event.type === 'email.opened') {
-      await db.campaignRecipient.update({
-        where: { id: campaignRecipient.id },
-        data: { openedAt: campaignRecipient.openedAt ?? new Date(), openCount: { increment: 1 } },
-      })
-    } else {
-      await db.campaignRecipient.update({
-        where: { id: campaignRecipient.id },
-        data: { status: 'BOUNCED', errorMessage: event.data?.bounce?.message ?? 'Bounced' },
-      })
+    await db.campaignRecipient.update({
+      where: { id: campaignRecipient.id },
+      data: buildUpdate(campaignRecipient.openedAt, campaignRecipient.clickedAt),
+    })
+    if (event.type === 'email.clicked' && clickedUrl) {
+      await db.campaignClickEvent.create({ data: { recipientId: campaignRecipient.id, url: clickedUrl } })
     }
     return NextResponse.json({ ok: true })
   }
 
   const newsletterRecipient = await db.newsletterRecipient.findFirst({ where: { resendId: emailId } })
   if (newsletterRecipient) {
-    if (event.type === 'email.opened') {
-      await db.newsletterRecipient.update({
-        where: { id: newsletterRecipient.id },
-        data: { openedAt: newsletterRecipient.openedAt ?? new Date(), openCount: { increment: 1 } },
-      })
-    } else {
-      await db.newsletterRecipient.update({
-        where: { id: newsletterRecipient.id },
-        data: { status: 'BOUNCED', errorMessage: event.data?.bounce?.message ?? 'Bounced' },
-      })
+    await db.newsletterRecipient.update({
+      where: { id: newsletterRecipient.id },
+      data: buildUpdate(newsletterRecipient.openedAt, newsletterRecipient.clickedAt),
+    })
+    if (event.type === 'email.clicked' && clickedUrl) {
+      await db.newsletterClickEvent.create({ data: { recipientId: newsletterRecipient.id, url: clickedUrl } })
     }
   }
 

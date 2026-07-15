@@ -26,6 +26,7 @@ interface Campaign {
   sentCount: number
   failedCount: number
   openedCount: number
+  clickedCount: number
   createdByName: string | null
   createdAt: string
 }
@@ -112,6 +113,7 @@ export default function CampaignsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Recipients</TableHead>
                   <TableHead>Opened</TableHead>
+                  <TableHead>Clicked</TableHead>
                   <TableHead>Sent / Scheduled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -133,6 +135,9 @@ export default function CampaignsPage() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {c.status === 'SENT' || c.status === 'SENDING' ? `${c.openedCount}/${c.sentCount}` : '—'}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {c.status === 'SENT' || c.status === 'SENDING' ? `${c.clickedCount}/${c.sentCount}` : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmt(c.sentAt ?? c.scheduledAt)}</TableCell>
                     <TableCell className="text-right space-x-1" onClick={e => e.stopPropagation()}>

@@ -22,6 +22,7 @@ interface SendRecord {
   sentByName: string | null
   createdAt: string
   openedCount: number
+  clickedCount: number
 }
 
 const ACCENT = '#bdac7e'
@@ -211,7 +212,7 @@ export default function Newsletter() {
                     <div>
                       <p className="text-sm font-medium">{h.subject}</p>
                       <p className="text-xs text-muted-foreground">
-                        {h.recipients.length} penerima · {h.openedCount}/{h.recipients.length} dibuka · dari {h.fromName ? `${h.fromName} <${h.fromEmail}>` : h.fromEmail} · oleh {h.sentByName ?? 'Unknown'} · {new Date(h.createdAt).toLocaleString('id-ID')}
+                        {h.recipients.length} penerima · {h.openedCount}/{h.recipients.length} dibuka · {h.clickedCount}/{h.recipients.length} klik link · dari {h.fromName ? `${h.fromName} <${h.fromEmail}>` : h.fromEmail} · oleh {h.sentByName ?? 'Unknown'} · {new Date(h.createdAt).toLocaleString('id-ID')}
                       </p>
                       {h.errorMessage && (
                         <p className="text-xs text-red-600 mt-1">{h.errorMessage}</p>

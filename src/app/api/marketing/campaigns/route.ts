@@ -19,10 +19,14 @@ export async function GET() {
       id: true, name: true, subject: true, status: true, fromEmail: true, fromName: true,
       scheduledAt: true, sentAt: true, totalRecipients: true, sentCount: true, failedCount: true,
       createdByName: true, createdAt: true, updatedAt: true,
-      _count: { select: { recipients: { where: { openedAt: { not: null } } } } },
+      recipients: { select: { openedAt: true, clickedAt: true } },
     },
   })
-  const withStats = campaigns.map(({ _count, ...c }) => ({ ...c, openedCount: _count.recipients }))
+  const withStats = campaigns.map(({ recipients, ...c }) => ({
+    ...c,
+    openedCount: recipients.filter(r => r.openedAt).length,
+    clickedCount: recipients.filter(r => r.clickedAt).length,
+  }))
   return NextResponse.json(withStats)
 }
 

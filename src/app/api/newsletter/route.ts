@@ -18,9 +18,13 @@ export async function GET() {
   const sends = await withRetry(db, () => db.newsletterEmail.findMany({
     orderBy: { createdAt: 'desc' },
     take: 50,
-    include: { _count: { select: { opens: { where: { openedAt: { not: null } } } } } },
+    include: { opens: { select: { openedAt: true, clickedAt: true } } },
   }))
-  const withStats = sends.map(s => ({ ...s, openedCount: s._count.opens }))
+  const withStats = sends.map(({ opens, ...s }) => ({
+    ...s,
+    openedCount: opens.filter(o => o.openedAt).length,
+    clickedCount: opens.filter(o => o.clickedAt).length,
+  }))
   return NextResponse.json(withStats)
 }
 
