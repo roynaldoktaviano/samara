@@ -2467,7 +2467,7 @@ export default function Bookings() {
                                       className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
                                       onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id) }}
                                     >
-                                      <Pencil className="h-3 w-3" /> Edit
+                                      <Pencil className="h-3 w-3" /> Edits
                                     </Button>
                                   )}
                                   <Button
