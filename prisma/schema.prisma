@@ -573,6 +573,103 @@ model NewsletterEmail {
   @@index([createdAt])
 }
 
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+  CANCELED
+}
+
+enum RecipientSourceType {
+  CUSTOMER
+  AGENT
+  AGENT_CONTACT
+  MANUAL
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_UNSUBSCRIBED
+}
+
+model EmailTemplate {
+  id              String          @id @default(cuid())
+  name            String
+  description     String?
+  blocksJson      Json
+  bodyHtml        String
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  campaigns       EmailCampaign[]
+
+  @@index([createdAt])
+}
+
+model EmailCampaign {
+  id              String              @id @default(cuid())
+  name            String
+  subject         String
+  previewText     String?
+  fromEmail       String
+  fromName        String?
+  templateId      String?
+  template        EmailTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  blocksJson      Json
+  bodyHtml        String
+  status          CampaignStatus      @default(DRAFT)
+  audienceSources Json
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  totalRecipients Int                 @default(0)
+  sentCount       Int                 @default(0)
+  failedCount     Int                 @default(0)
+  errorMessage    String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  recipients      CampaignRecipient[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdAt])
+  @@index([templateId])
+}
+
+model CampaignRecipient {
+  id               String              @id @default(cuid())
+  campaignId       String
+  campaign         EmailCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  email            String
+  name             String?
+  sourceType       RecipientSourceType
+  sourceId         String?
+  status           RecipientStatus     @default(PENDING)
+  resendId         String?
+  errorMessage     String?
+  unsubscribeToken String              @unique @default(cuid())
+  sentAt           DateTime?
+  createdAt        DateTime            @default(now())
+
+  @@unique([campaignId, email])
+  @@index([campaignId])
+  @@index([unsubscribeToken])
+}
+
+model EmailUnsubscribe {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  reason     String?
+  campaignId String?
+  createdAt  DateTime @default(now())
+}
+
 model Voucher {
   id          String    @id @default(cuid())
   code        String    @unique

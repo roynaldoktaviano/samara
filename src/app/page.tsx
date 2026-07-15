@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Mail } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Mail, Send, LayoutTemplate } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,6 +53,8 @@ import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
 import Newsletter from '@/components/newsletter/Newsletter'
+import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
+import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
 
 const FINANCE_TABS = [
   { key: 'summary',           label: 'Revenue Summary'   },
@@ -80,7 +82,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'trip-sheet' | 'newsletter'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
 
 type NavItem = {
   id: View
@@ -120,6 +122,8 @@ const navigationItems: NavItem[] = [
   { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
   { id: 'newsletter',    label: 'Newsletter',      icon: Mail,       roles: ['ADMIN'],                                  group: 'marketing'  },
+  { id: 'marketing-campaigns', label: 'Email Campaigns', icon: Send, roles: ['ADMIN', 'MARKETING'],                     group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-templates', label: 'Email Templates', icon: LayoutTemplate, roles: ['ADMIN', 'MARKETING'],           group: 'marketing', feature: 'marketing' },
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
@@ -530,6 +534,8 @@ export default function Home() {
       case 'finance-po-reimbursements': return <POReimbursements />
       case 'vouchers':      return <Vouchers />
       case 'newsletter':    return <Newsletter />
+      case 'marketing-campaigns': return <CampaignsPage />
+      case 'marketing-templates': return <TemplatesPage />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />

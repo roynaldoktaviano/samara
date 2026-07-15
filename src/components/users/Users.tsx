@@ -42,7 +42,7 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     label: 'Marketing',
     desc: 'Trips & customer reach',
     color: 'bg-orange-100 text-orange-700',
-    modules: 'Dashboard, Open Trips, Guests',
+    modules: 'Dashboard, Open Trips, Guests, Email Campaigns, Email Templates',
   },
   {
     value: 'PURCHASING',

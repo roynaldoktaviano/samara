@@ -1,9 +1,10 @@
-export type TenantFeatureKey = 'sharingCabin' | 'agentContract' | 'purchasing'
+export type TenantFeatureKey = 'sharingCabin' | 'agentContract' | 'purchasing' | 'marketing'
 
 export interface TenantFeatures {
   sharingCabin?: boolean
   agentContract?: boolean
   purchasing?: boolean
+  marketing?: boolean
 }
 
 export const TENANT_FEATURE_DEFINITIONS: {
@@ -25,6 +26,11 @@ export const TENANT_FEATURE_DEFINITIONS: {
     key: 'purchasing',
     label: 'Purchasing & Inventory',
     description: 'Purchasing, warehouse management, and ship inventory module',
+  },
+  {
+    key: 'marketing',
+    label: 'Email Marketing',
+    description: 'Email campaign builder and Resend-powered sending to guests and agents',
   },
 ]
 

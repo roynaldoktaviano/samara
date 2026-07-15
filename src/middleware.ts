@@ -9,6 +9,8 @@ const FEATURE_GATED_API_PREFIXES = [
   { prefix: '/api/purchasing', feature: 'purchasing' },
   { prefix: '/api/finance/purchase-order-payments', feature: 'purchasing' },
   { prefix: '/api/finance/po-reimbursements', feature: 'purchasing' },
+  { prefix: '/api/marketing/campaigns', feature: 'marketing' },
+  { prefix: '/api/marketing/templates', feature: 'marketing' },
 ]
 
 const PUBLIC_PATHS = [
@@ -28,6 +30,11 @@ const PUBLIC_PATHS = [
   '/guest-form',
   '/api/guest-form',
   '/api/booking-form',
+  // Email unsubscribe — reached from a link in a sent email, no staff login
+  '/unsubscribe',
+  '/api/marketing/unsubscribe',
+  // Scheduled-campaign dispatcher — triggered by Vercel Cron, authenticates via its own bearer secret
+  '/api/marketing/campaigns/dispatch',
 ]
 
 function isPublic(pathname: string) {
