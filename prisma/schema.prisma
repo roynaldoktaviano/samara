@@ -87,65 +87,65 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  password      String
-  role          Role      @default(SALES)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  bookings         Booking[]     @relation("SalespersonBookings")
-  managedAgents    Agent[]       @relation("AgentSalesperson")
-  waitingListItems WaitingList[]
-  stockMovements   StockMovement[]
-  purchaseRequests PurchaseRequest[] @relation("PRRequestedBy")
-  purchaseRequestsApproved PurchaseRequest[] @relation("PRApprovedBy")
-  purchaseOrdersCreated PurchaseOrder[]
-  goodsReceipts    GoodsReceipt[]
-  transfersDispatched         StockTransfer[] @relation("TransferDispatch")
-  transfersReceived           StockTransfer[] @relation("TransferReceive")
-  transfersExpectedReceive    StockTransfer[] @relation("TransferExpectedReceive")
+  id                          String               @id @default(cuid())
+  email                       String               @unique
+  name                        String?
+  password                    String
+  role                        Role                 @default(SALES)
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+  bookings                    Booking[]            @relation("SalespersonBookings")
+  managedAgents               Agent[]              @relation("AgentSalesperson")
+  waitingListItems            WaitingList[]
+  stockMovements              StockMovement[]
+  purchaseRequests            PurchaseRequest[]    @relation("PRRequestedBy")
+  purchaseRequestsApproved    PurchaseRequest[]    @relation("PRApprovedBy")
+  purchaseOrdersCreated       PurchaseOrder[]
+  goodsReceipts               GoodsReceipt[]
+  transfersDispatched         StockTransfer[]      @relation("TransferDispatch")
+  transfersReceived           StockTransfer[]      @relation("TransferReceive")
+  transfersExpectedReceive    StockTransfer[]      @relation("TransferExpectedReceive")
   inventoryExceptionsResolved InventoryException[] @relation("ExceptionResolvedBy")
-  crewRequests        CrewRequest[]
-  stockCountsBy       StockCount[]   @relation("StockCountBy")
-  stockCountsApproved StockCount[]   @relation("StockCountApprove")
-  poPaymentRequestsMade POPaymentRequest[] @relation("POPaymentRequestedBy")
-  poPaymentRequestsPaid POPaymentRequest[] @relation("POPaymentPaidBy")
-  poReimbursementsMade  POReimbursement[]  @relation("POReimbursementRequestedBy")
-  poReimbursementsPaid  POReimbursement[]  @relation("POReimbursementPaidBy")
+  crewRequests                CrewRequest[]
+  stockCountsBy               StockCount[]         @relation("StockCountBy")
+  stockCountsApproved         StockCount[]         @relation("StockCountApprove")
+  poPaymentRequestsMade       POPaymentRequest[]   @relation("POPaymentRequestedBy")
+  poPaymentRequestsPaid       POPaymentRequest[]   @relation("POPaymentPaidBy")
+  poReimbursementsMade        POReimbursement[]    @relation("POReimbursementRequestedBy")
+  poReimbursementsPaid        POReimbursement[]    @relation("POReimbursementPaidBy")
 }
 
 model Customer {
-  id                  String         @id @default(cuid())
-  name                String
-  firstName           String?
-  lastName            String?
-  gender              String?
-  email               String?
-  phone               String?
-  passport            String?
-  dateOfBirth         DateTime?
-  isChild             Boolean        @default(false)
-  address             String?
-  dietaryRequirements String?
-  allergies           String?
-  equipmentSizes      String?
-  operationalNotes    String?
-  nationality         String?
-  passportExpiry      DateTime?
-  emergencyContact    String?
-  drinkPreferences    String?
-  guestFormToken      String?        @unique
-  guestFormExpiresAt  DateTime?
-  medicalData         Json?
-  foodData            Json?
-  drinksData          Json?
-  divingData          Json?
-  surfingData         Json?
-  passportImage       String?
-  deletedAt           DateTime?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  id                   String               @id @default(cuid())
+  name                 String
+  firstName            String?
+  lastName             String?
+  gender               String?
+  email                String?
+  phone                String?
+  passport             String?
+  dateOfBirth          DateTime?
+  isChild              Boolean              @default(false)
+  address              String?
+  dietaryRequirements  String?
+  allergies            String?
+  equipmentSizes       String?
+  operationalNotes     String?
+  nationality          String?
+  passportExpiry       DateTime?
+  emergencyContact     String?
+  drinkPreferences     String?
+  guestFormToken       String?              @unique
+  guestFormExpiresAt   DateTime?
+  medicalData          Json?
+  foodData             Json?
+  drinksData           Json?
+  divingData           Json?
+  surfingData          Json?
+  passportImage        String?
+  deletedAt            DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
   bookings             Booking[]
   guestOf              BookingGuest[]
   waitingListItems     WaitingList[]
@@ -158,33 +158,33 @@ model Customer {
 }
 
 model Agent {
-  id                 String               @id @default(cuid())
-  name                      String
-  commission                Float                @default(0)
-  commissionOpenTrip        Float                @default(0)
-  commissionPrivateCharter  Float                @default(0)
-  isActive                  Boolean              @default(true)
-  country            String?
-  address            String?
-  email              String?
-  whatsapp           String?
-  note               String?
-  website            String?
-  instagram          String?
-  source             String?
-  currentCondition   String?
-  contract           String?
-  contractFile       String?
-  contractFileName   String?
-  calendarToken      String?              @unique
-  calendarActive     Boolean              @default(false)
-  salespersonId      String?
-  salesperson        User?                @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
-  bookings           Booking[]
-  contacts           AgentContact[]
-  calendarAccessLogs CalendarAccessLog[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                       String              @id @default(cuid())
+  name                     String
+  commission               Float               @default(0)
+  commissionOpenTrip       Float               @default(0)
+  commissionPrivateCharter Float               @default(0)
+  isActive                 Boolean             @default(true)
+  country                  String?
+  address                  String?
+  email                    String?
+  whatsapp                 String?
+  note                     String?
+  website                  String?
+  instagram                String?
+  source                   String?
+  currentCondition         String?
+  contract                 String?
+  contractFile             String?
+  contractFileName         String?
+  calendarToken            String?             @unique
+  calendarActive           Boolean             @default(false)
+  salespersonId            String?
+  salesperson              User?               @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+  bookings                 Booking[]
+  contacts                 AgentContact[]
+  calendarAccessLogs       CalendarAccessLog[]
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
   @@index([salespersonId])
   @@index([name])
@@ -204,52 +204,52 @@ model CalendarAccessLog {
 }
 
 model AgentContact {
-  id           String    @id @default(cuid())
-  agentId      String
-  name         String
-  email        String?
-  whatsapp     String?
-  jobTitle     String?
-  dateOfBirth  DateTime?
-  addedById    String?
-  addedByName  String?
-  agent        Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  bookings     Booking[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @default(now()) @updatedAt
+  id          String    @id @default(cuid())
+  agentId     String
+  name        String
+  email       String?
+  whatsapp    String?
+  jobTitle    String?
+  dateOfBirth DateTime?
+  addedById   String?
+  addedByName String?
+  agent       Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   @@index([agentId])
 }
 
 model Yacht {
-  id           String        @id @default(cuid())
-  name         String
-  model        String?
-  year         Int?
-  capacity     Int
-  cabinCount   Int           @default(0)
-  length       Float?
-  description  String?
-  hourlyRate     Float
-  dailyRate      Float
-  extraBedTiers  Json          @default("[]")
-  canDiving      Boolean       @default(false)
-  canSurfing     Boolean       @default(false)
-  status         YachtStatus   @default(available)
-  image        String?
-  deletedAt    DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  bookings         Booking[]
-  crew             Crew[]
-  cabins           Cabin[]
-  openTrips        OpenTrip[]
-  maintenances     Maintenance[]
-  expenses         Expense[]
-  waitingListItems WaitingList[]
-  stockLocations   StockLocation[]
-  crewRequests     CrewRequest[]
-  cashierSales     CashierSale[]
+  id                String                  @id @default(cuid())
+  name              String
+  model             String?
+  year              Int?
+  capacity          Int
+  cabinCount        Int                     @default(0)
+  length            Float?
+  description       String?
+  hourlyRate        Float
+  dailyRate         Float
+  extraBedTiers     Json                    @default("[]")
+  canDiving         Boolean                 @default(false)
+  canSurfing        Boolean                 @default(false)
+  status            YachtStatus             @default(available)
+  image             String?
+  deletedAt         DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  bookings          Booking[]
+  crew              Crew[]
+  cabins            Cabin[]
+  openTrips         OpenTrip[]
+  maintenances      Maintenance[]
+  expenses          Expense[]
+  waitingListItems  WaitingList[]
+  stockLocations    StockLocation[]
+  crewRequests      CrewRequest[]
+  cashierSales      CashierSale[]
   destinationPrices YachtDestinationPrice[]
 }
 
@@ -280,17 +280,17 @@ model YachtDestinationPrice {
 }
 
 model Cabin {
-  id            String             @id @default(cuid())
-  yachtId       String
-  name          String
-  capacity      Int                @default(2)
-  price         Float              @default(0)
-  deck          String?
-  bedType       String?
-  extraBeds     Int                @default(0)
-  yacht         Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  guests        BookingGuest[]
-  pricingTiers  CabinPricingTier[]
+  id           String             @id @default(cuid())
+  yachtId      String
+  name         String
+  capacity     Int                @default(2)
+  price        Float              @default(0)
+  deck         String?
+  bedType      String?
+  extraBeds    Int                @default(0)
+  yacht        Yacht              @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  guests       BookingGuest[]
+  pricingTiers CabinPricingTier[]
 
   @@index([yachtId])
 }
@@ -307,27 +307,27 @@ model CabinPricingTier {
 }
 
 model OpenTrip {
-  id            String   @id @default(cuid())
-  title         String
-  description   String?
-  yachtId       String
-  startDate     DateTime
-  endDate       DateTime
-  destination   String
-  destinationId String?
-  region        String?
-  departurePort String?
-  arrivalPort   String?
-  pricePerCabin Float    @default(0)
-  maxCapacity   Int      @default(0)
-  status        OpenTripStatus @default(open)
-  closedReason  String?
+  id               String         @id @default(cuid())
+  title            String
+  description      String?
+  yachtId          String
+  startDate        DateTime
+  endDate          DateTime
+  destination      String
+  destinationId    String?
+  region           String?
+  departurePort    String?
+  arrivalPort      String?
+  pricePerCabin    Float          @default(0)
+  maxCapacity      Int            @default(0)
+  status           OpenTripStatus @default(open)
+  closedReason     String?
   bookings         Booking[]
   waitingListItems WaitingList[]
-  yacht            Yacht    @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  destinationRef   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  yacht            Yacht          @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  destinationRef   Destination?   @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([yachtId])
   @@index([status])
@@ -336,68 +336,68 @@ model OpenTrip {
 }
 
 model Booking {
-  id             String          @id @default(cuid())
-  bookingCode    String          @unique
-  customerId     String
-  agentId        String?
-  agentContactId String?
-  openTripId     String?
-  source         BookingSource   @default(DIRECT)
-  tripType       TripType        @default(PRIVATE_CHARTER)
-  yachtId        String?
-  startDate      DateTime
-  endDate        DateTime
-  destination    String?
-  destinationId  String?
-  status         BookingStatus   @default(pending)
-  totalPrice     Float
-  depositPaid    Float           @default(0)
-  discount       Float           @default(0)
-  depositDueDate DateTime?
-  finalDueDate   DateTime?
+  id                            String               @id @default(cuid())
+  bookingCode                   String               @unique
+  customerId                    String
+  agentId                       String?
+  agentContactId                String?
+  openTripId                    String?
+  source                        BookingSource        @default(DIRECT)
+  tripType                      TripType             @default(PRIVATE_CHARTER)
+  yachtId                       String?
+  startDate                     DateTime
+  endDate                       DateTime
+  destination                   String?
+  destinationId                 String?
+  status                        BookingStatus        @default(pending)
+  totalPrice                    Float
+  depositPaid                   Float                @default(0)
+  discount                      Float                @default(0)
+  depositDueDate                DateTime?
+  finalDueDate                  DateTime?
   // When set, the invoice PDF shows this date instead of the live depositDueDate/finalDueDate above —
   // lets staff extend a due date internally without amending an already-issued invoice.
   depositDueDateInvoiceOverride DateTime?
   finalDueDateInvoiceOverride   DateTime?
-  holdUntil      DateTime?
-  guestCount     Int             @default(1)
-  crewRequired   Boolean         @default(false)
-  hasDiving           Boolean         @default(false)
-  hasSurfing          Boolean         @default(false)
-  hasPhotoPackage     Boolean         @default(false)
-  masterFormToken     String?         @unique
-  masterFormExpiresAt DateTime?
-  salesperson     String?
-  salespersonId   String?
-  notes           String?
-  cancelReason    String?
-  refundStatus    String?
-  refundDecision  String?
-  refundReason    String?
-  refundProof     String?
-  refundConfirmedAt DateTime?
-  refundConfirmedBy String?
-  voucherCode     String?
-  currency        String          @default("USD")
-  exchangeRate    Float?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  agent           Agent?          @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  agentContact    AgentContact?   @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
-  yacht           Yacht?          @relation(fields: [yachtId], references: [id])
-  openTrip        OpenTrip?       @relation(fields: [openTripId], references: [id], onDelete: SetNull)
-  destinationRef  Destination?    @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  salespersonUser User?           @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
-  guests          BookingGuest[]
-  services        BookingService[]
-  payments        Payment[]
-  expenses        Expense[]
-  notifications   Notification[]
-  waitingList          WaitingList[]        @relation("BookingWaitingList")
-  slotHistory          WaitingListHistory[] @relation("BookingSlotHistory")
-  promotedWaitingLists WaitingList[]        @relation("WaitingListPromotedBooking")
-  cashierSales         CashierSale[]
+  holdUntil                     DateTime?
+  guestCount                    Int                  @default(1)
+  crewRequired                  Boolean              @default(false)
+  hasDiving                     Boolean              @default(false)
+  hasSurfing                    Boolean              @default(false)
+  hasPhotoPackage               Boolean              @default(false)
+  masterFormToken               String?              @unique
+  masterFormExpiresAt           DateTime?
+  salesperson                   String?
+  salespersonId                 String?
+  notes                         String?
+  cancelReason                  String?
+  refundStatus                  String?
+  refundDecision                String?
+  refundReason                  String?
+  refundProof                   String?
+  refundConfirmedAt             DateTime?
+  refundConfirmedBy             String?
+  voucherCode                   String?
+  currency                      String               @default("USD")
+  exchangeRate                  Float?
+  createdAt                     DateTime             @default(now())
+  updatedAt                     DateTime             @updatedAt
+  customer                      Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  agent                         Agent?               @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentContact                  AgentContact?        @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
+  yacht                         Yacht?               @relation(fields: [yachtId], references: [id])
+  openTrip                      OpenTrip?            @relation(fields: [openTripId], references: [id], onDelete: SetNull)
+  destinationRef                Destination?         @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  salespersonUser               User?                @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
+  guests                        BookingGuest[]
+  services                      BookingService[]
+  payments                      Payment[]
+  expenses                      Expense[]
+  notifications                 Notification[]
+  waitingList                   WaitingList[]        @relation("BookingWaitingList")
+  slotHistory                   WaitingListHistory[] @relation("BookingSlotHistory")
+  promotedWaitingLists          WaitingList[]        @relation("WaitingListPromotedBooking")
+  cashierSales                  CashierSale[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -413,20 +413,20 @@ model Booking {
 }
 
 model BookingGuest {
-  id                  String   @id @default(cuid())
+  id                  String        @id @default(cuid())
   bookingId           String
   customerId          String
   cabinId             String?
-  isLead              Boolean  @default(false)
+  isLead              Boolean       @default(false)
   arrivalPickupTime   String?
   arrivalHotel        String?
   arrivalFlight       String?
   departurePickupTime String?
   departureHotel      String?
   departureFlight     String?
-  booking             Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  cabin               Cabin?   @relation(fields: [cabinId], references: [id])
+  booking             Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer            Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cabin               Cabin?        @relation(fields: [cabinId], references: [id])
   cashierSales        CashierSale[]
 
   @@unique([bookingId, customerId])
@@ -463,7 +463,7 @@ model Crew {
 }
 
 model Maintenance {
-  id            String    @id @default(cuid())
+  id            String            @id @default(cuid())
   yachtId       String
   title         String
   description   String?
@@ -471,9 +471,9 @@ model Maintenance {
   completedAt   DateTime?
   status        MaintenanceStatus @default(scheduled)
   cost          Float?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  yacht         Yacht     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  yacht         Yacht             @relation(fields: [yachtId], references: [id], onDelete: Cascade)
 
   @@index([yachtId])
   @@index([status, scheduledDate])
@@ -513,41 +513,41 @@ model Bank {
 }
 
 model Payment {
-  id                String    @id @default(cuid())
-  bookingId         String
-  invoiceNumber     String    @unique
-  paymentType       String    @default("DP")
-  paymentMethod     String?
-  amount            Float
-  previouslyPaid    Float     @default(0)
-  paymentDate       DateTime?
-  currency          String    @default("USD")
-  exchangeRate      Float?
-  status            PaymentStatus @default(pending_confirmation)
-  notes             String?
-  proofOfTransfer     String?
-  billToType          String?
-  showNetAmount       Boolean   @default(false)
-  showCommissionNote  Boolean   @default(false)
-  bankId              String?
-  paymentLink         String?
-  submittedByUserId   String?
-  submittedByName     String?
-  invoiceGeneratedBy  String?
-  invoiceGeneratedAt  DateTime?
-  confirmedBy         String?
-  confirmedAt         DateTime?
+  id                 String         @id @default(cuid())
+  bookingId          String
+  invoiceNumber      String         @unique
+  paymentType        String         @default("DP")
+  paymentMethod      String?
+  amount             Float
+  previouslyPaid     Float          @default(0)
+  paymentDate        DateTime?
+  currency           String         @default("USD")
+  exchangeRate       Float?
+  status             PaymentStatus  @default(pending_confirmation)
+  notes              String?
+  proofOfTransfer    String?
+  billToType         String?
+  showNetAmount      Boolean        @default(false)
+  showCommissionNote Boolean        @default(false)
+  bankId             String?
+  paymentLink        String?
+  submittedByUserId  String?
+  submittedByName    String?
+  invoiceGeneratedBy String?
+  invoiceGeneratedAt DateTime?
+  confirmedBy        String?
+  confirmedAt        DateTime?
   // hasDocument=false: an additional DP tacked onto parentPayment's invoice — no new invoice
   // document was generated, sales attaches proof of transfer directly at creation.
-  hasDocument         Boolean   @default(true)
-  parentPaymentId     String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  booking           Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  bank              Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
-  notifications     Notification[]
-  parentPayment     Payment?       @relation("PaymentParent", fields: [parentPaymentId], references: [id], onDelete: SetNull)
-  childPayments     Payment[]      @relation("PaymentParent")
+  hasDocument        Boolean        @default(true)
+  parentPaymentId    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  booking            Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bank               Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  notifications      Notification[]
+  parentPayment      Payment?       @relation("PaymentParent", fields: [parentPaymentId], references: [id], onDelete: SetNull)
+  childPayments      Payment[]      @relation("PaymentParent")
 
   @@index([bookingId])
   @@index([status])
@@ -558,39 +558,40 @@ model Payment {
 }
 
 model NewsletterEmail {
-  id           String   @id @default(cuid())
+  id           String                @id @default(cuid())
   subject      String
   bodyHtml     String
   fromEmail    String
   fromName     String?
   previewText  String?
   recipients   String[] // raw list entered at send time — no contact-list integration yet
-  status       String   @default("sent") // sent | failed | partial
+  status       String                @default("sent") // sent | failed | partial
   resendIds    String[] // Resend message id per successful recipient
   errorMessage String?
   sentByUserId String?
   sentByName   String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime              @default(now())
   opens        NewsletterRecipient[]
 
   @@index([createdAt])
 }
 
 model NewsletterRecipient {
-  id           String          @id @default(cuid())
+  id           String                 @id @default(cuid())
   newsletterId String
-  newsletter   NewsletterEmail @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  newsletter   NewsletterEmail        @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
   email        String
   resendId     String?
-  status       String          @default("PENDING") // PENDING | SENT | FAILED
+  status       String                 @default("PENDING") // PENDING | SENT | FAILED
   errorMessage String?
   openedAt     DateTime?
-  openCount    Int             @default(0)
+  openCount    Int                    @default(0)
   clickedAt    DateTime?
-  clickCount   Int             @default(0)
+  clickCount   Int                    @default(0)
   lastClickUrl String?
   clicks       NewsletterClickEvent[]
-  createdAt    DateTime        @default(now())
+  opens        NewsletterOpenEvent[]
+  createdAt    DateTime               @default(now())
 
   @@unique([newsletterId, email])
   @@index([newsletterId])
@@ -604,7 +605,22 @@ model NewsletterClickEvent {
   recipientId String
   recipient   NewsletterRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   url         String
+  ipAddress   String?
+  userAgent   String?
   clickedAt   DateTime            @default(now())
+
+  @@index([recipientId])
+}
+
+// One row per individual open — lets the detail view chart opens by date/hour
+// instead of only knowing the first-open timestamp.
+model NewsletterOpenEvent {
+  id          String              @id @default(cuid())
+  recipientId String
+  recipient   NewsletterRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  ipAddress   String?
+  userAgent   String?
+  openedAt    DateTime            @default(now())
 
   @@index([recipientId])
 }
@@ -680,25 +696,27 @@ model EmailCampaign {
 }
 
 model CampaignRecipient {
-  id               String              @id @default(cuid())
+  id               String               @id @default(cuid())
   campaignId       String
-  campaign         EmailCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign         EmailCampaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   email            String
   name             String?
   sourceType       RecipientSourceType
   sourceId         String?
-  status           RecipientStatus     @default(PENDING)
+  status           RecipientStatus      @default(PENDING)
   resendId         String?
   errorMessage     String?
-  unsubscribeToken String              @unique @default(cuid())
+  unsubscribeToken String               @unique @default(cuid())
   sentAt           DateTime?
   openedAt         DateTime?
-  openCount        Int                 @default(0)
+  openCount        Int                  @default(0)
   clickedAt        DateTime?
-  clickCount       Int                 @default(0)
+  clickCount       Int                  @default(0)
   lastClickUrl     String?
+  unsubscribedAt   DateTime?
   clicks           CampaignClickEvent[]
-  createdAt        DateTime            @default(now())
+  opens            CampaignOpenEvent[]
+  createdAt        DateTime             @default(now())
 
   @@unique([campaignId, email])
   @@index([campaignId])
@@ -712,7 +730,22 @@ model CampaignClickEvent {
   recipientId String
   recipient   CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   url         String
+  ipAddress   String?
+  userAgent   String?
   clickedAt   DateTime          @default(now())
+
+  @@index([recipientId])
+}
+
+// One row per individual open — lets the detail view chart opens by date/hour
+// instead of only knowing the first-open timestamp.
+model CampaignOpenEvent {
+  id          String            @id @default(cuid())
+  recipientId String
+  recipient   CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  ipAddress   String?
+  userAgent   String?
+  openedAt    DateTime          @default(now())
 
   @@index([recipientId])
 }
@@ -726,20 +759,20 @@ model EmailUnsubscribe {
 }
 
 model Voucher {
-  id          String    @id @default(cuid())
-  code        String    @unique
+  id          String      @id @default(cuid())
+  code        String      @unique
   name        String
   description String?
   type        VoucherType
   value       Float
   minBooking  Float?
   maxUses     Int?
-  usedCount   Int       @default(0)
+  usedCount   Int         @default(0)
   validFrom   DateTime?
   validUntil  DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 model ActivityLog {
@@ -759,20 +792,20 @@ model ActivityLog {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  type      String
-  title     String
-  body      String
-  paymentId String?
-  bookingId String?
-  orderId   String?
-  requestId String?
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  payment       Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  booking       Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  purchaseOrder PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  id              String           @id @default(cuid())
+  userId          String
+  type            String
+  title           String
+  body            String
+  paymentId       String?
+  bookingId       String?
+  orderId         String?
+  requestId       String?
+  isRead          Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  payment         Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  booking         Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  purchaseOrder   PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
   purchaseRequest PurchaseRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
@@ -799,14 +832,14 @@ model WaitingList {
   salespersonId     String?
   promotedBookingId String?
 
-  booking          Booking?   @relation("BookingWaitingList", fields: [bookingId], references: [id], onDelete: Cascade)
-  yacht            Yacht?     @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  openTrip         OpenTrip?  @relation(fields: [openTripId], references: [id], onDelete: Cascade)
-  customer         Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  salesperson      User?      @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
-  promotedBooking  Booking?   @relation("WaitingListPromotedBooking", fields: [promotedBookingId], references: [id], onDelete: SetNull)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  booking         Booking?  @relation("BookingWaitingList", fields: [bookingId], references: [id], onDelete: Cascade)
+  yacht           Yacht?    @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  openTrip        OpenTrip? @relation(fields: [openTripId], references: [id], onDelete: Cascade)
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  salesperson     User?     @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
+  promotedBooking Booking?  @relation("WaitingListPromotedBooking", fields: [promotedBookingId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([bookingId, status])
   @@index([yachtId, status])
@@ -817,13 +850,13 @@ model WaitingList {
 }
 
 model WaitingListHistory {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   bookingId    String
   holderName   String
   customerId   String?
   cancelledAt  DateTime
   cancelReason String?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime @default(now())
 
   booking  Booking   @relation("BookingSlotHistory", fields: [bookingId], references: [id], onDelete: Cascade)
   customer Customer? @relation("WaitingListHistoryCustomer", fields: [customerId], references: [id], onDelete: SetNull)
@@ -858,13 +891,13 @@ enum StockLocationType {
 }
 
 model PurchaseItemTypeConfig {
-  id         String   @id @default(cuid())
-  code       String   @unique
-  label      String
-  isLocked   Boolean  @default(false)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  code      String   @unique
+  label     String
+  isLocked  Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   categories PurchaseItemCategory[]
 }
@@ -925,8 +958,8 @@ enum StockCountStatus {
 }
 
 model PurchaseItem {
-  id               String           @id @default(cuid())
-  sku              String           @unique
+  id               String   @id @default(cuid())
+  sku              String   @unique
   name             String
   type             String   @default("MAINTENANCE")
   category         String
@@ -1003,11 +1036,11 @@ model CashierSale {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  yacht      Yacht           @relation(fields: [yachtId], references: [id])
-  location   StockLocation   @relation(fields: [locationId], references: [id])
-  booking    Booking?        @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  guest      BookingGuest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
-  items      CashierSaleItem[]
+  yacht    Yacht             @relation(fields: [yachtId], references: [id])
+  location StockLocation     @relation(fields: [locationId], references: [id])
+  booking  Booking?          @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  guest    BookingGuest?     @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  items    CashierSaleItem[]
 
   @@index([yachtId])
   @@index([bookingId])
@@ -1026,26 +1059,26 @@ model CashierSaleItem {
   round     Int      @default(1)
   createdAt DateTime @default(now())
 
-  sale      CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  item      PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  sale CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([saleId])
   @@index([itemId])
 }
 
 model StockLot {
-  id          String        @id @default(cuid())
+  id          String    @id @default(cuid())
   itemId      String
   locationId  String
-  quantity    Float         @default(0)
-  costPerUnit Float         @default(0)
+  quantity    Float     @default(0)
+  costPerUnit Float     @default(0)
   batch       String?
   expiresAt   DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  item        PurchaseItem  @relation(fields: [itemId], references: [id])
-  location    StockLocation @relation(fields: [locationId], references: [id])
+  item     PurchaseItem  @relation(fields: [itemId], references: [id])
+  location StockLocation @relation(fields: [locationId], references: [id])
 
   @@index([itemId, locationId])
   @@index([expiresAt])
@@ -1064,8 +1097,8 @@ model StockMovement {
   createdById    String
   createdAt      DateTime @default(now())
 
-  item           PurchaseItem @relation(fields: [itemId], references: [id])
-  createdBy      User         @relation(fields: [createdById], references: [id])
+  item      PurchaseItem @relation(fields: [itemId], references: [id])
+  createdBy User         @relation(fields: [createdById], references: [id])
 
   @@index([itemId])
   @@index([type])
@@ -1104,37 +1137,37 @@ model PurchaseRequest {
 }
 
 model Supplier {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   name      String
   locations Json     @default("[]")
   contact   String?
   phone     String?
   email     String?
   notes     String?
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  orders        PurchaseOrder[]
-  requestItems  PurchaseRequestItem[]
+  orders       PurchaseOrder[]
+  requestItems PurchaseRequestItem[]
 }
 
 model PurchaseRequestItem {
-  id            String          @id @default(cuid())
+  id            String  @id @default(cuid())
   requestId     String
   itemId        String?
   itemName      String
   quantity      Float
   unit          String
-  estimatedCost Float           @default(0)
+  estimatedCost Float   @default(0)
   supplierId    String?
   supplierName  String?
   notes         String?
-  imageKeys     Json            @default("[]") // reference photos for custom requests — array of base64/URL strings
+  imageKeys     Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
 
-  request     PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  item        PurchaseItem?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  supplier    Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  request  PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item     PurchaseItem?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
 }
@@ -1170,19 +1203,18 @@ model PurchaseOrder {
   requestedByDepartment String?
   requestedByRole       String?
 
-  request            PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  supplier           Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  deliveryLocation   StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  createdBy          User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  requestedByEmployee Employee?          @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
-  items            PurchaseOrderItem[]
-  receipts         GoodsReceipt[]
-  notifications    Notification[]
-  paymentRequests  POPaymentRequest[]
-  reimbursements   POReimbursement[]
+  request             PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier            Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  deliveryLocation    StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  createdBy           User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  requestedByEmployee Employee?           @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  items               PurchaseOrderItem[]
+  receipts            GoodsReceipt[]
+  notifications       Notification[]
+  paymentRequests     POPaymentRequest[]
+  reimbursements      POReimbursement[]
 
   @@index([createdById])
-
   @@index([status])
   @@index([createdAt])
   @@index([requestId])
@@ -1196,19 +1228,19 @@ enum POPaymentRequestStatus {
 }
 
 model POPaymentRequest {
-  id               String                 @id @default(cuid())
-  orderId          String
-  requestedById    String
-  amount           Float
-  notePhotoKeys    String[]               @default([])
-  notes            String?
-  status           POPaymentRequestStatus @default(PENDING)
-  paymentMethod    String                 @default("TRANSFER")
-  paidAt           DateTime?
-  paidById         String?
-  transferProofKeys String[]              @default([])
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  id                String                 @id @default(cuid())
+  orderId           String
+  requestedById     String
+  amount            Float
+  notePhotoKeys     String[]               @default([])
+  notes             String?
+  status            POPaymentRequestStatus @default(PENDING)
+  paymentMethod     String                 @default("TRANSFER")
+  paidAt            DateTime?
+  paidById          String?
+  transferProofKeys String[]               @default([])
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   requestedBy User          @relation("POPaymentRequestedBy", fields: [requestedById], references: [id])
@@ -1252,88 +1284,88 @@ model POReimbursement {
 }
 
 model PurchaseOrderItem {
-  id           String        @id @default(cuid())
-  orderId      String
-  itemId       String?
-  itemName     String
-  unit         String?
-  orderedQty   Float
-  receivedQty  Float         @default(0)
-  unitCost     Float         @default(0)
+  id          String  @id @default(cuid())
+  orderId     String
+  itemId      String?
+  itemName    String
+  unit        String?
+  orderedQty  Float
+  receivedQty Float   @default(0)
+  unitCost    Float   @default(0)
 
-  order        PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  item         PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
 }
 
 model GoodsReceipt {
-  id              String             @id @default(cuid())
-  grNumber        String             @unique
+  id              String   @id @default(cuid())
+  grNumber        String   @unique
   orderId         String
   receivedById    String
   receiverName    String?
   locationId      String
   receivePhotoKey String?
   notes           String?
-  receivedAt      DateTime           @default(now())
-  createdAt       DateTime           @default(now())
+  receivedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
 
-  order           PurchaseOrder      @relation(fields: [orderId], references: [id])
-  receivedBy      User               @relation(fields: [receivedById], references: [id])
-  location        StockLocation      @relation(fields: [locationId], references: [id])
-  items           GoodsReceiptItem[]
+  order      PurchaseOrder      @relation(fields: [orderId], references: [id])
+  receivedBy User               @relation(fields: [receivedById], references: [id])
+  location   StockLocation      @relation(fields: [locationId], references: [id])
+  items      GoodsReceiptItem[]
 
   @@index([orderId])
   @@index([receivedAt])
 }
 
 model GoodsReceiptItem {
-  id          String       @id @default(cuid())
+  id          String    @id @default(cuid())
   receiptId   String
   itemId      String?
   itemName    String
   receivedQty Float
-  unitCost    Float        @default(0)
-  outcome     String       @default("ACCEPTED")
-  condition   String       @default("good")
+  unitCost    Float     @default(0)
+  outcome     String    @default("ACCEPTED")
+  condition   String    @default("good")
   batch       String?
   expiryDate  DateTime?
   notes       String?
 
-  receipt     GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  item        PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  receipt GoodsReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item    PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([receiptId])
 }
 
 model StockTransfer {
-  id               String            @id @default(cuid())
-  transferNumber   String            @unique
-  fromLocationId   String
-  toLocationId     String
-  crewRequestId    String?
-  status           TransferStatus    @default(PENDING)
-  dispatchPhotoKey String?
-  receivePhotoKey  String?
+  id                   String         @id @default(cuid())
+  transferNumber       String         @unique
+  fromLocationId       String
+  toLocationId         String
+  crewRequestId        String?
+  status               TransferStatus @default(PENDING)
+  dispatchPhotoKey     String?
+  receivePhotoKey      String?
   dispatchedById       String?
   receivedById         String?
   expectedReceiverId   String?
   expectedReceiverName String?
   receivedByName       String?
-  notes            String?
-  dispatchedAt     DateTime?
-  receivedAt       DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  notes                String?
+  dispatchedAt         DateTime?
+  receivedAt           DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  fromLocation     StockLocation     @relation("TransferFrom", fields: [fromLocationId], references: [id])
-  toLocation       StockLocation     @relation("TransferTo", fields: [toLocationId], references: [id])
-  crewRequest      CrewRequest?      @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
-  dispatchedBy       User?             @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
-  receivedBy         User?             @relation("TransferReceive", fields: [receivedById], references: [id], onDelete: SetNull)
-  expectedReceivedBy User?             @relation("TransferExpectedReceive", fields: [expectedReceiverId], references: [id], onDelete: SetNull)
-  items            StockTransferItem[]
+  fromLocation       StockLocation       @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation         StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])
+  crewRequest        CrewRequest?        @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
+  dispatchedBy       User?               @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
+  receivedBy         User?               @relation("TransferReceive", fields: [receivedById], references: [id], onDelete: SetNull)
+  expectedReceivedBy User?               @relation("TransferExpectedReceive", fields: [expectedReceiverId], references: [id], onDelete: SetNull)
+  items              StockTransferItem[]
 
   @@index([status])
   @@index([createdAt])
@@ -1341,16 +1373,16 @@ model StockTransfer {
 }
 
 model StockTransferItem {
-  id            String        @id @default(cuid())
+  id            String  @id @default(cuid())
   transferId    String
   itemId        String?
   itemName      String
   requestedQty  Float
-  dispatchedQty Float         @default(0)
-  receivedQty   Float         @default(0)
+  dispatchedQty Float   @default(0)
+  receivedQty   Float   @default(0)
 
-  transfer      StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  item          PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([transferId])
 }
@@ -1368,10 +1400,10 @@ model StockCount {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  location     StockLocation    @relation(fields: [locationId], references: [id])
-  countedBy    User             @relation("StockCountBy", fields: [countedById], references: [id])
-  approvedBy   User?            @relation("StockCountApprove", fields: [approvedById], references: [id], onDelete: SetNull)
-  items        StockCountItem[]
+  location   StockLocation    @relation(fields: [locationId], references: [id])
+  countedBy  User             @relation("StockCountBy", fields: [countedById], references: [id])
+  approvedBy User?            @relation("StockCountApprove", fields: [approvedById], references: [id], onDelete: SetNull)
+  items      StockCountItem[]
 
   @@index([status])
   @@index([locationId])
@@ -1379,16 +1411,16 @@ model StockCount {
 }
 
 model StockCountItem {
-  id          String     @id @default(cuid())
-  countId     String
-  itemId      String?
-  itemName    String
-  systemQty   Float
-  countedQty  Float      @default(0)
-  reason      String?
+  id         String  @id @default(cuid())
+  countId    String
+  itemId     String?
+  itemName   String
+  systemQty  Float
+  countedQty Float   @default(0)
+  reason     String?
 
-  count       StockCount   @relation(fields: [countId], references: [id], onDelete: Cascade)
-  item        PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  count StockCount    @relation(fields: [countId], references: [id], onDelete: Cascade)
+  item  PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([countId])
 }
@@ -1402,10 +1434,10 @@ model CrewRequest {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  yacht         Yacht             @relation(fields: [yachtId], references: [id])
-  requestedBy   User              @relation(fields: [requestedById], references: [id])
-  items         CrewRequestItem[]
-  transfers     StockTransfer[]
+  yacht       Yacht             @relation(fields: [yachtId], references: [id])
+  requestedBy User              @relation(fields: [requestedById], references: [id])
+  items       CrewRequestItem[]
+  transfers   StockTransfer[]
 
   @@index([yachtId, status])
   @@index([status])
@@ -1413,23 +1445,23 @@ model CrewRequest {
 }
 
 model CrewRequestItem {
-  id         String       @id @default(cuid())
-  requestId  String
-  itemId     String?
-  itemName   String
-  quantity   Float
-  unit       String
-  notes      String?
+  id        String  @id @default(cuid())
+  requestId String
+  itemId    String?
+  itemName  String
+  quantity  Float
+  unit      String
+  notes     String?
 
-  request    CrewRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  item       PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  request CrewRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item    PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
 }
 
 model InventoryException {
   id            String    @id @default(cuid())
-  type          String    // TRANSFER_DISCREPANCY | NEGATIVE_STOCK | RECEIVING_DISCREPANCY | STOCK_COUNT_VARIANCE
+  type          String // TRANSFER_DISCREPANCY | NEGATIVE_STOCK | RECEIVING_DISCREPANCY | STOCK_COUNT_VARIANCE
   itemId        String?
   itemName      String
   locationId    String?
@@ -1446,7 +1478,7 @@ model InventoryException {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  resolvedBy    User?     @relation("ExceptionResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedBy User? @relation("ExceptionResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([type])
@@ -1457,21 +1489,21 @@ model InventoryException {
 // ─── People & HR (minimal master data) ─────────────────────────────────────────
 
 model LegalEntity {
-  id        String     @id @default(cuid())
+  id        String   @id @default(cuid())
   name      String
-  code      String?    @unique
+  code      String?  @unique
   country   String?
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 
   employees Employee[]
 }
 
 model EmployeeRole {
-  id        String     @id @default(cuid())
+  id        String   @id @default(cuid())
   title     String
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 
   employees Employee[]
 
@@ -1479,31 +1511,31 @@ model EmployeeRole {
 }
 
 model Employee {
-  id             String    @id @default(cuid())
-  employeeNumber String    @unique
-  fullName       String
-  department     String?
-  gender         String?
+  id               String    @id @default(cuid())
+  employeeNumber   String    @unique
+  fullName         String
+  department       String?
+  gender           String?
   employmentStatus String? // e.g. Permanent | Contract | Probation | Intern
-  leaveBalance   Int?
-  joinDate       DateTime?
-  isActive       Boolean   @default(true)
-  resignedAt     DateTime?
-  resignStatus   String?   // RESIGNED | TERMINATED | CONTRACT_ENDED | OTHER
-  resignReason   String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  leaveBalance     Int?
+  joinDate         DateTime?
+  isActive         Boolean   @default(true)
+  resignedAt       DateTime?
+  resignStatus     String? // RESIGNED | TERMINATED | CONTRACT_ENDED | OTHER
+  resignReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  legalEntityId  String?
-  legalEntity    LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
 
-  locationId     String?
-  location       StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId String?
+  location   StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
-  roleId         String?
-  role           EmployeeRole?  @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  roleId String?
+  role   EmployeeRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
-  purchaseRequests PurchaseRequest[]
+  purchaseRequests        PurchaseRequest[]
   purchaseOrdersRequested PurchaseOrder[]
 
   @@index([legalEntityId])

@@ -14,7 +14,8 @@ type ResendEvent = {
   data?: {
     email_id?: string
     bounce?: { message?: string }
-    click?: { link?: string }
+    click?: { link?: string; ipAddress?: string; userAgent?: string }
+    open?: { ipAddress?: string; userAgent?: string }
   }
 }
 
@@ -60,6 +61,8 @@ export async function POST(request: NextRequest) {
   }
 
   const clickedUrl = event.data?.click?.link
+  const clickMeta = { ipAddress: event.data?.click?.ipAddress, userAgent: event.data?.click?.userAgent }
+  const openMeta = { ipAddress: event.data?.open?.ipAddress, userAgent: event.data?.open?.userAgent }
 
   const campaignRecipient = await db.campaignRecipient.findFirst({ where: { resendId: emailId } })
   if (campaignRecipient) {
@@ -67,8 +70,11 @@ export async function POST(request: NextRequest) {
       where: { id: campaignRecipient.id },
       data: buildUpdate(campaignRecipient.openedAt, campaignRecipient.clickedAt),
     })
+    if (event.type === 'email.opened') {
+      await db.campaignOpenEvent.create({ data: { recipientId: campaignRecipient.id, ...openMeta } })
+    }
     if (event.type === 'email.clicked' && clickedUrl) {
-      await db.campaignClickEvent.create({ data: { recipientId: campaignRecipient.id, url: clickedUrl } })
+      await db.campaignClickEvent.create({ data: { recipientId: campaignRecipient.id, url: clickedUrl, ...clickMeta } })
     }
     return NextResponse.json({ ok: true })
   }
@@ -79,8 +85,11 @@ export async function POST(request: NextRequest) {
       where: { id: newsletterRecipient.id },
       data: buildUpdate(newsletterRecipient.openedAt, newsletterRecipient.clickedAt),
     })
+    if (event.type === 'email.opened') {
+      await db.newsletterOpenEvent.create({ data: { recipientId: newsletterRecipient.id, ...openMeta } })
+    }
     if (event.type === 'email.clicked' && clickedUrl) {
-      await db.newsletterClickEvent.create({ data: { recipientId: newsletterRecipient.id, url: clickedUrl } })
+      await db.newsletterClickEvent.create({ data: { recipientId: newsletterRecipient.id, url: clickedUrl, ...clickMeta } })
     }
   }
 

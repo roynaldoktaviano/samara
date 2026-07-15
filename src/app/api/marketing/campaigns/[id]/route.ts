@@ -19,7 +19,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       recipients: {
         orderBy: { createdAt: 'desc' },
         take: 200,
-        include: { clicks: { orderBy: { clickedAt: 'desc' } } },
+        include: {
+          clicks: { orderBy: { clickedAt: 'desc' } },
+          opens: { orderBy: { openedAt: 'desc' } },
+        },
       },
     },
   })

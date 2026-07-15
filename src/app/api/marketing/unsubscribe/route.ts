@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!found) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 404 })
 
   const { db: tenantDb, record } = found
-  await tenantDb.campaignRecipient.update({ where: { id: record.id }, data: { status: 'SKIPPED_UNSUBSCRIBED' } })
+  await tenantDb.campaignRecipient.update({ where: { id: record.id }, data: { status: 'SKIPPED_UNSUBSCRIBED', unsubscribedAt: new Date() } })
   await tenantDb.emailUnsubscribe.upsert({
     where: { email: record.email },
     update: {},

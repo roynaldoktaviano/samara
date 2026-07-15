@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Send, Plus, Pencil, Trash2, Ban, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import CampaignEditor from './CampaignEditor'
-import CampaignDetail from './CampaignDetail'
+import CampaignDetailView from './CampaignDetailView'
 
 const ACCENT = '#bdac7e'
 
@@ -49,8 +49,7 @@ export default function CampaignsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Campaign | null>(null)
-  const [detailId, setDetailId] = useState<string | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
+  const [viewingId, setViewingId] = useState<string | null>(null)
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true)
@@ -66,7 +65,7 @@ export default function CampaignsPage() {
 
   const openNew = () => { setEditingId(null); setEditorOpen(true) }
   const openEdit = (c: Campaign) => { setEditingId(c.id); setEditorOpen(true) }
-  const openDetail = (c: Campaign) => { setDetailId(c.id); setDetailOpen(true) }
+  const openDetail = (c: Campaign) => { setViewingId(c.id) }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
@@ -84,6 +83,10 @@ export default function CampaignsPage() {
     if (res.ok) { toast.success('Scheduled send canceled'); fetchCampaigns() }
     else toast.error('Failed to cancel')
     setCancelTarget(null)
+  }
+
+  if (viewingId) {
+    return <CampaignDetailView campaignId={viewingId} onBack={() => setViewingId(null)} />
   }
 
   return (
@@ -167,12 +170,6 @@ export default function CampaignsPage() {
         onOpenChange={setEditorOpen}
         campaignId={editingId}
         onSaved={fetchCampaigns}
-      />
-
-      <CampaignDetail
-        campaignId={detailId}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
