@@ -240,6 +240,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
           <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
         </div>
       )
 

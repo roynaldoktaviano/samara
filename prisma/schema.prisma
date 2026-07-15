@@ -562,6 +562,8 @@ model NewsletterEmail {
   subject      String
   bodyHtml     String
   fromEmail    String
+  fromName     String?
+  previewText  String?
   recipients   String[] // raw list entered at send time — no contact-list integration yet
   status       String   @default("sent") // sent | failed | partial
   resendIds    String[] // Resend message id per successful recipient
@@ -569,8 +571,26 @@ model NewsletterEmail {
   sentByUserId String?
   sentByName   String?
   createdAt    DateTime @default(now())
+  opens        NewsletterRecipient[]
 
   @@index([createdAt])
+}
+
+model NewsletterRecipient {
+  id           String          @id @default(cuid())
+  newsletterId String
+  newsletter   NewsletterEmail @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  email        String
+  resendId     String?
+  status       String          @default("PENDING") // PENDING | SENT | FAILED
+  errorMessage String?
+  openedAt     DateTime?
+  openCount    Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  @@unique([newsletterId, email])
+  @@index([newsletterId])
+  @@index([resendId])
 }
 
 enum CampaignStatus {
@@ -593,6 +613,7 @@ enum RecipientStatus {
   PENDING
   SENT
   FAILED
+  BOUNCED
   SKIPPED_UNSUBSCRIBED
 }
 
@@ -655,6 +676,8 @@ model CampaignRecipient {
   errorMessage     String?
   unsubscribeToken String              @unique @default(cuid())
   sentAt           DateTime?
+  openedAt         DateTime?
+  openCount        Int                 @default(0)
   createdAt        DateTime            @default(now())
 
   @@unique([campaignId, email])

@@ -576,19 +576,30 @@ export default function EmailBuilder({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6" style={DOT_GRID}>
+              {/* Mirrors the exported table cell (padding:${contentPadding}px 12px; background:pageBackground)
+                  so "Outer padding" is visible here, not just in the sent email. */}
               <div
-                className="mx-auto rounded-lg shadow-sm min-h-[400px] p-3"
-                style={{ maxWidth: emailSettings.contentWidth, background: emailSettings.contentBackground }}
+                className="mx-auto"
+                style={{
+                  maxWidth: emailSettings.contentWidth + 24,
+                  padding: `${emailSettings.contentPadding}px 12px`,
+                  background: emailSettings.pageBackground,
+                }}
               >
-                <BlockList
-                  containerId="root"
-                  blocks={blocks}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onDelete={deleteBlock}
-                  onDuplicate={duplicateBlock}
-                  emptyLabel="Drag blocks here to start designing"
-                />
+                <div
+                  className="rounded-lg shadow-sm min-h-100 p-3"
+                  style={{ background: emailSettings.contentBackground }}
+                >
+                  <BlockList
+                    containerId="root"
+                    blocks={blocks}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onDelete={deleteBlock}
+                    onDuplicate={duplicateBlock}
+                    emptyLabel="Drag blocks here to start designing"
+                  />
+                </div>
               </div>
             </div>
 

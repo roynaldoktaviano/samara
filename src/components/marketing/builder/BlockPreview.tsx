@@ -96,7 +96,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'columns':
       return (
-        <div style={{ padding: block.padding }} className="grid grid-cols-2 gap-3">
+        <div style={{ padding: block.padding, gap: block.gap ?? 24 }} className="grid grid-cols-2">
           {block.columns.map((col, i) => (
             <div key={i} className="space-y-1">
               {col.length === 0 ? (

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
-import { renderBlocksToHtml, injectUnsubscribeUrl, type EmailBlock } from '@/lib/email-builder'
+import { renderBlocksToHtml, injectUnsubscribeUrl, injectPreviewText, type EmailBlock } from '@/lib/email-builder'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 
 export interface AudienceSources {
@@ -138,10 +138,16 @@ export async function sendCampaign(db: PrismaClient, campaignId: string): Promis
     from: campaign.fromEmail,
     fromName: campaign.fromName ?? undefined,
     subject: campaign.subject,
-    recipients: pending.map(r => ({
-      email: r.email,
-      htmlFor: injectUnsubscribeUrl(campaign.bodyHtml, `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`),
-    })),
+    recipients: pending.map(r => {
+      const unsubscribeUrl = `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`
+      let html = injectUnsubscribeUrl(campaign.bodyHtml, unsubscribeUrl)
+      if (campaign.previewText) html = injectPreviewText(html, campaign.previewText)
+      return {
+        email: r.email,
+        htmlFor: html,
+        unsubscribeUrl,
+      }
+    }),
   })
 
   let sentCount = 0

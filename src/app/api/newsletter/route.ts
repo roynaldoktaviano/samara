@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { Resend } from 'resend'
+import { htmlToText } from '@/lib/resend-mailer'
+import { injectPreviewText } from '@/lib/email-builder'
 
 const ALLOWED_ROLES = ['ADMIN', 'SUPER_ADMIN']
 
@@ -16,8 +18,10 @@ export async function GET() {
   const sends = await withRetry(db, () => db.newsletterEmail.findMany({
     orderBy: { createdAt: 'desc' },
     take: 50,
+    include: { _count: { select: { opens: { where: { openedAt: { not: null } } } } } },
   }))
-  return NextResponse.json(sends)
+  const withStats = sends.map(s => ({ ...s, openedCount: s._count.opens }))
+  return NextResponse.json(withStats)
 }
 
 export async function POST(request: NextRequest) {
@@ -29,8 +33,8 @@ export async function POST(request: NextRequest) {
   if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 })
 
   const body = await request.json()
-  const { subject, bodyHtml, fromEmail, recipients } = body as {
-    subject?: string; bodyHtml?: string; fromEmail?: string; recipients?: string[]
+  const { subject, bodyHtml, fromEmail, fromName, previewText, recipients } = body as {
+    subject?: string; bodyHtml?: string; fromEmail?: string; fromName?: string; previewText?: string; recipients?: string[]
   }
 
   if (!subject || !bodyHtml || !fromEmail || !Array.isArray(recipients) || recipients.length === 0) {
@@ -47,15 +51,31 @@ export async function POST(request: NextRequest) {
   const resend = new Resend(apiKey)
   const resendIds: string[] = []
   const failures: string[] = []
+  const perRecipient: { email: string; resendId?: string; error?: string }[] = []
+  const from = fromName?.trim() ? `${fromName.trim()} <${fromEmail}>` : fromEmail
+  const html = previewText?.trim() ? injectPreviewText(bodyHtml, previewText) : bodyHtml
 
   // Sent one at a time (not a single multi-recipient email) so one bad address
   // doesn't block the rest, and each recipient's "To" line stays private.
   for (const to of cleanRecipients) {
-    const { data, error } = await resend.emails.send({ from: fromEmail, to, subject, html: bodyHtml })
+    const { data, error } = await resend.emails.send({
+      from,
+      to,
+      subject,
+      html,
+      text: htmlToText(bodyHtml),
+      headers: {
+        'List-Unsubscribe': `<mailto:${fromEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    })
     if (error || !data) {
-      failures.push(`${to}: ${error?.message ?? 'unknown error'}`)
+      const message = error?.message ?? 'unknown error'
+      failures.push(`${to}: ${message}`)
+      perRecipient.push({ email: to, error: message })
     } else {
       resendIds.push(data.id)
+      perRecipient.push({ email: to, resendId: data.id })
     }
   }
 
@@ -67,12 +87,22 @@ export async function POST(request: NextRequest) {
       subject,
       bodyHtml,
       fromEmail,
+      fromName: fromName?.trim() || null,
+      previewText: previewText?.trim() || null,
       recipients: cleanRecipients,
       status,
       resendIds,
       errorMessage: failures.length > 0 ? failures.join('; ') : null,
       sentByUserId: session?.user?.id ?? null,
       sentByName: session?.user?.name ?? session?.user?.email ?? null,
+      opens: {
+        create: perRecipient.map(r => ({
+          email: r.email,
+          resendId: r.resendId,
+          status: r.resendId ? 'SENT' : 'FAILED',
+          errorMessage: r.error,
+        })),
+      },
     },
   }))
 

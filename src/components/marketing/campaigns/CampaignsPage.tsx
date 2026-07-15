@@ -6,9 +6,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
-import { Send, Plus, Pencil, Trash2, Ban } from 'lucide-react'
+import { Send, Plus, Pencil, Trash2, Ban, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import CampaignEditor from './CampaignEditor'
+import CampaignDetail from './CampaignDetail'
 
 const ACCENT = '#bdac7e'
 
@@ -24,6 +25,7 @@ interface Campaign {
   totalRecipients: number
   sentCount: number
   failedCount: number
+  openedCount: number
   createdByName: string | null
   createdAt: string
 }
@@ -46,6 +48,8 @@ export default function CampaignsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Campaign | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true)
@@ -61,6 +65,7 @@ export default function CampaignsPage() {
 
   const openNew = () => { setEditingId(null); setEditorOpen(true) }
   const openEdit = (c: Campaign) => { setEditingId(c.id); setEditorOpen(true) }
+  const openDetail = (c: Campaign) => { setDetailId(c.id); setDetailOpen(true) }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
@@ -106,13 +111,18 @@ export default function CampaignsPage() {
                   <TableHead>Subject</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Recipients</TableHead>
+                  <TableHead>Opened</TableHead>
                   <TableHead>Sent / Scheduled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {campaigns.map(c => (
-                  <TableRow key={c.id}>
+                  <TableRow
+                    key={c.id}
+                    className={c.status === 'SENT' || c.status === 'SENDING' ? 'cursor-pointer' : undefined}
+                    onClick={() => (c.status === 'SENT' || c.status === 'SENDING') && openDetail(c)}
+                  >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{c.subject}</TableCell>
                     <TableCell><Badge className={STATUS_STYLE[c.status]}>{c.status}</Badge></TableCell>
@@ -121,8 +131,14 @@ export default function CampaignsPage() {
                         ? `${c.sentCount}/${c.totalRecipients}${c.failedCount ? ` (${c.failedCount} failed)` : ''}`
                         : c.totalRecipients || '—'}
                     </TableCell>
+                    <TableCell className="text-sm">
+                      {c.status === 'SENT' || c.status === 'SENDING' ? `${c.openedCount}/${c.sentCount}` : '—'}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmt(c.sentAt ?? c.scheduledAt)}</TableCell>
-                    <TableCell className="text-right space-x-1">
+                    <TableCell className="text-right space-x-1" onClick={e => e.stopPropagation()}>
+                      {(c.status === 'SENT' || c.status === 'SENDING') && (
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openDetail(c)} title="View detail"><Eye className="h-3.5 w-3.5" /></Button>
+                      )}
                       {(c.status === 'DRAFT' || c.status === 'SCHEDULED') && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(c)}><Pencil className="h-3.5 w-3.5" /></Button>
                       )}
@@ -146,6 +162,12 @@ export default function CampaignsPage() {
         onOpenChange={setEditorOpen}
         campaignId={editingId}
         onSaved={fetchCampaigns}
+      />
+
+      <CampaignDetail
+        campaignId={detailId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>

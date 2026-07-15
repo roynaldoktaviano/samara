@@ -15,20 +15,24 @@ interface SendRecord {
   id: string
   subject: string
   fromEmail: string
+  fromName: string | null
   recipients: string[]
   status: string
   errorMessage: string | null
   sentByName: string | null
   createdAt: string
+  openedCount: number
 }
 
 const ACCENT = '#bdac7e'
 
 export default function Newsletter() {
-  const [subject,    setSubject]    = useState('')
-  const [bodyHtml,   setBodyHtml]   = useState('')
-  const [fromEmail,  setFromEmail]  = useState('')
-  const [recipients, setRecipients] = useState('')
+  const [subject,     setSubject]     = useState('')
+  const [bodyHtml,    setBodyHtml]    = useState('')
+  const [fromEmail,   setFromEmail]   = useState('')
+  const [fromName,    setFromName]    = useState('')
+  const [previewText, setPreviewText] = useState('')
+  const [recipients,  setRecipients]  = useState('')
   const [showPreview, setShowPreview] = useState(false)
   const [sending,    setSending]    = useState(false)
 
@@ -62,7 +66,7 @@ export default function Newsletter() {
       const res = await fetch('/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject, bodyHtml, fromEmail, recipients: recipientList }),
+        body: JSON.stringify({ subject, bodyHtml, fromEmail, fromName, previewText, recipients: recipientList }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -106,12 +110,34 @@ export default function Newsletter() {
               <p className="text-[11px] text-muted-foreground">Harus pakai domain yang udah diverifikasi di Resend.</p>
             </div>
             <div className="space-y-1.5">
+              <Label>Nama Pengirim</Label>
+              <Input
+                placeholder="Samara Yachting"
+                value={fromName}
+                onChange={e => setFromName(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">Tampil sebagai nama sebelum alamat email di inbox penerima.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
               <Label>Subject <span className="text-red-500">*</span></Label>
               <Input
                 placeholder="Judul email..."
                 value={subject}
                 onChange={e => setSubject(e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Preview Text</Label>
+              <Input
+                placeholder="Ringkasan singkat yang tampil setelah subject..."
+                value={previewText}
+                onChange={e => setPreviewText(e.target.value)}
+                maxLength={150}
+              />
+              <p className="text-[11px] text-muted-foreground">Kalau kosong, inbox akan otomatis ambil dari isi email.</p>
             </div>
           </div>
 
@@ -185,7 +211,7 @@ export default function Newsletter() {
                     <div>
                       <p className="text-sm font-medium">{h.subject}</p>
                       <p className="text-xs text-muted-foreground">
-                        {h.recipients.length} penerima · dari {h.fromEmail} · oleh {h.sentByName ?? 'Unknown'} · {new Date(h.createdAt).toLocaleString('id-ID')}
+                        {h.recipients.length} penerima · {h.openedCount}/{h.recipients.length} dibuka · dari {h.fromName ? `${h.fromName} <${h.fromEmail}>` : h.fromEmail} · oleh {h.sentByName ?? 'Unknown'} · {new Date(h.createdAt).toLocaleString('id-ID')}
                       </p>
                       {h.errorMessage && (
                         <p className="text-xs text-red-600 mt-1">{h.errorMessage}</p>

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const SECURITY_HEADERS = [
   { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
@@ -24,6 +25,7 @@ const nextConfig: NextConfig = {
   // Turbopack (Next.js 16 default): alias canvas/encoding to empty module
   // so pdfjs-dist doesn't pull in Node-only native addons into the browser bundle.
   turbopack: {
+    root: path.join(__dirname),
     resolveAlias: {
       canvas:   { browser: './src/lib/empty-module.ts' },
       encoding: { browser: './src/lib/empty-module.ts' },

@@ -19,9 +19,11 @@ export async function GET() {
       id: true, name: true, subject: true, status: true, fromEmail: true, fromName: true,
       scheduledAt: true, sentAt: true, totalRecipients: true, sentCount: true, failedCount: true,
       createdByName: true, createdAt: true, updatedAt: true,
+      _count: { select: { recipients: { where: { openedAt: { not: null } } } } },
     },
   })
-  return NextResponse.json(campaigns)
+  const withStats = campaigns.map(({ _count, ...c }) => ({ ...c, openedCount: _count.recipients }))
+  return NextResponse.json(withStats)
 }
 
 export async function POST(request: NextRequest) {

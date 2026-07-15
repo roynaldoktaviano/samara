@@ -111,6 +111,7 @@ export interface ColumnsBlock {
   type: 'columns'
   columns: [EmailBlock[], EmailBlock[]]
   padding: number
+  gap: number // total horizontal space between the two columns, in px
 }
 
 export interface SocialLink {
@@ -209,7 +210,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'spacer':
       return { id: nextId(), type: 'spacer', height: 24 }
     case 'columns':
-      return { id: nextId(), type: 'columns', padding: 16, columns: [[], []] }
+      return { id: nextId(), type: 'columns', padding: 16, gap: 24, columns: [[], []] }
     case 'social':
       return { id: nextId(), type: 'social', links: [{ platform: 'Instagram', url: 'https://instagram.com' }], align: 'center', padding: 16 }
     case 'footer':
@@ -287,13 +288,15 @@ function renderBlock(block: EmailBlock): string {
     case 'spacer':
       return `<tr><td style="height:${block.height}px;line-height:${block.height}px;font-size:0;">&nbsp;</td></tr>`
 
-    case 'columns':
+    case 'columns': {
+      const halfGap = (block.gap ?? 24) / 2
       return `<tr><td style="padding:${block.padding}px 24px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td width="50%" valign="top" style="padding-right:12px;">${renderColumnCell(block.columns[0])}</td>
-          <td width="50%" valign="top" style="padding-left:12px;">${renderColumnCell(block.columns[1])}</td>
+          <td width="50%" valign="top" style="padding-right:${halfGap}px;">${renderColumnCell(block.columns[0])}</td>
+          <td width="50%" valign="top" style="padding-left:${halfGap}px;">${renderColumnCell(block.columns[1])}</td>
         </tr></table>
       </td></tr>`
+    }
 
     case 'social':
       return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};">
@@ -331,4 +334,20 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
 /** Cheap string substitution done per-recipient at send time — avoids re-rendering the whole block tree for each email. */
 export function injectUnsubscribeUrl(html: string, unsubscribeUrl: string): string {
   return html.split(UNSUBSCRIBE_TOKEN).join(unsubscribeUrl)
+}
+
+/**
+ * Inserts a hidden preheader right after <body> so inbox clients show custom
+ * preview text instead of grabbing the first visible line of the email.
+ * Padded with zero-width joiners so trailing body text can't leak into the snippet.
+ */
+export function injectPreviewText(html: string, previewText: string): string {
+  const text = previewText.trim()
+  if (!text) return html
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const padding = '&nbsp;&zwnj;'.repeat(80)
+  const preheader = `<div style="display:none;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${esc}${padding}</div>`
+  return /<body[^>]*>/i.test(html)
+    ? html.replace(/(<body[^>]*>)/i, `$1${preheader}`)
+    : preheader + html
 }
