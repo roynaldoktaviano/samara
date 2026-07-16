@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowLeft, MousePointerClick, UserX } from 'lucide-react'
+import { ArrowLeft, Eye, MousePointerClick, UserX } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const GREEN = '#16a34a'
@@ -298,8 +298,27 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                   <TableCell className="text-sm">{r.name ?? '—'}</TableCell>
                   <TableCell className="text-sm">{r.email}</TableCell>
                   <TableCell><Badge className={STATUS_STYLE[r.status]}>{STATUS_LABEL[r.status]}</Badge></TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {r.openedAt ? `${fmt(r.openedAt)}${r.openCount > 1 ? ` (${r.openCount}x)` : ''}` : '—'}
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.openedAt ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button type="button" className="flex items-center gap-1 text-blue-600 hover:underline">
+                            <Eye className="h-3 w-3" />
+                            {fmt(r.openedAt)}{r.openCount > 1 ? ` (${r.openCount}x)` : ''}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-3" align="start">
+                          <p className="text-xs font-medium mb-2">Dibuka ({r.opens.length}x)</p>
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {r.opens.map(o => (
+                              <div key={o.id} className="text-xs border-b pb-1.5 last:border-0">
+                                <div className="text-muted-foreground">{fmt(o.openedAt)}{o.ipAddress ? ` · ${o.ipAddress}` : ''}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    ) : '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.clickedAt ? (

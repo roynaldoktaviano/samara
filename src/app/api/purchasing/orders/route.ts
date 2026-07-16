@@ -73,11 +73,20 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue } = body
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
   // Resolve supplierId by name if not provided, so order history stays linked even for raw API callers
+  const cleanExtraCharges = Array.isArray(extraCharges)
+    ? extraCharges
+        .map((c: { label?: string; amount?: number }) => ({ label: String(c.label ?? '').trim(), amount: Number(c.amount) || 0 }))
+        .filter(c => c.label || c.amount)
+    : []
+
+  const cleanDiscountType = discountType === 'PERCENT' || discountType === 'FIXED' ? discountType : null
+  const cleanDiscountValue = cleanDiscountType ? Math.max(0, Number(discountValue) || 0) : 0
+
   let resolvedSupplierId = supplierId || null
   if (!resolvedSupplierId) {
     const matched = await db.supplier.findFirst({ where: { name: { equals: supplierName.trim(), mode: 'insensitive' } }, select: { id: true } })
@@ -111,6 +120,9 @@ export async function POST(req: NextRequest) {
       notes: notes?.trim() || null,
       createdById: session.user.id,
       updatedAt: new Date(),
+      extraCharges: cleanExtraCharges.length > 0 ? cleanExtraCharges : undefined,
+      discountType: cleanDiscountType,
+      discountValue: cleanDiscountValue,
       ...(requester && {
         requestedByEmployeeId,
         requestedByName: requester.fullName,

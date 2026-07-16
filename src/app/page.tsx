@@ -27,6 +27,8 @@ import Payments from '@/components/payments/Payments'
 import TripSheet from '@/components/payments/TripSheet'
 import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
 import POReimbursements from '@/components/finance/POReimbursements'
+import DeliveryFeePayments from '@/components/finance/DeliveryFeePayments'
+import DeliveryFeeReimbursements from '@/components/finance/DeliveryFeeReimbursements'
 import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
@@ -82,7 +84,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
 
 type NavItem = {
   id: View
@@ -116,6 +118,8 @@ const navigationItems: NavItem[] = [
   { id: 'banks',         label: 'Bank Accounts',   icon: Building2,  roles: ['ADMIN', 'FINANCE'],                       group: 'finance'    },
   { id: 'finance-po-payments', label: 'PO Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],                       group: 'finance', feature: 'purchasing' },
   { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
+  { id: 'finance-delivery-fee-payments', label: 'Delivery Fee Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],   group: 'finance', feature: 'purchasing' },
+  { id: 'finance-delivery-fee-reimbursements', label: 'Delivery Fee Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance', feature: 'purchasing' },
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
@@ -452,7 +456,11 @@ export default function Home() {
       setCurrentView('finance-po-payments')
     } else if (n.type === 'PO_REIMBURSEMENT_REQUESTED' && isFinance) {
       setCurrentView('finance-po-reimbursements')
-    } else if (n.orderId || n.requestId || n.type.startsWith('PO_') || n.type === 'REQUEST_ORDER_SUBMITTED') {
+    } else if ((n.type === 'DF_PAYMENT_REQUESTED' || n.type === 'DF_PAID_BY_PURCHASING') && isFinance) {
+      setCurrentView('finance-delivery-fee-payments')
+    } else if (n.type === 'DF_REIMBURSEMENT_REQUESTED' && isFinance) {
+      setCurrentView('finance-delivery-fee-reimbursements')
+    } else if (n.orderId || n.requestId || n.type.startsWith('PO_') || n.type.startsWith('DF_') || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
     } else if (n.paymentId && isFinance) {
       setCurrentView('payments')
@@ -532,6 +540,8 @@ export default function Home() {
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments />
       case 'finance-po-reimbursements': return <POReimbursements />
+      case 'finance-delivery-fee-payments': return <DeliveryFeePayments />
+      case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements />
       case 'vouchers':      return <Vouchers />
       case 'newsletter':    return <Newsletter />
       case 'marketing-campaigns': return <CampaignsPage />

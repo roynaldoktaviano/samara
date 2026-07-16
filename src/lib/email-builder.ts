@@ -4,6 +4,25 @@
 
 export type BlockAlign = 'left' | 'center' | 'right'
 
+export interface Padding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export function uniformPadding(n: number): Padding {
+  return { top: n, right: n, bottom: n, left: n }
+}
+
+/** Padding object → React inline-style fields, for the canvas preview (the sent HTML uses `paddingCss` instead). */
+export function paddingStyle(p: Padding): { paddingTop: number; paddingRight: number; paddingBottom: number; paddingLeft: number } {
+  return { paddingTop: p.top, paddingRight: p.right, paddingBottom: p.bottom, paddingLeft: p.left }
+}
+
+/** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
+export type HideOn = 'none' | 'desktop' | 'mobile'
+
 export const FONT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
   { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
@@ -24,7 +43,11 @@ export interface TextBlock {
   fontSize: number
   fontFamily: string
   color: string
-  padding: number
+  linkColor: string
+  lineHeight: number
+  letterSpacing: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface HeadingBlock {
@@ -35,7 +58,11 @@ export interface HeadingBlock {
   fontSize: number
   fontFamily: string
   color: string
-  padding: number
+  linkColor: string
+  lineHeight: number
+  letterSpacing: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface ImageBlock {
@@ -43,10 +70,13 @@ export interface ImageBlock {
   type: 'image'
   src: string
   alt: string
-  width: number // percent of content width, 10-100
+  width: number // percent of content width, 10-100 — ignored when autoWidth is on
   align: BlockAlign
   link?: string
-  padding: number
+  autoWidth: boolean
+  fullWidthOnMobile: boolean // only meaningful when autoWidth is off
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface LogoBlock {
@@ -57,7 +87,10 @@ export interface LogoBlock {
   width: number
   align: BlockAlign
   link?: string
-  padding: number
+  autoWidth: boolean
+  fullWidthOnMobile: boolean
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface VideoBlock {
@@ -67,14 +100,16 @@ export interface VideoBlock {
   thumbnailSrc: string
   width: number
   align: BlockAlign
-  padding: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface HtmlBlock {
   id: string
   type: 'html'
   code: string
-  padding: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface ButtonBlock {
@@ -87,7 +122,8 @@ export interface ButtonBlock {
   fontFamily: string
   align: BlockAlign
   borderRadius: number
-  padding: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface DividerBlock {
@@ -95,13 +131,15 @@ export interface DividerBlock {
   type: 'divider'
   color: string
   thickness: number
-  padding: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface SpacerBlock {
   id: string
   type: 'spacer'
   height: number
+  hideOn: HideOn
 }
 
 // A column holds a nested list of content blocks — anything except another
@@ -110,8 +148,9 @@ export interface ColumnsBlock {
   id: string
   type: 'columns'
   columns: EmailBlock[][] // 1-6 columns, evenly split
-  padding: number
+  padding: Padding
   gap: number // total horizontal space between columns, in px
+  hideOn: HideOn
 }
 
 export type SectionBackgroundSize = 'cover' | 'contain' | 'repeat'
@@ -122,10 +161,11 @@ export interface SectionBlock {
   id: string
   type: 'section'
   blocks: EmailBlock[]
-  padding: number
+  padding: Padding
   backgroundColor: string
   backgroundImage: string // '' = none
   backgroundSize: SectionBackgroundSize
+  hideOn: HideOn
 }
 
 export interface SocialLink {
@@ -138,7 +178,8 @@ export interface SocialBlock {
   type: 'social'
   links: SocialLink[]
   align: BlockAlign
-  padding: number
+  padding: Padding
+  hideOn: HideOn
 }
 
 export interface FooterBlock {
@@ -148,7 +189,8 @@ export interface FooterBlock {
   address: string
   align: BlockAlign
   showUnsubscribe: boolean
-  padding: number
+  padding: number // fixed/locked block, never exposed in the inspector — no need for per-side padding or hide-on
+  backgroundColor: string // fixed to black by default — not exposed as an editable field, so every footer stays visually consistent
 }
 
 export type EmailBlock =
@@ -186,14 +228,83 @@ export interface EmailDesign {
   settings: EmailSettings
 }
 
-/** Normalizes stored design JSON — handles legacy rows saved before `settings` existed (bare block array). */
+// Fixed footer — every design (except raw-HTML mode) gets exactly this footer,
+// appended if missing. It's not user-editable: the builder UI never lets it be
+// selected, dragged, or deleted, and normalizeDesign re-asserts its content on
+// every load/save so it can't drift even via a direct API call.
+export const FIXED_FOOTER_ADDRESS = 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234'
+
+function fixedFooterBlock(): FooterBlock {
+  return { id: nextId(), type: 'footer', companyName: '', address: FIXED_FOOTER_ADDRESS, align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000' }
+}
+
+function withFixedFooter(blocks: EmailBlock[]): EmailBlock[] {
+  // Raw-HTML authoring mode is a single freeform 'html' block — the fixed footer doesn't apply.
+  if (blocks.length === 1 && blocks[0].type === 'html') return blocks
+  return [...blocks.filter(b => b.type !== 'footer'), fixedFooterBlock()]
+}
+
+// ── Legacy-data migration ─────────────────────────────────────────────────
+// Older saved designs used a single numeric `padding` and didn't have hideOn /
+// text-typography / image-width fields at all. Backfill sensible defaults so
+// existing templates & campaigns keep rendering correctly after this change.
+function migratePadding(raw: unknown, fallback: number): Padding {
+  if (raw && typeof raw === 'object' && 'top' in (raw as object)) return raw as Padding
+  const n = typeof raw === 'number' ? raw : fallback
+  return uniformPadding(n)
+}
+
+function migrateHideOn(raw: unknown): HideOn {
+  return raw === 'desktop' || raw === 'mobile' ? raw : 'none'
+}
+
+function migrateBlock(raw: EmailBlock): EmailBlock {
+  const hideOn = migrateHideOn((raw as { hideOn?: unknown }).hideOn)
+  switch (raw.type) {
+    case 'text':
+    case 'heading':
+      return {
+        ...raw,
+        padding: migratePadding(raw.padding, 16),
+        hideOn,
+        lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : raw.type === 'heading' ? 1.3 : 1.5,
+        letterSpacing: typeof raw.letterSpacing === 'number' ? raw.letterSpacing : 0,
+        linkColor: raw.linkColor || '#2563eb',
+      }
+    case 'image':
+    case 'logo':
+      return {
+        ...raw,
+        padding: migratePadding(raw.padding, 16),
+        hideOn,
+        autoWidth: typeof raw.autoWidth === 'boolean' ? raw.autoWidth : false,
+        fullWidthOnMobile: typeof raw.fullWidthOnMobile === 'boolean' ? raw.fullWidthOnMobile : false,
+      }
+    case 'video':
+    case 'html':
+    case 'button':
+    case 'divider':
+    case 'social':
+      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn }
+    case 'spacer':
+      return { ...raw, hideOn }
+    case 'columns':
+      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, columns: raw.columns.map(list => list.map(migrateBlock)) }
+    case 'section':
+      return { ...raw, padding: migratePadding(raw.padding, 24), hideOn, blocks: raw.blocks.map(migrateBlock) }
+    case 'footer':
+      return { ...raw, padding: typeof raw.padding === 'number' ? raw.padding : 20, backgroundColor: raw.backgroundColor || '#000000' }
+  }
+}
+
+/** Normalizes stored design JSON — handles legacy rows saved before `settings` existed (bare block array) and older block shapes. */
 export function normalizeDesign(raw: unknown): EmailDesign {
-  if (Array.isArray(raw)) return { blocks: raw as EmailBlock[], settings: { ...DEFAULT_EMAIL_SETTINGS } }
+  if (Array.isArray(raw)) return { blocks: withFixedFooter((raw as EmailBlock[]).map(migrateBlock)), settings: { ...DEFAULT_EMAIL_SETTINGS } }
   if (raw && typeof raw === 'object' && Array.isArray((raw as any).blocks)) {
     const r = raw as { blocks: EmailBlock[]; settings?: Partial<EmailSettings> }
-    return { blocks: r.blocks, settings: { ...DEFAULT_EMAIL_SETTINGS, ...r.settings } }
+    return { blocks: withFixedFooter(r.blocks.map(migrateBlock)), settings: { ...DEFAULT_EMAIL_SETTINGS, ...r.settings } }
   }
-  return { blocks: [], settings: { ...DEFAULT_EMAIL_SETTINGS } }
+  return { blocks: withFixedFooter([]), settings: { ...DEFAULT_EMAIL_SETTINGS } }
 }
 
 export const UNSUBSCRIBE_TOKEN = '{{UNSUBSCRIBE_URL}}'
@@ -207,31 +318,31 @@ function nextId(): string {
 export function createBlock(type: EmailBlock['type']): EmailBlock {
   switch (type) {
     case 'text':
-      return { id: nextId(), type: 'text', html: '<p>Write something...</p>', align: 'left', fontSize: 15, fontFamily: DEFAULT_FONT, color: '#1f2937', padding: 16 }
+      return { id: nextId(), type: 'text', html: '<p>Write something...</p>', align: 'left', fontSize: 15, fontFamily: DEFAULT_FONT, color: '#1f2937', linkColor: '#2563eb', lineHeight: 1.5, letterSpacing: 0, padding: uniformPadding(16), hideOn: 'none' }
     case 'heading':
-      return { id: nextId(), type: 'heading', html: '<p><strong>Your Heading</strong></p>', align: 'left', fontSize: 26, fontFamily: DEFAULT_FONT, color: '#1f2937', padding: 16 }
+      return { id: nextId(), type: 'heading', html: '<p><strong>Your Heading</strong></p>', align: 'left', fontSize: 26, fontFamily: DEFAULT_FONT, color: '#1f2937', linkColor: '#2563eb', lineHeight: 1.3, letterSpacing: 0, padding: uniformPadding(16), hideOn: 'none' }
     case 'image':
-      return { id: nextId(), type: 'image', src: '', alt: '', width: 100, align: 'center', padding: 16 }
+      return { id: nextId(), type: 'image', src: '', alt: '', width: 100, align: 'center', autoWidth: false, fullWidthOnMobile: false, padding: uniformPadding(16), hideOn: 'none' }
     case 'logo':
-      return { id: nextId(), type: 'logo', src: '', alt: 'Logo', width: 30, align: 'center', padding: 16 }
+      return { id: nextId(), type: 'logo', src: '', alt: 'Logo', width: 30, align: 'center', autoWidth: false, fullWidthOnMobile: false, padding: uniformPadding(16), hideOn: 'none' }
     case 'video':
-      return { id: nextId(), type: 'video', videoUrl: '', thumbnailSrc: '', width: 100, align: 'center', padding: 16 }
+      return { id: nextId(), type: 'video', videoUrl: '', thumbnailSrc: '', width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'html':
-      return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: 16 }
+      return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: uniformPadding(16), hideOn: 'none' }
     case 'button':
-      return { id: nextId(), type: 'button', label: 'Click Here', url: 'https://', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: 16 }
+      return { id: nextId(), type: 'button', label: 'Click Here', url: 'https://', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
-      return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, padding: 16 }
+      return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':
-      return { id: nextId(), type: 'spacer', height: 24 }
+      return { id: nextId(), type: 'spacer', height: 24, hideOn: 'none' }
     case 'columns':
-      return { id: nextId(), type: 'columns', padding: 16, gap: 24, columns: [[], []] }
+      return { id: nextId(), type: 'columns', padding: uniformPadding(16), gap: 24, columns: [[], []], hideOn: 'none' }
     case 'section':
-      return { id: nextId(), type: 'section', padding: 24, backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', blocks: [] }
+      return { id: nextId(), type: 'section', padding: uniformPadding(24), backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', blocks: [], hideOn: 'none' }
     case 'social':
-      return { id: nextId(), type: 'social', links: [{ platform: 'Instagram', url: 'https://instagram.com' }], align: 'center', padding: 16 }
+      return { id: nextId(), type: 'social', links: [{ platform: 'Instagram', url: 'https://instagram.com' }], align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'footer':
-      return { id: nextId(), type: 'footer', companyName: '', address: '', align: 'center', showUnsubscribe: true, padding: 20 }
+      return fixedFooterBlock()
   }
 }
 
@@ -265,6 +376,19 @@ export const BLOCK_LABELS: Record<EmailBlock['type'], string> = {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+function paddingCss(p: Padding): string {
+  return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
+}
+
+function hideOnClass(hideOn: HideOn): string {
+  return hideOn === 'desktop' ? 'hide-desktop' : hideOn === 'mobile' ? 'hide-mobile' : ''
+}
+
+function classAttr(...classes: (string | false | undefined)[]): string {
+  const cls = classes.filter(Boolean).join(' ')
+  return cls ? ` class="${cls}"` : ''
+}
+
 function renderColumnCell(list: EmailBlock[]): string {
   if (list.length === 0) return ''
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
@@ -273,21 +397,25 @@ function renderColumnCell(list: EmailBlock[]): string {
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
     case 'text':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.5;color:${block.color};font-family:${block.fontFamily};">${block.html}</td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${block.color};font-family:${block.fontFamily};">${block.html}</td></tr>`
 
     case 'heading':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.3;color:${block.color};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${block.color};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
 
     case 'image':
     case 'logo': {
-      const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
+      const dims = block.autoWidth
+        ? 'style="max-width:100%;height:auto;display:inline-block;border:0;"'
+        : `width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
+      const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
+      const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(fwmClass)} ${dims} />`
       const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">${inner}</td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
     }
 
     case 'video': {
       const img = `<img src="${esc(block.thumbnailSrc)}" alt="Video thumbnail" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         <a href="${esc(block.videoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-block;">
           ${img}
           <div style="margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;">&#9654; Watch video</div>
@@ -296,18 +424,18 @@ function renderBlock(block: EmailBlock): string {
     }
 
     case 'html':
-      return `<tr><td style="padding:${block.padding}px;">${block.code}</td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${block.code}</td></tr>`
 
     case 'button':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
       </td></tr>`
 
     case 'divider':
-      return `<tr><td style="padding:${block.padding}px;"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;">&nbsp;</div></td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;">&nbsp;</div></td></tr>`
 
     case 'spacer':
-      return `<tr><td style="height:${block.height}px;line-height:${block.height}px;font-size:0;">&nbsp;</td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="height:${block.height}px;line-height:${block.height}px;font-size:0;">&nbsp;</td></tr>`
 
     case 'columns': {
       const n = block.columns.length || 1
@@ -318,7 +446,7 @@ function renderBlock(block: EmailBlock): string {
         const padRight = i === n - 1 ? 0 : halfGap
         return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
       }).join('')
-      return `<tr><td style="padding:${block.padding}px;">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
       </td></tr>`
     }
@@ -327,20 +455,20 @@ function renderBlock(block: EmailBlock): string {
       const bg = block.backgroundImage
         ? `background-color:${block.backgroundColor};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
         : `background-color:${block.backgroundColor};`
-      return `<tr><td style="padding:0;">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${bg}"><tr>
-          <td style="padding:${block.padding}px;">${renderColumnCell(block.blocks)}</td>
+          <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`
     }
 
     case 'social':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         ${block.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;text-decoration:underline;">${esc(l.platform)}</a>`).join('')}
       </td></tr>`
 
     case 'footer':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;">
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
         ${block.companyName ? `<div>${esc(block.companyName)}</div>` : ''}
         ${block.address ? `<div>${esc(block.address)}</div>` : ''}
         ${block.showUnsubscribe ? `<div style="margin-top:8px;"><a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></div>` : ''}
@@ -348,11 +476,36 @@ function renderBlock(block: EmailBlock): string {
   }
 }
 
+// Per-instance CSS (link color, full-width-on-mobile images) that can't be expressed
+// as inline styles alone — collected once and emitted in the exported HTML's <head>.
+function collectExtraStyles(blocks: EmailBlock[]): string[] {
+  const rules: string[] = []
+  for (const b of blocks) {
+    if ((b.type === 'text' || b.type === 'heading') && b.linkColor) {
+      rules.push(`.lc-${b.id} a{color:${b.linkColor} !important;}`)
+    }
+    if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
+      rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
+    }
+    if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
+    if (b.type === 'section') rules.push(...collectExtraStyles(b.blocks))
+  }
+  return rules
+}
+
 export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
   const rows = blocks.map(renderBlock).join('\n')
+  const extraStyles = collectExtraStyles(blocks).join('\n')
   return `<!doctype html>
 <html>
+  <head>
+    <style>
+      @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
+      @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
+      ${extraStyles}
+    </style>
+  </head>
   <body style="margin:0;padding:0;background:${s.pageBackground};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${s.pageBackground};">
       <tr>

@@ -9,16 +9,14 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Type, Heading as HeadingIcon, Image as ImageIcon, ImagePlus, Video as VideoIcon, MousePointerClick,
-  Minus, MoveVertical, Columns, LayoutTemplate, Share2, Code2, PanelBottom,
-  GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Settings2,
+  Minus, MoveVertical, Columns, LayoutTemplate, Share2, Code2,
+  GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Sparkles, Lock, X,
 } from 'lucide-react'
 import {
-  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS,
-  type EmailBlock, type EmailSettings, BLOCK_LABELS,
+  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle,
+  type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS,
 } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
@@ -39,7 +37,8 @@ const PALETTE: { type: EmailBlock['type']; icon: React.ElementType }[] = [
   { type: 'section', icon: LayoutTemplate },
   { type: 'social', icon: Share2 },
   { type: 'html', icon: Code2 },
-  { type: 'footer', icon: PanelBottom },
+  // 'footer' intentionally excluded — it's a fixed, system-managed block (see FIXED_FOOTER_ADDRESS),
+  // not something users drag in themselves.
 ]
 
 const LAYOUTS: { id: string; label: string; build: () => EmailBlock[] }[] = [
@@ -47,7 +46,184 @@ const LAYOUTS: { id: string; label: string; build: () => EmailBlock[] }[] = [
   { id: 'image-caption', label: 'Image + Caption', build: () => [createBlock('image'), createBlock('text')] },
   { id: 'two-column-promo', label: 'Two Column Promo', build: () => [{ ...createBlock('heading'), fontSize: 20 } as EmailBlock, createBlock('columns')] },
   { id: 'video-feature', label: 'Video Feature', build: () => [createBlock('heading'), createBlock('video')] },
-  { id: 'social-footer', label: 'Social + Footer', build: () => [createBlock('social'), createBlock('footer')] },
+  { id: 'social-links', label: 'Social Links', build: () => [createBlock('social')] },
+]
+
+// ── Full ready-made templates ─────────────────────────────────────────────
+// Curated, hardcoded designs (not user-addable) — picking one REPLACES the
+// whole canvas so the user gets a finished layout and just swaps text/images/colors.
+const heading = (html: string, overrides: Record<string, unknown> = {}): EmailBlock =>
+  ({ ...createBlock('heading'), html, ...overrides }) as EmailBlock
+const text = (html: string, overrides: Record<string, unknown> = {}): EmailBlock =>
+  ({ ...createBlock('text'), html, ...overrides }) as EmailBlock
+const button = (label: string, overrides: Record<string, unknown> = {}): EmailBlock =>
+  ({ ...createBlock('button'), label, ...overrides }) as EmailBlock
+const image = (src: string, alt: string, overrides: Record<string, unknown> = {}): EmailBlock =>
+  ({ ...createBlock('image'), src, alt, ...overrides }) as EmailBlock
+const logo = (src: string, alt: string, overrides: Record<string, unknown> = {}): EmailBlock =>
+  ({ ...createBlock('logo'), src, alt, ...overrides }) as EmailBlock
+const columnsOf = (cols: EmailBlock[][], overrides: Partial<ColumnsBlock> = {}): EmailBlock =>
+  ({ ...(createBlock('columns') as ColumnsBlock), columns: cols, ...overrides }) as EmailBlock
+const sectionOf = (blocks: EmailBlock[], overrides: Partial<SectionBlock> = {}): EmailBlock =>
+  ({ ...(createBlock('section') as SectionBlock), blocks, ...overrides }) as EmailBlock
+
+export const TEMPLATES: { id: string; label: string; description: string; build: () => EmailBlock[] }[] = [
+  {
+    id: 'newsletter',
+    label: 'Newsletter',
+    description: 'Logo, intro, featured story, two-column highlights, footer.',
+    build: () => [
+      logo('https://placehold.co/240x80?text=Your+Logo', 'Your logo'),
+      heading('<p><strong>This Month\'s Update</strong></p>', { fontSize: 28, align: 'center' }),
+      text('<p>Hi there! Here\'s what\'s new this month — updates, tips, and a few things we think you\'ll love.</p>', { align: 'center' }),
+      image('https://picsum.photos/seed/newsletter/600/300', 'Featured image'),
+      heading('<p><strong>Featured Story</strong></p>', { fontSize: 20 }),
+      text('<p>Share the details of your featured update, announcement, or story here. Keep it short and to the point.</p>'),
+      button('Read More'),
+      createBlock('divider'),
+      columnsOf([
+        [heading('<p><strong>Highlight One</strong></p>', { fontSize: 16 }), text('<p>A short description of this highlight.</p>', { fontSize: 14 })],
+        [heading('<p><strong>Highlight Two</strong></p>', { fontSize: 16 }), text('<p>A short description of this highlight.</p>', { fontSize: 14 })],
+      ]),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'promo-sale',
+    label: 'Promo / Sale',
+    description: 'Bold dark banner, offer details, two-column reasons, CTA.',
+    build: () => [
+      sectionOf(
+        [
+          heading('<p><strong>Big Sale — 30% Off</strong></p>', { fontSize: 32, align: 'center', color: '#ffffff' }),
+          text('<p>For a limited time only. Use code SALE30 at checkout.</p>', { align: 'center', color: '#e5e7eb' }),
+          button('Shop Now', { bgColor: '#bdac7e', align: 'center' }),
+        ],
+        { backgroundColor: '#111827' },
+      ),
+      image('https://picsum.photos/seed/promo-sale/600/300', 'Promo banner'),
+      heading('<p><strong>Why You\'ll Love It</strong></p>', { fontSize: 20, align: 'center' }),
+      columnsOf([
+        [heading('<p><strong>Reason One</strong></p>', { fontSize: 16 }), text('<p>Explain one reason customers should buy now.</p>', { fontSize: 14 })],
+        [heading('<p><strong>Reason Two</strong></p>', { fontSize: 16 }), text('<p>Explain another reason customers should buy now.</p>', { fontSize: 14 })],
+      ]),
+      createBlock('divider'),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'welcome',
+    label: 'Welcome Email',
+    description: 'Logo, greeting, CTA, and a short help section.',
+    build: () => [
+      logo('https://placehold.co/240x80?text=Your+Logo', 'Your logo'),
+      heading('<p><strong>Welcome Aboard!</strong></p>', { fontSize: 28, align: 'center' }),
+      text('<p>We\'re thrilled to have you here. Here\'s a quick way to get started.</p>', { align: 'center' }),
+      button('Get Started', { align: 'center' }),
+      createBlock('divider'),
+      heading('<p><strong>Need Help?</strong></p>', { fontSize: 18 }),
+      text('<p>If you have any questions, just reply to this email — we\'re happy to help.</p>'),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'event-invite',
+    label: 'Event Invite',
+    description: 'Banner image, date/location details, RSVP button.',
+    build: () => [
+      heading('<p><strong>You\'re Invited</strong></p>', { fontSize: 30, align: 'center' }),
+      image('https://picsum.photos/seed/event-invite/600/300', 'Event photo'),
+      text('<p><strong>Date:</strong> Saturday, 20 July 2026<br/><strong>Time:</strong> 6:00 PM<br/><strong>Location:</strong> Your venue name here</p>', { align: 'center' }),
+      button('RSVP Now', { align: 'center' }),
+      createBlock('divider'),
+      text('<p>Add any extra details guests should know — dress code, parking, or an agenda.</p>', { align: 'center' }),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'order-confirmation',
+    label: 'Order Confirmation',
+    description: 'Confirmation heading, order summary, tracking button, footer.',
+    build: () => [
+      logo('https://placehold.co/240x80?text=Your+Logo', 'Your logo'),
+      heading('<p><strong>Your Order is Confirmed!</strong></p>', { fontSize: 26, align: 'center' }),
+      text('<p>Thanks for your order — we\'re getting it ready. Here are the details:</p>', { align: 'center' }),
+      text('<p><strong>Order #:</strong> 000123<br/><strong>Order date:</strong> 20 July 2026<br/><strong>Total:</strong> Rp 0</p>'),
+      button('Track Order', { align: 'center' }),
+      createBlock('divider'),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'feedback',
+    label: 'Feedback Request',
+    description: 'Thank-you note, feedback CTA, footer.',
+    build: () => [
+      heading('<p><strong>How Did We Do?</strong></p>', { fontSize: 26, align: 'center' }),
+      text('<p>We\'d love to hear about your recent experience — it only takes a minute.</p>', { align: 'center' }),
+      button('Give Feedback', { align: 'center' }),
+      createBlock('divider'),
+      text('<p>Your feedback helps us improve and serve you better.</p>', { align: 'center' }),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'product-announcement',
+    label: 'Product Announcement',
+    description: 'Banner image, feature highlights in columns, CTA.',
+    build: () => [
+      logo('https://placehold.co/240x80?text=Your+Logo', 'Your logo'),
+      image('https://picsum.photos/seed/product-launch/600/300', 'New product'),
+      heading('<p><strong>Introducing Something New</strong></p>', { fontSize: 26, align: 'center' }),
+      text('<p>We\'re excited to announce our latest product. Here\'s what\'s new.</p>', { align: 'center' }),
+      columnsOf([
+        [heading('<p><strong>Feature One</strong></p>', { fontSize: 16 }), text('<p>Describe this feature.</p>', { fontSize: 14 })],
+        [heading('<p><strong>Feature Two</strong></p>', { fontSize: 16 }), text('<p>Describe this feature.</p>', { fontSize: 14 })],
+      ]),
+      button('Learn More', { align: 'center' }),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'thank-you',
+    label: 'Thank You',
+    description: 'Warm appreciation message, footer.',
+    build: () => [
+      heading('<p><strong>Thank You!</strong></p>', { fontSize: 30, align: 'center' }),
+      text('<p>We just wanted to take a moment to say thank you for being with us. We truly appreciate it.</p>', { align: 'center' }),
+      createBlock('divider'),
+      text('<p>If there\'s ever anything we can do for you, just let us know.</p>', { align: 'center' }),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 're-engagement',
+    label: 'We Miss You',
+    description: 'Re-engagement message with a comeback CTA.',
+    build: () => [
+      heading('<p><strong>We Miss You!</strong></p>', { fontSize: 28, align: 'center' }),
+      text('<p>It\'s been a while — come back and see what\'s new. We\'ve got something special waiting for you.</p>', { align: 'center' }),
+      button('Come Back', { align: 'center' }),
+      createBlock('divider'),
+      createBlock('footer'),
+    ],
+  },
+  {
+    id: 'seasonal-greeting',
+    label: 'Seasonal Greeting',
+    description: 'Festive banner, greeting message, footer.',
+    build: () => [
+      sectionOf(
+        [
+          heading('<p><strong>Happy Holidays!</strong></p>', { fontSize: 30, align: 'center', color: '#ffffff' }),
+          text('<p>Wishing you a wonderful season from all of us.</p>', { align: 'center', color: '#f3f4f6' }),
+        ],
+        { backgroundColor: '#b91c1c' },
+      ),
+      text('<p>Thank you for a great year — here\'s to more ahead.</p>', { align: 'center' }),
+      createBlock('footer'),
+    ],
+  },
 ]
 
 // ── Container-aware tree helpers ─────────────────────────────────────────
@@ -113,6 +289,15 @@ function setContainerList(root: EmailBlock[], containerId: ContainerId, newList:
     if (rest.length === 0) return { ...b, columns: b.columns.map((c, i) => (i === idx ? newList : c)) }
     return { ...b, columns: b.columns.map((c, i) => (i === idx ? setContainerList(c, restId, newList) : c)) }
   })
+}
+
+// The fixed footer must always stay last at the root level — clamp any insertion
+// index in the root container so nothing lands after it (footer isn't draggable
+// itself, but other blocks could otherwise be dropped/reordered past it).
+function rootSafeInsertIndex(containerId: ContainerId, list: EmailBlock[], desired: number): number {
+  if (containerId !== 'root') return desired
+  const footerIdx = list.findIndex(b => b.type === 'footer')
+  return footerIdx === -1 ? desired : Math.min(desired, footerIdx)
 }
 
 function findContainerOf(root: EmailBlock[], blockId: string): ContainerId {
@@ -242,6 +427,24 @@ function LayoutItem({ label, onClick }: { label: string; onClick: () => void }) 
   )
 }
 
+function TemplateItem({ label, description, onClick }: { label: string; description: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-3 rounded-lg border bg-white p-3 text-left hover:border-[#bdac7e] hover:shadow-sm transition-all w-full"
+    >
+      <div className="h-9 w-9 shrink-0 rounded-md border flex items-center justify-center" style={{ background: 'rgba(189,172,126,0.10)' }}>
+        <Sparkles className="h-4 w-4" style={{ color: ACCENT }} />
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-700">{label}</p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
+      </div>
+    </button>
+  )
+}
+
 function SortableCanvasBlock({
   block, selected, onSelect, onDelete, onDuplicate, children,
 }: {
@@ -249,17 +452,24 @@ function SortableCanvasBlock({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
+  const hideOn = 'hideOn' in block ? block.hideOn : 'none'
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       onClick={e => { e.stopPropagation(); onSelect() }}
-      className={`group relative rounded-lg border-2 transition-all ${selected ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'} ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative rounded-lg border-2 transition-all ${selected ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'} ${isDragging ? 'opacity-40' : ''} ${hideOn !== 'none' ? 'opacity-60' : ''}`}
     >
       {selected && (
         <span className="absolute -top-2.5 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm" style={{ backgroundColor: ACCENT }}>
           {BLOCK_LABELS[block.type]}
+        </span>
+      )}
+      {hideOn !== 'none' && (
+        <span className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+          {hideOn === 'desktop' ? <Monitor className="h-2.5 w-2.5" /> : <Smartphone className="h-2.5 w-2.5" />}
+          Hidden
         </span>
       )}
       <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -312,7 +522,7 @@ function BlockList({
             onDuplicate={() => onDuplicate(block.id)}
           >
             {block.type === 'columns' ? (
-              <div style={{ padding: block.padding, gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+              <div style={{ ...paddingStyle(block.padding), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
                 {block.columns.map((colList, i) => (
                   <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" />
                 ))}
@@ -320,7 +530,7 @@ function BlockList({
             ) : block.type === 'section' ? (
               <div
                 style={{
-                  padding: block.padding,
+                  ...paddingStyle(block.padding),
                   backgroundColor: block.backgroundColor,
                   backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
                   backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
@@ -379,11 +589,15 @@ export default function EmailBuilder({
   title?: string
 }) {
   const emailSettings = settings ?? DEFAULT_EMAIL_SETTINGS
+  // The fixed footer is rendered separately, outside the interactive/sortable tree,
+  // so it can never be selected, dragged, deleted, or have other blocks dropped after it.
+  const editableBlocks = blocks.filter(b => b.type !== 'footer')
+  const footerBlock = blocks.find((b): b is FooterBlock => b.type === 'footer')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [search, setSearch] = useState('')
-  const [paletteTab, setPaletteTab] = useState<'content' | 'layouts'>('content')
+  const [paletteTab, setPaletteTab] = useState<'content' | 'layouts' | 'templates' | 'settings'>('content')
   const [activeDrag, setActiveDrag] = useState<{ kind: 'palette'; blockType: EmailBlock['type'] } | { kind: 'block'; block: EmailBlock } | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
@@ -469,7 +683,7 @@ export default function EmailBuilder({
       const newBlock = createBlock(activeData.blockType)
       const destList = getContainerList(blocks, destContainer)
       const overIndex = destList.findIndex(b => b.id === overId)
-      const insertAt = overIndex === -1 ? destList.length : overIndex + 1
+      const insertAt = rootSafeInsertIndex(destContainer, destList, overIndex === -1 ? destList.length : overIndex + 1)
       const newList = [...destList]
       newList.splice(insertAt, 0, newBlock)
       commit(setContainerList(blocks, destContainer, newList))
@@ -490,9 +704,10 @@ export default function EmailBuilder({
       const newIndex = list.findIndex(b => b.id === overId)
       if (oldIndex === -1) return
       if (newIndex === -1) {
-        if (oldIndex === list.length - 1) return
+        const maxIdx = rootSafeInsertIndex(sourceContainer, list, list.length)
+        if (oldIndex === maxIdx - 1 || oldIndex >= maxIdx) return
         const next = list.filter(b => b.id !== activeId)
-        next.push(draggedBlock)
+        next.splice(rootSafeInsertIndex(sourceContainer, next, next.length), 0, draggedBlock)
         commit(setContainerList(blocks, sourceContainer, next))
         return
       }
@@ -503,7 +718,7 @@ export default function EmailBuilder({
       const afterRemoval = setContainerList(blocks, sourceContainer, sourceList)
       const destList = getContainerList(afterRemoval, destContainer)
       const overIndex = destList.findIndex(b => b.id === overId)
-      const insertAt = overIndex === -1 ? destList.length : overIndex + 1
+      const insertAt = rootSafeInsertIndex(destContainer, destList, overIndex === -1 ? destList.length : overIndex + 1)
       const newDestList = [...destList]
       newDestList.splice(insertAt, 0, draggedBlock)
       commit(setContainerList(afterRemoval, destContainer, newDestList))
@@ -515,16 +730,28 @@ export default function EmailBuilder({
   }
 
   const deleteBlock = (id: string) => {
+    const target = findBlockDeep(blocks, id)
+    if (target?.type === 'footer') return // fixed footer — not user-deletable
     commit(deleteBlockDeep(blocks, id))
     if (selectedId === id) setSelectedId(null)
   }
 
   const duplicateBlock = (id: string) => {
+    const target = findBlockDeep(blocks, id)
+    if (target?.type === 'footer') return // fixed footer — not user-duplicable
     commit(duplicateBlockDeep(blocks, id))
   }
 
   const insertLayout = (build: () => EmailBlock[]) => {
-    commit([...blocks, ...build()])
+    const footerIdx = blocks.findIndex(b => b.type === 'footer')
+    if (footerIdx === -1) { commit([...blocks, ...build()]); return }
+    commit([...blocks.slice(0, footerIdx), ...build(), ...blocks.slice(footerIdx)])
+  }
+
+  const applyTemplate = (build: () => EmailBlock[]) => {
+    if (blocks.length > 0 && !window.confirm('Replace the current design with this template? You can undo afterwards.')) return
+    commit(build())
+    setSelectedId(null)
   }
 
   return (
@@ -545,23 +772,6 @@ export default function EmailBuilder({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {onSettingsChange && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    className="flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors mr-1"
-                    title="Email background & padding"
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                    Design
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-64">
-                  <EmailSettingsPanel settings={emailSettings} onChange={onSettingsChange} />
-                </PopoverContent>
-              </Popover>
-            )}
-
             <div className="flex items-center gap-0.5 mr-1">
               <button
                 onClick={undo}
@@ -622,50 +832,99 @@ export default function EmailBuilder({
           </div>
         ) : (
           <div className="flex flex-1 min-h-0">
-            <div className="w-64 border-r bg-white flex flex-col shrink-0">
-              <div className="flex items-center gap-4 border-b px-3 pt-3 text-sm font-medium shrink-0">
+            <div className="w-72 border-r bg-white flex flex-col shrink-0">
+              <div className={`flex items-center gap-4 border-b px-3 pt-3 text-sm font-medium shrink-0 ${selectedBlock ? 'opacity-40 pointer-events-none' : ''}`}>
                 <button
-                  onClick={() => setPaletteTab('content')}
+                  onClick={() => { setSelectedId(null); setPaletteTab('content') }}
                   className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'content' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
                   style={paletteTab === 'content' ? { borderColor: ACCENT } : undefined}
                 >
                   Content
                 </button>
                 <button
-                  onClick={() => setPaletteTab('layouts')}
+                  onClick={() => { setSelectedId(null); setPaletteTab('layouts') }}
                   className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'layouts' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
                   style={paletteTab === 'layouts' ? { borderColor: ACCENT } : undefined}
                 >
-                  Layouts
+                  Rows
                 </button>
-              </div>
-
-              <div className="p-3 space-y-3 overflow-y-auto flex-1">
-                {paletteTab === 'content' ? (
-                  <>
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                      <Input
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="Search blocks"
-                        className="h-8 pl-8 text-xs"
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {filteredPalette.map(p => <PaletteItem key={p.type} type={p.type} icon={p.icon} />)}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground pt-1">Drag a block into the canvas — including into a Columns or Section block — or drop it onto an existing block to insert after it.</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-[10px] text-muted-foreground pb-1">Click a layout to add its blocks to the end of your email.</p>
-                    <div className="space-y-2">
-                      {LAYOUTS.map(l => <LayoutItem key={l.id} label={l.label} onClick={() => insertLayout(l.build)} />)}
-                    </div>
-                  </>
+                <button
+                  onClick={() => { setSelectedId(null); setPaletteTab('templates') }}
+                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'templates' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                  style={paletteTab === 'templates' ? { borderColor: ACCENT } : undefined}
+                >
+                  Templates
+                </button>
+                {onSettingsChange && (
+                  <button
+                    onClick={() => { setSelectedId(null); setPaletteTab('settings') }}
+                    className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'settings' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                    style={paletteTab === 'settings' ? { borderColor: ACCENT } : undefined}
+                  >
+                    Settings
+                  </button>
                 )}
               </div>
+
+              {selectedBlock ? (
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="flex items-center justify-between border-b bg-gray-100 px-3 py-2.5 shrink-0">
+                    <p className="text-[11px] font-semibold tracking-wide text-gray-600 uppercase">{BLOCK_LABELS[selectedBlock.type]} properties</p>
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => duplicateBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-gray-200 text-gray-500" title="Duplicate">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => deleteBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-gray-200 text-red-500" title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => setSelectedId(null)} className="p-1.5 rounded hover:bg-gray-200 text-gray-500" title="Close">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-3 overflow-y-auto flex-1">
+                    <BlockInspector block={selectedBlock} onChange={updateBlock} />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 space-y-3 overflow-y-auto flex-1">
+                  {paletteTab === 'content' ? (
+                    <>
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          value={search}
+                          onChange={e => setSearch(e.target.value)}
+                          placeholder="Search blocks"
+                          className="h-8 pl-8 text-xs"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {filteredPalette.map(p => <PaletteItem key={p.type} type={p.type} icon={p.icon} />)}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground pt-1">Drag a block into the canvas — including into a Columns or Section block — or drop it onto an existing block to insert after it.</p>
+                    </>
+                  ) : paletteTab === 'layouts' ? (
+                    <>
+                      <p className="text-[10px] text-muted-foreground pb-1">Click a layout to add its blocks to the end of your email.</p>
+                      <div className="space-y-2">
+                        {LAYOUTS.map(l => <LayoutItem key={l.id} label={l.label} onClick={() => insertLayout(l.build)} />)}
+                      </div>
+                    </>
+                  ) : paletteTab === 'templates' ? (
+                    <>
+                      <p className="text-[10px] text-muted-foreground pb-1">Click a template to replace your whole email with a ready-made design — then just swap the text, images, and colors.</p>
+                      <div className="space-y-2">
+                        {TEMPLATES.map(t => (
+                          <TemplateItem key={t.id} label={t.label} description={t.description} onClick={() => applyTemplate(t.build)} />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    onSettingsChange && <EmailSettingsPanel settings={emailSettings} onChange={onSettingsChange} />
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-6" style={DOT_GRID}>
@@ -680,32 +939,30 @@ export default function EmailBuilder({
                 }}
               >
                 <div
-                  className="rounded-lg shadow-sm min-h-100 p-3"
+                  className="rounded-lg shadow-sm min-h-100 flex flex-col"
                   style={{ background: emailSettings.contentBackground }}
                 >
-                  <BlockList
-                    containerId="root"
-                    blocks={blocks}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onDelete={deleteBlock}
-                    onDuplicate={duplicateBlock}
-                    emptyLabel="Drag blocks here to start designing"
-                  />
+                  <div className="flex-1 p-3">
+                    <BlockList
+                      containerId="root"
+                      blocks={editableBlocks}
+                      selectedId={selectedId}
+                      onSelect={setSelectedId}
+                      onDelete={deleteBlock}
+                      onDuplicate={duplicateBlock}
+                      emptyLabel="Drag blocks here to start designing"
+                    />
+                  </div>
+                  {footerBlock && (
+                    <div className="group relative shrink-0 cursor-not-allowed overflow-hidden rounded-b-lg" title="This footer is fixed and can't be edited, moved, or removed">
+                      <BlockPreview block={footerBlock} />
+                      <span className="absolute -top-2.5 left-2 z-10 flex items-center gap-1 rounded-full bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                        <Lock className="h-2.5 w-2.5" /> Fixed footer
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-
-            <div className="w-72 border-l bg-white p-4 overflow-y-auto shrink-0">
-              {selectedBlock ? (
-                <>
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-3">{BLOCK_LABELS[selectedBlock.type]} settings</p>
-                  <BlockInspector block={selectedBlock} onChange={updateBlock} />
-                  <Separator className="my-4" />
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">Select a block to edit its settings.</p>
-              )}
             </div>
           </div>
         )}

@@ -1,27 +1,59 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FONT_OPTIONS, type EmailBlock, type BlockAlign } from '@/lib/email-builder'
+import { FONT_OPTIONS, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Link as LinkIcon, Loader2, Upload } from 'lucide-react'
+import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { toast } from 'sonner'
 
+/** Full-bleed section divider bar — groups fields the way "BLOCK OPTIONS" / "ACTION" do in the reference builder. */
+function SectionHeader({ label }: { label: string }) {
+  return <p className="-mx-3 bg-gray-100 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-gray-500 uppercase">{label}</p>
+}
+
+function Stepper({ value, onChange, min = 0, max = 200, step = 1 }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
+  const round = (n: number) => Math.round(n * 100) / 100
+  const dec = () => onChange(Math.max(min, round(value - step)))
+  const inc = () => onChange(Math.min(max, round(value + step)))
+  return (
+    <div className="flex items-center rounded-md border overflow-hidden">
+      <button type="button" onClick={dec} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-r">−</button>
+      <input
+        type="number" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value) || 0)}
+        className="h-8 w-full min-w-0 text-center text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button type="button" onClick={inc} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-l">+</button>
+    </div>
+  )
+}
+
 function AlignField({ value, onChange }: { value: BlockAlign; onChange: (v: BlockAlign) => void }) {
+  const options: { v: BlockAlign; icon: React.ElementType }[] = [
+    { v: 'left', icon: AlignLeft },
+    { v: 'center', icon: AlignCenter },
+    { v: 'right', icon: AlignRight },
+  ]
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Alignment</Label>
-      <Select value={value} onValueChange={v => onChange(v as BlockAlign)}>
-        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="left">Left</SelectItem>
-          <SelectItem value="center">Center</SelectItem>
-          <SelectItem value="right">Right</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="grid grid-cols-3 gap-1.5">
+        {options.map(o => (
+          <button
+            key={o.v}
+            type="button"
+            onClick={() => onChange(o.v)}
+            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}
+          >
+            <o.icon className="h-3.5 w-3.5" />
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -54,11 +86,67 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   )
 }
 
-function NumberField({ label, value, onChange, min = 0, max = 200 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number }) {
+function NumberField({ label, value, onChange, min = 0, max = 200, step = 1 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <Input type="number" min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value) || 0)} className="h-8 text-sm" />
+      <Stepper value={value} onChange={onChange} min={min} max={max} step={step} />
+    </div>
+  )
+}
+
+function PaddingField({ value, onChange }: { value: Padding; onChange: (p: Padding) => void }) {
+  const allEqual = value.top === value.right && value.right === value.bottom && value.bottom === value.left
+  const [expanded, setExpanded] = useState(!allEqual)
+  const side = (key: keyof Padding, label: string) => (
+    <div className="space-y-1">
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Stepper value={value[key]} onChange={n => onChange({ ...value, [key]: n })} />
+    </div>
+  )
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">Padding</Label>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">More options</span>
+          <Switch checked={expanded} onCheckedChange={setExpanded} />
+        </div>
+      </div>
+      {expanded ? (
+        <div className="grid grid-cols-2 gap-2">
+          {side('top', 'Top')}
+          {side('right', 'Right')}
+          {side('bottom', 'Bottom')}
+          {side('left', 'Left')}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <Label className="text-[10px] text-muted-foreground">All sides</Label>
+          <Stepper value={value.top} onChange={n => onChange(uniformPadding(n))} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn) => void }) {
+  const base = 'flex items-center justify-center gap-1 h-8 rounded-md border text-xs font-medium transition-colors'
+  const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
+  const inactive = 'text-muted-foreground hover:bg-muted/50'
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Hide on</Label>
+      <div className="grid grid-cols-3 gap-1.5">
+        <button type="button" onClick={() => onChange('none')} className={`${base} ${value === 'none' ? active : inactive}`}>Off</button>
+        <button type="button" title="Hide on desktop" onClick={() => onChange('desktop')} className={`${base} ${value === 'desktop' ? active : inactive}`}>
+          <Monitor className="h-3.5 w-3.5" />
+        </button>
+        <button type="button" title="Hide on mobile" onClick={() => onChange('mobile')} className={`${base} ${value === 'mobile' ? active : inactive}`}>
+          <Smartphone className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">Hides this block on that device when the email is opened. Support varies slightly across email clients.</p>
     </div>
   )
 }
@@ -137,7 +225,12 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={48} />
           <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
+          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
+          <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -149,7 +242,12 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={14} max={60} />
           <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
+          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
+          <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -162,13 +260,33 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Label className="text-xs">Alt text</Label>
             <Input value={block.alt} onChange={e => onChange({ ...block, alt: e.target.value })} className="h-8 text-sm" />
           </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Auto width</Label>
+            <Switch checked={block.autoWidth} onCheckedChange={autoWidth => onChange({ ...block, autoWidth })} />
+          </div>
+          {block.autoWidth ? (
+            <div className="flex items-center justify-between opacity-50">
+              <Label className="text-xs">Full width on mobile</Label>
+              <Switch checked={false} disabled />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Full width on mobile</Label>
+                <Switch checked={block.fullWidthOnMobile} onCheckedChange={fullWidthOnMobile => onChange({ ...block, fullWidthOnMobile })} />
+              </div>
+              <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
+            </>
+          )}
+          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <SectionHeader label="Action" />
           <div className="space-y-1.5">
             <Label className="text-xs">Link (optional)</Label>
             <Input value={block.link ?? ''} onChange={e => onChange({ ...block, link: e.target.value || undefined })} placeholder="https://..." className="h-8 text-sm" />
           </div>
-          <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -183,7 +301,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ImageUploadField label="Thumbnail" src={block.thumbnailSrc} onChange={thumbnailSrc => onChange({ ...block, thumbnailSrc })} />
           <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -195,7 +315,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Textarea value={block.code} onChange={e => onChange({ ...block, code: e.target.value })} rows={8} className="font-mono text-xs" />
             <p className="text-[11px] text-muted-foreground">For advanced use — inserted as-is into the email.</p>
           </div>
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -215,7 +337,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -224,7 +348,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <ColorField label="Color" value={block.color} onChange={color => onChange({ ...block, color })} />
           <NumberField label="Thickness" value={block.thickness} onChange={thickness => onChange({ ...block, thickness })} min={1} max={10} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -232,6 +358,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
       return (
         <div className="space-y-3">
           <NumberField label="Height" value={block.height} onChange={height => onChange({ ...block, height })} min={4} max={200} />
+          <SectionHeader label="Block options" />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -254,8 +382,10 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
           <NumberField label="Number of columns" value={count} onChange={setCount} min={1} max={6} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
     }
@@ -279,7 +409,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
               </Select>
             </div>
           )}
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 
@@ -307,7 +439,9 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             + Add link
           </Button>
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Block options" />
+          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
 

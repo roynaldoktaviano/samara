@@ -87,32 +87,37 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id                          String               @id @default(cuid())
-  email                       String               @unique
-  name                        String?
-  password                    String
-  role                        Role                 @default(SALES)
-  createdAt                   DateTime             @default(now())
-  updatedAt                   DateTime             @updatedAt
-  bookings                    Booking[]            @relation("SalespersonBookings")
-  managedAgents               Agent[]              @relation("AgentSalesperson")
-  waitingListItems            WaitingList[]
-  stockMovements              StockMovement[]
-  purchaseRequests            PurchaseRequest[]    @relation("PRRequestedBy")
-  purchaseRequestsApproved    PurchaseRequest[]    @relation("PRApprovedBy")
-  purchaseOrdersCreated       PurchaseOrder[]
-  goodsReceipts               GoodsReceipt[]
-  transfersDispatched         StockTransfer[]      @relation("TransferDispatch")
-  transfersReceived           StockTransfer[]      @relation("TransferReceive")
-  transfersExpectedReceive    StockTransfer[]      @relation("TransferExpectedReceive")
-  inventoryExceptionsResolved InventoryException[] @relation("ExceptionResolvedBy")
-  crewRequests                CrewRequest[]
-  stockCountsBy               StockCount[]         @relation("StockCountBy")
-  stockCountsApproved         StockCount[]         @relation("StockCountApprove")
-  poPaymentRequestsMade       POPaymentRequest[]   @relation("POPaymentRequestedBy")
-  poPaymentRequestsPaid       POPaymentRequest[]   @relation("POPaymentPaidBy")
-  poReimbursementsMade        POReimbursement[]    @relation("POReimbursementRequestedBy")
-  poReimbursementsPaid        POReimbursement[]    @relation("POReimbursementPaidBy")
+  id                             String                      @id @default(cuid())
+  email                          String                      @unique
+  name                           String?
+  password                       String
+  role                           Role                        @default(SALES)
+  createdAt                      DateTime                    @default(now())
+  updatedAt                      DateTime                    @updatedAt
+  bookings                       Booking[]                   @relation("SalespersonBookings")
+  managedAgents                  Agent[]                     @relation("AgentSalesperson")
+  waitingListItems               WaitingList[]
+  stockMovements                 StockMovement[]
+  purchaseRequests               PurchaseRequest[]           @relation("PRRequestedBy")
+  purchaseRequestsApproved       PurchaseRequest[]           @relation("PRApprovedBy")
+  purchaseOrdersCreated          PurchaseOrder[]
+  goodsReceipts                  GoodsReceipt[]
+  transfersDispatched            StockTransfer[]             @relation("TransferDispatch")
+  transfersReceived              StockTransfer[]             @relation("TransferReceive")
+  transfersExpectedReceive       StockTransfer[]             @relation("TransferExpectedReceive")
+  inventoryExceptionsResolved    InventoryException[]        @relation("ExceptionResolvedBy")
+  crewRequests                   CrewRequest[]
+  stockCountsBy                  StockCount[]                @relation("StockCountBy")
+  stockCountsApproved            StockCount[]                @relation("StockCountApprove")
+  poPaymentRequestsMade          POPaymentRequest[]          @relation("POPaymentRequestedBy")
+  poPaymentRequestsPaid          POPaymentRequest[]          @relation("POPaymentPaidBy")
+  poReimbursementsMade           POReimbursement[]           @relation("POReimbursementRequestedBy")
+  poReimbursementsPaid           POReimbursement[]           @relation("POReimbursementPaidBy")
+  deliveryFeesCreated            DeliveryFee[]
+  deliveryFeePaymentRequestsMade DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
+  deliveryFeePaymentRequestsPaid DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
+  deliveryFeeReimbursementsMade  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
+  deliveryFeeReimbursementsPaid  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
 }
 
 model Customer {
@@ -1193,6 +1198,15 @@ model PurchaseOrder {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
+  // Additional pricing lines beyond item subtotal (tax/VAT, fees, etc.) — [{ label, amount }].
+  // Set once at PO creation, shown above Order Total; not editable afterward, same as items.
+  extraCharges Json?
+
+  // Discount applied to the item subtotal BEFORE extraCharges are added on top.
+  // discountType 'PERCENT' means discountValue is a % of the item subtotal; 'FIXED' means a flat Rupiah amount.
+  discountType  String?
+  discountValue Float   @default(0)
+
   // Requester snapshot — captured at PO creation time (direct create, or auto-created from an
   // approved PR) so department/office/role stay historically accurate even if the employee's
   // record changes later.
@@ -1212,6 +1226,7 @@ model PurchaseOrder {
   notifications       Notification[]
   paymentRequests     POPaymentRequest[]
   reimbursements      POReimbursement[]
+  deliveryFees        DeliveryFee[]
 
   @@index([createdById])
   @@index([status])
@@ -1278,6 +1293,89 @@ model POReimbursement {
   paidBy      User?         @relation("POReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+// A delivery/shipping fee tied to an existing PO — no items of its own, just
+// "which PO's goods this shipment cost covers". Goes through the same
+// Request Payment / Debit Paid / Reimburse flow as a Purchase Order.
+model DeliveryFee {
+  id              String   @id @default(cuid())
+  feeNumber       String   @unique
+  purchaseOrderId String
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrder   PurchaseOrder               @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  createdBy       User?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  paymentRequests DeliveryFeePaymentRequest[]
+  reimbursements  DeliveryFeeReimbursement[]
+
+  @@index([purchaseOrderId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+enum DeliveryFeePaymentRequestStatus {
+  PENDING
+  PAID
+}
+
+model DeliveryFeePaymentRequest {
+  id                String                          @id @default(cuid())
+  deliveryFeeId     String
+  requestedById     String
+  amount            Float
+  notePhotoKeys     String[]                        @default([])
+  notes             String?
+  status            DeliveryFeePaymentRequestStatus @default(PENDING)
+  paymentMethod     String                          @default("TRANSFER")
+  paidAt            DateTime?
+  paidById          String?
+  transferProofKeys String[]                        @default([])
+  createdAt         DateTime                        @default(now())
+  updatedAt         DateTime                        @updatedAt
+
+  deliveryFee DeliveryFee @relation(fields: [deliveryFeeId], references: [id], onDelete: Cascade)
+  requestedBy User        @relation("DeliveryFeePaymentRequestedBy", fields: [requestedById], references: [id])
+  paidBy      User?       @relation("DeliveryFeePaymentPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@index([deliveryFeeId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+enum DeliveryFeeReimbursementStatus {
+  PENDING
+  PAID
+}
+
+model DeliveryFeeReimbursement {
+  id                String                         @id @default(cuid())
+  deliveryFeeId     String
+  requestedById     String
+  amount            Float
+  notePhotoKeys     String[]                       @default([])
+  notes             String?
+  requesterName     String
+  bankName          String
+  accountNumber     String
+  accountHolderName String
+  status            DeliveryFeeReimbursementStatus @default(PENDING)
+  paidAt            DateTime?
+  paidById          String?
+  transferProofKeys String[]                       @default([])
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+
+  deliveryFee DeliveryFee @relation(fields: [deliveryFeeId], references: [id], onDelete: Cascade)
+  requestedBy User        @relation("DeliveryFeeReimbursementRequestedBy", fields: [requestedById], references: [id])
+  paidBy      User?       @relation("DeliveryFeeReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@index([deliveryFeeId])
   @@index([status])
   @@index([requestedById])
 }

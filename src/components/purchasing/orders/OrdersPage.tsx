@@ -44,6 +44,9 @@ interface OrderDetail extends PurchaseOrder {
   cancelledAt?: string | null
   cancelledByName?: string | null
   items: OrderItem[]
+  extraCharges?: { label: string; amount: number }[] | null
+  discountType?: 'PERCENT' | 'FIXED' | null
+  discountValue?: number
   receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
   paymentRequests: PaymentRequest[]
   reimbursements: Reimbursement[]
@@ -386,6 +389,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+  const [extraCharges, setExtraCharges] = useState<{ label: string; amount: number }[]>([])
+  const [discountType, setDiscountType] = useState<'PERCENT' | 'FIXED'>('PERCENT')
+  const [discountValue, setDiscountValue] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -485,6 +491,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }]) }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)) }
+  function addCharge() { setExtraCharges(c => [...c, { label: '', amount: 0 }]) }
+  function removeCharge(i: number) { setExtraCharges(c => c.filter((_, idx) => idx !== i)) }
+  function updateCharge(i: number, patch: Partial<{ label: string; amount: number }>) {
+    setExtraCharges(c => c.map((charge, idx) => idx !== i ? charge : { ...charge, ...patch }))
+  }
   function pickItem(idx: number, item: PurchaseItem) {
     setLines(l => l.map((line, i) => i !== idx ? line : {
       ...line,
@@ -513,6 +524,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes,
         requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
+        extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
+        discountType: discountValue > 0 ? discountType : undefined,
+        discountValue: discountValue > 0 ? discountValue : undefined,
       }),
     })
     const data = await res.json()
@@ -520,6 +534,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     setSaving(false); setView('list')
     setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
     setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+    setExtraCharges([])
+    setDiscountType('PERCENT'); setDiscountValue(0)
     load()
   }
 
@@ -689,7 +705,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // ── Create ──
   if (view === 'create') {
-    const total = lines.reduce((s, l) => s + l.orderedQty * l.unitCost, 0)
+    const itemsTotal = lines.reduce((s, l) => s + l.orderedQty * l.unitCost, 0)
+    const chargesTotal = extraCharges.reduce((s, c) => s + c.amount, 0)
+    const discountAmount = Math.min(itemsTotal, discountType === 'PERCENT' ? itemsTotal * (discountValue / 100) : discountValue)
+    const afterDiscount = itemsTotal - discountAmount
+    const total = afterDiscount + chargesTotal
     const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
     return (
       <div className="space-y-6">
@@ -884,9 +904,59 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             </tbody>
           </table>
 
-          <div className="flex items-center justify-between px-5 py-4 bg-muted/20 border-t">
-            <span className="text-sm text-muted-foreground">{lines.length} item{lines.length > 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-3">
+          <div className="px-5 py-4 bg-muted/20 border-t space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{lines.length} item{lines.length > 1 ? 's' : ''}</span>
+              <span className="text-sm text-muted-foreground">Subtotal <span className="ml-3 text-foreground font-medium">{fmtMoney(itemsTotal)}</span></span>
+            </div>
+
+            {extraCharges.map((c, i) => (
+              <div key={i} className="flex items-center justify-end gap-2">
+                <input
+                  className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                  placeholder="e.g. VAT, MOQ Fee 15%"
+                  value={c.label}
+                  onChange={e => updateCharge(i, { label: e.target.value })}
+                />
+                <input
+                  type="number" step="any"
+                  className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  placeholder="0"
+                  value={c.amount || ''}
+                  onChange={e => updateCharge(i, { amount: Number(e.target.value) || 0 })}
+                />
+                <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+
+            <div className="flex justify-end">
+              <button onClick={addCharge}
+                className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                <Plus className="h-3.5 w-3.5" /> Add Pricing (Tax, Fee, etc.)
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">Discount</span>
+              <div className="flex rounded-md border overflow-hidden h-8">
+                <button type="button" onClick={() => setDiscountType('PERCENT')}
+                  className={`px-2.5 text-xs font-medium transition-colors ${discountType === 'PERCENT' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
+                <button type="button" onClick={() => setDiscountType('FIXED')}
+                  className={`px-2.5 text-xs font-medium transition-colors border-l ${discountType === 'FIXED' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
+              </div>
+              <input
+                type="number" step="any" min={0}
+                className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                placeholder="0"
+                value={discountValue || ''}
+                onChange={e => setDiscountValue(Number(e.target.value) || 0)}
+              />
+              {discountAmount > 0 && <span className="text-xs text-muted-foreground w-32 text-right">-{fmtMoney(discountAmount)}</span>}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">Order Total</span>
               <span className="text-lg font-bold">{fmtMoney(total)}</span>
             </div>
@@ -1235,12 +1305,45 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-muted/30 border-t">
-                <tr>
-                  <td colSpan={4} className="px-5 py-3 text-sm font-semibold text-right">Total</td>
-                  <td className="px-5 py-3 text-right font-bold">{fmtMoney(detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0))}</td>
-                </tr>
-              </tfoot>
+              {(() => {
+                const itemsSubtotal = detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+                const discountAmount = detail.discountType
+                  ? Math.min(itemsSubtotal, detail.discountType === 'PERCENT' ? itemsSubtotal * ((detail.discountValue ?? 0) / 100) : (detail.discountValue ?? 0))
+                  : 0
+                const chargesTotal = detail.extraCharges?.reduce((s, c) => s + c.amount, 0) ?? 0
+                const grandTotal = itemsSubtotal - discountAmount + chargesTotal
+                const hasBreakdown = discountAmount > 0 || (detail.extraCharges && detail.extraCharges.length > 0)
+                return (
+                  <tfoot className="bg-muted/30 border-t">
+                    {hasBreakdown && (
+                      <>
+                        <tr>
+                          <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">Subtotal</td>
+                          <td className="px-5 py-2 text-right text-muted-foreground">{fmtMoney(itemsSubtotal)}</td>
+                        </tr>
+                        {discountAmount > 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">
+                              Discount{detail.discountType === 'PERCENT' ? ` (${detail.discountValue}%)` : ''}
+                            </td>
+                            <td className="px-5 py-2 text-right text-muted-foreground">-{fmtMoney(discountAmount)}</td>
+                          </tr>
+                        )}
+                        {detail.extraCharges?.map((c, i) => (
+                          <tr key={i}>
+                            <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">{c.label || 'Additional charge'}</td>
+                            <td className="px-5 py-2 text-right text-muted-foreground">{fmtMoney(c.amount)}</td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                    <tr>
+                      <td colSpan={4} className="px-5 py-3 text-sm font-semibold text-right">Total</td>
+                      <td className="px-5 py-3 text-right font-bold">{fmtMoney(grandTotal)}</td>
+                    </tr>
+                  </tfoot>
+                )
+              })()}
             </table>
           </div>
 

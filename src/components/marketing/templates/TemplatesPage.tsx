@@ -11,8 +11,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Palette, Plus, Pencil, Trash2, Copy, Loader2, Code2, LayoutTemplate, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
-import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
-import { createBlock, normalizeDesign, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
+import EmailBuilder, { TEMPLATES } from '@/components/marketing/builder/EmailBuilder'
+import { createBlock, normalizeDesign, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
 
 const ACCENT = '#bdac7e'
 
@@ -20,14 +20,15 @@ interface Template {
   id: string
   name: string
   description: string | null
+  bodyHtml: string
   createdByName: string | null
   createdAt: string
   updatedAt: string
+  _count: { campaigns: number }
 }
 
 interface TemplateFull extends Template {
   blocksJson: unknown
-  bodyHtml: string
 }
 
 export default function TemplatesPage() {
@@ -42,6 +43,7 @@ export default function TemplatesPage() {
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null)
   const [pickModeOpen, setPickModeOpen] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [htmlMode, setHtmlMode] = useState(false)
   const [rawHtml, setRawHtml] = useState('')
   const [showHtmlPreview, setShowHtmlPreview] = useState(false)
@@ -69,12 +71,26 @@ export default function TemplatesPage() {
     setPickModeOpen(true)
   }
 
-  const startBuilderMode = () => {
+  const openGallery = () => {
+    setPickModeOpen(false)
+    setGalleryOpen(true)
+  }
+
+  const startBlank = () => {
     setBlocks([createBlock('text'), createBlock('footer')])
     setSettings(DEFAULT_EMAIL_SETTINGS)
     setHtmlMode(false)
     setShowHtmlPreview(false)
-    setPickModeOpen(false)
+    setGalleryOpen(false)
+    setEditorOpen(true)
+  }
+
+  const startFromGalleryTemplate = (build: () => EmailBlock[]) => {
+    setBlocks(build())
+    setSettings(DEFAULT_EMAIL_SETTINGS)
+    setHtmlMode(false)
+    setShowHtmlPreview(false)
+    setGalleryOpen(false)
     setEditorOpen(true)
   }
 
@@ -168,11 +184,30 @@ export default function TemplatesPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map(t => (
-            <Card key={t.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4 space-y-2">
+            <Card key={t.id} className="hover:shadow-md transition-shadow overflow-hidden">
+              <div className="h-20 w-full overflow-hidden border-b bg-white">
+                {t.bodyHtml ? (
+                  <iframe
+                    title={`Preview ${t.name}`}
+                    srcDoc={t.bodyHtml}
+                    sandbox=""
+                    scrolling="no"
+                    style={{ width: '400%', height: '400%', transform: 'scale(0.25)', transformOrigin: 'top left', border: 'none', pointerEvents: 'none' }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground">No preview</div>
+                )}
+              </div>
+              <CardContent className="p-4 space-y-1">
                 <p className="font-medium text-sm">{t.name}</p>
                 {t.description && <p className="text-xs text-muted-foreground line-clamp-2">{t.description}</p>}
-                <p className="text-[11px] text-muted-foreground">Updated {new Date(t.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Created {new Date(t.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {t.createdByName ? ` by ${t.createdByName}` : ''}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Updated {new Date(t.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · Used {t._count.campaigns}x
+                </p>
                 <div className="flex gap-1.5 pt-1">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openEdit(t)}><Pencil className="h-3 w-3 mr-1" />Edit</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => duplicate(t)}><Copy className="h-3 w-3 mr-1" />Duplicate</Button>
@@ -272,7 +307,7 @@ export default function TemplatesPage() {
             </button>
             <button
               type="button"
-              onClick={startBuilderMode}
+              onClick={openGallery}
               className="flex flex-col items-center gap-2 rounded-lg border p-5 hover:border-[--accent] hover:bg-muted/50 transition-colors"
               style={{ '--accent': ACCENT } as React.CSSProperties}
             >
@@ -280,6 +315,52 @@ export default function TemplatesPage() {
               <span className="text-sm font-medium">Builder</span>
               <span className="text-[11px] text-muted-foreground text-center">Susun pakai drag & drop block</span>
             </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pilih desain awal</DialogTitle>
+            <DialogDescription>Pilih salah satu template siap-pakai, atau mulai dari kanvas kosong. Semua bisa diedit bebas setelah dipilih.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+            <button
+              type="button"
+              onClick={startBlank}
+              className="flex flex-col rounded-lg border overflow-hidden hover:border-[#bdac7e] hover:shadow-sm transition-all text-left"
+            >
+              <div className="h-28 w-full flex items-center justify-center bg-muted/40 border-b">
+                <Plus className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div className="p-2.5">
+                <p className="text-xs font-medium">Mulai kosong</p>
+                <p className="text-[10px] text-muted-foreground">Kanvas kosong, susun dari nol</p>
+              </div>
+            </button>
+            {TEMPLATES.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => startFromGalleryTemplate(t.build)}
+                className="flex flex-col rounded-lg border overflow-hidden hover:border-[#bdac7e] hover:shadow-sm transition-all text-left"
+              >
+                <div className="h-28 w-full overflow-hidden bg-white border-b">
+                  <iframe
+                    title={`Preview ${t.label}`}
+                    srcDoc={renderBlocksToHtml(t.build(), DEFAULT_EMAIL_SETTINGS)}
+                    sandbox=""
+                    scrolling="no"
+                    style={{ width: '400%', height: '400%', transform: 'scale(0.25)', transformOrigin: 'top left', border: 'none', pointerEvents: 'none' }}
+                  />
+                </div>
+                <div className="p-2.5">
+                  <p className="text-xs font-medium">{t.label}</p>
+                  <p className="text-[10px] text-muted-foreground line-clamp-2">{t.description}</p>
+                </div>
+              </button>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

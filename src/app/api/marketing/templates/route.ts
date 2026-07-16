@@ -14,7 +14,10 @@ export async function GET() {
 
   const templates = await db.emailTemplate.findMany({
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, name: true, description: true, createdByName: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true, name: true, description: true, bodyHtml: true, createdByName: true, createdAt: true, updatedAt: true,
+      _count: { select: { campaigns: true } },
+    },
   })
   return NextResponse.json(templates)
 }
