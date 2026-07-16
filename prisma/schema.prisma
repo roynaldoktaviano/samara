@@ -118,6 +118,7 @@ model User {
   deliveryFeePaymentRequestsPaid DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
   deliveryFeeReimbursementsMade  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
   deliveryFeeReimbursementsPaid  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
+  agentLeadsPromoted             AgentLead[]                 @relation("AgentLeadPromotedBy")
 }
 
 model Customer {
@@ -188,6 +189,7 @@ model Agent {
   bookings                 Booking[]
   contacts                 AgentContact[]
   calendarAccessLogs       CalendarAccessLog[]
+  leadsPromoted            AgentLead[]
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
 
@@ -224,6 +226,50 @@ model AgentContact {
   updatedAt   DateTime  @default(now()) @updatedAt
 
   @@index([agentId])
+}
+
+enum AgentLeadStatus {
+  NEW
+  PROMOTED
+  DISCARDED
+}
+
+// Staging area for agent contacts pulled from an external CRM (Freshsales) before
+// they become real Agent records. Contacts sharing the same display_name in the
+// source system are grouped into one AgentLead with multiple AgentLeadContact rows
+// (e.g. "Nicholson Yachts" with two different emails) — reviewed and promoted by
+// hand so the real Agent table never gets polluted with unqualified/duplicate leads.
+model AgentLead {
+  id              String             @id @default(cuid())
+  name            String             @unique
+  status          AgentLeadStatus    @default(NEW)
+  promotedAgentId String?
+  promotedAgent   Agent?             @relation(fields: [promotedAgentId], references: [id], onDelete: SetNull)
+  promotedAt      DateTime?
+  promotedById    String?
+  promotedBy      User?              @relation("AgentLeadPromotedBy", fields: [promotedById], references: [id], onDelete: SetNull)
+  discardedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  contacts        AgentLeadContact[]
+
+  @@index([status])
+}
+
+model AgentLeadContact {
+  id                  String   @id @default(cuid())
+  agentLeadId         String
+  freshsalesContactId String   @unique
+  name                String
+  email               String?
+  whatsapp            String?
+  jobTitle            String?
+  salesOwnerName      String?
+  createdAt           DateTime @default(now())
+
+  agentLead AgentLead @relation(fields: [agentLeadId], references: [id], onDelete: Cascade)
+
+  @@index([agentLeadId])
 }
 
 model Yacht {

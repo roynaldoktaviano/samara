@@ -12,6 +12,7 @@ interface ContactRow {
   first_name?: string
   last_name?: string
   email?: string
+  owner_id?: number | string | null
   custom_field?: {
     cf_whatsapp_number?: string
     cf_trip_type?: string
@@ -22,6 +23,12 @@ interface ContactRow {
     [key: string]: unknown
   }
   [key: string]: unknown
+}
+
+interface OwnerUser {
+  id: number | string
+  display_name?: string
+  email?: string
 }
 
 const fmtCfDate = (d?: string) => {
@@ -36,6 +43,7 @@ export default function FreshsalesPreviewPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [contacts, setContacts] = useState<ContactRow[]>([])
+  const [owners, setOwners] = useState<Record<string, OwnerUser>>({})
   const [meta, setMeta] = useState<Record<string, unknown> | null>(null)
   const [showRaw, setShowRaw] = useState(false)
   const [raw, setRaw] = useState<unknown>(null)
@@ -58,6 +66,8 @@ export default function FreshsalesPreviewPage() {
       setMeta(data.meta ?? null)
       const list: ContactRow[] = Array.isArray(data.contacts) ? data.contacts : []
       setContacts(list)
+      const userList: OwnerUser[] = Array.isArray(data.users) ? data.users : []
+      setOwners(Object.fromEntries(userList.map(u => [String(u.id), u])))
     } catch {
       setError('Failed to reach the preview endpoint')
     } finally {
@@ -127,6 +137,7 @@ export default function FreshsalesPreviewPage() {
                 <th style={{ padding: '6px 8px' }}>ID</th>
                 <th style={{ padding: '6px 8px' }}>Nama</th>
                 <th style={{ padding: '6px 8px' }}>Email</th>
+                <th style={{ padding: '6px 8px' }}>Sales Owner</th>
                 <th style={{ padding: '6px 8px' }}>WhatsApp</th>
                 <th style={{ padding: '6px 8px' }}>Trip Type</th>
                 <th style={{ padding: '6px 8px' }}>Guests</th>
@@ -141,6 +152,7 @@ export default function FreshsalesPreviewPage() {
                   <td style={{ padding: '6px 8px', color: '#6b7280' }}>{c.id}</td>
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.display_name ?? (`${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || '—')}</td>
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.email ?? '—'}</td>
+                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{(c.owner_id != null && owners[String(c.owner_id)]?.display_name) ?? '—'}</td>
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.custom_field?.cf_whatsapp_number ?? '—'}</td>
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.custom_field?.cf_trip_type ?? '—'}</td>
                   <td style={{ padding: '6px 8px' }}>{c.custom_field?.cf_number_of_guests ?? '—'}</td>

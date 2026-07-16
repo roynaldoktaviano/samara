@@ -29,6 +29,7 @@ import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
 import POReimbursements from '@/components/finance/POReimbursements'
 import DeliveryFeePayments from '@/components/finance/DeliveryFeePayments'
 import DeliveryFeeReimbursements from '@/components/finance/DeliveryFeeReimbursements'
+import AgentLeadsPage from '@/components/agents/AgentLeadsPage'
 import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
@@ -84,7 +85,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
 
 type NavItem = {
   id: View
@@ -124,6 +125,7 @@ const navigationItems: NavItem[] = [
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
   { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
+  { id: 'agent-leads',   label: 'Agent Leads',     icon: Users,      roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
   { id: 'newsletter',    label: 'Newsletter',      icon: Mail,       roles: ['ADMIN'],                                  group: 'marketing'  },
   { id: 'marketing-campaigns', label: 'Email Campaigns', icon: Send, roles: ['ADMIN', 'MARKETING'],                     group: 'marketing', feature: 'marketing' },
@@ -537,6 +539,7 @@ export default function Home() {
       case 'payments':     return <Payments />
       case 'trip-sheet':   return <TripSheet />
       case 'agents':       return <Agents />
+      case 'agent-leads':  return <AgentLeadsPage />
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments />
       case 'finance-po-reimbursements': return <POReimbursements />

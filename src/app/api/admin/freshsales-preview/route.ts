@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const sortType = searchParams.get('sort_type') ?? 'desc'
 
   try {
-    const res = await fetch(`https://${domain}/api/contacts/view/${viewId}?page=${page}&per_page=25&sort=${sort}&sort_type=${sortType}`, {
+    const res = await fetch(`https://${domain}/api/contacts/view/${viewId}?page=${page}&per_page=25&sort=${sort}&sort_type=${sortType}&include=owner`, {
       headers: {
         'Authorization': `Token token=${apiKey}`,
         'Content-Type': 'application/json',
