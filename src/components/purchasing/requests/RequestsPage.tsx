@@ -24,22 +24,18 @@ interface PurchaseRequest {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', SENT: 'Requested', APPROVED: 'Approved', REJECTED: 'Rejected',
-  ORDERED: 'Ordered', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
+  REQUESTED: 'Requested', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground', SENT: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700',
-  ORDERED: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700',
-  RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
+  REQUESTED: 'bg-blue-100 text-blue-700', APPROVED: 'bg-green-100 text-green-700',
+  REJECTED: 'bg-red-100 text-red-700', CANCELLED: 'bg-muted text-muted-foreground',
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
-  { key: 'DRAFT', label: 'Draft' },
-  { key: 'SENT', label: 'Requested' },
+  { key: 'REQUESTED', label: 'Requested' },
   { key: 'APPROVED', label: 'Approved' },
   { key: 'REJECTED', label: 'Rejected' },
-  { key: 'ORDERED', label: 'Ordered' },
+  { key: 'CANCELLED', label: 'Cancelled' },
 ]
 
 function fmtDate(s: string) {
@@ -323,7 +319,7 @@ export default function RequestsPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'SENT' ? (
+                  {r.status === 'REQUESTED' ? (
                     <button
                       onClick={() => changeStatus(r.id, 'APPROVED')}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors whitespace-nowrap">
@@ -688,19 +684,7 @@ export default function RequestsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            {selected.status === 'DRAFT' && (
-              <>
-                <button onClick={() => changeStatus(selected.id, 'SENT')}
-                  className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
-                  Submit Request
-                </button>
-                <button onClick={() => deleteReq(selected)}
-                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
-                  Delete
-                </button>
-              </>
-            )}
-            {selected.status === 'SENT' && (
+            {selected.status === 'REQUESTED' && (
               <>
                 <button onClick={() => changeStatus(selected.id, 'APPROVED')}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
@@ -710,15 +694,19 @@ export default function RequestsPage() {
                   className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                   Reject
                 </button>
+                <button onClick={() => deleteReq(selected)}
+                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                  Delete
+                </button>
               </>
             )}
             {selected.status === 'APPROVED' && (
               <span className="text-sm text-muted-foreground italic">Ready to be ordered</span>
             )}
             {selected.status === 'REJECTED' && (
-              <button onClick={() => changeStatus(selected.id, 'DRAFT')}
+              <button onClick={() => changeStatus(selected.id, 'REQUESTED')}
                 className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-muted transition-colors">
-                Revert to Draft
+                Reopen
               </button>
             )}
           </div>
@@ -770,7 +758,7 @@ export default function RequestsPage() {
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
-                  const editable = ['DRAFT', 'SENT'].includes(detail.status)
+                  const editable = detail.status === 'REQUESTED'
                   const isCustom = !item.itemId
                   return (
                     <tr

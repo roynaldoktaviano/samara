@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       requestedByEmployeeId: employeeId,
       deliveryLocationId: locationId || null,
       notes: notes?.trim() || null,
-      status: 'DRAFT',
+      status: 'REQUESTED',
       updatedAt: new Date(),
       items: {
         create: items.map(it => ({

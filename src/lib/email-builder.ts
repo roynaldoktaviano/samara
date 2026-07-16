@@ -105,13 +105,27 @@ export interface SpacerBlock {
 }
 
 // A column holds a nested list of content blocks — anything except another
-// 'columns' block (no nested columns, keeps the drag & drop tree 2 levels deep).
+// 'columns' or 'section' block (no nested containers, keeps the drag & drop tree 2 levels deep).
 export interface ColumnsBlock {
   id: string
   type: 'columns'
-  columns: [EmailBlock[], EmailBlock[]]
+  columns: EmailBlock[][] // 1-6 columns, evenly split
   padding: number
-  gap: number // total horizontal space between the two columns, in px
+  gap: number // total horizontal space between columns, in px
+}
+
+export type SectionBackgroundSize = 'cover' | 'contain' | 'repeat'
+
+// A full-width container with its own background (color and/or image) — holds
+// a nested list of content blocks, same 2-level-tree restriction as columns.
+export interface SectionBlock {
+  id: string
+  type: 'section'
+  blocks: EmailBlock[]
+  padding: number
+  backgroundColor: string
+  backgroundImage: string // '' = none
+  backgroundSize: SectionBackgroundSize
 }
 
 export interface SocialLink {
@@ -147,6 +161,7 @@ export type EmailBlock =
   | DividerBlock
   | SpacerBlock
   | ColumnsBlock
+  | SectionBlock
   | SocialBlock
   | HtmlBlock
   | FooterBlock
@@ -211,6 +226,8 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
       return { id: nextId(), type: 'spacer', height: 24 }
     case 'columns':
       return { id: nextId(), type: 'columns', padding: 16, gap: 24, columns: [[], []] }
+    case 'section':
+      return { id: nextId(), type: 'section', padding: 24, backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', blocks: [] }
     case 'social':
       return { id: nextId(), type: 'social', links: [{ platform: 'Instagram', url: 'https://instagram.com' }], align: 'center', padding: 16 }
     case 'footer':
@@ -222,7 +239,10 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
 export function cloneBlockWithNewIds(block: EmailBlock): EmailBlock {
   const id = nextId()
   if (block.type === 'columns') {
-    return { ...block, id, columns: [block.columns[0].map(cloneBlockWithNewIds), block.columns[1].map(cloneBlockWithNewIds)] }
+    return { ...block, id, columns: block.columns.map(list => list.map(cloneBlockWithNewIds)) }
+  }
+  if (block.type === 'section') {
+    return { ...block, id, blocks: block.blocks.map(cloneBlockWithNewIds) }
   }
   return { ...block, id }
 }
@@ -236,7 +256,8 @@ export const BLOCK_LABELS: Record<EmailBlock['type'], string> = {
   button: 'Button',
   divider: 'Divider',
   spacer: 'Spacer',
-  columns: '2 Columns',
+  columns: 'Columns',
+  section: 'Section',
   social: 'Social Links',
   html: 'Custom HTML',
   footer: 'Footer',
@@ -252,21 +273,21 @@ function renderColumnCell(list: EmailBlock[]): string {
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
     case 'text':
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.5;color:${block.color};font-family:${block.fontFamily};">${block.html}</td></tr>`
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.5;color:${block.color};font-family:${block.fontFamily};">${block.html}</td></tr>`
 
     case 'heading':
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.3;color:${block.color};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-size:${block.fontSize}px;line-height:1.3;color:${block.color};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
 
     case 'image':
     case 'logo': {
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
       const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};">${inner}</td></tr>`
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">${inner}</td></tr>`
     }
 
     case 'video': {
       const img = `<img src="${esc(block.thumbnailSrc)}" alt="Video thumbnail" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};">
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
         <a href="${esc(block.videoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-block;">
           ${img}
           <div style="margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;">&#9654; Watch video</div>
@@ -275,36 +296,51 @@ function renderBlock(block: EmailBlock): string {
     }
 
     case 'html':
-      return `<tr><td style="padding:${block.padding}px 24px;">${block.code}</td></tr>`
+      return `<tr><td style="padding:${block.padding}px;">${block.code}</td></tr>`
 
     case 'button':
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};">
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
         <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
       </td></tr>`
 
     case 'divider':
-      return `<tr><td style="padding:${block.padding}px 24px;"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;">&nbsp;</div></td></tr>`
+      return `<tr><td style="padding:${block.padding}px;"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;">&nbsp;</div></td></tr>`
 
     case 'spacer':
       return `<tr><td style="height:${block.height}px;line-height:${block.height}px;font-size:0;">&nbsp;</td></tr>`
 
     case 'columns': {
+      const n = block.columns.length || 1
       const halfGap = (block.gap ?? 24) / 2
-      return `<tr><td style="padding:${block.padding}px 24px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td width="50%" valign="top" style="padding-right:${halfGap}px;">${renderColumnCell(block.columns[0])}</td>
-          <td width="50%" valign="top" style="padding-left:${halfGap}px;">${renderColumnCell(block.columns[1])}</td>
+      const width = (100 / n).toFixed(4)
+      const cells = block.columns.map((list, i) => {
+        const padLeft = i === 0 ? 0 : halfGap
+        const padRight = i === n - 1 ? 0 : halfGap
+        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
+      }).join('')
+      return `<tr><td style="padding:${block.padding}px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+      </td></tr>`
+    }
+
+    case 'section': {
+      const bg = block.backgroundImage
+        ? `background-color:${block.backgroundColor};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
+        : `background-color:${block.backgroundColor};`
+      return `<tr><td style="padding:0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${bg}"><tr>
+          <td style="padding:${block.padding}px;">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`
     }
 
     case 'social':
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};">
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};">
         ${block.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;text-decoration:underline;">${esc(l.platform)}</a>`).join('')}
       </td></tr>`
 
     case 'footer':
-      return `<tr><td style="padding:${block.padding}px 24px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;">
+      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;">
         ${block.companyName ? `<div>${esc(block.companyName)}</div>` : ''}
         ${block.address ? `<div>${esc(block.address)}</div>` : ''}
         ${block.showUnsubscribe ? `<div style="margin-top:8px;"><a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></div>` : ''}

@@ -235,12 +235,51 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         </div>
       )
 
-    case 'columns':
+    case 'columns': {
+      const count = block.columns.length
+      const setCount = (n: number) => {
+        n = Math.min(6, Math.max(1, n))
+        if (n === count) return
+        const columns = n > count
+          ? [...block.columns, ...Array.from({ length: n - count }, () => [] as EmailBlock[])]
+          : (() => {
+              const kept = block.columns.slice(0, n)
+              const overflow = block.columns.slice(n).flat()
+              kept[n - 1] = [...kept[n - 1], ...overflow]
+              return kept
+            })()
+        onChange({ ...block, columns })
+      }
       return (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
+          <NumberField label="Number of columns" value={count} onChange={setCount} min={1} max={6} />
           <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
+        </div>
+      )
+    }
+
+    case 'section':
+      return (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">Drag blocks from the palette into the section on the canvas.</p>
+          <ColorField label="Background color" value={block.backgroundColor} onChange={backgroundColor => onChange({ ...block, backgroundColor })} />
+          <ImageUploadField label="Background image (optional)" src={block.backgroundImage} onChange={backgroundImage => onChange({ ...block, backgroundImage })} />
+          {block.backgroundImage && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Background fit</Label>
+              <Select value={block.backgroundSize} onValueChange={v => onChange({ ...block, backgroundSize: v as typeof block.backgroundSize })}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cover">Cover</SelectItem>
+                  <SelectItem value="contain">Contain</SelectItem>
+                  <SelectItem value="repeat">Repeat (tile)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
         </div>
       )
 

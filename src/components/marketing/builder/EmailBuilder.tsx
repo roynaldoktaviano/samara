@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useRef, useEffect, useReducer, type ReactNode } from 'react'
 import {
-  DndContext, PointerSensor, useSensor, useSensors, closestCenter,
-  useDraggable, useDroppable, DragOverlay, type DragStartEvent, type DragEndEvent,
+  DndContext, PointerSensor, useSensor, useSensors, pointerWithin, rectIntersection,
+  useDraggable, useDroppable, DragOverlay, type CollisionDetection, type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Type, Heading as HeadingIcon, Image as ImageIcon, ImagePlus, Video as VideoIcon, MousePointerClick,
-  Minus, MoveVertical, Columns2, Share2, Code2, PanelBottom,
+  Minus, MoveVertical, Columns, LayoutTemplate, Share2, Code2, PanelBottom,
   GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Settings2,
 } from 'lucide-react'
 import {
@@ -35,7 +35,8 @@ const PALETTE: { type: EmailBlock['type']; icon: React.ElementType }[] = [
   { type: 'image', icon: ImageIcon },
   { type: 'logo', icon: ImagePlus },
   { type: 'video', icon: VideoIcon },
-  { type: 'columns', icon: Columns2 },
+  { type: 'columns', icon: Columns },
+  { type: 'section', icon: LayoutTemplate },
   { type: 'social', icon: Share2 },
   { type: 'html', icon: Code2 },
   { type: 'footer', icon: PanelBottom },
@@ -50,47 +51,108 @@ const LAYOUTS: { id: string; label: string; build: () => EmailBlock[] }[] = [
 ]
 
 // ── Container-aware tree helpers ─────────────────────────────────────────
-// Blocks form a 2-level tree: the root list, and each ColumnsBlock's two
-// column lists. A "container id" addresses either: 'root', or `col:<blockId>:<0|1>`.
+// Blocks form a tree: the root list, plus any ColumnsBlock's N column lists
+// or SectionBlock's single list — and a Columns block may itself live inside
+// a Section (so Section > Columns > leaf is valid), though Columns may not
+// contain another Columns/Section, and a Section may not nest inside anything.
+// A "container id" is 'root' or a '>'-joined path of hops, each hop being
+// `sec:<blockId>` or `col:<blockId>:<index>`, e.g. `sec:abc>col:def:1`.
 type ContainerId = string
 
-function getContainerList(root: EmailBlock[], containerId: ContainerId): EmailBlock[] {
-  if (containerId === 'root') return root
-  const [, colId, idxStr] = containerId.split(':')
-  const idx = Number(idxStr) as 0 | 1
-  const col = root.find(b => b.id === colId)
-  return col && col.type === 'columns' ? col.columns[idx] : []
+const CONTAINER_TYPES = ['columns', 'section'] as const
+function isContainerBlockType(type: EmailBlock['type']): boolean {
+  return (CONTAINER_TYPES as readonly string[]).includes(type)
 }
 
-function setContainerList(root: EmailBlock[], containerId: ContainerId, list: EmailBlock[]): EmailBlock[] {
-  if (containerId === 'root') return list
-  const [, colId, idxStr] = containerId.split(':')
-  const idx = Number(idxStr) as 0 | 1
-  return root.map(b => {
-    if (b.id === colId && b.type === 'columns') {
-      const columns: [EmailBlock[], EmailBlock[]] = idx === 0 ? [list, b.columns[1]] : [b.columns[0], list]
-      return { ...b, columns }
+// A container block (Columns/Section) may only be dropped where the resulting
+// tree stays valid: Section only at root; Columns at root or directly inside
+// a Section (not inside another Columns' cell, not nested deeper).
+function isValidContainerDestination(blockType: EmailBlock['type'], destContainer: ContainerId): boolean {
+  if (!isContainerBlockType(blockType)) return true
+  if (destContainer === 'root') return true
+  if (blockType === 'section') return false
+  const hops = destContainer.split('>')
+  return hops.length === 1 && hops[0].startsWith('sec:')
+}
+
+function childContainerId(parentContainerId: ContainerId, hop: string): ContainerId {
+  return parentContainerId === 'root' ? hop : `${parentContainerId}>${hop}`
+}
+
+function getContainerList(root: EmailBlock[], containerId: ContainerId): EmailBlock[] {
+  let list = root
+  for (const hop of containerId === 'root' ? [] : containerId.split('>')) {
+    if (hop.startsWith('sec:')) {
+      const [, id] = hop.split(':')
+      const sec = list.find(b => b.id === id)
+      list = sec && sec.type === 'section' ? sec.blocks : []
+    } else {
+      const [, id, idxStr] = hop.split(':')
+      const idx = Number(idxStr)
+      const col = list.find(b => b.id === id)
+      list = col && col.type === 'columns' ? col.columns[idx] ?? [] : []
     }
-    return b
+  }
+  return list
+}
+
+function setContainerList(root: EmailBlock[], containerId: ContainerId, newList: EmailBlock[]): EmailBlock[] {
+  const hops = containerId === 'root' ? [] : containerId.split('>')
+  if (hops.length === 0) return newList
+  const [hop, ...rest] = hops
+  const restId = rest.length === 0 ? 'root' : rest.join('>')
+  return root.map(b => {
+    if (hop.startsWith('sec:')) {
+      const [, id] = hop.split(':')
+      if (b.id !== id || b.type !== 'section') return b
+      return { ...b, blocks: rest.length === 0 ? newList : setContainerList(b.blocks, restId, newList) }
+    }
+    const [, id, idxStr] = hop.split(':')
+    const idx = Number(idxStr)
+    if (b.id !== id || b.type !== 'columns') return b
+    if (rest.length === 0) return { ...b, columns: b.columns.map((c, i) => (i === idx ? newList : c)) }
+    return { ...b, columns: b.columns.map((c, i) => (i === idx ? setContainerList(c, restId, newList) : c)) }
   })
 }
 
 function findContainerOf(root: EmailBlock[], blockId: string): ContainerId {
-  if (root.some(b => b.id === blockId)) return 'root'
-  for (const b of root) {
-    if (b.type === 'columns') {
-      if (b.columns[0].some(c => c.id === blockId)) return `col:${b.id}:0`
-      if (b.columns[1].some(c => c.id === blockId)) return `col:${b.id}:1`
+  function search(list: EmailBlock[], prefix: ContainerId): ContainerId | null {
+    if (list.some(b => b.id === blockId)) return prefix
+    for (const b of list) {
+      if (b.type === 'section') {
+        const found = search(b.blocks, childContainerId(prefix, `sec:${b.id}`))
+        if (found) return found
+      }
+      if (b.type === 'columns') {
+        for (let i = 0; i < b.columns.length; i++) {
+          if (b.columns[i].some(c => c.id === blockId)) return childContainerId(prefix, `col:${b.id}:${i}`)
+        }
+      }
     }
+    return null
   }
-  return 'root'
+  return search(root, 'root') ?? 'root'
+}
+
+// Recurses into a block's nested lists (Section's single list, Columns' N
+// lists) — returns [] for leaf blocks, so callers naturally stop there.
+function childLists(block: EmailBlock): EmailBlock[][] {
+  if (block.type === 'section') return [block.blocks]
+  if (block.type === 'columns') return block.columns
+  return []
+}
+
+function withChildLists(block: EmailBlock, lists: EmailBlock[][]): EmailBlock {
+  if (block.type === 'section') return { ...block, blocks: lists[0] }
+  if (block.type === 'columns') return { ...block, columns: lists }
+  return block
 }
 
 function findBlockDeep(root: EmailBlock[], id: string): EmailBlock | null {
   for (const b of root) {
     if (b.id === id) return b
-    if (b.type === 'columns') {
-      const found = b.columns[0].find(c => c.id === id) ?? b.columns[1].find(c => c.id === id)
+    for (const list of childLists(b)) {
+      const found = findBlockDeep(list, id)
       if (found) return found
     }
   }
@@ -100,17 +162,15 @@ function findBlockDeep(root: EmailBlock[], id: string): EmailBlock | null {
 function updateBlockDeep(root: EmailBlock[], updated: EmailBlock): EmailBlock[] {
   return root.map(b => {
     if (b.id === updated.id) return updated
-    if (b.type === 'columns') {
-      return { ...b, columns: [b.columns[0].map(c => (c.id === updated.id ? updated : c)), b.columns[1].map(c => (c.id === updated.id ? updated : c))] }
-    }
-    return b
+    const lists = childLists(b)
+    return lists.length === 0 ? b : withChildLists(b, lists.map(list => updateBlockDeep(list, updated)))
   })
 }
 
 function deleteBlockDeep(root: EmailBlock[], id: string): EmailBlock[] {
   return root.filter(b => b.id !== id).map(b => {
-    if (b.type === 'columns') return { ...b, columns: [b.columns[0].filter(c => c.id !== id), b.columns[1].filter(c => c.id !== id)] }
-    return b
+    const lists = childLists(b)
+    return lists.length === 0 ? b : withChildLists(b, lists.map(list => deleteBlockDeep(list, id)))
   })
 }
 
@@ -123,6 +183,24 @@ function duplicateBlockDeep(root: EmailBlock[], id: string): EmailBlock[] {
   const next = [...list]
   next.splice(idx + 1, 0, clone)
   return setContainerList(root, containerId, next)
+}
+
+// A full-width container (e.g. a Section) can have nearly the same bounding box
+// as its own nested drop list, so `closestCenter` can resolve the drop to the
+// container's outer sortable slot instead of the list inside it — the block
+// then lands after the container at the parent level instead of inside it.
+// Preferring the smallest-area droppable under the pointer always picks the
+// most deeply nested match first.
+const collisionDetection: CollisionDetection = args => {
+  const hits = pointerWithin(args)
+  if (hits.length === 0) return rectIntersection(args)
+  return [...hits].sort((a, b) => {
+    const rectA = args.droppableRects.get(a.id)
+    const rectB = args.droppableRects.get(b.id)
+    const areaA = rectA ? rectA.width * rectA.height : Infinity
+    const areaB = rectB ? rectB.width * rectB.height : Infinity
+    return areaA - areaB
+  })
 }
 
 function PaletteItem({ type, icon: Icon }: { type: EmailBlock['type']; icon: React.ElementType }) {
@@ -234,9 +312,24 @@ function BlockList({
             onDuplicate={() => onDuplicate(block.id)}
           >
             {block.type === 'columns' ? (
-              <div style={{ padding: block.padding }} className="grid grid-cols-2 gap-3">
-                <BlockList containerId={`col:${block.id}:0`} blocks={block.columns[0]} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" />
-                <BlockList containerId={`col:${block.id}:1`} blocks={block.columns[1]} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" />
+              <div style={{ padding: block.padding, gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+                {block.columns.map((colList, i) => (
+                  <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" />
+                ))}
+              </div>
+            ) : block.type === 'section' ? (
+              <div
+                style={{
+                  padding: block.padding,
+                  backgroundColor: block.backgroundColor,
+                  backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
+                  backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
+                  backgroundRepeat: block.backgroundImage ? (block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat') : undefined,
+                  backgroundPosition: 'center',
+                }}
+                className="rounded-md"
+              >
+                <BlockList containerId={childContainerId(containerId, `sec:${block.id}`)} blocks={block.blocks} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop blocks here" />
               </div>
             ) : null}
           </SortableCanvasBlock>
@@ -348,7 +441,7 @@ export default function EmailBuilder({
   )
 
   const resolveContainer = (overId: string): ContainerId => {
-    if (overId === 'root' || overId.startsWith('col:')) return overId
+    if (overId === 'root' || overId.startsWith('col:') || overId.startsWith('sec:')) return overId
     return findContainerOf(blocks, overId)
   }
 
@@ -372,7 +465,7 @@ export default function EmailBuilder({
 
     if (activeData?.fromPalette && activeData.blockType) {
       let destContainer = resolveContainer(overId)
-      if (activeData.blockType === 'columns' && destContainer !== 'root') destContainer = 'root'
+      if (!isValidContainerDestination(activeData.blockType, destContainer)) destContainer = 'root'
       const newBlock = createBlock(activeData.blockType)
       const destList = getContainerList(blocks, destContainer)
       const overIndex = destList.findIndex(b => b.id === overId)
@@ -389,7 +482,7 @@ export default function EmailBuilder({
     if (!draggedBlock) return
     const sourceContainer = findContainerOf(blocks, activeId)
     let destContainer = resolveContainer(overId)
-    if (draggedBlock.type === 'columns' && destContainer !== 'root') destContainer = 'root'
+    if (!isValidContainerDestination(draggedBlock.type, destContainer)) destContainer = 'root'
 
     if (sourceContainer === destContainer) {
       const list = getContainerList(blocks, sourceContainer)
@@ -437,7 +530,7 @@ export default function EmailBuilder({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveDrag(null)}
@@ -562,7 +655,7 @@ export default function EmailBuilder({
                     <div className="grid grid-cols-3 gap-2">
                       {filteredPalette.map(p => <PaletteItem key={p.type} type={p.type} icon={p.icon} />)}
                     </div>
-                    <p className="text-[10px] text-muted-foreground pt-1">Drag a block into the canvas — including into a 2-column block — or drop it onto an existing block to insert after it.</p>
+                    <p className="text-[10px] text-muted-foreground pt-1">Drag a block into the canvas — including into a Columns or Section block — or drop it onto an existing block to insert after it.</p>
                   </>
                 ) : (
                   <>

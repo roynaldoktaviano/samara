@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       requestedById: session.user.id,
       deliveryLocationId: deliveryLocationId || null,
       notes: notes?.trim() || null,
-      status: 'DRAFT',
+      status: 'REQUESTED',
       updatedAt: new Date(),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string }) => ({

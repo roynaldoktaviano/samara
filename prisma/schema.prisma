@@ -915,14 +915,13 @@ model PurchaseItemCategory {
   @@unique([typeCode, name])
 }
 
+// Simplified from an 8-value enum (DRAFT/SENT/ORDERED/PARTIALLY_RECEIVED/RECEIVED
+// were either dead states never set by any code path, or duplicated tracking that
+// already belongs to the linked PurchaseOrder — see PurchaseOrderStatus).
 enum PurchaseRequestStatus {
-  DRAFT
-  SENT
+  REQUESTED
   APPROVED
   REJECTED
-  ORDERED
-  PARTIALLY_RECEIVED
-  RECEIVED
   CANCELLED
 }
 
@@ -1113,7 +1112,7 @@ model PurchaseRequest {
   requestedByEmployeeId String?
   deliveryLocationId    String?
   notes                 String?
-  status                PurchaseRequestStatus @default(DRAFT)
+  status                PurchaseRequestStatus @default(REQUESTED)
   pdfKey                String?
   approvedById          String?
   approvedAt            DateTime?

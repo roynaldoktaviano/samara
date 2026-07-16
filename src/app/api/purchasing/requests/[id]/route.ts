@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
   const body = await req.json()
   const { status } = body
-  const valid = ['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
+  const valid = ['REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED']
   if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   const request = await db.purchaseRequest.update({
     where: { id },
@@ -147,7 +147,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb(session)
   const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR berstatus DRAFT yang bisa dihapus' }, { status: 409 })
+  if (existing.status !== 'REQUESTED') return NextResponse.json({ error: 'Hanya PR yang belum diproses (Requested) yang bisa dihapus' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
   await db.purchaseRequest.delete({ where: { id } })
   return NextResponse.json({ ok: true })

@@ -14,8 +14,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const request = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
   if (!request) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
-  if (!['DRAFT', 'SENT'].includes(request.status)) {
-    return NextResponse.json({ error: 'Items can only be edited while the request is still Draft or Requested' }, { status: 409 })
+  if (request.status !== 'REQUESTED') {
+    return NextResponse.json({ error: 'Items can only be edited while the request is still Requested' }, { status: 409 })
   }
 
   const existingItem = await db.purchaseRequestItem.findUnique({ where: { id: itemId }, select: { id: true, requestId: true } })

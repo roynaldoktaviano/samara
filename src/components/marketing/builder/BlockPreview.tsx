@@ -96,7 +96,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'columns':
       return (
-        <div style={{ padding: block.padding, gap: block.gap ?? 24 }} className="grid grid-cols-2">
+        <div style={{ padding: block.padding, gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
           {block.columns.map((col, i) => (
             <div key={i} className="space-y-1">
               {col.length === 0 ? (
@@ -106,6 +106,26 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
               )}
             </div>
           ))}
+        </div>
+      )
+
+    case 'section':
+      return (
+        <div
+          style={{
+            padding: block.padding,
+            backgroundColor: block.backgroundColor,
+            backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
+            backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
+            backgroundRepeat: block.backgroundImage ? (block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat') : undefined,
+            backgroundPosition: 'center',
+          }}
+        >
+          {block.blocks.length === 0 ? (
+            <div className="text-xs text-muted-foreground text-center py-6">Empty section</div>
+          ) : (
+            block.blocks.map(child => <BlockPreview key={child.id} block={child} />)
+          )}
         </div>
       )
 
