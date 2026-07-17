@@ -23,15 +23,18 @@ export function paddingStyle(p: Padding): { paddingTop: number; paddingRight: nu
 /** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
 export type HideOn = 'none' | 'desktop' | 'mobile'
 
+// Font names with spaces are single-quoted, not double-quoted — these values get embedded
+// verbatim inside double-quote-delimited style="..." attributes in the rendered email HTML,
+// and an embedded " would terminate that attribute early and corrupt everything after it.
 export const FONT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
   { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, "Times New Roman", serif' },
-  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Georgia', value: "Georgia, 'Times New Roman', serif" },
+  { label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
   { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
-  { label: 'Trebuchet MS', value: '"Trebuchet MS", Helvetica, sans-serif' },
-  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
-  { label: 'Palatino', value: 'Palatino, "Palatino Linotype", serif' },
+  { label: 'Trebuchet MS', value: "'Trebuchet MS', Helvetica, sans-serif" },
+  { label: 'Courier New', value: "'Courier New', Courier, monospace" },
+  { label: 'Palatino', value: "Palatino, 'Palatino Linotype', serif" },
 ]
 const DEFAULT_FONT = FONT_OPTIONS[0].value
 
@@ -260,6 +263,13 @@ function migrateHideOn(raw: unknown): HideOn {
   return raw === 'desktop' || raw === 'mobile' ? raw : 'none'
 }
 
+// Designs saved before FONT_OPTIONS switched to single-quoted font names (e.g. "Times New
+// Roman") stored a double-quoted value that corrupts the double-quote-delimited style="..."
+// attribute in the rendered HTML — rewrite any leftover double quotes to single quotes.
+function migrateFontFamily(raw: unknown): string | undefined {
+  return typeof raw === 'string' ? raw.replace(/"/g, "'") : undefined
+}
+
 function migrateBlock(raw: EmailBlock): EmailBlock {
   const hideOn = migrateHideOn((raw as { hideOn?: unknown }).hideOn)
   switch (raw.type) {
@@ -269,6 +279,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         ...raw,
         padding: migratePadding(raw.padding, 16),
         hideOn,
+        fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily,
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : raw.type === 'heading' ? 1.3 : 1.5,
         letterSpacing: typeof raw.letterSpacing === 'number' ? raw.letterSpacing : 0,
         linkColor: raw.linkColor || '#2563eb',
@@ -290,9 +301,10 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         width: typeof raw.width === 'number' ? raw.width : 100,
         align: raw.align === 'left' || raw.align === 'right' ? raw.align : 'center',
       }
+    case 'button':
+      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily }
     case 'video':
     case 'html':
-    case 'button':
     case 'social':
       return { ...raw, padding: migratePadding(raw.padding, 16), hideOn }
     case 'spacer':
@@ -437,12 +449,12 @@ function renderBlock(block: EmailBlock): string {
 
     case 'button':
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
       </td></tr>`
 
     case 'divider': {
       const margin = block.align === 'center' ? '0 auto' : block.align === 'right' ? '0 0 0 auto' : '0 auto 0 0'
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div${classAttr(`div-${block.id}`)} style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
     }
 
     case 'spacer':
@@ -467,7 +479,7 @@ function renderBlock(block: EmailBlock): string {
         ? `background-color:${block.backgroundColor};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
         : `background-color:${block.backgroundColor};`
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${bg}"><tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} style="${bg}"><tr>
           <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`
@@ -479,7 +491,7 @@ function renderBlock(block: EmailBlock): string {
       </td></tr>`
 
     case 'footer':
-      return `<tr><td style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
+      return `<tr><td class="footer-block" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
         ${block.companyName ? `<div>${esc(block.companyName)}</div>` : ''}
         ${block.address ? `<div>${esc(block.address)}</div>` : ''}
         ${block.showUnsubscribe ? `<div style="margin-top:8px;"><a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></div>` : ''}
@@ -498,8 +510,26 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
     }
+    // Gmail/Apple Mail dark mode auto-inverts colors it thinks look wrong (e.g. white button
+    // text flipping to black, or a light section background flipping dark) — pin every
+    // authored color so dark mode can't touch any of them, matching the built template exactly.
+    if (b.type === 'button') {
+      rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}}`)
+    }
+    if (b.type === 'text' || b.type === 'heading') {
+      rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}}`)
+    }
+    if (b.type === 'divider') {
+      rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${b.color} !important;}}`)
+    }
+    if (b.type === 'footer') {
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}}`)
+    }
+    if (b.type === 'section') {
+      rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${b.backgroundColor} !important;}}`)
+      rules.push(...collectExtraStyles(b.blocks))
+    }
     if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
-    if (b.type === 'section') rules.push(...collectExtraStyles(b.blocks))
   }
   return rules
 }
@@ -511,17 +541,23 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   return `<!doctype html>
 <html>
   <head>
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
     <style>
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
+      @media (prefers-color-scheme: dark){
+        .email-page,.email-body{background:${s.pageBackground} !important;}
+        .email-content{background:${s.contentBackground} !important;}
+      }
       ${extraStyles}
     </style>
   </head>
-  <body style="margin:0;padding:0;background:${s.pageBackground};">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${s.pageBackground};">
+  <body class="email-body" style="margin:0;padding:0;background:${s.pageBackground};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" style="background:${s.pageBackground};">
       <tr>
         <td align="center" style="padding:${s.contentPadding}px 12px;">
-          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" style="max-width:${s.contentWidth}px;width:100%;background:${s.contentBackground};border-radius:8px;overflow:hidden;">
+          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" style="max-width:${s.contentWidth}px;width:100%;background:${s.contentBackground};border-radius:8px;overflow:hidden;">
             ${rows}
           </table>
         </td>
