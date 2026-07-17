@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
+import { useFileDrop } from '@/hooks/useFileDrop'
 import TripSheet from './TripSheet'
 
 interface Bank {
@@ -179,6 +180,9 @@ export default function Payments() {
   const [refundReason,    setRefundReason]    = useState('')
   const [refundProof,     setRefundProof]     = useState('')
   const [refundSaving,    setRefundSaving]    = useState(false)
+  const refundProofInputRef = useRef<HTMLInputElement>(null)
+  const processRefundProofFile = (file: File) => { compressImage(file).then(setRefundProof).catch(() => {}) }
+  const { isDragging: isDraggingRefundProof, dropProps: refundProofDropProps } = useFileDrop(files => { if (files[0]) processRefundProofFile(files[0]) })
 
   interface RefundHistoryItem {
     id: string; bookingCode: string; status: string; cancelReason: string | null; updatedAt: string
@@ -1720,15 +1724,26 @@ export default function Payments() {
                   ) : (
                     <>
                       <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload Refund Proof (image/base64)</Label>
-                        <input type="file" accept="image/*" className="w-full text-sm"
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            compressImage(file).then(setRefundProof).catch(() => {})
-                          }}
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload Refund Proof</Label>
+                        <div
+                          {...refundProofDropProps}
+                          onClick={() => refundProofInputRef.current?.click()}
+                          className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-28 overflow-hidden cursor-pointer ${
+                            isDraggingRefundProof ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
+                          }`}
+                        >
+                          {refundProof ? (
+                            <img src={refundProof} alt="Refund proof preview" className="w-full max-h-40 object-contain" />
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5 py-6 text-muted-foreground">
+                              <FilePlus className="h-6 w-6 opacity-40" />
+                              <p className="text-sm">{isDraggingRefundProof ? 'Drop to upload' : 'Click or drag image to upload'}</p>
+                            </div>
+                          )}
+                        </div>
+                        <input ref={refundProofInputRef} type="file" accept="image/*" className="hidden"
+                          onChange={e => { const file = e.target.files?.[0]; if (file) processRefundProofFile(file) }}
                         />
-                        {refundProof && <img src={refundProof} alt="Refund proof preview" className="mt-2 rounded border max-h-40 object-contain" />}
                       </div>
                       <DialogFooter>
                         <Button variant="outline" onClick={() => setRefundSelected(null)}>Close</Button>

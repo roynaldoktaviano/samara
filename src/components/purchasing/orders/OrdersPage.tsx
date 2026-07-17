@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 
 interface PaymentRequest {
@@ -409,6 +410,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [transitSaving, setTransitSaving] = useState(false)
   const [transitError, setTransitError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { isDragging: isDraggingTransitPhoto, dropProps: transitPhotoDropProps } = useFileDrop(files => { if (files[0]) handlePhotoFile(files[0]) })
 
   // cancel form
   const [cancelModal, setCancelModal] = useState(false)
@@ -456,6 +458,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [receiveLines, setReceiveLines] = useState<{ poItemId: string; itemId: string | null; itemName: string; orderedQty: number; receivedQty: number; unitCost: number; outcome: string; batch: string; expiryDate: string; unit?: string | null }[]>([])
   const [receivePhoto, setReceivePhoto] = useState<string | null>(null)
   const receivePhotoRef = useRef<HTMLInputElement>(null)
+  const { isDragging: isDraggingReceivePhoto, dropProps: receivePhotoDropProps } = useFileDrop(files => { if (files[0]) handleReceivePhotoFile(files[0]) })
   const [receiveSaving, setReceiveSaving] = useState(false)
   const [receiveError, setReceiveError] = useState('')
   const [team, setTeam] = useState<{ id: string; name: string }[]>([])
@@ -1555,13 +1558,15 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => fileInputRef.current?.click()}
-                    className="w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
+                  <button onClick={() => fileInputRef.current?.click()} {...transitPhotoDropProps}
+                    className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
+                      isDraggingTransitPhoto ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
+                    }`}>
                     <div className="h-12 w-12 rounded-full bg-amber-50 flex items-center justify-center">
                       <Camera className="h-6 w-6 text-amber-500" />
                     </div>
                     <div className="text-center">
-                      <p className="font-medium text-sm">Take or upload photo</p>
+                      <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
                       <p className="text-xs mt-0.5">Packing slip, shipping label, or proof of dispatch</p>
                     </div>
                   </button>
@@ -1952,13 +1957,15 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => receivePhotoRef.current?.click()}
-                      className="w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2.5 text-muted-foreground hover:border-green-400 hover:text-green-700 transition-colors">
+                    <button onClick={() => receivePhotoRef.current?.click()} {...receivePhotoDropProps}
+                      className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2.5 transition-colors ${
+                        isDraggingReceivePhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                      }`}>
                       <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
                         <Camera className="h-5 w-5 text-green-500" />
                       </div>
                       <div className="text-center">
-                        <p className="font-medium text-sm">Take or upload photo</p>
+                        <p className="font-medium text-sm">{isDraggingReceivePhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
                         <p className="text-xs mt-0.5">Photo of the goods, packaging, or condition on arrival</p>
                       </div>
                     </button>

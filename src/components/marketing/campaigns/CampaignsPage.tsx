@@ -170,6 +170,7 @@ export default function CampaignsPage() {
         onOpenChange={setEditorOpen}
         campaignId={editingId}
         onSaved={fetchCampaigns}
+        onSent={id => setViewingId(id)}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>

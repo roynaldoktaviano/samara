@@ -6,6 +6,11 @@ export interface BulkRecipient {
   unsubscribeUrl?: string // adds a List-Unsubscribe header (one-click) when present
 }
 
+export interface BulkSendItemResult {
+  resendId?: string
+  error?: string
+}
+
 export interface BulkSendResult {
   sentIds: Record<string, string> // email -> resend message id
   failures: Record<string, string> // email -> error message
@@ -52,6 +57,9 @@ export async function sendBulkEmail(params: {
   fromName?: string
   subject: string
   recipients: BulkRecipient[]
+  /** Invoked right after each individual send resolves — lets the caller persist
+   * per-recipient status immediately instead of waiting for the whole batch to finish. */
+  onSent?: (email: string, result: BulkSendItemResult) => void | Promise<void>
 }): Promise<BulkSendResult> {
   const resend = new Resend(params.apiKey)
   const from = params.fromName ? `${params.fromName} <${params.from}>` : params.from
@@ -81,9 +89,12 @@ export async function sendBulkEmail(params: {
     }
 
     if (error || !data) {
-      result.failures[r.email] = error?.message ?? 'unknown error'
+      const message = error?.message ?? 'unknown error'
+      result.failures[r.email] = message
+      await params.onSent?.(r.email, { error: message })
     } else {
       result.sentIds[r.email] = data.id
+      await params.onSent?.(r.email, { resendId: data.id })
     }
   }
 

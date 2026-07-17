@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, ChevronDown, Save, Calendar, MapPin, Ship, Anchor, Lock, User, Users, Camera, FileText, Wrench, X as XIcon, Plus, AlertCircle, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const TEAL = '#1a5f6e'
@@ -184,24 +185,29 @@ function Combobox({ value, onChange, options, placeholder, disabled }: { value: 
   )
 }
 
+function compressImageFile(file: File, onChange: (b64: string) => void) {
+  const img = new window.Image()
+  const url = URL.createObjectURL(file)
+  img.onload = () => {
+    const MAX = 1200
+    const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+    const canvas = document.createElement('canvas')
+    canvas.width  = img.width  * scale
+    canvas.height = img.height * scale
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    onChange(canvas.toDataURL('image/jpeg', 0.82))
+    URL.revokeObjectURL(url)
+  }
+  img.src = url
+}
+
 function ImageUpload({ label, hint, value, onChange }: { label?: string; hint?: string; value: string; onChange: (b64: string) => void }) {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const img = new window.Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      const MAX = 1200
-      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
-      const canvas = document.createElement('canvas')
-      canvas.width  = img.width  * scale
-      canvas.height = img.height * scale
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      onChange(canvas.toDataURL('image/jpeg', 0.82))
-      URL.revokeObjectURL(url)
-    }
-    img.src = url
+    compressImageFile(file, onChange)
   }
+  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) compressImageFile(files[0], onChange) })
   return (
     <div className="space-y-2">
       {label && <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>}
@@ -215,9 +221,11 @@ function ImageUpload({ label, hint, value, onChange }: { label?: string; hint?: 
           </button>
         </div>
       ) : (
-        <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-all">
+        <label {...dropProps} className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+        }`}>
           <span className="text-2xl mb-1">📷</span>
-          <span className="text-xs font-medium text-gray-500">Tap to upload photo</span>
+          <span className="text-xs font-medium text-gray-500">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
           <span className="text-[11px] text-gray-300 mt-0.5">JPG, PNG — max display 1200px</span>
           <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFile} />
         </label>
@@ -260,6 +268,7 @@ function FileUpload({ label, hint, values, onChange }: { label?: string; hint?: 
   }
   function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
   const isPdf = (v: string) => v.startsWith('data:application/pdf')
+  const { isDragging, dropProps } = useFileDrop(handleFiles)
   return (
     <div className="space-y-2">
       {label && <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>}
@@ -281,9 +290,11 @@ function FileUpload({ label, hint, values, onChange }: { label?: string; hint?: 
             </button>
           </div>
         ))}
-        <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-all">
-          <span className="text-xl leading-none mb-0.5 text-gray-400">＋</span>
-          <span className="text-[9px] font-medium text-gray-500 text-center px-1">Add file</span>
+        <label {...dropProps} className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+        }`}>
+          <span className="text-xl leading-none mb-0.5 text-gray-400">{isDragging ? '⬇' : '＋'}</span>
+          <span className="text-[9px] font-medium text-gray-500 text-center px-1">{isDragging ? 'Drop' : 'Add file'}</span>
           <input type="file" multiple className="hidden" accept="image/*,application/pdf"
             onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
         </label>

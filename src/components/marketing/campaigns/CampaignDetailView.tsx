@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowLeft, Eye, MousePointerClick, UserX } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ArrowLeft, Eye, MousePointerClick, UserX, Loader2 } from 'lucide-react'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 const GREEN = '#16a34a'
 const BLUE = '#2563eb'
+const AMBER = '#eda100'
+const RED = '#dc2626'
 const TZ = 'Asia/Jakarta'
+const PREVIEW_SCALE = 0.72
 
 interface ClickEvent {
   id: string
@@ -49,6 +52,7 @@ interface CampaignWithRecipients {
   subject: string
   status: string
   totalRecipients: number
+  bodyHtml: string
   recipients: Recipient[]
 }
 
@@ -71,12 +75,24 @@ const STATUS_LABEL: Record<Recipient['status'], string> = {
 const fmt = (d: string | null) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }) : '—'
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: TZ })
 
-function StatTile({ label, value, color }: { label: string; value: number; color?: string }) {
+function StatTile({ label, value, suffix = '', color }: { label: string; value: number; suffix?: string; color?: string }) {
   return (
     <div className="rounded-lg border p-3 text-center">
-      <div className="text-2xl font-semibold" style={color ? { color } : undefined}>{value}</div>
+      <div className="text-2xl font-semibold" style={color ? { color } : undefined}>{value}{suffix}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </div>
+  )
+}
+
+function RateTile({ label, value, suffix = '%', sub, color }: { label: string; value: number; suffix?: string; sub?: string; color?: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-5 pb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-3xl font-bold mt-1" style={color ? { color } : undefined}>{value}{suffix}</p>
+        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -125,17 +141,29 @@ function LinkPerformance({ stats, totalRecipients }: { stats: LinkStat[]; totalR
   )
 }
 
-function opensByDate(recipients: Recipient[]) {
-  const counts = new Map<string, number>()
-  for (const r of recipients) {
-    for (const o of r.opens) {
-      const key = new Date(o.openedAt).toLocaleDateString('en-CA', { timeZone: TZ }) // YYYY-MM-DD, sorts naturally
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
+// Per-day Sent/Opened/Clicked series for the trend chart — Sent will usually land on
+// a single day (a campaign is a one-time blast), while Opened/Clicked trail across
+// the days after as recipients check their inbox.
+function dailyTrend(recipients: Recipient[]) {
+  const sent = new Map<string, number>()
+  const opened = new Map<string, number>()
+  const clicked = new Map<string, number>()
+  const bump = (map: Map<string, number>, iso: string) => {
+    const key = new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }) // YYYY-MM-DD, sorts naturally
+    map.set(key, (map.get(key) ?? 0) + 1)
   }
-  return Array.from(counts.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, count]) => ({ date: fmtDate(date), count }))
+  for (const r of recipients) {
+    if (r.sentAt) bump(sent, r.sentAt)
+    for (const o of r.opens) bump(opened, o.openedAt)
+    for (const c of r.clicks) bump(clicked, c.clickedAt)
+  }
+  const keys = new Set([...sent.keys(), ...opened.keys(), ...clicked.keys()])
+  return Array.from(keys).sort((a, b) => a.localeCompare(b)).map(key => ({
+    date: fmtDate(key),
+    sent: sent.get(key) ?? 0,
+    opened: opened.get(key) ?? 0,
+    clicked: clicked.get(key) ?? 0,
+  }))
 }
 
 function opensByHour(recipients: Recipient[]) {
@@ -160,12 +188,68 @@ function latestIp(r: Recipient): string | null {
   return events[0].ip
 }
 
+interface SendProgress {
+  status: string
+  startedAt: string
+  total: number
+  sent: number
+  failed: number
+  done: number
+}
+
+// Resend rate-limits to ~2 req/s (a fixed 550ms gap between sends, plus occasional
+// retry backoff) — used as the fallback pace estimate before enough real samples
+// have come in to compute an actual rate from elapsed time.
+const FALLBACK_SECONDS_PER_EMAIL = 0.65
+
+function fmtDuration(totalSeconds: number): string {
+  if (!isFinite(totalSeconds) || totalSeconds <= 0) return 'a few seconds'
+  const s = Math.round(totalSeconds)
+  if (s < 60) return `${s} sec`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  if (m < 60) return rem > 0 ? `${m} min ${rem} sec` : `${m} min`
+  const h = Math.floor(m / 60)
+  return `${h} hr ${m % 60} min`
+}
+
+function SendingBanner({ progress }: { progress: SendProgress }) {
+  const remaining = Math.max(0, progress.total - progress.done)
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+  const elapsedSeconds = (Date.now() - new Date(progress.startedAt).getTime()) / 1000
+  const rate = elapsedSeconds > 2 && progress.done > 0 ? progress.done / elapsedSeconds : 0
+  const etaSeconds = rate > 0 ? remaining / rate : remaining * FALLBACK_SECONDS_PER_EMAIL
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/50">
+      <CardContent className="pt-5 pb-4 space-y-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Sending campaign… {progress.done} of {progress.total} ({pct}%)
+          </div>
+          {remaining > 0 && (
+            <span className="text-xs text-amber-700 shrink-0">~{fmtDuration(etaSeconds)} remaining</span>
+          )}
+        </div>
+        <div className="h-2 rounded-full bg-amber-200/60 overflow-hidden">
+          <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+        </div>
+        {progress.failed > 0 && (
+          <p className="text-xs text-amber-700">{progress.failed} failed so far</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function CampaignDetailView({ campaignId, onBack }: {
   campaignId: string
   onBack: () => void
 }) {
   const [campaign, setCampaign] = useState<CampaignWithRecipients | null>(null)
   const [loading, setLoading] = useState(true)
+  const [progress, setProgress] = useState<SendProgress | null>(null)
 
   const fetchDetail = useCallback(async () => {
     setLoading(true)
@@ -179,6 +263,25 @@ export default function CampaignDetailView({ campaignId, onBack }: {
 
   useEffect(() => { fetchDetail() }, [fetchDetail])
 
+  // While the campaign is actively sending, poll a lightweight counts-only endpoint
+  // every few seconds to drive the progress bar/ETA, and pull the full detail again
+  // once it finishes so stats/recipient statuses reflect the final outcome.
+  useEffect(() => {
+    if (campaign?.status !== 'SENDING') return
+    let cancelled = false
+    const poll = async () => {
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}/progress`)
+      if (!res.ok || cancelled) return
+      const data: SendProgress = await res.json()
+      if (cancelled) return
+      setProgress(data)
+      if (data.status !== 'SENDING') fetchDetail()
+    }
+    poll()
+    const interval = setInterval(poll, 2500)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [campaign?.status, campaignId, fetchDetail])
+
   if (loading || !campaign) {
     return (
       <div className="p-4 md:p-6">
@@ -189,14 +292,22 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   }
 
   const recipients = campaign.recipients
+  const total = campaign.totalRecipients
+  const delivered = recipients.filter(r => r.status === 'SENT').length
   const opened = recipients.filter(r => r.openedAt).length
   const clicked = recipients.filter(r => r.clickedAt).length
   const failed = recipients.filter(r => r.status === 'FAILED').length
   const bounced = recipients.filter(r => r.status === 'BOUNCED').length
   const unsubscribed = recipients.filter(r => r.status === 'SKIPPED_UNSUBSCRIBED')
   const linkStats = computeLinkStats(recipients)
-  const dateData = opensByDate(recipients)
+  const trendData = dailyTrend(recipients)
   const hourData = opensByHour(recipients)
+
+  const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+  const deliveryRate = pct(delivered)
+  const openRate = pct(opened)
+  const clickRate = pct(clicked)
+  const bounceRate = pct(bounced)
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -209,31 +320,58 @@ export default function CampaignDetailView({ campaignId, onBack }: {
         <p className="text-sm text-muted-foreground">{campaign.subject}</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        <StatTile label="Recipients" value={campaign.totalRecipients} />
-        <StatTile label="Opened" value={opened} color={GREEN} />
-        <StatTile label="Clicked" value={clicked} color={BLUE} />
-        <StatTile label="Failed" value={failed} color="#dc2626" />
-        <StatTile label="Bounced" value={bounced} color="#ea580c" />
+      {campaign.status === 'SENDING' && progress && <SendingBanner progress={progress} />}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
+        <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
+        <RateTile label="Open Rate" value={openRate} sub={`${opened} of ${total}`} color={GREEN} />
+        <RateTile label="Click Rate" value={clickRate} sub={`${clicked} of ${total}`} color={BLUE} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatTile label="Bounce Rate" value={bounceRate} suffix="%" color={bounced > 0 ? RED : undefined} />
+        <StatTile label="Failed" value={failed} color={failed > 0 ? RED : undefined} />
         <StatTile label="Unsubscribed" value={unsubscribed.length} color="#6b7280" />
       </div>
 
-      {(dateData.length > 0 || hourData.some(h => h.count > 0)) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Email content</CardTitle></CardHeader>
+          <CardContent className="flex justify-center bg-muted/30 rounded-b-lg py-6 overflow-hidden">
+            {/* Fixed 640px intrinsic width keeps the email above its own 600px mobile
+                breakpoint (so hide-mobile/hide-desktop blocks render as desktop), then
+                the wrapper visually scales it down to fit this column. */}
+            <div style={{ width: 640 * PREVIEW_SCALE, height: 700 * PREVIEW_SCALE, overflow: 'hidden' }}>
+              <iframe
+                title="Sent email (desktop view)"
+                srcDoc={campaign.bodyHtml}
+                className="bg-white shadow-sm rounded-md border"
+                style={{ width: 640, height: 700, border: 'none', transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}
+                sandbox=""
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Opens by date</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Sent, opened & clicked over time</CardTitle></CardHeader>
             <CardContent>
-              {dateData.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-10">No opens yet</p>
+              {trendData.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-10">No activity yet</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={dateData}>
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={trendData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
                     <Tooltip />
-                    <Bar dataKey="count" name="Opens" fill={GREEN} radius={[3, 3, 0, 0]} />
-                  </BarChart>
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="sent" name="Sent" stroke={AMBER} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="opened" name="Opened" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="clicked" name="Clicked" stroke={BLUE} strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
                 </ResponsiveContainer>
               )}
             </CardContent>
@@ -242,19 +380,23 @@ export default function CampaignDetailView({ campaignId, onBack }: {
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Opens by hour of day</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={hourData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="hour" tick={{ fontSize: 9 }} interval={2} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
-                  <Tooltip />
-                  <Bar dataKey="count" name="Opens" fill={GREEN} radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {hourData.every(h => h.count === 0) ? (
+                <p className="text-sm text-muted-foreground text-center py-10">No opens yet</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={hourData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="hour" tick={{ fontSize: 9 }} interval={2} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
+                    <Tooltip />
+                    <Bar dataKey="count" name="Opens" fill={GREEN} radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </div>
-      )}
+      </div>
 
       <LinkPerformance stats={linkStats} totalRecipients={campaign.totalRecipients} />
 

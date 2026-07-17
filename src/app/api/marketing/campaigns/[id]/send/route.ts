@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { sendCampaign } from '@/lib/marketing'
+import { prepareCampaignSend, dispatchCampaignEmails } from '@/lib/marketing'
 import { logActivity } from '@/lib/activity'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
@@ -34,12 +34,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, scheduled: true, campaign: updated })
   }
 
+  let prepared: { totalRecipients: number }
   try {
-    await sendCampaign(db, id)
+    prepared = await prepareCampaignSend(db, id)
   } catch (err: any) {
-    await db.emailCampaign.update({ where: { id }, data: { status: 'FAILED', errorMessage: err?.message ?? 'Send failed' } })
     return NextResponse.json({ error: err?.message ?? 'Send failed' }, { status: 500 })
   }
+
+  // Dispatch (the slow, rate-limited part) runs in the background — don't hold the
+  // response open for it. This process is a long-running standalone Node server
+  // (not a short-lived serverless function), so the promise keeps executing after
+  // the response is flushed.
+  dispatchCampaignEmails(db, id).catch(async err => {
+    await db.emailCampaign.update({ where: { id }, data: { status: 'FAILED', errorMessage: err?.message ?? 'Send failed' } }).catch(() => {})
+  })
 
   const result = await db.emailCampaign.findUnique({ where: { id } })
 
@@ -48,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     userName: session!.user.name ?? session!.user.email ?? 'Unknown',
     userRole: role,
     action: 'SEND', entity: 'EmailCampaign', entityId: id,
-    detail: `Send campaign: ${result?.name} (${result?.sentCount} sent, ${result?.failedCount} failed)`,
+    detail: `Start sending campaign: ${result?.name} (${prepared.totalRecipients} recipients)`,
   }, db).catch(() => {})
 
   return NextResponse.json({ ok: true, campaign: result })

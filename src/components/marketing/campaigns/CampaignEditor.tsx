@@ -53,12 +53,13 @@ function audienceStateFromSources(sources: any): AudienceState {
 }
 
 export default function CampaignEditor({
-  open, onOpenChange, campaignId, onSaved,
+  open, onOpenChange, campaignId, onSaved, onSent,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   campaignId: string | null
   onSaved: () => void
+  onSent?: (id: string) => void
 }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(0)
@@ -188,9 +189,10 @@ export default function CampaignEditor({
       const res = await fetch(`/api/marketing/campaigns/${savedId}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
       const data = await res.json()
       if (!res.ok) { toast.error(data?.error ?? 'Failed to send'); return }
-      toast.success(`Sent to ${data.campaign?.sentCount ?? 0} recipients`)
+      toast.success('Campaign is sending…')
       onSaved()
       onOpenChange(false)
+      onSent?.(savedId)
     } finally {
       setSending(false)
     }

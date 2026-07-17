@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import { FileText, Camera } from 'lucide-react'
 import { isPdfDataUrl, readUploadFile } from '@/lib/fileUpload'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 export function FilePreview({ src, alt, className, onClick }: { src: string; alt: string; className?: string; onClick?: () => void }) {
   if (isPdfDataUrl(src)) {
@@ -27,6 +28,7 @@ export function MultiFilePicker({ files, onChange }: { files: string[]; onChange
     Promise.all(Array.from(list).map(f => readUploadFile(f))).then(newOnes => onChange([...files, ...newOnes]))
   }
   function removeAt(i: number) { onChange(files.filter((_, idx) => idx !== i)) }
+  const { isDragging, dropProps } = useFileDrop(handleFiles)
   return (
     <div className="space-y-2">
       <input ref={inputRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
@@ -42,10 +44,12 @@ export function MultiFilePicker({ files, onChange }: { files: string[]; onChange
           ))}
         </div>
       )}
-      <button type="button" onClick={() => inputRef.current?.click()}
-        className="w-full border-2 border-dashed rounded-xl py-6 flex flex-col items-center gap-1.5 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
+      <button type="button" onClick={() => inputRef.current?.click()} {...dropProps}
+        className={`w-full border-2 border-dashed rounded-xl py-6 flex flex-col items-center gap-1.5 transition-colors ${
+          isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
+        }`}>
         <Camera className="h-5 w-5 text-amber-500" />
-        <span className="text-sm font-medium">{files.length > 0 ? 'Add more files' : 'Take a photo or upload photo/PDF'}</span>
+        <span className="text-sm font-medium">{isDragging ? 'Drop to upload' : files.length > 0 ? 'Add more files' : 'Take a photo or upload photo/PDF'}</span>
       </button>
     </div>
   )

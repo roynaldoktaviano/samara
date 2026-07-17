@@ -27,6 +27,7 @@ import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from './WaitingListManager'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
@@ -676,17 +677,20 @@ export default function Bookings() {
     setPayLinkedCurrency('USD')
     setPayLinkedExchangeRate(1)
   }
-  const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const processPayProofFile = (file: File) => {
     const allowed = ['image/jpeg', 'image/jpg', 'image/png']
     if (!allowed.includes(file.type)) {
       toast.error('Only JPG and PNG files are allowed')
-      e.target.value = ''
       return
     }
     compressImage(file).then(setPayProof).catch(() => toast.error('Failed to process image'))
   }
+  const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    processPayProofFile(file)
+  }
+  const { isDragging: isDraggingPayProof, dropProps: payProofDropProps } = useFileDrop(files => { if (files[0]) processPayProofFile(files[0]) })
   const submitPayment = async () => {
     if (!paymentBooking) return
     setPaymentSaving(true)
@@ -932,17 +936,20 @@ export default function Bookings() {
     setSettingLeadId(null)
   }
 
-  const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const processProofFile = (file: File) => {
     const allowed = ['image/jpeg', 'image/jpg', 'image/png']
     if (!allowed.includes(file.type)) {
       toast.error('Only JPG and PNG files are allowed')
-      e.target.value = ''
       return
     }
     compressImage(file).then(setProofPreview).catch(() => toast.error('Failed to process image'))
   }
+  const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    processProofFile(file)
+  }
+  const { isDragging: isDraggingProof, dropProps: proofDropProps } = useFileDrop(files => { if (files[0]) processProofFile(files[0]) })
   const saveProof = async () => {
     if (!proofPayment || !proofPreview) return
     setProofUploading(true)
@@ -1776,7 +1783,10 @@ export default function Bookings() {
                   <div className="space-y-1.5">
                     <Label>Transfer Proof <span className="text-red-500">*</span></Label>
                     <div
-                      className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer hover:border-primary/50"
+                      {...payProofDropProps}
+                      className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer ${
+                        isDraggingPayProof ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
+                      }`}
                       onClick={() => payProofInputRef.current?.click()}
                     >
                       {payProof ? (
@@ -1785,7 +1795,7 @@ export default function Bookings() {
                       ) : (
                         <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                           <ImageIcon className="h-10 w-10 opacity-30" />
-                          <p className="text-sm">Click to select image</p>
+                          <p className="text-sm">{isDraggingPayProof ? 'Drop to upload' : 'Click or drag to select image'}</p>
                           <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
                         </div>
                       )}
@@ -1869,7 +1879,10 @@ export default function Bookings() {
               <div className="space-y-1.5">
                 <Label>Transfer Proof <span className="text-red-500">*</span></Label>
                 <div
-                  className="border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer hover:border-primary/50"
+                  {...proofDropProps}
+                  className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer ${
+                    isDraggingProof ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
+                  }`}
                   onClick={() => proofInputRef.current?.click()}
                 >
                   {proofPreview ? (
@@ -1878,7 +1891,7 @@ export default function Bookings() {
                   ) : (
                     <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                       <ImageIcon className="h-10 w-10 opacity-30" />
-                      <p className="text-sm">Click to select image</p>
+                      <p className="text-sm">{isDraggingProof ? 'Drop to upload' : 'Click or drag to select image'}</p>
                       <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
                     </div>
                   )}

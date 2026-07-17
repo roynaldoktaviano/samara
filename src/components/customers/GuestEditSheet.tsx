@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { compressImage } from '@/lib/compressImage'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 /* ── Types ── */
 export interface GuestFormState {
@@ -163,6 +164,7 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
     if (!file) return
     compressImage(file).then(onChange).catch(() => {})
   }
+  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) compressImage(files[0]).then(onChange).catch(() => {}) })
   return (
     <div>
       <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
@@ -184,8 +186,10 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
             >✕</button>
           </div>
         ) : (
-          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors">
-            <span className="text-xs text-muted-foreground">Click to upload</span>
+          <label {...dropProps} className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+            isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-border hover:bg-muted/30'
+          }`}>
+            <span className="text-xs text-muted-foreground">{isDragging ? 'Drop to upload' : 'Click or drag file to upload'}</span>
             <span className="text-[10px] text-muted-foreground/60 mt-0.5">JPG, PNG, PDF</span>
             <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFile} />
           </label>
@@ -237,6 +241,7 @@ function MultiFileUpload({ label, values, onChange }: { label: string; values: s
   }
   function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
   const isPdf = (v: string) => v.startsWith('data:application/pdf')
+  const { isDragging, dropProps } = useFileDrop(handleFiles)
   return (
     <div>
       <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
@@ -261,9 +266,11 @@ function MultiFileUpload({ label, values, onChange }: { label: string; values: s
               className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
           </div>
         ))}
-        <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-muted/30 transition-colors">
-          <span className="text-sm text-muted-foreground">＋</span>
-          <span className="text-[9px] text-muted-foreground/60">Add</span>
+        <label {...dropProps} className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-border hover:bg-muted/30'
+        }`}>
+          <span className="text-sm text-muted-foreground">{isDragging ? '⬇' : '＋'}</span>
+          <span className="text-[9px] text-muted-foreground/60">{isDragging ? 'Drop' : 'Add'}</span>
           <input type="file" multiple className="hidden" accept="image/*,.pdf"
             onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
         </label>

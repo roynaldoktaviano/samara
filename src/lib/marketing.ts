@@ -97,23 +97,23 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
 }
 
 /**
- * Sends (or re-sends failed recipients of) a campaign: creates CampaignRecipient
- * rows for its resolved audience, sends via Resend, and updates counts/status.
- * Shared by the immediate-send API route and the scheduled-dispatch cron route.
+ * Fast, synchronous phase of sending: validates the campaign, flips it to SENDING,
+ * resolves the audience, and upserts a PENDING CampaignRecipient row per recipient
+ * (idempotent — re-running a partially-failed send won't duplicate rows). Safe to
+ * await from an HTTP handler since it does no outbound email calls itself — the
+ * actual dispatch (the slow part) is a separate step, see `dispatchCampaignEmails`.
  */
-export async function sendCampaign(db: PrismaClient, campaignId: string): Promise<void> {
+export async function prepareCampaignSend(db: PrismaClient, campaignId: string): Promise<{ totalRecipients: number }> {
   const campaign = await db.emailCampaign.findUnique({ where: { id: campaignId } })
   if (!campaign) throw new Error('Campaign not found')
-  if (campaign.status === 'SENT' || campaign.status === 'SENDING') return
+  if (campaign.status === 'SENT' || campaign.status === 'SENDING') throw new Error('Campaign already sent')
 
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) throw new Error('RESEND_API_KEY not configured')
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured')
 
   await db.emailCampaign.update({ where: { id: campaignId }, data: { status: 'SENDING' } })
 
   const audience = await resolveAudience(db, campaign.audienceSources as AudienceSources)
 
-  // Upsert recipient rows (idempotent — re-running a partially-failed send won't duplicate rows)
   for (const member of audience) {
     await db.campaignRecipient.upsert({
       where: { campaignId_email: { campaignId, email: member.email } },
@@ -128,12 +128,29 @@ export async function sendCampaign(db: PrismaClient, campaignId: string): Promis
     })
   }
 
-  const pending = await db.campaignRecipient.findMany({
-    where: { campaignId, status: 'PENDING' },
-  })
+  return { totalRecipients: audience.length }
+}
+
+/**
+ * Slow phase: actually sends via Resend, updating each CampaignRecipient's status
+ * the moment its send resolves (so a poller can show live progress), then rolls up
+ * final counts onto the campaign. Meant to be called after `prepareCampaignSend` —
+ * split out so the API route can respond to the browser as soon as prepare finishes
+ * and let this run in the background rather than holding the request open for the
+ * whole batch (which, at Resend's ~2 req/s rate limit, can take minutes for a large
+ * audience).
+ */
+export async function dispatchCampaignEmails(db: PrismaClient, campaignId: string): Promise<void> {
+  const campaign = await db.emailCampaign.findUnique({ where: { id: campaignId } })
+  if (!campaign) throw new Error('Campaign not found')
+
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) throw new Error('RESEND_API_KEY not configured')
+
+  const pending = await db.campaignRecipient.findMany({ where: { campaignId, status: 'PENDING' } })
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const result = await sendBulkEmail({
+  await sendBulkEmail({
     apiKey,
     from: campaign.fromEmail,
     fromName: campaign.fromName ?? undefined,
@@ -148,41 +165,49 @@ export async function sendCampaign(db: PrismaClient, campaignId: string): Promis
         unsubscribeUrl,
       }
     }),
+    onSent: async (email, itemResult) => {
+      const r = pending.find(p => p.email === email)
+      if (!r) return
+      if (itemResult.resendId) {
+        await db.campaignRecipient.update({
+          where: { id: r.id },
+          data: { status: 'SENT', resendId: itemResult.resendId, sentAt: new Date() },
+        })
+      } else {
+        await db.campaignRecipient.update({
+          where: { id: r.id },
+          data: { status: 'FAILED', errorMessage: itemResult.error ?? 'unknown error' },
+        })
+      }
+    },
   })
 
-  let sentCount = 0
-  let failedCount = 0
-  for (const r of pending) {
-    const resendId = result.sentIds[r.email]
-    const failure = result.failures[r.email]
-    if (resendId) {
-      sentCount += 1
-      await db.campaignRecipient.update({
-        where: { id: r.id },
-        data: { status: 'SENT', resendId, sentAt: new Date() },
-      })
-    } else {
-      failedCount += 1
-      await db.campaignRecipient.update({
-        where: { id: r.id },
-        data: { status: 'FAILED', errorMessage: failure ?? 'unknown error' },
-      })
-    }
-  }
-
-  const totalSent = (campaign.sentCount ?? 0) + sentCount
-  const totalFailed = (campaign.failedCount ?? 0) + failedCount
+  const [totalSent, totalFailed, totalRecipients] = await Promise.all([
+    db.campaignRecipient.count({ where: { campaignId, status: 'SENT' } }),
+    db.campaignRecipient.count({ where: { campaignId, status: 'FAILED' } }),
+    db.campaignRecipient.count({ where: { campaignId } }),
+  ])
 
   await db.emailCampaign.update({
     where: { id: campaignId },
     data: {
       status: totalFailed > 0 && totalSent === 0 ? 'FAILED' : 'SENT',
-      totalRecipients: audience.length,
+      totalRecipients,
       sentCount: totalSent,
       failedCount: totalFailed,
       sentAt: new Date(),
     },
   })
+}
+
+/**
+ * Convenience wrapper that runs both phases back-to-back and awaits full
+ * completion — used by the scheduled-dispatch cron route, which isn't blocking
+ * a browser request and so has no reason to split the phases apart.
+ */
+export async function sendCampaign(db: PrismaClient, campaignId: string): Promise<void> {
+  await prepareCampaignSend(db, campaignId)
+  await dispatchCampaignEmails(db, campaignId)
 }
 
 export function previewHtml(blocks: EmailBlock[]): string {

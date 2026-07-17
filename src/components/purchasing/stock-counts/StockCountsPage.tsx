@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Plus, X, ChevronRight, CheckCircle2, ClipboardList, AlertTriangle, Trash2, CheckCheck, Camera } from 'lucide-react'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 interface Location { id: string; name: string; type: string }
 interface CountItem {
@@ -54,6 +55,7 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
     if (!file) return
     onChange(await compressPhoto(file))
   }
+  const { isDragging, dropProps } = useFileDrop(async files => { if (files[0]) onChange(await compressPhoto(files[0])) })
   return (
     <div className="space-y-2">
       {value ? (
@@ -64,9 +66,11 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
           </button>
         </div>
       ) : (
-        <button onClick={() => ref.current?.click()} className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-5 px-8 text-muted-foreground hover:bg-muted/30 transition-colors w-full">
+        <button onClick={() => ref.current?.click()} {...dropProps} className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-5 px-8 transition-colors w-full ${
+          isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+        }`}>
           <Camera className="h-5 w-5" />
-          <span className="text-sm">Upload count photo</span>
+          <span className="text-sm">{isDragging ? 'Drop to upload' : 'Upload or drag count photo'}</span>
         </button>
       )}
       <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight } from 'lucide-react'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 interface StockLocation { id: string; name: string; type: string }
 interface StockLotItem { item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number }; qty: number }
@@ -55,6 +56,7 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
     const b64 = await compressPhoto(f)
     onChange(b64)
   }
+  const { isDragging, dropProps } = useFileDrop(async files => { if (files[0]) onChange(await compressPhoto(files[0])) })
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium">{label} <span className="text-destructive">*</span></label>
@@ -64,9 +66,11 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
           <button onClick={() => onChange('')} className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"><X className="h-3.5 w-3.5" /></button>
         </div>
       ) : (
-        <button onClick={() => ref.current?.click()} className="w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-6 text-muted-foreground hover:bg-muted/30 transition-colors">
+        <button onClick={() => ref.current?.click()} {...dropProps} className={`w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-6 transition-colors ${
+          isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+        }`}>
           <Camera className="h-6 w-6" />
-          <span className="text-sm">Tap to upload photo</span>
+          <span className="text-sm">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
         </button>
       )}
       <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />

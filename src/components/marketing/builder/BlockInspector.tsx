@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { toast } from 'sonner'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 /** Full-bleed section divider bar — groups fields the way "BLOCK OPTIONS" / "ACTION" do in the reference builder. */
 function SectionHeader({ label }: { label: string }) {
@@ -202,11 +203,13 @@ function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; 
     }
   }
 
+  const { isDragging, dropProps } = useFileDrop(files => { const f = files[0]; if (f) upload(f) }, uploading)
+
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <div className="flex gap-2">
-        <Input value={src} onChange={e => onChange(e.target.value)} placeholder="https://..." className="h-8 text-xs" />
+      <div {...dropProps} className={`flex gap-2 rounded-md p-1 -m-1 transition-colors ${isDragging ? 'ring-2 ring-[#bdac7e] bg-[#bdac7e]/5' : ''}`}>
+        <Input value={src} onChange={e => onChange(e.target.value)} placeholder={isDragging ? 'Drop image to upload' : 'https://...'} className="h-8 text-xs" />
         <Button type="button" variant="outline" size="sm" className="h-8 shrink-0" disabled={uploading} onClick={() => inputRef.current?.click()}>
           {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
         </Button>

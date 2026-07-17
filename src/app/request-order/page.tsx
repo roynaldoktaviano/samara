@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } from '@/lib/purchase-item-types'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
@@ -86,6 +87,9 @@ function RequestOrderContent() {
   const [customForm, setCustomForm] = useState({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] as string[] })
   const customFileRef = useRef<HTMLInputElement>(null)
   const [compressingCustomImage, setCompressingCustomImage] = useState(false)
+  const { isDragging: isDraggingCustomImage, dropProps: customImageDropProps } = useFileDrop(
+    files => processCustomImages(Array.from(files)), compressingCustomImage
+  )
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -132,14 +136,18 @@ function RequestOrderContent() {
     setCart(prev => prev.filter(l => l.key !== key))
   }
 
-  async function handleCustomImages(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
+  async function processCustomImages(files: File[]) {
     if (!files.length) return
-    e.target.value = ''
     setCompressingCustomImage(true)
     const compressed = await Promise.all(files.map(compressImage))
     setCustomForm(f => ({ ...f, images: [...f.images, ...compressed] }))
     setCompressingCustomImage(false)
+  }
+
+  async function handleCustomImages(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    await processCustomImages(files)
   }
 
   function removeCustomImage(index: number) {
@@ -436,10 +444,12 @@ function RequestOrderContent() {
                       </button>
                     </div>
                   ))}
-                  <button onClick={() => customFileRef.current?.click()} disabled={compressingCustomImage}
-                    className="aspect-square flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg text-muted-foreground hover:bg-muted/30 transition-colors disabled:opacity-50">
+                  <button onClick={() => customFileRef.current?.click()} disabled={compressingCustomImage} {...customImageDropProps}
+                    className={`aspect-square flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
+                      isDraggingCustomImage ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-[#8a7040]' : 'text-muted-foreground hover:bg-muted/30'
+                    }`}>
                     <Camera className="h-5 w-5" />
-                    <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : 'Add photo'}</span>
+                    <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
                   </button>
                 </div>
                 <input ref={customFileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleCustomImages} />
