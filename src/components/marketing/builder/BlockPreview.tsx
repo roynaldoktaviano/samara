@@ -11,7 +11,8 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'text':
       return (
         <div
-          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing }}
+          className="email-rich-text"
+          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -19,7 +20,8 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'heading':
       return (
         <div
-          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing }}
+          className="email-rich-text"
+          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -66,7 +68,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           <span className="absolute top-0 right-0 flex items-center gap-1 text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
             <Code2 className="h-3 w-3" /> HTML
           </span>
-          <div dangerouslySetInnerHTML={{ __html: block.code }} />
+          <div className="email-rich-text" dangerouslySetInnerHTML={{ __html: block.code }} />
         </div>
       )
 
@@ -76,7 +78,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           <span
             style={{
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
-              padding: '10px 24px', borderRadius: block.borderRadius, fontSize: 14, fontWeight: 600,
+              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: 15, fontWeight: 600,
             }}
           >
             {block.label || 'Button'}
@@ -87,7 +89,12 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'divider':
       return (
         <div style={paddingStyle(block.padding)}>
-          <div style={{ borderTop: `${block.thickness}px solid ${block.color}` }} />
+          <div style={{
+            borderTop: `${block.thickness}px solid ${block.color}`,
+            width: `${block.width}%`,
+            marginLeft: block.align === 'right' ? 'auto' : block.align === 'center' ? 'auto' : undefined,
+            marginRight: block.align === 'left' ? 'auto' : block.align === 'center' ? 'auto' : undefined,
+          }} />
         </div>
       )
 

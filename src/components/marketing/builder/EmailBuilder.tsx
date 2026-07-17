@@ -942,7 +942,7 @@ export default function EmailBuilder({
                   className="rounded-lg shadow-sm min-h-100 flex flex-col"
                   style={{ background: emailSettings.contentBackground }}
                 >
-                  <div className="flex-1 p-3">
+                  <div className="flex-1">
                     <BlockList
                       containerId="root"
                       blocks={editableBlocks}

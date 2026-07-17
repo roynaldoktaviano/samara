@@ -131,6 +131,8 @@ export interface DividerBlock {
   type: 'divider'
   color: string
   thickness: number
+  width: number // percent of content width, 10-100
+  align: BlockAlign
   padding: Padding
   hideOn: HideOn
 }
@@ -280,10 +282,17 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         autoWidth: typeof raw.autoWidth === 'boolean' ? raw.autoWidth : false,
         fullWidthOnMobile: typeof raw.fullWidthOnMobile === 'boolean' ? raw.fullWidthOnMobile : false,
       }
+    case 'divider':
+      return {
+        ...raw,
+        padding: migratePadding(raw.padding, 16),
+        hideOn,
+        width: typeof raw.width === 'number' ? raw.width : 100,
+        align: raw.align === 'left' || raw.align === 'right' ? raw.align : 'center',
+      }
     case 'video':
     case 'html':
     case 'button':
-    case 'divider':
     case 'social':
       return { ...raw, padding: migratePadding(raw.padding, 16), hideOn }
     case 'spacer':
@@ -332,7 +341,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'button':
       return { id: nextId(), type: 'button', label: 'Click Here', url: 'https://', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
-      return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':
       return { id: nextId(), type: 'spacer', height: 24, hideOn: 'none' }
     case 'columns':
@@ -431,8 +440,10 @@ function renderBlock(block: EmailBlock): string {
         <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
       </td></tr>`
 
-    case 'divider':
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;">&nbsp;</div></td></tr>`
+    case 'divider': {
+      const margin = block.align === 'center' ? '0 auto' : block.align === 'right' ? '0 0 0 auto' : '0 auto 0 0'
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
+    }
 
     case 'spacer':
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="height:${block.height}px;line-height:${block.height}px;font-size:0;">&nbsp;</td></tr>`

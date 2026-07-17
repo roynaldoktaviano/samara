@@ -1123,6 +1123,17 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     openDetail(detail); load()
   }
 
+  const poGrandTotal = detail
+    ? (() => {
+        const itemsSubtotal = detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+        const discountAmount = detail.discountType
+          ? Math.min(itemsSubtotal, detail.discountType === 'PERCENT' ? itemsSubtotal * ((detail.discountValue ?? 0) / 100) : (detail.discountValue ?? 0))
+          : 0
+        const chargesTotal = detail.extraCharges?.reduce((s, c) => s + c.amount, 0) ?? 0
+        return itemsSubtotal - discountAmount + chargesTotal
+      })()
+    : 0
+
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -1167,11 +1178,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             )}
             {canTransit && detail.status !== 'DRAFT' && !actionTaken && (
               <>
-                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <Wallet className="h-3.5 w-3.5" /> Request Payment
                 </button>
-                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
@@ -1682,10 +1693,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
-                  <input type="number" min={0} autoFocus
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="e.g. 1500000"
-                    value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
+                    <input type="text" inputMode="numeric" autoFocus
+                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. 1.500.000"
+                      value={paymentAmount ? new Intl.NumberFormat('id-ID').format(Number(paymentAmount)) : ''}
+                      onChange={e => setPaymentAmount(e.target.value.replace(/\D/g, ''))} />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

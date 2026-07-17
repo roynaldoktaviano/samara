@@ -151,7 +151,7 @@ function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn)
   )
 }
 
-function RichTextField({ html, onChange }: { html: string; onChange: (html: string) => void }) {
+function RichTextField({ html, onChange, linkColor }: { html: string; onChange: (html: string) => void; linkColor?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const exec = (cmd: string, arg?: string) => {
     ref.current?.focus()
@@ -173,7 +173,8 @@ function RichTextField({ html, onChange }: { html: string; onChange: (html: stri
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="min-h-[80px] border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+        className="email-rich-text min-h-[80px] border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+        style={linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined}
         dangerouslySetInnerHTML={{ __html: html }}
         onBlur={e => onChange(e.currentTarget.innerHTML)}
       />
@@ -220,7 +221,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
     case 'text':
       return (
         <div className="space-y-3">
-          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} />
+          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={48} />
@@ -237,7 +238,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
     case 'heading':
       return (
         <div className="space-y-3">
-          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} />
+          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={14} max={60} />
@@ -348,6 +349,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <ColorField label="Color" value={block.color} onChange={color => onChange({ ...block, color })} />
           <NumberField label="Thickness" value={block.thickness} onChange={thickness => onChange({ ...block, thickness })} min={1} max={10} />
+          <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
+          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />

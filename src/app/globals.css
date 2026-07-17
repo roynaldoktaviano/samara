@@ -128,3 +128,23 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Undoes Tailwind Preflight for rich-text block content (text/heading/HTML
+   blocks in the email builder canvas) so the editor approximates the same
+   unstyled-browser defaults an actual email client renders — without this,
+   paragraphs/lists/links looked flat in the editor but got real spacing,
+   bullets and underlines once the raw HTML was actually sent. */
+.email-rich-text {
+  --link-color: #2563eb;
+}
+.email-rich-text p { margin: 0 0 1em; }
+.email-rich-text p:last-child { margin-bottom: 0; }
+.email-rich-text ul, .email-rich-text ol { margin: 0 0 1em; padding-left: 1.5em; }
+.email-rich-text ul:last-child, .email-rich-text ol:last-child { margin-bottom: 0; }
+.email-rich-text ul { list-style: disc; }
+.email-rich-text ol { list-style: decimal; }
+.email-rich-text li { display: list-item; }
+.email-rich-text blockquote { margin: 0 0 1em; padding-left: 1em; border-left: 3px solid currentColor; opacity: 0.85; }
+.email-rich-text a { color: var(--link-color); text-decoration: underline; }
+.email-rich-text strong, .email-rich-text b { font-weight: 700; }
+.email-rich-text em, .email-rich-text i { font-style: italic; }

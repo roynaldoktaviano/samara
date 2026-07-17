@@ -163,6 +163,24 @@ model Customer {
   @@index([createdAt])
 }
 
+model Lead {
+  id           String    @id @default(cuid())
+  name         String
+  firstName    String?
+  lastName     String?
+  nationality  String?
+  email        String?
+  phone        String?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([deletedAt])
+  @@index([name])
+  @@index([email])
+  @@index([createdAt])
+}
+
 model Agent {
   id                       String              @id @default(cuid())
   name                     String

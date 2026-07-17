@@ -16,7 +16,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const request = await db.pOPaymentRequest.findUnique({
     where: { id },
     include: {
-      order: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } },
+      order: {
+        select: {
+          poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } },
+          requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true,
+          discountType: true, discountValue: true, extraCharges: true,
+          items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
+        },
+      },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
     },
