@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
@@ -36,6 +36,8 @@ interface Inquiry {
   guestCount?: number | null
   tripType?: string | null
   message?: string | null
+  website?: string | null
+  url?: string | null
   utmSource?: string | null
   utmMedium?: string | null
   utmCampaign?: string | null
@@ -52,6 +54,7 @@ export default function Leads() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [sheetLeadId, setSheetLeadId] = useState<string | null>(null)
@@ -75,7 +78,7 @@ export default function Leads() {
   const fetchLeads = useCallback(async (p = 1) => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE) })
+      const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE), sort: sortDir })
       if (search) params.set('search', search)
       const res = await fetch(`/api/leads?${params}`)
       if (res.ok) {
@@ -85,9 +88,11 @@ export default function Leads() {
     } finally {
       setLoading(false)
     }
-  }, [search])
+  }, [search, sortDir])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
+
+  const toggleSort = () => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
 
   const totalPages = Math.max(1, Math.ceil(totalLeads / PAGE_SIZE))
   const goToPage = (p: number) => { setPage(p); fetchLeads(p) }
@@ -243,6 +248,12 @@ export default function Leads() {
                   <TableHead>Contact</TableHead>
                   <TableHead>Subscribed</TableHead>
                   <TableHead>Nationality</TableHead>
+                  <TableHead>
+                    <button onClick={toggleSort} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Created
+                      {sortDir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />}
+                    </button>
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -263,12 +274,13 @@ export default function Leads() {
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
                       <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-3 w-20" /></TableCell>
                       <TableCell><div className="flex justify-end gap-1"><Skeleton className="h-8 w-8 rounded-md" /><Skeleton className="h-8 w-8 rounded-md" /></div></TableCell>
                     </TableRow>
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -310,6 +322,9 @@ export default function Leads() {
                     </TableCell>
                     <TableCell>
                       {l.nationality ? <div className="flex items-center gap-1 text-xs"><Globe className="h-3 w-3 text-muted-foreground" />{l.nationality}</div> : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">{new Date(l.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -448,6 +463,11 @@ export default function Leads() {
                             </p>
                           )}
                           {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                          {inq.website && (
+                            <p className="text-xs text-muted-foreground">
+                              {inq.url ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
+                            </p>
+                          )}
                           {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
                             <div className="flex flex-wrap gap-1 pt-0.5">
                               {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}

@@ -10,46 +10,66 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
 import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
+import AudiencePicker from '@/components/marketing/campaigns/AudiencePicker'
 import { createBlock, renderBlocksToHtml, normalizeDesign, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
 
 const ACCENT = '#bdac7e'
 const STEPS = ['Details', 'Design', 'Audience', 'Review'] as const
 
 interface TemplateSummary { id: string; name: string }
+interface YachtSummary { id: string; name: string }
+
+interface AudienceSourceState { enabled: boolean; search: string; excludeIds: Set<string> }
 
 interface AudienceState {
-  customers: boolean; customersSearch: string
-  agents: boolean; agentsSearch: string
-  agentContacts: boolean; agentContactsSearch: string
+  customers: AudienceSourceState & { yachtId: string }
+  leads: AudienceSourceState
+  agents: AudienceSourceState
+  agentLeads: AudienceSourceState
   manualEmails: string
 }
 
+const emptySource = (): AudienceSourceState => ({ enabled: false, search: '', excludeIds: new Set() })
+
 const emptyAudience = (): AudienceState => ({
-  customers: true, customersSearch: '',
-  agents: false, agentsSearch: '',
-  agentContacts: false, agentContactsSearch: '',
+  customers: { ...emptySource(), enabled: true, yachtId: '' },
+  leads: emptySource(),
+  agents: emptySource(),
+  agentLeads: emptySource(),
   manualEmails: '',
 })
 
 function buildAudienceSources(a: AudienceState) {
+  const toFilter = (s: AudienceSourceState, extra?: Record<string, unknown>) => {
+    if (!s.enabled) return undefined
+    return {
+      ...(s.search && { search: s.search }),
+      ...(s.excludeIds.size > 0 && { excludeIds: [...s.excludeIds] }),
+      ...extra,
+    }
+  }
   return {
-    ...(a.customers && { customers: a.customersSearch ? { search: a.customersSearch } : {} }),
-    ...(a.agents && { agents: a.agentsSearch ? { search: a.agentsSearch } : {} }),
-    ...(a.agentContacts && { agentContacts: a.agentContactsSearch ? { search: a.agentContactsSearch } : {} }),
+    ...(a.customers.enabled && { customers: toFilter(a.customers, a.customers.yachtId ? { yachtId: a.customers.yachtId } : undefined) }),
+    ...(a.leads.enabled && { leads: toFilter(a.leads) }),
+    ...(a.agents.enabled && { agents: toFilter(a.agents) }),
+    ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
     manualEmails: a.manualEmails.split(/[\n,]/).map(s => s.trim()).filter(Boolean),
   }
 }
 
 function audienceStateFromSources(sources: any): AudienceState {
-  const a = emptyAudience()
-  a.customers = !!sources?.customers
-  a.customersSearch = sources?.customers?.search ?? ''
-  a.agents = !!sources?.agents
-  a.agentsSearch = sources?.agents?.search ?? ''
-  a.agentContacts = !!sources?.agentContacts
-  a.agentContactsSearch = sources?.agentContacts?.search ?? ''
-  a.manualEmails = (sources?.manualEmails ?? []).join('\n')
-  return a
+  const fill = (src: any): AudienceSourceState => ({
+    enabled: !!src,
+    search: src?.search ?? '',
+    excludeIds: new Set<string>(src?.excludeIds ?? []),
+  })
+  return {
+    customers: { ...fill(sources?.customers), yachtId: sources?.customers?.yachtId ?? '' },
+    leads: fill(sources?.leads),
+    agents: fill(sources?.agents),
+    agentLeads: fill(sources?.agentLeads),
+    manualEmails: (sources?.manualEmails ?? []).join('\n'),
+  }
 }
 
 export default function CampaignEditor({
@@ -73,6 +93,7 @@ export default function CampaignEditor({
   const [blocks, setBlocks] = useState<EmailBlock[]>([])
   const [settings, setSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
+  const [yachts, setYachts] = useState<YachtSummary[]>([])
   const [audience, setAudience] = useState<AudienceState>(emptyAudience())
   const [audienceCount, setAudienceCount] = useState<number | null>(null)
   const [audienceLoading, setAudienceLoading] = useState(false)
@@ -94,6 +115,7 @@ export default function CampaignEditor({
   useEffect(() => {
     if (!open) return
     fetch('/api/marketing/templates').then(r => r.ok ? r.json() : []).then(setTemplates).catch(() => {})
+    fetch('/api/yachts').then(r => r.ok ? r.json() : []).then(list => setYachts(list.map((y: YachtSummary) => ({ id: y.id, name: y.name })))).catch(() => {})
 
     if (campaignId) {
       setLoading(true)
@@ -334,33 +356,32 @@ export default function CampaignEditor({
 
             {step === 2 && (
               <div className="p-6 max-w-2xl mx-auto space-y-5">
-                <div className="border rounded-lg p-4 space-y-2">
-                  <label className="flex items-center gap-2 font-medium text-sm">
-                    <input type="checkbox" checked={audience.customers} onChange={e => setAudience(a => ({ ...a, customers: e.target.checked }))} />
-                    Guests (from bookings)
-                  </label>
-                  {audience.customers && (
-                    <Input value={audience.customersSearch} onChange={e => setAudience(a => ({ ...a, customersSearch: e.target.value }))} placeholder="Filter by name or email (optional)" className="h-8 text-sm ml-6 w-[calc(100%-1.5rem)]" />
-                  )}
-                </div>
-                <div className="border rounded-lg p-4 space-y-2">
-                  <label className="flex items-center gap-2 font-medium text-sm">
-                    <input type="checkbox" checked={audience.agents} onChange={e => setAudience(a => ({ ...a, agents: e.target.checked }))} />
-                    Agents
-                  </label>
-                  {audience.agents && (
-                    <Input value={audience.agentsSearch} onChange={e => setAudience(a => ({ ...a, agentsSearch: e.target.value }))} placeholder="Filter by name or email (optional)" className="h-8 text-sm ml-6 w-[calc(100%-1.5rem)]" />
-                  )}
-                </div>
-                <div className="border rounded-lg p-4 space-y-2">
-                  <label className="flex items-center gap-2 font-medium text-sm">
-                    <input type="checkbox" checked={audience.agentContacts} onChange={e => setAudience(a => ({ ...a, agentContacts: e.target.checked }))} />
-                    Agent contacts
-                  </label>
-                  {audience.agentContacts && (
-                    <Input value={audience.agentContactsSearch} onChange={e => setAudience(a => ({ ...a, agentContactsSearch: e.target.value }))} placeholder="Filter by name or email (optional)" className="h-8 text-sm ml-6 w-[calc(100%-1.5rem)]" />
-                  )}
-                </div>
+                <AudiencePicker
+                  source="customers" label="Guest" hint="From bookings"
+                  enabled={audience.customers.enabled} onToggle={v => setAudience(a => ({ ...a, customers: { ...a.customers, enabled: v } }))}
+                  search={audience.customers.search} onSearchChange={v => setAudience(a => ({ ...a, customers: { ...a.customers, search: v } }))}
+                  excludeIds={audience.customers.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, customers: { ...a.customers, excludeIds: ids } }))}
+                  yachtId={audience.customers.yachtId} onYachtChange={v => setAudience(a => ({ ...a, customers: { ...a.customers, yachtId: v } }))}
+                  yachts={yachts}
+                />
+                <AudiencePicker
+                  source="leads" label="Leads"
+                  enabled={audience.leads.enabled} onToggle={v => setAudience(a => ({ ...a, leads: { ...a.leads, enabled: v } }))}
+                  search={audience.leads.search} onSearchChange={v => setAudience(a => ({ ...a, leads: { ...a.leads, search: v } }))}
+                  excludeIds={audience.leads.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, leads: { ...a.leads, excludeIds: ids } }))}
+                />
+                <AudiencePicker
+                  source="agents" label="Agent"
+                  enabled={audience.agents.enabled} onToggle={v => setAudience(a => ({ ...a, agents: { ...a.agents, enabled: v } }))}
+                  search={audience.agents.search} onSearchChange={v => setAudience(a => ({ ...a, agents: { ...a.agents, search: v } }))}
+                  excludeIds={audience.agents.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, agents: { ...a.agents, excludeIds: ids } }))}
+                />
+                <AudiencePicker
+                  source="agentLeads" label="Agent Leads"
+                  enabled={audience.agentLeads.enabled} onToggle={v => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, enabled: v } }))}
+                  search={audience.agentLeads.search} onSearchChange={v => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, search: v } }))}
+                  excludeIds={audience.agentLeads.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, excludeIds: ids } }))}
+                />
                 <div className="border rounded-lg p-4 space-y-2">
                   <Label className="font-medium text-sm">Manual emails (optional)</Label>
                   <Textarea rows={3} value={audience.manualEmails} onChange={e => setAudience(a => ({ ...a, manualEmails: e.target.value }))} placeholder={'one per line, or comma-separated'} className="font-mono text-xs" />

@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
+    const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
 
     const where: Record<string, unknown> = { deletedAt: null }
     if (search) {
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     const [leads, total] = await Promise.all([
       db.lead.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: sort },
         skip: (page - 1) * limit,
         take: limit,
       }),

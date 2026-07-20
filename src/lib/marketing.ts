@@ -2,33 +2,43 @@ import type { PrismaClient } from '@prisma/client'
 import { renderBlocksToHtml, injectUnsubscribeUrl, injectPreviewText, type EmailBlock } from '@/lib/email-builder'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 
+export interface AudienceSourceFilter {
+  search?: string
+  yachtId?: string // customers only — restricts to guests with a booking on this yacht
+  excludeIds?: string[] // individually unchecked in the per-person picker
+}
+
 export interface AudienceSources {
-  customers?: { search?: string } | boolean
-  agents?: { search?: string } | boolean
-  agentContacts?: { search?: string } | boolean
+  customers?: AudienceSourceFilter | boolean
+  leads?: AudienceSourceFilter | boolean
+  agents?: AudienceSourceFilter | boolean
+  agentLeads?: AudienceSourceFilter | boolean
   manualEmails?: string[]
 }
 
 export interface AudienceMember {
   email: string
   name: string | null
-  sourceType: 'CUSTOMER' | 'AGENT' | 'AGENT_CONTACT' | 'MANUAL'
+  sourceType: 'CUSTOMER' | 'LEAD' | 'AGENT' | 'AGENT_LEAD_CONTACT' | 'MANUAL'
   sourceId: string | null
 }
 
 /**
  * Resolves an audience spec into a deduplicated recipient list, excluding
  * anyone on the tenant's unsubscribe suppression list. First match wins on
- * duplicate emails across sources (customers > agents > agent contacts > manual).
+ * duplicate emails across sources (customers > leads > agents > agent leads > manual).
  */
 export async function resolveAudience(db: PrismaClient, sources: AudienceSources): Promise<AudienceMember[]> {
   const byEmail = new Map<string, AudienceMember>()
 
-  const asFilter = (v: { search?: string } | boolean | undefined) =>
+  const asFilter = (v: AudienceSourceFilter | boolean | undefined): AudienceSourceFilter | null =>
     v === true ? {} : (v && typeof v === 'object') ? v : null
+
+  const excludeSet = (ids?: string[]) => new Set(ids ?? [])
 
   const customerFilter = asFilter(sources.customers)
   if (customerFilter) {
+    const excluded = excludeSet(customerFilter.excludeIds)
     const where: Record<string, unknown> = { deletedAt: null, email: { not: null } }
     if (customerFilter.search) {
       where.OR = [
@@ -36,16 +46,36 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
         { email: { contains: customerFilter.search, mode: 'insensitive' } },
       ]
     }
+    if (customerFilter.yachtId) where.bookings = { some: { yachtId: customerFilter.yachtId } }
     const customers = await db.customer.findMany({ where, select: { id: true, name: true, email: true } })
     for (const c of customers) {
-      if (c.email && !byEmail.has(c.email.toLowerCase())) {
+      if (c.email && !excluded.has(c.id) && !byEmail.has(c.email.toLowerCase())) {
         byEmail.set(c.email.toLowerCase(), { email: c.email, name: c.name, sourceType: 'CUSTOMER', sourceId: c.id })
+      }
+    }
+  }
+
+  const leadFilter = asFilter(sources.leads)
+  if (leadFilter) {
+    const excluded = excludeSet(leadFilter.excludeIds)
+    const where: Record<string, unknown> = { deletedAt: null, email: { not: null } }
+    if (leadFilter.search) {
+      where.OR = [
+        { name: { contains: leadFilter.search, mode: 'insensitive' } },
+        { email: { contains: leadFilter.search, mode: 'insensitive' } },
+      ]
+    }
+    const leads = await db.lead.findMany({ where, select: { id: true, name: true, email: true } })
+    for (const l of leads) {
+      if (l.email && !excluded.has(l.id) && !byEmail.has(l.email.toLowerCase())) {
+        byEmail.set(l.email.toLowerCase(), { email: l.email, name: l.name, sourceType: 'LEAD', sourceId: l.id })
       }
     }
   }
 
   const agentFilter = asFilter(sources.agents)
   if (agentFilter) {
+    const excluded = excludeSet(agentFilter.excludeIds)
     const where: Record<string, unknown> = { email: { not: null } }
     if (agentFilter.search) {
       where.OR = [
@@ -55,25 +85,26 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
     }
     const agents = await db.agent.findMany({ where, select: { id: true, name: true, email: true } })
     for (const a of agents) {
-      if (a.email && !byEmail.has(a.email.toLowerCase())) {
+      if (a.email && !excluded.has(a.id) && !byEmail.has(a.email.toLowerCase())) {
         byEmail.set(a.email.toLowerCase(), { email: a.email, name: a.name, sourceType: 'AGENT', sourceId: a.id })
       }
     }
   }
 
-  const agentContactFilter = asFilter(sources.agentContacts)
-  if (agentContactFilter) {
+  const agentLeadFilter = asFilter(sources.agentLeads)
+  if (agentLeadFilter) {
+    const excluded = excludeSet(agentLeadFilter.excludeIds)
     const where: Record<string, unknown> = { email: { not: null } }
-    if (agentContactFilter.search) {
+    if (agentLeadFilter.search) {
       where.OR = [
-        { name: { contains: agentContactFilter.search, mode: 'insensitive' } },
-        { email: { contains: agentContactFilter.search, mode: 'insensitive' } },
+        { name: { contains: agentLeadFilter.search, mode: 'insensitive' } },
+        { email: { contains: agentLeadFilter.search, mode: 'insensitive' } },
       ]
     }
-    const contacts = await db.agentContact.findMany({ where, select: { id: true, name: true, email: true } })
+    const contacts = await db.agentLeadContact.findMany({ where, select: { id: true, name: true, email: true } })
     for (const c of contacts) {
-      if (c.email && !byEmail.has(c.email.toLowerCase())) {
-        byEmail.set(c.email.toLowerCase(), { email: c.email, name: c.name, sourceType: 'AGENT_CONTACT', sourceId: c.id })
+      if (c.email && !excluded.has(c.id) && !byEmail.has(c.email.toLowerCase())) {
+        byEmail.set(c.email.toLowerCase(), { email: c.email, name: c.name, sourceType: 'AGENT_LEAD_CONTACT', sourceId: c.id })
       }
     }
   }

@@ -13,10 +13,23 @@ interface InquiryPayload {
   guestCount: number | null
   tripType: string | null
   message: string | null
+  website: string | null
+  url: string | null
   utmSource: string | null
   utmMedium: string | null
   utmCampaign: string | null
   utmTerm: string | null
+  gclid: string | null
+  leadSource: string | null
+  refererField: string | null
+  mobileNumberBackup: string | null
+  reference: string | null
+  lastSource: string | null
+  lastMedium: string | null
+  lastCampaign: string | null
+  latestSource: string | null
+  latestMedium: string | null
+  latestCampaign: string | null
   rawPayload: Record<string, unknown>
   createdAt: string | null
 }
@@ -32,6 +45,7 @@ interface Decision {
   existingId?: string
   data: RowData
   inquiry?: InquiryPayload | null
+  createdAt?: string | null
 }
 
 // Lead has no `address` column — see leadProfileData in the batch import
@@ -42,19 +56,14 @@ function leadProfileData(data: RowData) {
 }
 
 function toInquiryCreateData(inquiry: InquiryPayload) {
+  const { checkInDate, checkOutDate, rawPayload, createdAt, ...rest } = inquiry
   return {
     source: 'freshsales',
-    checkInDate: inquiry.checkInDate ? new Date(inquiry.checkInDate) : null,
-    checkOutDate: inquiry.checkOutDate ? new Date(inquiry.checkOutDate) : null,
-    guestCount: inquiry.guestCount,
-    tripType: inquiry.tripType,
-    message: inquiry.message,
-    utmSource: inquiry.utmSource,
-    utmMedium: inquiry.utmMedium,
-    utmCampaign: inquiry.utmCampaign,
-    utmTerm: inquiry.utmTerm,
-    rawPayload: inquiry.rawPayload as Prisma.InputJsonValue,
-    ...(inquiry.createdAt ? { createdAt: new Date(inquiry.createdAt) } : {}),
+    ...rest,
+    checkInDate: checkInDate ? new Date(checkInDate) : null,
+    checkOutDate: checkOutDate ? new Date(checkOutDate) : null,
+    rawPayload: rawPayload as Prisma.InputJsonValue,
+    ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
   }
 }
 
@@ -83,15 +92,16 @@ export async function POST(req: NextRequest) {
   if (target === 'lead') {
     for (const d of decisions) {
       const profile = leadProfileData(d.data)
+      const createdAt = d.createdAt ? new Date(d.createdAt) : null
       if (d.action === 'merge' && d.existingId) {
-        await db.lead.update({ where: { id: d.existingId }, data: { ...profile, freshsalesContactId: d.freshsalesContactId } })
+        await db.lead.update({ where: { id: d.existingId }, data: { ...profile, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) } })
         if (d.inquiry) await db.inquiry.create({ data: { leadId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
         merged++
       } else {
         const lead = await db.lead.upsert({
           where: { freshsalesContactId: d.freshsalesContactId },
-          create: { ...profile, freshsalesContactId: d.freshsalesContactId },
-          update: profile,
+          create: { ...profile, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) },
+          update: { ...profile, ...(createdAt ? { createdAt } : {}) },
         })
         if (d.inquiry) await db.inquiry.create({ data: { leadId: lead.id, ...toInquiryCreateData(d.inquiry) } })
         createdNew++
@@ -99,15 +109,16 @@ export async function POST(req: NextRequest) {
     }
   } else {
     for (const d of decisions) {
+      const createdAt = d.createdAt ? new Date(d.createdAt) : null
       if (d.action === 'merge' && d.existingId) {
-        await db.customer.update({ where: { id: d.existingId }, data: { ...d.data, freshsalesContactId: d.freshsalesContactId } })
+        await db.customer.update({ where: { id: d.existingId }, data: { ...d.data, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) } })
         if (d.inquiry) await db.inquiry.create({ data: { customerId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
         merged++
       } else {
         const customer = await db.customer.upsert({
           where: { freshsalesContactId: d.freshsalesContactId },
-          create: { ...d.data, freshsalesContactId: d.freshsalesContactId },
-          update: d.data,
+          create: { ...d.data, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) },
+          update: { ...d.data, ...(createdAt ? { createdAt } : {}) },
         })
         if (d.inquiry) await db.inquiry.create({ data: { customerId: customer.id, ...toInquiryCreateData(d.inquiry) } })
         createdNew++

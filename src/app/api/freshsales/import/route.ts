@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { withRetry } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 
 export const maxDuration = 60
@@ -13,10 +14,13 @@ const PAGE_SIZE = 100
 // Each request only walks a bounded slice of pages so it stays well inside
 // Vercel's function timeout even for 30k+ record views. The client (see
 // FreshsalesImportModal) calls this repeatedly with an advancing startPage
-// until `done` comes back true.
-const DEFAULT_PAGES_PER_BATCH = 10
+// until `done` comes back true. Kept small because a re-import batch is
+// mostly individual UPDATEs (one per already-linked contact, see
+// UPDATE_CONCURRENCY below) — a serverless Postgres connection (Neon) can
+// drop mid-batch (P1017) if too many of these pile up in one request.
+const DEFAULT_PAGES_PER_BATCH = 4
 const MAX_RETRIES = 3
-const UPDATE_CONCURRENCY = 10
+const UPDATE_CONCURRENCY = 5
 
 interface FreshsalesContact {
   id: number; display_name?: string; first_name?: string; last_name?: string
@@ -25,6 +29,13 @@ interface FreshsalesContact {
   created_at?: string
   custom_field?: Record<string, unknown> | null
   first_source?: string | null; first_medium?: string | null; first_campaign?: string | null
+  last_source?: string | null; last_medium?: string | null; last_campaign?: string | null
+  latest_source?: string | null; latest_medium?: string | null; latest_campaign?: string | null
+  keyword?: string | null; medium?: string | null
+  // Free-text note dump from the WPCF7 plugin sync — sometimes contains
+  // "vx_url=<the actual page the form was submitted from>" buried in it.
+  // Best-effort only: format isn't guaranteed, see extractFormUrl().
+  recent_note?: string | null
 }
 
 interface RowData {
@@ -44,19 +55,33 @@ interface InquiryPayload {
   guestCount: number | null
   tripType: string | null
   message: string | null
+  website: string | null
+  url: string | null
   utmSource: string | null
   utmMedium: string | null
   utmCampaign: string | null
   utmTerm: string | null
+  gclid: string | null
+  leadSource: string | null
+  refererField: string | null
+  mobileNumberBackup: string | null
+  reference: string | null
+  lastSource: string | null
+  lastMedium: string | null
+  lastCampaign: string | null
+  latestSource: string | null
+  latestMedium: string | null
+  latestCampaign: string | null
   rawPayload: Prisma.InputJsonValue
   createdAt: Date | null
 }
-interface Row { freshsalesContactId: string; data: RowData; inquiry: InquiryPayload | null }
+interface Row { freshsalesContactId: string; data: RowData; inquiry: InquiryPayload | null; createdAt: Date | null }
 interface ExistingRecord { id: string; name: string; email: string | null; phone: string | null }
 interface PossibleMatch {
   freshsalesContactId: string
   freshsalesData: RowData
   inquiry: InquiryPayload | null
+  createdAt: Date | null
   existingId: string
   existingName: string
   existingEmail: string | null
@@ -100,6 +125,21 @@ function parseFreshsalesDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+// The WPCF7-to-Freshsales sync dumps the raw form submission as a big
+// PHP-array-style note ("{key=value, key2=value2, ...}"), not JSON. When a
+// "vx_url=" entry is present it's the actual page the form was submitted
+// from — best-effort extraction only, since nothing guarantees this format.
+function extractFormUrl(recentNote: string | null | undefined): string | null {
+  if (!recentNote) return null
+  const match = recentNote.match(/vx_url=(https?:\/\/[^,]+)/)
+  return match ? match[1].trim() : null
+}
+
+function hostnameOf(url: string | null): string | null {
+  if (!url) return null
+  try { return new URL(url).hostname } catch { return null }
+}
+
 // Trip/request details live in Freshsales' free-form custom_field bag, not a
 // fixed shape — most of it is null for any given contact (see the review
 // conversation that led here: some contacts have structured trip_date/
@@ -117,17 +157,49 @@ function buildInquiryPayload(c: FreshsalesContact): InquiryPayload | null {
   const guestCount = Number.isFinite(guestCountNum) && guestCountNum > 0 && guestCountNum <= 999 ? guestCountNum : null
   const tripType = (typeof cf.cf_trip_type === 'string' && cf.cf_trip_type) || null
   const message = (typeof cf.cf_details_and_special_requests === 'string' && cf.cf_details_and_special_requests) || null
+  // "Original" touch (first_*), "Created from" touch (last_*), "Most recent"
+  // touch (latest_*) — Freshsales' three-tier attribution fields, matching
+  // the labels shown in its contact detail UI.
   const utmSource = c.first_source || null
   const utmMedium = c.first_medium || null
   const utmCampaign = c.first_campaign || null
   const utmTerm = (typeof cf.cf_utm_term === 'string' && cf.cf_utm_term) || null
+  const gclid = (typeof cf.cf_gclid === 'string' && cf.cf_gclid) || null
+  const leadSource = (typeof cf.cf_lead_source === 'string' && cf.cf_lead_source) || null
+  const refererField = (typeof cf.cf_referer_field === 'string' && cf.cf_referer_field) || null
+  const mobileNumberBackup = (typeof cf.cf_mobile_number_backup === 'string' && cf.cf_mobile_number_backup) || null
+  const reference = (typeof cf.cf_reference === 'string' && cf.cf_reference) || null
+  const lastSource = c.last_source || null
+  const lastMedium = c.last_medium || null
+  const lastCampaign = c.last_campaign || null
+  const latestSource = c.latest_source || null
+  const latestMedium = c.latest_medium || null
+  const latestCampaign = c.latest_campaign || null
+  const url = extractFormUrl(c.recent_note)
+  const website = hostnameOf(url)
 
-  const hasSignal = checkInDate || checkOutDate || guestCount != null || tripType || message || utmSource || utmMedium || utmCampaign || utmTerm
+  const hasSignal = checkInDate || checkOutDate || guestCount != null || tripType || message
+    || utmSource || utmMedium || utmCampaign || utmTerm || gclid || leadSource || refererField
+    || mobileNumberBackup || reference || lastSource || lastMedium || lastCampaign
+    || latestSource || latestMedium || latestCampaign || url
   if (!hasSignal) return null
 
   return {
-    checkInDate, checkOutDate, guestCount, tripType, message, utmSource, utmMedium, utmCampaign, utmTerm,
-    rawPayload: cf as Prisma.InputJsonValue,
+    checkInDate, checkOutDate, guestCount, tripType, message, website, url,
+    utmSource, utmMedium, utmCampaign, utmTerm, gclid, leadSource, refererField, mobileNumberBackup, reference,
+    lastSource, lastMedium, lastCampaign, latestSource, latestMedium, latestCampaign,
+    // Keep the raw custom_field bag plus the top-level attribution fields
+    // together, so anything not promoted to a named column above is still
+    // recoverable later.
+    rawPayload: {
+      ...cf,
+      _topLevel: {
+        first_source: c.first_source, first_medium: c.first_medium, first_campaign: c.first_campaign,
+        last_source: c.last_source, last_medium: c.last_medium, last_campaign: c.last_campaign,
+        latest_source: c.latest_source, latest_medium: c.latest_medium, latest_campaign: c.latest_campaign,
+        keyword: c.keyword, medium: c.medium,
+      },
+    } as Prisma.InputJsonValue,
     // Each Freshsales contact's inquiry is dated to when they actually
     // submitted it there, not when this import ran — future inquiries (e.g.
     // a new CF7 submission) get their own createdAt as usual.
@@ -160,6 +232,7 @@ function findPossibleMatches(candidates: Row[], existing: ExistingRecord[]): { m
         freshsalesContactId: c.freshsalesContactId,
         freshsalesData: c.data,
         inquiry: c.inquiry,
+        createdAt: c.createdAt,
         existingId: match.id,
         existingName: match.name,
         existingEmail: match.email,
@@ -229,6 +302,10 @@ export async function POST(req: NextRequest) {
         address: [c.city, c.state, c.zipcode].filter(Boolean).join(', ') || null,
       },
       inquiry: buildInquiryPayload(c),
+      // Dated to when the contact actually first appeared in Freshsales, not
+      // when this import ran, so the Leads/Guests list sorts by real history
+      // instead of bunching everything at "just now".
+      createdAt: parseFreshsalesDate(c.created_at),
     }
   })
 
@@ -245,7 +322,7 @@ export async function POST(req: NextRequest) {
   // every re-run would duplicate the same trip/message.
   if (target === 'lead') {
     const existingById = ids.length
-      ? await db.lead.findMany({ where: { freshsalesContactId: { in: ids } }, select: { freshsalesContactId: true } })
+      ? await withRetry(db, () => db.lead.findMany({ where: { freshsalesContactId: { in: ids } }, select: { freshsalesContactId: true } }))
       : []
     const existingIdSet = new Set(existingById.map(e => e.freshsalesContactId))
     const createCandidates = rows.filter(r => !existingIdSet.has(r.freshsalesContactId))
@@ -254,25 +331,28 @@ export async function POST(req: NextRequest) {
     const emails = createCandidates.map(r => r.data.email).filter((e): e is string => !!e)
     const phones = createCandidates.map(r => r.data.phone).filter((p): p is string => !!p)
     const existingForMatch: ExistingRecord[] = (emails.length || phones.length)
-      ? await db.lead.findMany({
+      ? await withRetry(db, () => db.lead.findMany({
           where: {
             freshsalesContactId: null,
             OR: [...(emails.length ? [{ email: { in: emails } }] : []), ...(phones.length ? [{ phone: { in: phones } }] : [])],
           },
           select: { id: true, name: true, email: true, phone: true },
-        })
+        }))
       : []
     const { matches, unmatched: toCreate } = findPossibleMatches(createCandidates, existingForMatch)
     possibleMatches = matches
 
     if (toCreate.length) {
-      await db.lead.createMany({ data: toCreate.map(r => ({ ...leadProfileData(r.data), freshsalesContactId: r.freshsalesContactId })), skipDuplicates: true })
+      await withRetry(db, () => db.lead.createMany({
+        data: toCreate.map(r => ({ ...leadProfileData(r.data), freshsalesContactId: r.freshsalesContactId, ...(r.createdAt ? { createdAt: r.createdAt } : {}) })),
+        skipDuplicates: true,
+      }))
       const withInquiry = toCreate.filter(r => r.inquiry)
       if (withInquiry.length) {
-        const createdLeads = await db.lead.findMany({
+        const createdLeads = await withRetry(db, () => db.lead.findMany({
           where: { freshsalesContactId: { in: withInquiry.map(r => r.freshsalesContactId) } },
           select: { id: true, freshsalesContactId: true },
-        })
+        }))
         const idByFsId = new Map(createdLeads.map(l => [l.freshsalesContactId, l.id]))
         const inquiryRows = withInquiry
           .map(r => {
@@ -282,21 +362,28 @@ export async function POST(req: NextRequest) {
             return { leadId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
           })
           .filter((x): x is NonNullable<typeof x> => !!x)
-        if (inquiryRows.length) await db.inquiry.createMany({ data: inquiryRows })
+        if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
       }
     }
     const updatedLeads: { id: string; freshsalesContactId: string | null }[] = []
     for (let i = 0; i < toUpdate.length; i += UPDATE_CONCURRENCY) {
-      const batch = await Promise.all(toUpdate.slice(i, i + UPDATE_CONCURRENCY).map(r =>
-        db.lead.update({ where: { freshsalesContactId: r.freshsalesContactId }, data: leadProfileData(r.data) })))
+      // One retry decision for the whole concurrent slice, not one per item —
+      // $disconnect()/$connect() act on the shared client, so racing several
+      // independent reconnects here would abort each other's in-flight queries.
+      const chunk = toUpdate.slice(i, i + UPDATE_CONCURRENCY)
+      const batch = await withRetry(db, () => Promise.all(chunk.map(r =>
+        db.lead.update({
+          where: { freshsalesContactId: r.freshsalesContactId },
+          data: { ...leadProfileData(r.data), ...(r.createdAt ? { createdAt: r.createdAt } : {}) },
+        }))))
       updatedLeads.push(...batch)
     }
     const updateRowsWithInquiry = toUpdate.filter(r => r.inquiry)
     if (updateRowsWithInquiry.length) {
-      const existingInquiries = await db.inquiry.findMany({
+      const existingInquiries = await withRetry(db, () => db.inquiry.findMany({
         where: { leadId: { in: updatedLeads.map(l => l.id) }, source: 'freshsales' },
         select: { leadId: true },
-      })
+      }))
       const hasInquirySet = new Set(existingInquiries.map(i => i.leadId))
       const idByFsId = new Map(updatedLeads.map(l => [l.freshsalesContactId, l.id]))
       const inquiryRows = updateRowsWithInquiry
@@ -307,13 +394,13 @@ export async function POST(req: NextRequest) {
           return { leadId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
         })
         .filter((x): x is NonNullable<typeof x> => !!x)
-      if (inquiryRows.length) await db.inquiry.createMany({ data: inquiryRows })
+      if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
     }
     created = toCreate.length
     updated = toUpdate.length
   } else {
     const existingById = ids.length
-      ? await db.customer.findMany({ where: { freshsalesContactId: { in: ids } }, select: { freshsalesContactId: true } })
+      ? await withRetry(db, () => db.customer.findMany({ where: { freshsalesContactId: { in: ids } }, select: { freshsalesContactId: true } }))
       : []
     const existingIdSet = new Set(existingById.map(e => e.freshsalesContactId))
     const createCandidates = rows.filter(r => !existingIdSet.has(r.freshsalesContactId))
@@ -322,25 +409,28 @@ export async function POST(req: NextRequest) {
     const emails = createCandidates.map(r => r.data.email).filter((e): e is string => !!e)
     const phones = createCandidates.map(r => r.data.phone).filter((p): p is string => !!p)
     const existingForMatch: ExistingRecord[] = (emails.length || phones.length)
-      ? await db.customer.findMany({
+      ? await withRetry(db, () => db.customer.findMany({
           where: {
             freshsalesContactId: null,
             OR: [...(emails.length ? [{ email: { in: emails } }] : []), ...(phones.length ? [{ phone: { in: phones } }] : [])],
           },
           select: { id: true, name: true, email: true, phone: true },
-        })
+        }))
       : []
     const { matches, unmatched: toCreate } = findPossibleMatches(createCandidates, existingForMatch)
     possibleMatches = matches
 
     if (toCreate.length) {
-      await db.customer.createMany({ data: toCreate.map(r => ({ ...r.data, freshsalesContactId: r.freshsalesContactId })), skipDuplicates: true })
+      await withRetry(db, () => db.customer.createMany({
+        data: toCreate.map(r => ({ ...r.data, freshsalesContactId: r.freshsalesContactId, ...(r.createdAt ? { createdAt: r.createdAt } : {}) })),
+        skipDuplicates: true,
+      }))
       const withInquiry = toCreate.filter(r => r.inquiry)
       if (withInquiry.length) {
-        const createdCustomers = await db.customer.findMany({
+        const createdCustomers = await withRetry(db, () => db.customer.findMany({
           where: { freshsalesContactId: { in: withInquiry.map(r => r.freshsalesContactId) } },
           select: { id: true, freshsalesContactId: true },
-        })
+        }))
         const idByFsId = new Map(createdCustomers.map(c => [c.freshsalesContactId, c.id]))
         const inquiryRows = withInquiry
           .map(r => {
@@ -350,21 +440,27 @@ export async function POST(req: NextRequest) {
             return { customerId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
           })
           .filter((x): x is NonNullable<typeof x> => !!x)
-        if (inquiryRows.length) await db.inquiry.createMany({ data: inquiryRows })
+        if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
       }
     }
     const updatedCustomers: { id: string; freshsalesContactId: string | null }[] = []
     for (let i = 0; i < toUpdate.length; i += UPDATE_CONCURRENCY) {
-      const batch = await Promise.all(toUpdate.slice(i, i + UPDATE_CONCURRENCY).map(r =>
-        db.customer.update({ where: { freshsalesContactId: r.freshsalesContactId }, data: r.data })))
+      // One retry decision for the whole concurrent slice — see the Lead
+      // update loop above for why per-item withRetry here would be unsafe.
+      const chunk = toUpdate.slice(i, i + UPDATE_CONCURRENCY)
+      const batch = await withRetry(db, () => Promise.all(chunk.map(r =>
+        db.customer.update({
+          where: { freshsalesContactId: r.freshsalesContactId },
+          data: { ...r.data, ...(r.createdAt ? { createdAt: r.createdAt } : {}) },
+        }))))
       updatedCustomers.push(...batch)
     }
     const updateRowsWithInquiry = toUpdate.filter(r => r.inquiry)
     if (updateRowsWithInquiry.length) {
-      const existingInquiries = await db.inquiry.findMany({
+      const existingInquiries = await withRetry(db, () => db.inquiry.findMany({
         where: { customerId: { in: updatedCustomers.map(c => c.id) }, source: 'freshsales' },
         select: { customerId: true },
-      })
+      }))
       const hasInquirySet = new Set(existingInquiries.map(i => i.customerId))
       const idByFsId = new Map(updatedCustomers.map(c => [c.freshsalesContactId, c.id]))
       const inquiryRows = updateRowsWithInquiry
@@ -375,7 +471,7 @@ export async function POST(req: NextRequest) {
           return { customerId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
         })
         .filter((x): x is NonNullable<typeof x> => !!x)
-      if (inquiryRows.length) await db.inquiry.createMany({ data: inquiryRows })
+      if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
     }
     created = toCreate.length
     updated = toUpdate.length

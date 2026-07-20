@@ -20,7 +20,12 @@ interface RowData {
 interface InquiryPayload {
   checkInDate: string | null; checkOutDate: string | null; guestCount: number | null
   tripType: string | null; message: string | null
+  website: string | null; url: string | null
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; utmTerm: string | null
+  gclid: string | null; leadSource: string | null; refererField: string | null
+  mobileNumberBackup: string | null; reference: string | null
+  lastSource: string | null; lastMedium: string | null; lastCampaign: string | null
+  latestSource: string | null; latestMedium: string | null; latestCampaign: string | null
   rawPayload: Record<string, unknown>
   createdAt: string | null
 }
@@ -28,6 +33,7 @@ interface PossibleMatch {
   freshsalesContactId: string
   freshsalesData: RowData
   inquiry: InquiryPayload | null
+  createdAt: string | null
   existingId: string
   existingName: string
   existingEmail: string | null
@@ -134,6 +140,7 @@ export default function FreshsalesImportModal({
               existingId: m.existingId,
               data: m.freshsalesData,
               inquiry: m.inquiry,
+              createdAt: m.createdAt,
             })),
           }),
         })

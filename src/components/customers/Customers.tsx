@@ -68,6 +68,8 @@ interface Inquiry {
   guestCount?: number | null
   tripType?: string | null
   message?: string | null
+  website?: string | null
+  url?: string | null
   utmSource?: string | null
   utmMedium?: string | null
   utmCampaign?: string | null
@@ -607,6 +609,11 @@ export default function Guests() {
                               </p>
                             )}
                             {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                            {inq.website && (
+                              <p className="text-xs text-muted-foreground">
+                                {inq.url ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
+                              </p>
+                            )}
                             {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
                               <div className="flex flex-wrap gap-1 pt-0.5">
                                 {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}

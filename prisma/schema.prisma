@@ -202,11 +202,27 @@ model Inquiry {
   guestCount   Int?
   tripType     String?
   message      String?
+  website      String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
+  url          String? // full URL of the page the form was submitted from
+  // "Original" touch — first_source/first_medium/first_campaign in Freshsales
   utmSource    String?
   utmMedium    String?
   utmCampaign  String?
   utmTerm      String?
   utmContent   String?
+  gclid        String?
+  leadSource   String? // Freshsales "Lead Source" (cf_lead_source)
+  refererField String? // Freshsales "Referer Field" (cf_referer_field)
+  mobileNumberBackup String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
+  reference    String? // Freshsales "Reference" (cf_reference)
+  // "Created from" touch — last_source/last_medium/last_campaign in Freshsales
+  lastSource   String?
+  lastMedium   String?
+  lastCampaign String?
+  // "Most recent" touch — latest_source/latest_medium/latest_campaign in Freshsales
+  latestSource   String?
+  latestMedium   String?
+  latestCampaign String?
   rawPayload   Json?
   createdAt    DateTime  @default(now())
 
@@ -742,8 +758,9 @@ enum CampaignStatus {
 
 enum RecipientSourceType {
   CUSTOMER
+  LEAD
   AGENT
-  AGENT_CONTACT
+  AGENT_LEAD_CONTACT
   MANUAL
 }
 

@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
     const utmCampaign = pick(data, 'utm_campaign', 'utm-campaign')
     const utmTerm     = pick(data, 'utm_term',     'utm-term')
     const utmContent  = pick(data, 'utm_content',  'utm-content')
+    const url = pick(data, 'page-url', 'page_url', 'url', 'form-url')
+    const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
 
     if (!firstName && !email && !phone) {
       return NextResponse.json({ error: 'Insufficient contact data' }, { status: 400 })
@@ -166,6 +168,8 @@ export async function POST(request: NextRequest) {
         guestCount:   numGuests ? parseInt10(numGuests) : null,
         tripType:     tripType || null,
         message:      message  || null,
+        website:      website || null,
+        url:          url     || null,
         utmSource:    utmSource   || null,
         utmMedium:    utmMedium   || null,
         utmCampaign:  utmCampaign || null,
