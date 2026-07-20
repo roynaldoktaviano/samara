@@ -57,6 +57,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     orderBy: { receivedAt: 'asc' },
     include: { items: true },
   })
+
+  // Same rule as the list endpoint (src/app/api/purchasing/orders/route.ts)
+  // — paid via either Request Payment/Debit Paid or Reimburse counts the same.
+  const paymentRecords = [...order.paymentRequests, ...order.reimbursements]
+  const paymentStatus = paymentRecords.length === 0
+    ? 'UNPAID'
+    : paymentRecords.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
+
   return NextResponse.json({
     ...order,
     receipts,
@@ -65,6 +73,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     requestedByOffice,
     requestedByDepartment,
     requestedByRole,
+    paymentStatus,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
   })

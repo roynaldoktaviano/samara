@@ -80,10 +80,16 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
         ? [detail.supplierName, detail.confirmedByName ? `by ${detail.confirmedByName}` : null]
         : [],
     },
-    ...(detail.paymentRequests.length > 0 ? (() => {
-      const latest = detail.paymentRequests[0]
+    // Payment step(s) — a PO is paid either via Request Payment/Debit Paid
+    // (POPaymentRequest) or via Reimburse (POReimbursement), never tracked
+    // as the same model. Both need to show up here identically, or a
+    // reimbursement-only PO would show no payment progress at all and could
+    // never advance past "PO Confirmed" (see the "Mark In Transit" gate below).
+    ...((detail.paymentRequests.length > 0 || detail.reimbursements.length > 0) ? (() => {
+      const isReimbursement = detail.paymentRequests.length === 0
+      const latest: PaymentRequest | Reimbursement = isReimbursement ? detail.reimbursements[0] : detail.paymentRequests[0]
       const paid = latest.status === 'PAID'
-      const isCard = latest.paymentMethod === 'CARD'
+      const isCard = !isReimbursement && (latest as PaymentRequest).paymentMethod === 'CARD'
       if (isCard) {
         return [{
           key: 'payment-card',
@@ -99,7 +105,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
         {
           key: 'payment-requested',
           done: true,
-          label: 'Payment Requested',
+          label: isReimbursement ? 'Reimbursement Requested' : 'Payment Requested',
           date: fmt(latest.createdAt),
           sub: [fmtMoney(latest.amount), latest.requestedBy?.name ? `by ${latest.requestedBy.name}` : null],
           photos: latest.notePhotoKeys,
@@ -108,7 +114,7 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
         {
           key: 'payment-paid',
           done: paid,
-          label: 'Payment Confirmed',
+          label: isReimbursement ? 'Reimbursement Paid' : 'Payment Confirmed',
           date: paid && latest.paidAt ? fmt(latest.paidAt) : null,
           sub: paid ? [latest.paidBy?.name ? `by ${latest.paidBy.name}` : null] : [],
           photos: paid ? latest.transferProofKeys : [],
@@ -1190,7 +1196,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
                 <button onClick={() => {
-                  setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
+                  setReimburseAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setReimbursePhotos([]); setReimburseNotes('')
                   setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
                   setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
                   setReimburseError(''); setReimburseEditId(null); setReimburseModal(true)
@@ -1213,7 +1219,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             })() && (
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
-            {detail.status === 'ORDERED' && canTransit && detail.paymentRequests.some(p => p.status === 'PAID') && (
+            {detail.status === 'ORDERED' && canTransit && (detail.paymentRequests.some(p => p.status === 'PAID') || detail.reimbursements.some(r => r.status === 'PAID')) && (
               <button onClick={() => { setTransitPhoto(null); setTransitError(''); setTransitModal(true) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 <Camera className="h-3.5 w-3.5" /> Mark In Transit

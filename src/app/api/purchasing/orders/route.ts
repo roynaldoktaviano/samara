@@ -35,15 +35,19 @@ export async function GET() {
         select: { receivedAt: true, receivedBy: { select: { name: true } } },
       },
       paymentRequests: { select: { status: true } },
+      reimbursements: { select: { status: true } },
     },
   })
   return NextResponse.json(orders.map(o => {
     const totalOrdered = o.items.reduce((s, i) => s + i.orderedQty, 0)
     const totalReceived = o.items.reduce((s, i) => s + i.receivedQty, 0)
     const fullyReceivedCount = o.items.filter(i => i.receivedQty >= i.orderedQty).length
-    const paymentStatus = o.paymentRequests.length === 0
+    // Paid via either Request Payment/Debit Paid (paymentRequests) or
+    // Reimburse (reimbursements) — both count the same toward payment status.
+    const paymentRecords = [...o.paymentRequests, ...o.reimbursements]
+    const paymentStatus = paymentRecords.length === 0
       ? 'UNPAID'
-      : o.paymentRequests.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
+      : paymentRecords.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
     return {
       ...o,
       itemCount: o.items.length,
@@ -56,6 +60,7 @@ export async function GET() {
       receipts: undefined,
       paymentStatus,
       paymentRequests: undefined,
+      reimbursements: undefined,
       createdByName: o.createdBy?.name ?? null,
       requestedByName: o.requestedByName ?? o.request?.requestedByEmployee?.fullName ?? null,
       requestedByOffice: o.requestedByOffice ?? o.request?.requestedByEmployee?.location?.name ?? null,

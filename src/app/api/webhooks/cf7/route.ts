@@ -3,6 +3,25 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 
+// This endpoint is meant to be called directly from the browser (client-side
+// JS on the WordPress site listening for the wpcf7mailsent event), not just
+// server-to-server — so it needs CORS. Auth is the ?secret= query param, not
+// cookies, so a wide-open origin doesn't expose anything beyond the secret
+// itself (which the client-side caller already has in plain view anyway).
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: CORS_HEADERS })
+}
+
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const val = data[key]
@@ -40,14 +59,14 @@ export async function POST(request: NextRequest) {
     // Resolved before the secret check below, since the secret itself is per-tenant.
     const tenantSlug = request.nextUrl.searchParams.get('tenant')
     const resolved = await resolveTenantBySlugFull(tenantSlug)
-    if (!resolved) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+    if (!resolved) return json({ error: 'Unknown or inactive tenant' }, 400)
     const { db, tenant } = resolved
 
     // ── Verify secret token ──────────────────────────────────────────────────
     const secret   = request.nextUrl.searchParams.get('secret')
     const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
     if (!expected || secret !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return json({ error: 'Unauthorized' }, 401)
     }
 
     // ── Parse body (JSON or form-encoded) ────────────────────────────────────
@@ -93,7 +112,7 @@ export async function POST(request: NextRequest) {
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
 
     if (!firstName && !email && !phone) {
-      return NextResponse.json({ error: 'Insufficient contact data' }, { status: 400 })
+      return json({ error: 'Insufficient contact data' }, 400)
     }
 
     const fullName = [firstName, lastName].filter(Boolean).join(' ') || email || phone
@@ -185,9 +204,9 @@ export async function POST(request: NextRequest) {
       detail: `Website inquiry: ${fullName}${message ? ` · ${message}` : ''}`,
     }, db).catch(() => {})
 
-    return NextResponse.json({ ok: true, ownerType, ownerId })
+    return json({ ok: true, ownerType, ownerId })
   } catch (error) {
     console.error('[CF7 webhook]', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return json({ error: 'Internal server error' }, 500)
   }
 }
