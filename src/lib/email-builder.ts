@@ -123,6 +123,7 @@ export interface ButtonBlock {
   bgColor: string
   textColor: string
   fontFamily: string
+  lineHeight: number
   align: BlockAlign
   borderRadius: number
   padding: Padding
@@ -197,6 +198,7 @@ export interface FooterBlock {
   websiteUrl: string
   align: BlockAlign
   showUnsubscribe: boolean
+  lineHeight: number
   padding: number // position/behavior is fixed (can't move/delete/duplicate — see EmailBuilder.tsx), but its content fields above are editable per template/campaign via BlockInspector
   backgroundColor: string // fixed to black by default — not exposed as an editable field, so every footer stays visually consistent
 }
@@ -247,7 +249,7 @@ export const FIXED_FOOTER_ADDRESS = 'Jalan Tukad Badung IXB No.9, Renon, Denpasa
 
 function fixedFooterBlock(): FooterBlock {
   return {
-    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000',
+    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', lineHeight: 1.6,
     companyName: 'PT Samara Wisata Bahari',
     address: FIXED_FOOTER_ADDRESS,
     instagramUrl: '',
@@ -321,7 +323,13 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         align: raw.align === 'left' || raw.align === 'right' ? raw.align : 'center',
       }
     case 'button':
-      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily }
+      return {
+        ...raw,
+        padding: migratePadding(raw.padding, 16),
+        hideOn,
+        fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily,
+        lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.3,
+      }
     case 'video':
     case 'html':
     case 'social':
@@ -337,6 +345,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         ...raw,
         padding: typeof raw.padding === 'number' ? raw.padding : 20,
         backgroundColor: raw.backgroundColor || '#000000',
+        lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.6,
         companyName: raw.companyName || 'PT Samara Wisata Bahari',
         address: raw.address || FIXED_FOOTER_ADDRESS,
         instagramUrl: raw.instagramUrl || '',
@@ -379,7 +388,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'html':
       return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: uniformPadding(16), hideOn: 'none' }
     case 'button':
-      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, lineHeight: 1.3, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
       return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':
@@ -446,12 +455,12 @@ function paddingCss(p: Padding): string {
   return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
 }
 
-// A newline the user types in the button label becomes a mobile-only break point:
-// on desktop it collapses to a plain space (the .hide-mobile span shows, the
-// .hide-desktop <br> is hidden), on mobile it's a real line break (the reverse) —
-// reusing the existing hide-mobile/hide-desktop media-query classes.
-function renderLabelWithMobileBreaks(label: string): string {
-  return esc(label).split('\n').join('<span class="hide-mobile"> </span><br class="hide-desktop">')
+// A newline the user types in the button label becomes a real <br> on every
+// device — not a mobile-only break. Whether a break should differ by device is
+// a separate, explicit choice (the block's own hideOn), not something implied
+// by pressing Enter.
+function renderMultilineLabel(label: string): string {
+  return esc(label).split('\n').join('<br>')
 }
 
 function hideOnClass(hideOn: HideOn): string {
@@ -530,10 +539,16 @@ function renderFooterSocialRow(block: FooterBlock): string {
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
     case 'text':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${darkModeSafe(block.color)};font-family:${block.fontFamily};">${block.html}</td></tr>`
+      // Color lives on an inner <span>, not the <td> — Gmail's dark mode lightens
+      // any sufficiently dark text color it finds on a <td>/<body>-level element,
+      // regardless of exact value (unlike its background pass, which only targets
+      // literal pure black/white and is already handled by darkModeSafe). Moving
+      // the color one level down onto a plain <span> dodges that targeted pass,
+      // the same trick that fixed the button's forced link-color override.
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
 
     case 'heading':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${darkModeSafe(block.color)};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
 
     case 'image':
     case 'logo': {
@@ -560,8 +575,11 @@ function renderBlock(block: EmailBlock): string {
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${block.code}</td></tr>`
 
     case 'button':
+      // The text color lives on an inner <span>, not the <a> itself — Gmail's dark
+      // mode runs a separate forced-recolor pass specifically for <a> link color
+      // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};color:${darkModeSafe(block.textColor)};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${renderLabelWithMobileBreaks(block.label)}</a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
       </td></tr>`
 
     case 'divider': {
@@ -604,14 +622,15 @@ function renderBlock(block: EmailBlock): string {
       </td></tr>`
 
     case 'footer': {
+      // Color lives on inner <span>s, not the <td> — same reason as text/heading/button above.
       const footerBg = darkModeSafe(block.backgroundColor || '#000000')
       const sent = block.companyName && block.address
-        ? `<div style="margin-bottom:12px;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</div>`
+        ? `<div style="margin-bottom:12px;"><span style="color:#9ca3af;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</span></div>`
         : ''
       const unsubscribe = block.showUnsubscribe
-        ? `<div>Don't want to receive emails from us? Manage your email preferences <a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">here</a>.</div>`
+        ? `<div><span style="color:#9ca3af;">Don't want to receive emails from us? Manage your email preferences </span><a href="${UNSUBSCRIBE_TOKEN}" style="text-decoration:underline;"><span style="color:#9ca3af;">here</span></a><span style="color:#9ca3af;">.</span></div>`
         : ''
-      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${footerBg};">
+      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};">
         ${renderFooterSocialRow(block)}
         ${sent}
         ${unsubscribe}
@@ -641,13 +660,15 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     if (b.type === 'button') {
       const bg = darkModeSafe(b.bgColor)
       const fg = darkModeSafe(b.textColor)
-      rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${bg} !important;color:${fg} !important;}}`)
-      rules.push(darkOverride(`.btn-${b.id}`, `background:${bg} !important;color:${fg} !important;`))
+      rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${bg} !important;}.btn-${b.id} span{color:${fg} !important;}}`)
+      rules.push(darkOverride(`.btn-${b.id}`, `background:${bg} !important;`))
+      rules.push(darkOverride(`.btn-${b.id} span`, `color:${fg} !important;`))
     }
     if (b.type === 'text' || b.type === 'heading') {
       const fg = darkModeSafe(b.color)
-      rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${fg} !important;background-color:transparent !important;}}`)
-      rules.push(darkOverride(`.lc-${b.id}`, `color:${fg} !important;background-color:transparent !important;`))
+      rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{background-color:transparent !important;}.lc-${b.id} span{color:${fg} !important;}}`)
+      rules.push(darkOverride(`.lc-${b.id}`, `background-color:transparent !important;`))
+      rules.push(darkOverride(`.lc-${b.id} span`, `color:${fg} !important;`))
     }
     if (b.type === 'divider') {
       const c = darkModeSafe(b.color)
@@ -656,8 +677,9 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if (b.type === 'footer') {
       const bg = darkModeSafe(b.backgroundColor || '#000000')
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;color:#9ca3af !important;}}`)
-      rules.push(darkOverride('.footer-block', `background-color:${bg} !important;color:#9ca3af !important;`))
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:#9ca3af !important;}}`)
+      rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
+      rules.push(darkOverride('.footer-block span', 'color:#9ca3af !important;'))
     }
     if (b.type === 'section') {
       const bg = darkModeSafe(b.backgroundColor)

@@ -12,11 +12,11 @@ import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, A
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
-// Catches the ways a manual mobile-only line break (see renderLabelWithMobileBreaks
-// in email-builder.ts) can look awkward once it actually breaks on a narrow screen:
-// splitting mid-word, leaving a lone word stranded on its own line, or a line long
-// enough that mobile wraps it again anyway, undoing the manual break's intent.
-function mobileLabelWarnings(label: string): string[] {
+// Catches the ways a manual line break (Enter in the label, rendered as a real
+// <br> on every device — see renderMultilineLabel in email-builder.ts) can look
+// awkward: splitting mid-word, leaving a lone word stranded on its own line, or a
+// line long enough that a narrow button still wraps it again anyway.
+function labelBreakWarnings(label: string): string[] {
   const lines = label.split('\n')
   if (lines.length < 2) return []
   const warnings: string[] = []
@@ -32,7 +32,7 @@ function mobileLabelWarnings(label: string): string[] {
     if (!trimmed) return
     const wordCount = trimmed.split(/\s+/).filter(Boolean).length
     if (wordCount === 1) warnings.push(`Baris ${i + 1} cuma 1 kata ("${trimmed}") — bisa kelihatan aneh sendirian, coba gabung ke baris sebelah.`)
-    else if (trimmed.length > 30) warnings.push(`Baris ${i + 1} agak panjang (${trimmed.length} karakter) — kemungkinan tetap wrap ulang otomatis di layar kecil.`)
+    else if (trimmed.length > 30) warnings.push(`Baris ${i + 1} agak panjang (${trimmed.length} karakter) — kemungkinan tetap wrap ulang otomatis kalau layar/tombolnya sempit.`)
   })
   return warnings
 }
@@ -361,8 +361,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
               rows={2}
               className="text-sm resize-none"
             />
-            <p className="text-[11px] text-muted-foreground">Press Enter where you want the text to break on mobile only — it stays one line on desktop.</p>
-            {mobileLabelWarnings(block.label).map((w, i) => (
+            <p className="text-[11px] text-muted-foreground">Press Enter for a line break — it shows the same way on desktop and mobile.</p>
+            {labelBreakWarnings(block.label).map((w, i) => (
               <p key={i} className="flex items-start gap-1 text-[11px] text-amber-600">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>{w}</span>
@@ -376,6 +376,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ColorField label="Background" value={block.bgColor} onChange={bgColor => onChange({ ...block, bgColor })} />
           <ColorField label="Text color" value={block.textColor} onChange={textColor => onChange({ ...block, textColor })} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
+          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
@@ -512,6 +513,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.websiteUrl} onChange={e => onChange({ ...block, websiteUrl: e.target.value })} placeholder="https://..." className="h-8 text-sm" />
           </div>
           <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
         </div>
       )
   }

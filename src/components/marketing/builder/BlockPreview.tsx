@@ -78,7 +78,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           <span
             style={{
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
-              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: 15, fontWeight: 600,
+              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: 15, fontWeight: 600, lineHeight: block.lineHeight, whiteSpace: 'pre-line',
             }}
           >
             {block.label || 'Button'}
@@ -148,7 +148,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'footer':
       return (
         <div
-          style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', color: '#9ca3af' }}
+          style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', color: '#9ca3af', lineHeight: block.lineHeight }}
           className="text-xs space-y-3"
         >
           <div className="flex items-center gap-2" style={{ justifyContent: block.align === 'left' ? 'flex-start' : block.align === 'right' ? 'flex-end' : 'center' }}>
