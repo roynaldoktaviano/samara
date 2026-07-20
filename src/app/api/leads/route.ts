@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
+    const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
 
     const where: Record<string, unknown> = { deletedAt: null }
     if (search) {
@@ -22,11 +23,15 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const leads = await db.lead.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    })
+    const [leads, total] = await Promise.all([
+      db.lead.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.lead.count({ where }),
+    ])
 
     const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
     const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
@@ -35,7 +40,10 @@ export async function GET(request: NextRequest) {
       isSubscribed: l.email ? !unsubscribedSet.has(l.email.toLowerCase()) : null,
     }))
 
-    return NextResponse.json(result)
+    // Body stays a plain array for existing callers; the true count (which
+    // can exceed the capped `take`) rides along as a header for callers that
+    // display it, e.g. the "N registered" label on the Leads page.
+    return NextResponse.json(result, { headers: { 'X-Total-Count': String(total) } })
   } catch (error) {
     console.error('Error fetching leads:', error)
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })

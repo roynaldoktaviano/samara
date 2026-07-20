@@ -954,10 +954,17 @@ export default function EmailBuilder({
                     />
                   </div>
                   {footerBlock && (
-                    <div className="group relative shrink-0 cursor-not-allowed overflow-hidden rounded-b-lg" title="This footer is fixed and can't be edited, moved, or removed">
+                    <div
+                      onClick={() => setSelectedId(footerBlock.id)}
+                      title="Always last, can't be moved, duplicated, or removed — click to edit its company/social details"
+                      className={`group relative shrink-0 cursor-pointer overflow-hidden rounded-b-lg border-2 transition-all ${selectedId === footerBlock.id ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'}`}
+                    >
                       <BlockPreview block={footerBlock} />
-                      <span className="absolute -top-2.5 left-2 z-10 flex items-center gap-1 rounded-full bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                        <Lock className="h-2.5 w-2.5" /> Fixed footer
+                      <span
+                        className={`absolute -top-2.5 left-2 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm transition-opacity ${selectedId === footerBlock.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        style={{ backgroundColor: selectedId === footerBlock.id ? ACCENT : '#1f2937' }}
+                      >
+                        <Lock className="h-2.5 w-2.5" /> Footer
                       </span>
                     </div>
                   )}

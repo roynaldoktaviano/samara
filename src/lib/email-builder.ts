@@ -192,9 +192,12 @@ export interface FooterBlock {
   type: 'footer'
   companyName: string
   address: string
+  instagramUrl: string
+  whatsappNumber: string
+  websiteUrl: string
   align: BlockAlign
   showUnsubscribe: boolean
-  padding: number // fixed/locked block, never exposed in the inspector — no need for per-side padding or hide-on
+  padding: number // position/behavior is fixed (can't move/delete/duplicate — see EmailBuilder.tsx), but its content fields above are editable per template/campaign via BlockInspector
   backgroundColor: string // fixed to black by default — not exposed as an editable field, so every footer stays visually consistent
 }
 
@@ -233,14 +236,24 @@ export interface EmailDesign {
   settings: EmailSettings
 }
 
-// Fixed footer — every design (except raw-HTML mode) gets exactly this footer,
-// appended if missing. It's not user-editable: the builder UI never lets it be
-// selected, dragged, or deleted, and normalizeDesign re-asserts its content on
-// every load/save so it can't drift even via a direct API call.
+// Every design (except raw-HTML mode) gets exactly one footer, appended if
+// missing. Its position/behavior is fixed — the builder UI never lets it be
+// dragged, duplicated, deleted, or pushed out of last place, and
+// normalizeDesign re-appends one on every load/save if it's ever missing —
+// but its content (company name, address, social links) IS editable per
+// template/campaign via BlockInspector, since different templates use
+// different sender identities.
 export const FIXED_FOOTER_ADDRESS = 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234'
 
 function fixedFooterBlock(): FooterBlock {
-  return { id: nextId(), type: 'footer', companyName: '', address: FIXED_FOOTER_ADDRESS, align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000' }
+  return {
+    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000',
+    companyName: 'PT Samara Wisata Bahari',
+    address: FIXED_FOOTER_ADDRESS,
+    instagramUrl: '',
+    whatsappNumber: '+62 859-5495-1085',
+    websiteUrl: 'https://samaraliveaboard.com',
+  }
 }
 
 function withFixedFooter(blocks: EmailBlock[]): EmailBlock[] {
@@ -314,7 +327,16 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
     case 'section':
       return { ...raw, padding: migratePadding(raw.padding, 24), hideOn, blocks: raw.blocks.map(migrateBlock) }
     case 'footer':
-      return { ...raw, padding: typeof raw.padding === 'number' ? raw.padding : 20, backgroundColor: raw.backgroundColor || '#000000' }
+      return {
+        ...raw,
+        padding: typeof raw.padding === 'number' ? raw.padding : 20,
+        backgroundColor: raw.backgroundColor || '#000000',
+        companyName: raw.companyName || 'PT Samara Wisata Bahari',
+        address: raw.address || FIXED_FOOTER_ADDRESS,
+        instagramUrl: raw.instagramUrl || '',
+        whatsappNumber: raw.whatsappNumber || '+62 859-5495-1085',
+        websiteUrl: raw.websiteUrl || 'https://samaraliveaboard.com',
+      }
   }
 }
 
@@ -415,6 +437,50 @@ function renderColumnCell(list: EmailBlock[]): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
 }
 
+// Minimal inline-SVG line icons (Feather-style) so the footer's social row
+// doesn't depend on a hosted image — keeps the fixed footer self-contained.
+type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
+function footerIcon(kind: FooterIconKind): string {
+  const paths: Record<FooterIconKind, string> = {
+    instagram: '<rect x="3" y="3" width="18" height="18" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#ffffff" stroke="none"/>',
+    whatsapp: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/>',
+  }
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`
+}
+
+// Table-based sizing (HTML width/height attributes, not just CSS) — the
+// bulletproof technique for fixed-size elements in email HTML. CSS-only
+// sizing (e.g. display:inline-block + width on an <a>) is exactly the kind
+// of thing Gmail/Outlook/Apple Mail can render inconsistently or ignore,
+// which is how these icons ended up oversized in preview.
+function renderFooterSocialRow(block: FooterBlock): string {
+  const allLinks: { url: string; icon: FooterIconKind }[] = [
+    { url: block.instagramUrl, icon: 'instagram' },
+    { url: block.whatsappNumber ? `https://wa.me/${block.whatsappNumber.replace(/[^0-9]/g, '')}` : '', icon: 'whatsapp' },
+    { url: block.websiteUrl, icon: 'link' },
+  ]
+  const links = allLinks.filter(l => l.url)
+  if (!links.length) return ''
+  const cell = (l: { url: string; icon: FooterIconKind }) => `
+    <td style="padding:0 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
+        <tr>
+          <td width="34" height="34" align="center" valign="middle" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
+            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">${footerIcon(l.icon)}</a>
+          </td>
+        </tr>
+      </table>
+    </td>`
+  // `align` is the legacy HTML attribute Outlook's Word engine needs to
+  // center a block-level <table>; `margin` is what actual browsers use.
+  // text-align on the parent <td> only affects inline content, not this
+  // table, so both have to be set explicitly here.
+  const tableAlign = block.align === 'left' ? 'left' : block.align === 'right' ? 'right' : 'center'
+  const marginCss = block.align === 'left' ? '0 0 14px 0' : block.align === 'right' ? '0 0 14px auto' : '0 auto 14px auto'
+  return `<table role="presentation" align="${tableAlign}" cellpadding="0" cellspacing="0" style="margin:${marginCss};"><tr>${links.map(cell).join('')}</tr></table>`
+}
+
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
     case 'text':
@@ -490,12 +556,19 @@ function renderBlock(block: EmailBlock): string {
         ${block.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;text-decoration:underline;">${esc(l.platform)}</a>`).join('')}
       </td></tr>`
 
-    case 'footer':
+    case 'footer': {
+      const sent = block.companyName && block.address
+        ? `<div style="margin-bottom:12px;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</div>`
+        : ''
+      const unsubscribe = block.showUnsubscribe
+        ? `<div>Don't want to receive emails from us? Manage your email preferences <a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">here</a>.</div>`
+        : ''
       return `<tr><td class="footer-block" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
-        ${block.companyName ? `<div>${esc(block.companyName)}</div>` : ''}
-        ${block.address ? `<div>${esc(block.address)}</div>` : ''}
-        ${block.showUnsubscribe ? `<div style="margin-top:8px;"><a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></div>` : ''}
+        ${renderFooterSocialRow(block)}
+        ${sent}
+        ${unsubscribe}
       </td></tr>`
+    }
   }
 }
 

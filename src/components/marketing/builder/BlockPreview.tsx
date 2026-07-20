@@ -1,5 +1,5 @@
 import { paddingStyle, type EmailBlock } from '@/lib/email-builder'
-import { ImageOff, Play, Code2 } from 'lucide-react'
+import { ImageOff, Play, Code2, Instagram, MessageCircle, Link2 } from 'lucide-react'
 
 /**
  * Editor-canvas approximation of a block (plain divs, not the table-based
@@ -149,11 +149,23 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
       return (
         <div
           style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', color: '#9ca3af' }}
-          className="text-xs space-y-1"
+          className="text-xs space-y-3"
         >
-          {block.companyName && <div>{block.companyName}</div>}
-          {block.address && <div>{block.address}</div>}
-          {block.showUnsubscribe && <div className="underline">Unsubscribe</div>}
+          <div className="flex items-center gap-2" style={{ justifyContent: block.align === 'left' ? 'flex-start' : block.align === 'right' ? 'flex-end' : 'center' }}>
+            {block.instagramUrl && (
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Instagram className="h-3 w-3" /></span>
+            )}
+            {block.whatsappNumber && (
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><MessageCircle className="h-3 w-3" /></span>
+            )}
+            {block.websiteUrl && (
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Link2 className="h-3 w-3" /></span>
+            )}
+          </div>
+          <div className="space-y-3">
+            {block.companyName && block.address && <div>Message sent by {block.companyName} at {block.address}.</div>}
+            {block.showUnsubscribe && <div>Don&apos;t want to receive emails from us? Manage your email preferences <span className="underline">here</span>.</div>}
+          </div>
         </div>
       )
   }

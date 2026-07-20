@@ -7,12 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Trash2, X, CreditCard, Calendar, RotateCw, Download } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
@@ -29,6 +28,7 @@ interface Guest {
   dateOfBirth?: string
   isChild?: boolean
   address?: string
+  nationality?: string
   dietaryRequirements?: string
   allergies?: string
   equipmentSizes?: string
@@ -88,6 +88,8 @@ export default function Guests() {
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
 
   const [guests, setGuests] = useState<Guest[]>([])
+  const [totalGuests, setTotalGuests] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -109,17 +111,27 @@ export default function Guests() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkErrors, setBulkErrors] = useState<string[]>([])
 
-  const fetchGuests = useCallback(async () => {
+  const PAGE_SIZE = 20
+
+  const fetchGuests = useCallback(async (p = 1) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/customers${search ? `?search=${encodeURIComponent(search)}` : ''}`)
-      if (res.ok) setGuests(await res.json())
+      const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE) })
+      if (search) params.set('search', search)
+      const res = await fetch(`/api/customers?${params}`)
+      if (res.ok) {
+        setGuests(await res.json())
+        setTotalGuests(Number(res.headers.get('X-Total-Count')) || 0)
+      }
     } finally {
       setLoading(false)
     }
   }, [search])
 
-  useEffect(() => { fetchGuests() }, [fetchGuests])
+  useEffect(() => { setPage(1); fetchGuests(1) }, [fetchGuests])
+
+  const totalPages = Math.max(1, Math.ceil(totalGuests / PAGE_SIZE))
+  const goToPage = (p: number) => { setPage(p); fetchGuests(p) }
 
   // clear selection when list changes
   useEffect(() => { setSelectedIds(new Set()) }, [guests])
@@ -136,6 +148,8 @@ export default function Guests() {
       setDetailLoading(false)
     }
   }
+
+  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null) }
 
   const openEdit = (g: Guest, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -201,6 +215,7 @@ export default function Guests() {
 
   return (
     <div className="space-y-6">
+      {!detailOpen && <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -226,7 +241,7 @@ export default function Guests() {
       <Card>
         <CardHeader>
           <CardTitle>All Guests</CardTitle>
-          <CardDescription>{guests.length} guest(s) registered</CardDescription>
+          <CardDescription>{totalGuests} guest(s) registered</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2 mb-4">
@@ -380,8 +395,50 @@ export default function Guests() {
               </TableBody>
             </Table>
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-sm pt-4">
+              <p className="text-muted-foreground text-xs">Page {page} of {totalPages} · {totalGuests} guest(s)</p>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(1)}>
+                  <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                  .reduce<(number | '...')[]>((acc, p, i, arr) => {
+                    if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push('...')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, i) =>
+                    p === '...' ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-xs">…</span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={page === p ? 'default' : 'outline'}
+                        size="icon" className="h-8 w-8 text-xs"
+                        onClick={() => goToPage(p as number)}
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(totalPages)}>
+                  <ChevronRight className="h-3 w-3" /><ChevronRight className="h-3 w-3 -ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+      </>}
 
       {/* ── Add / Edit Guest Sheet ─────────────────────────────────────────── */}
       <GuestEditSheet
@@ -393,22 +450,22 @@ export default function Guests() {
 
       <FreshsalesImportModal open={importOpen} onOpenChange={setImportOpen} onImported={() => fetchGuests()} />
 
-      {/* ── Detail + Trip History Dialog ─────────────────────────────────── */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+      {/* ── Detail + Trip History (full page) ────────────────────────────── */}
+      {detailOpen && (
+        <>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="icon" onClick={closeDetail}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
             {detailLoading || !detail ? (
-              <>
-                <DialogTitle className="sr-only">Customer Detail</DialogTitle>
-                <div className="space-y-1.5">
-                  <Skeleton className="h-6 w-48" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
-              </>
+              <div className="space-y-1.5">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-32" />
+              </div>
             ) : (
-              <div className="flex items-start justify-between">
+              <div className="flex-1 flex items-start justify-between">
                 <div>
-                  <DialogTitle className="text-xl">{detail.name}</DialogTitle>
+                  <h3 className="text-xl font-bold tracking-tight">{detail.name}</h3>
                   <p className="text-sm text-muted-foreground mt-0.5">
                     {detail.gender && <span>{detail.gender} · </span>}
                     {detail.totalBookings} trip(s)
@@ -419,149 +476,155 @@ export default function Guests() {
                 </Button>
               </div>
             )}
-          </DialogHeader>
-          {detailLoading || !detail ? (
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="space-y-1">
-                    <Skeleton className="h-3 w-16" />
-                    <Skeleton className="h-4 w-36" />
-                  </div>
-                ))}
-              </div>
-              <Skeleton className="h-px w-full" />
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-32" />
-                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* Info grid */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                {[
-                  ['Email', detail.email],
-                  ['Phone', detail.phone],
-                  ['Passport / ID', detail.passport],
-                  ['Date of Birth', detail.dateOfBirth ? fmtDate(detail.dateOfBirth) : ''],
-                  ['Address', detail.address],
-                  ['Dietary Requirements', detail.dietaryRequirements],
-                  ['Allergies', detail.allergies],
-                  ['Equipment Sizes', detail.equipmentSizes],
-                  ['Operational Notes', detail.operationalNotes],
-                ].filter(([, v]) => v).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-                    <p className="font-medium mt-0.5">{value}</p>
-                  </div>
-                ))}
-              </div>
+          </div>
 
-              <Separator />
-
-              {/* Trip History */}
-              <div>
-                <p className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Ship className="h-4 w-4 text-muted-foreground" />
-                  Trip History ({detail.tripHistory.filter(t => !t.isWaitingList).length})
-                  {detail.tripHistory.some(t => t.isWaitingList) && (
-                    <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
-                      +{detail.tripHistory.filter(t => t.isWaitingList).length} waiting list
-                    </span>
-                  )}
-                </p>
-                {detail.tripHistory.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No trips yet.</p>
-                ) : (
+          <Card>
+            <CardContent className="pt-6">
+              {detailLoading || !detail ? (
+                <div className="space-y-4 py-2">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="space-y-1">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-4 w-36" />
+                      </div>
+                    ))}
+                  </div>
+                  <Skeleton className="h-px w-full" />
                   <div className="space-y-2">
-                    {detail.tripHistory.map(t => (
-                      <div key={t.id} className={`rounded-lg border p-3 text-sm ${t.isWaitingList ? 'border-amber-200 bg-amber-50/40' : ''}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
-                              {t.isWaitingList && (
-                                <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
-                              )}
-                              {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-[#bdac7e]/20 text-[#8a7040] rounded px-1.5 py-0.5 font-medium">Lead</span>}
-                              {t.cabin && <span className="text-[10px] text-muted-foreground">{t.cabin}</span>}
-                            </div>
-                            <p className="font-medium mt-1">{t.tripTitle || t.destination || '—'}</p>
-                            {t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                              <Calendar className="h-3 w-3" />
-                              {fmtDate(t.startDate)} – {fmtDate(t.endDate)}
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            {t.isWaitingList ? (
-                              <Badge variant="outline" className={`text-[10px] ${
-                                t.wlStatus === 'waiting'   ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                t.wlStatus === 'promoted'  ? 'bg-green-50 text-green-700 border-green-200' :
-                                                             'bg-slate-100 text-slate-500 border-slate-200'
-                              }`}>
-                                {t.wlStatus === 'waiting' ? 'Waiting' : t.wlStatus === 'promoted' ? 'Promoted' : 'Cancelled'}
-                              </Badge>
-                            ) : (
-                              <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
-                                {t.status}
-                              </Badge>
-                            )}
-                            {!t.isWaitingList && (
-                              <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                            )}
-                          </div>
-                        </div>
+                    <Skeleton className="h-4 w-32" />
+                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Info grid */}
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    {[
+                      ['Email', detail.email],
+                      ['Phone', detail.phone],
+                      ['Passport / ID', detail.passport],
+                      ['Date of Birth', detail.dateOfBirth ? fmtDate(detail.dateOfBirth) : ''],
+                      ['Nationality', detail.nationality],
+                      ['Address', detail.address],
+                      ['Dietary Requirements', detail.dietaryRequirements],
+                      ['Allergies', detail.allergies],
+                      ['Equipment Sizes', detail.equipmentSizes],
+                      ['Operational Notes', detail.operationalNotes],
+                    ].filter(([, v]) => v).map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+                        <p className="font-medium mt-0.5">{value}</p>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
 
-              <Separator />
+                  <Separator />
 
-              {/* Inquiry History */}
-              <div>
-                <p className="text-sm font-semibold mb-3">Inquiry History</p>
-                {inquiries === null ? (
-                  <p className="text-sm text-muted-foreground">Loading…</p>
-                ) : inquiries.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No form submissions yet</p>
-                ) : (
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {inquiries.map(inq => (
-                      <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1 text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium">{inq.source}</span>
-                          <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        {(inq.checkInDate || inq.checkOutDate) && (
-                          <p className="text-xs text-muted-foreground">
-                            {inq.checkInDate ? fmtDate(inq.checkInDate) : '—'}
-                            {' → '}
-                            {inq.checkOutDate ? fmtDate(inq.checkOutDate) : '—'}
-                            {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
-                            {inq.tripType ? ` · ${inq.tripType}` : ''}
-                          </p>
-                        )}
-                        {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
-                        {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
-                            {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
-                            {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
+                  {/* Trip History */}
+                  <div>
+                    <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Ship className="h-4 w-4 text-muted-foreground" />
+                      Trip History ({detail.tripHistory.filter(t => !t.isWaitingList).length})
+                      {detail.tripHistory.some(t => t.isWaitingList) && (
+                        <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
+                          +{detail.tripHistory.filter(t => t.isWaitingList).length} waiting list
+                        </span>
+                      )}
+                    </p>
+                    {detail.tripHistory.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No trips yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {detail.tripHistory.map(t => (
+                          <div key={t.id} className={`rounded-lg border p-3 text-sm ${t.isWaitingList ? 'border-amber-200 bg-amber-50/40' : ''}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
+                                  {t.isWaitingList && (
+                                    <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
+                                  )}
+                                  {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-[#bdac7e]/20 text-[#8a7040] rounded px-1.5 py-0.5 font-medium">Lead</span>}
+                                  {t.cabin && <span className="text-[10px] text-muted-foreground">{t.cabin}</span>}
+                                </div>
+                                <p className="font-medium mt-1">{t.tripTitle || t.destination || '—'}</p>
+                                {t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {fmtDate(t.startDate)} – {fmtDate(t.endDate)}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                {t.isWaitingList ? (
+                                  <Badge variant="outline" className={`text-[10px] ${
+                                    t.wlStatus === 'waiting'   ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                    t.wlStatus === 'promoted'  ? 'bg-green-50 text-green-700 border-green-200' :
+                                                                 'bg-slate-100 text-slate-500 border-slate-200'
+                                  }`}>
+                                    {t.wlStatus === 'waiting' ? 'Waiting' : t.wlStatus === 'promoted' ? 'Promoted' : 'Cancelled'}
+                                  </Badge>
+                                ) : (
+                                  <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
+                                    {t.status}
+                                  </Badge>
+                                )}
+                                {!t.isWaitingList && (
+                                  <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+
+                  <Separator />
+
+                  {/* Inquiry History */}
+                  <div>
+                    <p className="text-sm font-semibold mb-3">Inquiry History</p>
+                    {inquiries === null ? (
+                      <p className="text-sm text-muted-foreground">Loading…</p>
+                    ) : inquiries.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No form submissions yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {inquiries.map(inq => (
+                          <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1 text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium">{inq.source}</span>
+                              <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            {(inq.checkInDate || inq.checkOutDate) && (
+                              <p className="text-xs text-muted-foreground">
+                                {inq.checkInDate ? fmtDate(inq.checkInDate) : '—'}
+                                {' → '}
+                                {inq.checkOutDate ? fmtDate(inq.checkOutDate) : '—'}
+                                {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
+                                {inq.tripType ? ` · ${inq.tripType}` : ''}
+                              </p>
+                            )}
+                            {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                            {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
+                                {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
+                                {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* ── Single Delete Confirmation ────────────────────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>

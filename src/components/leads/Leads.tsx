@@ -7,11 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, Trash2, X, Globe, RotateCw, Download } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
@@ -49,6 +48,8 @@ export default function Leads() {
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
 
   const [leads, setLeads] = useState<Lead[]>([])
+  const [totalLeads, setTotalLeads] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -69,17 +70,27 @@ export default function Leads() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkErrors, setBulkErrors] = useState<string[]>([])
 
-  const fetchLeads = useCallback(async () => {
+  const PAGE_SIZE = 20
+
+  const fetchLeads = useCallback(async (p = 1) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/leads${search ? `?search=${encodeURIComponent(search)}` : ''}`)
-      if (res.ok) setLeads(await res.json())
+      const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE) })
+      if (search) params.set('search', search)
+      const res = await fetch(`/api/leads?${params}`)
+      if (res.ok) {
+        setLeads(await res.json())
+        setTotalLeads(Number(res.headers.get('X-Total-Count')) || 0)
+      }
     } finally {
       setLoading(false)
     }
   }, [search])
 
-  useEffect(() => { fetchLeads() }, [fetchLeads])
+  useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
+
+  const totalPages = Math.max(1, Math.ceil(totalLeads / PAGE_SIZE))
+  const goToPage = (p: number) => { setPage(p); fetchLeads(p) }
 
   // clear selection when list changes
   useEffect(() => { setSelectedIds(new Set()) }, [leads])
@@ -90,6 +101,8 @@ export default function Leads() {
     setInquiries(null)
     fetch(`/api/leads/${l.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
   }
+
+  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null) }
 
   const openEdit = (l: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -155,6 +168,7 @@ export default function Leads() {
 
   return (
     <div className="space-y-6">
+      {!detailOpen && <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -180,7 +194,7 @@ export default function Leads() {
       <Card>
         <CardHeader>
           <CardTitle>All Leads</CardTitle>
-          <CardDescription>{leads.length} lead(s) registered</CardDescription>
+          <CardDescription>{totalLeads} lead(s) registered</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2 mb-4">
@@ -317,8 +331,50 @@ export default function Leads() {
               </TableBody>
             </Table>
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-sm pt-4">
+              <p className="text-muted-foreground text-xs">Page {page} of {totalPages} · {totalLeads} lead(s)</p>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(1)}>
+                  <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                  .reduce<(number | '...')[]>((acc, p, i, arr) => {
+                    if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push('...')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, i) =>
+                    p === '...' ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-xs">…</span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={page === p ? 'default' : 'outline'}
+                        size="icon" className="h-8 w-8 text-xs"
+                        onClick={() => goToPage(p as number)}
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(totalPages)}>
+                  <ChevronRight className="h-3 w-3" /><ChevronRight className="h-3 w-3 -ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+      </>}
 
       {/* ── Add / Edit Lead Sheet ─────────────────────────────────────────── */}
       <LeadEditSheet
@@ -330,81 +386,85 @@ export default function Leads() {
 
       <FreshsalesImportModal open={importOpen} onOpenChange={setImportOpen} onImported={() => fetchLeads()} />
 
-      {/* ── Detail Dialog ─────────────────────────────────────────────────── */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <DialogTitle className="text-xl">{detail?.name}</DialogTitle>
-              </div>
+      {/* ── Detail (full page) ────────────────────────────────────────────── */}
+      {detailOpen && (
+        <>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="icon" onClick={closeDetail}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex-1 flex items-start justify-between">
+              <h3 className="text-xl font-bold tracking-tight">{detail?.name}</h3>
               {detail && (
                 <Button size="sm" variant="outline" onClick={e => openEdit(detail, e)}>
                   <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
                 </Button>
               )}
             </div>
-          </DialogHeader>
+          </div>
+
           {detail && (
-            <>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                {[
-                  ['Email', detail.email],
-                  ['Phone', detail.phone],
-                  ['Nationality', detail.nationality],
-                ].filter(([, v]) => v).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-                    <p className="font-medium mt-0.5">{value}</p>
-                  </div>
-                ))}
-              </div>
-              {detail.notes && (
-                <div className="text-sm">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Notes</p>
-                  <p className="font-medium mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
+            <Card>
+              <CardContent className="pt-6 space-y-4">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  {[
+                    ['Email', detail.email],
+                    ['Phone', detail.phone],
+                    ['Nationality', detail.nationality],
+                  ].filter(([, v]) => v).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+                      <p className="font-medium mt-0.5">{value}</p>
+                    </div>
+                  ))}
                 </div>
-              )}
-              <div className="text-sm">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Inquiry History</p>
-                {inquiries === null ? (
-                  <p className="text-xs text-muted-foreground">Loading…</p>
-                ) : inquiries.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No form submissions yet</p>
-                ) : (
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {inquiries.map(inq => (
-                      <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium">{inq.source}</span>
-                          <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        {(inq.checkInDate || inq.checkOutDate) && (
-                          <p className="text-xs text-muted-foreground">
-                            {inq.checkInDate ? new Date(inq.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                            {' → '}
-                            {inq.checkOutDate ? new Date(inq.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                            {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
-                            {inq.tripType ? ` · ${inq.tripType}` : ''}
-                          </p>
-                        )}
-                        {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
-                        {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
-                            {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
-                            {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                {detail.notes && (
+                  <div className="text-sm">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Notes</p>
+                    <p className="font-medium mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
                   </div>
                 )}
-              </div>
-            </>
+                <div className="text-sm">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Inquiry History</p>
+                  {inquiries === null ? (
+                    <p className="text-xs text-muted-foreground">Loading…</p>
+                  ) : inquiries.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No form submissions yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {inquiries.map(inq => (
+                        <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium">{inq.source}</span>
+                            <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          {(inq.checkInDate || inq.checkOutDate) && (
+                            <p className="text-xs text-muted-foreground">
+                              {inq.checkInDate ? new Date(inq.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              {' → '}
+                              {inq.checkOutDate ? new Date(inq.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
+                              {inq.tripType ? ` · ${inq.tripType}` : ''}
+                            </p>
+                          )}
+                          {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                          {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
+                              {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
+                              {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </DialogContent>
-      </Dialog>
+        </>
+      )}
 
       {/* ── Single Delete Confirmation ────────────────────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>

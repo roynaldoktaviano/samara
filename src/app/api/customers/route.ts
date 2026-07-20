@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
+    const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
 
     const where: Record<string, unknown> = { deletedAt: null }
     if (search) {
@@ -23,22 +24,26 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const customers = await db.customer.findMany({
-      where,
-      select: {
-        id: true, name: true, firstName: true, lastName: true,
-        gender: true, email: true, phone: true, passport: true,
-        dateOfBirth: true, address: true, nationality: true,
-        passportExpiry: true, emergencyContact: true,
-        dietaryRequirements: true, allergies: true,
-        drinkPreferences: true, equipmentSizes: true, operationalNotes: true,
-        isChild: true, deletedAt: true, createdAt: true, updatedAt: true,
-        _count: { select: { bookings: true, guestOf: true } },
-        bookings: { select: { totalPrice: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    })
+    const [customers, total] = await Promise.all([
+      db.customer.findMany({
+        where,
+        select: {
+          id: true, name: true, firstName: true, lastName: true,
+          gender: true, email: true, phone: true, passport: true,
+          dateOfBirth: true, address: true, nationality: true,
+          passportExpiry: true, emergencyContact: true,
+          dietaryRequirements: true, allergies: true,
+          drinkPreferences: true, equipmentSizes: true, operationalNotes: true,
+          isChild: true, deletedAt: true, createdAt: true, updatedAt: true,
+          _count: { select: { bookings: true, guestOf: true } },
+          bookings: { select: { totalPrice: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.customer.count({ where }),
+    ])
 
     const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
     const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
@@ -50,7 +55,10 @@ export async function GET(request: NextRequest) {
       isSubscribed: c.email ? !unsubscribedSet.has(c.email.toLowerCase()) : null,
     }))
 
-    return NextResponse.json(result)
+    // Body stays a plain array for existing callers (BookingWizard, calendar
+    // search, etc.) that expect that shape; the true count (which can exceed
+    // the capped `take`) rides along as a header for callers that display it.
+    return NextResponse.json(result, { headers: { 'X-Total-Count': String(total) } })
   } catch (error) {
     console.error('Error fetching customers:', error)
     return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 })

@@ -462,11 +462,18 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Label className="text-xs">Address</Label>
             <Input value={block.address} onChange={e => onChange({ ...block, address: e.target.value })} className="h-8 text-sm" />
           </div>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={block.showUnsubscribe} onChange={e => onChange({ ...block, showUnsubscribe: e.target.checked })} />
-            Show unsubscribe link
-          </label>
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Instagram URL</Label>
+            <Input value={block.instagramUrl} onChange={e => onChange({ ...block, instagramUrl: e.target.value })} placeholder="https://instagram.com/..." className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">WhatsApp number</Label>
+            <Input value={block.whatsappNumber} onChange={e => onChange({ ...block, whatsappNumber: e.target.value })} placeholder="+62 ..." className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Website URL</Label>
+            <Input value={block.websiteUrl} onChange={e => onChange({ ...block, websiteUrl: e.target.value })} placeholder="https://..." className="h-8 text-sm" />
+          </div>
           <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
         </div>
       )
