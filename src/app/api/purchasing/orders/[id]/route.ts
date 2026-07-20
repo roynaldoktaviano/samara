@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
+import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const TRANSIT_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -59,11 +60,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   })
 
   // Same rule as the list endpoint (src/app/api/purchasing/orders/route.ts)
-  // — paid via either Request Payment/Debit Paid or Reimburse counts the same.
-  const paymentRecords = [...order.paymentRequests, ...order.reimbursements]
-  const paymentStatus = paymentRecords.length === 0
-    ? 'UNPAID'
-    : paymentRecords.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
+  // — a PO can be paid across multiple installments (DP + final settlement),
+  // in any mix of Request Payment/Debit Paid and Reimburse.
+  const grandTotal = computePOGrandTotal(order)
+  const { paymentStatus, paidTotal, requestedTotal, remaining } = summarizePOPayments(grandTotal, order.paymentRequests, order.reimbursements)
 
   return NextResponse.json({
     ...order,
@@ -74,6 +74,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     requestedByDepartment,
     requestedByRole,
     paymentStatus,
+    grandTotal,
+    paidTotal,
+    requestedTotal,
+    remaining,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
   })

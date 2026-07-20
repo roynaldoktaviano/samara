@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
+import { computePOGrandTotal, summarizePOPayments, describeInstallment } from '@/lib/po-payment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -13,13 +14,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const order = await db.purchaseOrder.findUnique({ where: { id }, select: { id: true, poNumber: true, supplierName: true } })
+  const order = await db.purchaseOrder.findUnique({
+    where: { id },
+    select: {
+      id: true, poNumber: true, supplierName: true, discountType: true, discountValue: true, extraCharges: true,
+      items: { select: { orderedQty: true, unitCost: true } },
+      paymentRequests: { select: { amount: true, status: true } },
+      reimbursements: { select: { amount: true, status: true } },
+    },
+  })
   if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
 
   const body = await req.json()
   const { amount, notePhotoKeys, notes, paidByPurchasing } = body
   if (!amount || Number(amount) <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
   if (!Array.isArray(notePhotoKeys) || notePhotoKeys.length === 0) return NextResponse.json({ error: 'At least one receipt/nota photo is required' }, { status: 400 })
+
+  // Installments (DP + final settlement, in any mix of payment method) are
+  // capped at what's left of the PO total — never let requests add up to
+  // more than the order is actually worth.
+  const grandTotal = computePOGrandTotal(order)
+  const { requestedTotal, remaining } = summarizePOPayments(grandTotal, order.paymentRequests, order.reimbursements)
+  if (Number(amount) > remaining + 0.5) {
+    return NextResponse.json({ error: `Amount exceeds the remaining balance (Rp ${new Intl.NumberFormat('id-ID').format(remaining)})` }, { status: 400 })
+  }
+  const installmentLabel = describeInstallment(grandTotal, requestedTotal, Number(amount))
 
   const isDirect = !!paidByPurchasing
   const amountFormatted = `Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))}`
@@ -44,14 +63,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (isDirect) {
     notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAID_BY_PURCHASING',
-      'Debit Paid',
-      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} was paid directly by the purchasing team (debit) — ${amountFormatted}`,
+      `Debit Paid — ${installmentLabel}`,
+      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} was paid directly by the purchasing team (debit), ${installmentLabel.toLowerCase()} — ${amountFormatted}`,
       id,
     ).catch(console.error)
   } else {
     notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAYMENT_REQUESTED',
-      'Payment Request Submitted',
-      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} needs payment approval (${amountFormatted})`,
+      `${installmentLabel} Requested`,
+      `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} needs payment approval — ${installmentLabel.toLowerCase()} (${amountFormatted})`,
       id,
     ).catch(console.error)
   }

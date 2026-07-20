@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
@@ -20,6 +21,10 @@ export async function GET() {
           requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true,
           discountType: true, discountValue: true, extraCharges: true,
           items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
+          // Only needed to compute the PO's overall payment status below —
+          // a PO can be paid across multiple DP/final-settlement installments.
+          paymentRequests: { select: { amount: true, status: true } },
+          reimbursements: { select: { amount: true, status: true } },
         },
       },
       requestedBy: { select: { name: true } },
@@ -27,5 +32,14 @@ export async function GET() {
     },
   })
 
-  return NextResponse.json(requests)
+  // "Paid" on an individual request can be misleading if it was just a DP —
+  // poPaymentStatus reflects the whole PO's progress, so Finance can tell a
+  // settled installment apart from one that still has a final payment coming.
+  const withPoStatus = requests.map(r => {
+    const grandTotal = computePOGrandTotal(r.order)
+    const { paymentStatus } = summarizePOPayments(grandTotal, r.order.paymentRequests, r.order.reimbursements)
+    return { ...r, poPaymentStatus: paymentStatus, order: { ...r.order, paymentRequests: undefined, reimbursements: undefined } }
+  })
+
+  return NextResponse.json(withPoStatus)
 }

@@ -443,8 +443,18 @@ function renderColumnCell(list: EmailBlock[]): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
 }
 
-// Minimal inline-SVG line icons (Feather-style) so the footer's social row
-// doesn't depend on a hosted image — keeps the fixed footer self-contained.
+function toBase64(str: string): string {
+  // btoa is global in browsers (client canvas render) and Node 16+ (server send/preview render).
+  if (typeof btoa === 'function') return btoa(str)
+  return Buffer.from(str, 'utf-8').toString('base64')
+}
+
+// Feather-style line icons for the footer's social row, encoded as base64 PNG-less
+// data-URI <img> (not raw inline <svg>) — Outlook doesn't support inline SVG at all,
+// and several mobile mail clients silently strip <svg> too, which left the icon
+// circles empty and — since the <a> then had no content and no explicit size —
+// unclickable. A data-URI <img> renders reliably everywhere <img> works, which is
+// effectively universal in HTML email.
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
 function footerIcon(kind: FooterIconKind): string {
   const paths: Record<FooterIconKind, string> = {
@@ -452,7 +462,8 @@ function footerIcon(kind: FooterIconKind): string {
     whatsapp: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/>',
   }
-  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`
+  return `<img src="data:image/svg+xml;base64,${toBase64(svg)}" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -473,7 +484,7 @@ function renderFooterSocialRow(block: FooterBlock): string {
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
         <tr>
           <td width="34" height="34" align="center" valign="middle" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
-            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">${footerIcon(l.icon)}</a>
+            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
           </td>
         </tr>
       </table>
@@ -551,7 +562,7 @@ function renderBlock(block: EmailBlock): string {
         ? `background-color:${block.backgroundColor};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
         : `background-color:${block.backgroundColor};`
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} style="${bg}"><tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} bgcolor="${block.backgroundColor}" style="${bg}"><tr>
           <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`
@@ -569,7 +580,7 @@ function renderBlock(block: EmailBlock): string {
       const unsubscribe = block.showUnsubscribe
         ? `<div>Don't want to receive emails from us? Manage your email preferences <a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">here</a>.</div>`
         : ''
-      return `<tr><td class="footer-block" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
+      return `<tr><td class="footer-block" bgcolor="${block.backgroundColor || '#000000'}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
         ${renderFooterSocialRow(block)}
         ${sent}
         ${unsubscribe}
@@ -592,20 +603,29 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     // Gmail/Apple Mail dark mode auto-inverts colors it thinks look wrong (e.g. white button
     // text flipping to black, or a light section background flipping dark) — pin every
     // authored color so dark mode can't touch any of them, matching the built template exactly.
+    // Gmail's own auto-dark engine ignores prefers-color-scheme entirely and force-recolors
+    // elements it decides are "unstyled," marking them with data-ogsc (text) / data-ogsb
+    // (background) attributes as it does — targeting those attributes directly is the only
+    // way to fight that override back, since it happens regardless of any @media support.
     if (b.type === 'button') {
       rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}}`)
+      rules.push(`[data-ogsc] .btn-${b.id},[data-ogsb] .btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}`)
     }
     if (b.type === 'text' || b.type === 'heading') {
       rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}}`)
+      rules.push(`[data-ogsc] .lc-${b.id},[data-ogsb] .lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}`)
     }
     if (b.type === 'divider') {
       rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${b.color} !important;}}`)
+      rules.push(`[data-ogsc] .div-${b.id},[data-ogsb] .div-${b.id}{border-top-color:${b.color} !important;}`)
     }
     if (b.type === 'footer') {
       rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}}`)
+      rules.push(`[data-ogsc] .footer-block,[data-ogsb] .footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}`)
     }
     if (b.type === 'section') {
       rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${b.backgroundColor} !important;}}`)
+      rules.push(`[data-ogsc] .sec-${b.id},[data-ogsb] .sec-${b.id}{background-color:${b.backgroundColor} !important;}`)
       rules.push(...collectExtraStyles(b.blocks))
     }
     if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
@@ -620,23 +640,28 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   return `<!doctype html>
 <html>
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <style>
+    <style type="text/css">
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
       @media (prefers-color-scheme: dark){
         .email-page,.email-body{background:${s.pageBackground} !important;}
         .email-content{background:${s.contentBackground} !important;}
       }
+      [data-ogsc] .email-page,[data-ogsb] .email-page,[data-ogsc] .email-body,[data-ogsb] .email-body{background:${s.pageBackground} !important;}
+      [data-ogsc] .email-content,[data-ogsb] .email-content{background:${s.contentBackground} !important;}
       ${extraStyles}
     </style>
   </head>
   <body class="email-body" style="margin:0;padding:0;background:${s.pageBackground};">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" style="background:${s.pageBackground};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${s.pageBackground}" style="background:${s.pageBackground};">
       <tr>
         <td align="center" style="padding:${s.contentPadding}px 12px;">
-          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" style="max-width:${s.contentWidth}px;width:100%;background:${s.contentBackground};border-radius:8px;overflow:hidden;">
+          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" bgcolor="${s.contentBackground}" style="max-width:${s.contentWidth}px;width:100%;background:${s.contentBackground};border-radius:8px;overflow:hidden;">
             ${rows}
           </table>
         </td>

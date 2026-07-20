@@ -11,6 +11,7 @@ interface Reimbursement {
   notePhotoKeys: string[]
   notes: string | null
   status: string
+  poPaymentStatus: string // the PO's overall progress (UNPAID/PARTIALLY_PAID/PAID) — distinct from this reimbursement's own status, since a PO can be paid in installments
   requesterName: string
   bankName: string
   accountNumber: string
@@ -28,6 +29,15 @@ interface Reimbursement {
 
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+
+// A reimbursement that's individually PAID can still just be a DP — show the
+// PO's overall progress instead of a flat "Paid" so Finance knows a final
+// settlement request may still be coming for the same PO.
+function statusBadge(status: string, poPaymentStatus: string): { label: string; className: string } {
+  if (status !== 'PAID') return { label: 'Waiting for Payment', className: 'bg-amber-100 text-amber-700' }
+  if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', className: 'bg-orange-100 text-orange-700' }
+  return { label: 'Paid', className: 'bg-green-100 text-green-700' }
+}
 
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   const isPdf = isPdfDataUrl(photoKey)
@@ -150,8 +160,8 @@ export default function POReimbursements() {
                 <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
                 <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.createdAt)}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {r.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(r.status, r.poPaymentStatus).className}`}>
+                    {statusBadge(r.status, r.poPaymentStatus).label}
                   </span>
                 </td>
               </tr>
@@ -180,8 +190,8 @@ export default function POReimbursements() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
                     <p className="text-2xl font-bold mt-0.5">{fmtMoney(selected.amount)}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${selected.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {selected.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusBadge(selected.status, selected.poPaymentStatus).className}`}>
+                    {statusBadge(selected.status, selected.poPaymentStatus).label}
                   </span>
                 </div>
 

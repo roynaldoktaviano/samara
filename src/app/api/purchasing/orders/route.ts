@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -20,7 +21,7 @@ export async function GET() {
   const orders = await db.purchaseOrder.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, orderedQty: true, receivedQty: true } },
+      items: { select: { id: true, orderedQty: true, receivedQty: true, unitCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       createdBy: { select: { name: true } },
       request: {
@@ -34,20 +35,20 @@ export async function GET() {
         take: 1,
         select: { receivedAt: true, receivedBy: { select: { name: true } } },
       },
-      paymentRequests: { select: { status: true } },
-      reimbursements: { select: { status: true } },
+      paymentRequests: { select: { amount: true, status: true } },
+      reimbursements: { select: { amount: true, status: true } },
     },
   })
   return NextResponse.json(orders.map(o => {
     const totalOrdered = o.items.reduce((s, i) => s + i.orderedQty, 0)
     const totalReceived = o.items.reduce((s, i) => s + i.receivedQty, 0)
     const fullyReceivedCount = o.items.filter(i => i.receivedQty >= i.orderedQty).length
-    // Paid via either Request Payment/Debit Paid (paymentRequests) or
-    // Reimburse (reimbursements) — both count the same toward payment status.
-    const paymentRecords = [...o.paymentRequests, ...o.reimbursements]
-    const paymentStatus = paymentRecords.length === 0
-      ? 'UNPAID'
-      : paymentRecords.some(p => p.status === 'PAID') ? 'PAID' : 'PENDING'
+    // A PO can be paid across multiple installments (DP + final settlement),
+    // in any mix of Request Payment/Debit Paid (paymentRequests) and
+    // Reimburse (reimbursements) — status reflects what's actually PAID
+    // against the order's real total, not just "any record exists".
+    const grandTotal = computePOGrandTotal(o)
+    const { paymentStatus } = summarizePOPayments(grandTotal, o.paymentRequests, o.reimbursements)
     return {
       ...o,
       itemCount: o.items.length,

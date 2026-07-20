@@ -52,6 +52,10 @@ interface OrderDetail extends PurchaseOrder {
   receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
   paymentRequests: PaymentRequest[]
   reimbursements: Reimbursement[]
+  grandTotal: number
+  paidTotal: number
+  requestedTotal: number
+  remaining: number
 }
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
@@ -81,48 +85,60 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
         ? [detail.supplierName, detail.confirmedByName ? `by ${detail.confirmedByName}` : null]
         : [],
     },
-    // Payment step(s) — a PO is paid either via Request Payment/Debit Paid
-    // (POPaymentRequest) or via Reimburse (POReimbursement), never tracked
-    // as the same model. Both need to show up here identically, or a
-    // reimbursement-only PO would show no payment progress at all and could
-    // never advance past "PO Confirmed" (see the "Mark In Transit" gate below).
-    ...((detail.paymentRequests.length > 0 || detail.reimbursements.length > 0) ? (() => {
-      const isReimbursement = detail.paymentRequests.length === 0
-      const latest: PaymentRequest | Reimbursement = isReimbursement ? detail.reimbursements[0] : detail.paymentRequests[0]
-      const paid = latest.status === 'PAID'
-      const isCard = !isReimbursement && (latest as PaymentRequest).paymentMethod === 'CARD'
-      if (isCard) {
-        return [{
-          key: 'payment-card',
+    // Payment step(s) — a PO can be paid across multiple installments (DP +
+    // final settlement), in any mix of Request Payment/Debit Paid
+    // (POPaymentRequest) and Reimburse (POReimbursement). Every installment
+    // gets its own Requested/Paid step-pair, in chronological order, labeled
+    // Down Payment / Additional Payment / Final Payment based on how much of
+    // the order total it and the installments before it add up to.
+    ...(() => {
+      const installments = [
+        ...detail.paymentRequests.map(p => ({ ...p, kind: 'payment' as const })),
+        ...detail.reimbursements.map(r => ({ ...r, kind: 'reimbursement' as const })),
+      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+      let cumulative = 0
+      const paymentSteps: Step[] = []
+      for (const inst of installments) {
+        const label = describeInstallment(detail.grandTotal, cumulative, inst.amount)
+        cumulative += inst.amount
+        const paid = inst.status === 'PAID'
+        const isReimbursement = inst.kind === 'reimbursement'
+        const isCard = inst.kind === 'payment' && inst.paymentMethod === 'CARD'
+
+        if (isCard) {
+          paymentSteps.push({
+            key: `payment-${inst.id}`,
+            done: true,
+            label: `${label} — Debit Paid`,
+            date: inst.paidAt ? fmt(inst.paidAt) : fmt(inst.createdAt),
+            sub: [fmtMoney(inst.amount), (inst.paidBy?.name ?? inst.requestedBy?.name) ? `by ${inst.paidBy?.name ?? inst.requestedBy?.name}` : null],
+            photos: inst.notePhotoKeys,
+            photoLabel: 'View nota',
+          })
+          continue
+        }
+        paymentSteps.push({
+          key: `${inst.kind}-requested-${inst.id}`,
           done: true,
-          label: 'Debit Paid',
-          date: latest.paidAt ? fmt(latest.paidAt) : fmt(latest.createdAt),
-          sub: [fmtMoney(latest.amount), 'Debit Paid', (latest.paidBy?.name ?? latest.requestedBy?.name) ? `by ${latest.paidBy?.name ?? latest.requestedBy?.name}` : null],
-          photos: latest.notePhotoKeys,
+          label: isReimbursement ? `${label} (Reimbursement) Requested` : `${label} Requested`,
+          date: fmt(inst.createdAt),
+          sub: [fmtMoney(inst.amount), inst.requestedBy?.name ? `by ${inst.requestedBy.name}` : null],
+          photos: inst.notePhotoKeys,
           photoLabel: 'View nota',
-        }]
-      }
-      return [
-        {
-          key: 'payment-requested',
-          done: true,
-          label: isReimbursement ? 'Reimbursement Requested' : 'Payment Requested',
-          date: fmt(latest.createdAt),
-          sub: [fmtMoney(latest.amount), latest.requestedBy?.name ? `by ${latest.requestedBy.name}` : null],
-          photos: latest.notePhotoKeys,
-          photoLabel: 'View nota',
-        },
-        {
-          key: 'payment-paid',
+        })
+        paymentSteps.push({
+          key: `${inst.kind}-paid-${inst.id}`,
           done: paid,
-          label: isReimbursement ? 'Reimbursement Paid' : 'Payment Confirmed',
-          date: paid && latest.paidAt ? fmt(latest.paidAt) : null,
-          sub: paid ? [latest.paidBy?.name ? `by ${latest.paidBy.name}` : null] : [],
-          photos: paid ? latest.transferProofKeys : [],
+          label: isReimbursement ? `${label} (Reimbursement) Paid` : `${label} Confirmed`,
+          date: paid && inst.paidAt ? fmt(inst.paidAt) : null,
+          sub: paid ? [inst.paidBy?.name ? `by ${inst.paidBy.name}` : null] : [],
+          photos: paid ? inst.transferProofKeys : [],
           photoLabel: 'View transfer proof',
-        },
-      ]
-    })() : []),
+        })
+      }
+      return paymentSteps
+    })(),
     {
       key: 'transit',
       done: ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(detail.status),
@@ -204,10 +220,20 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
 const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
-const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PAID: 'Paid' }
-const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PAID: 'bg-green-100 text-green-700' }
+const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid' }
+const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+
+// Display-only mirror of src/lib/po-payment.ts's describeInstallment — labels
+// a payment/reimbursement installment as a DP, a top-up, or the one that
+// settles the PO, purely from its position and amount relative to the total.
+function describeInstallment(grandTotal: number, requestedBefore: number, amount: number): string {
+  const isFirst = requestedBefore <= 0
+  const completesTotal = requestedBefore + amount >= grandTotal
+  if (isFirst) return completesTotal ? 'Full Payment' : 'Down Payment'
+  return completesTotal ? 'Final Payment' : 'Additional Payment'
+}
 
 function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
   value: string; suppliers: SupplierOption[]; onChange: (name: string, id: string) => void; onAdded: (s: SupplierOption) => void
@@ -1148,9 +1174,18 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     openDetail(detail); load()
   }
 
-  const actionTaken = !!detail && (
-    detail.status === 'CANCELLED' || detail.paymentRequests.length > 0 || detail.reimbursements.length > 0
-  )
+  // A PO can now be paid across multiple installments (DP + final
+  // settlement), in any mix of Request Payment/Debit Paid/Reimburse — so
+  // "has an action been taken" is no longer a single yes/no per PO.
+  const hasAnyPaymentRecord = !!detail && (detail.paymentRequests.length > 0 || detail.reimbursements.length > 0)
+  const canRequestMorePayment = !!detail && detail.status !== 'CANCELLED' && detail.remaining > 0
+  const latestRecord = !detail ? null : [
+    ...detail.paymentRequests.map(p => ({ ...p, kind: 'payment' as const })),
+    ...detail.reimbursements.map(r => ({ ...r, kind: 'reimbursement' as const })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null
+  // Only the most recent installment can be edited (and only before it's
+  // paid) — earlier, already-settled installments are history.
+  const canEditLatest = !!latestRecord && latestRecord.status !== 'PAID'
 
   function openEditAction() {
     if (!detail) return
@@ -1158,15 +1193,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       setCancelReason(detail.cancellationReason ?? ''); setCancelError(''); setCancelModal(true)
       return
     }
-    if (detail.paymentRequests.length > 0) {
-      const p = detail.paymentRequests[0]
+    if (!latestRecord) return
+    if (latestRecord.kind === 'payment') {
+      const p = latestRecord
       setPaymentMode(p.paymentMethod === 'CARD' ? 'DIRECT' : 'REQUEST')
       setPaymentAmount(String(p.amount)); setPaymentPhotos(p.notePhotoKeys); setPaymentNotes(p.notes ?? '')
       setPaymentError(''); setPaymentEditId(p.id); setPaymentModal(true)
-      return
-    }
-    if (detail.reimbursements.length > 0) {
-      const r = detail.reimbursements[0]
+    } else {
+      const r = latestRecord
       setReimburseAmount(String(r.amount)); setReimbursePhotos(r.notePhotoKeys); setReimburseNotes(r.notes ?? '')
       setReimburseRequesterName(r.requesterName); setReimburseBankName(r.bankName)
       setReimburseAccountNumber(r.accountNumber); setReimburseAccountHolderName(r.accountHolderName)
@@ -1248,18 +1282,18 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 <Pencil className="h-3.5 w-3.5" /> Edit PO
               </button>
             )}
-            {canTransit && detail.status !== 'DRAFT' && !actionTaken && (
+            {canTransit && detail.status !== 'DRAFT' && canRequestMorePayment && (
               <>
-                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                  <Wallet className="h-3.5 w-3.5" /> Request Payment
+                  <Wallet className="h-3.5 w-3.5" /> {hasAnyPaymentRecord ? 'Request Payment (Balance)' : 'Request Payment'}
                 </button>
-                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
                 <button onClick={() => {
-                  setReimburseAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setReimbursePhotos([]); setReimburseNotes('')
+                  setReimburseAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setReimbursePhotos([]); setReimburseNotes('')
                   setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
                   setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
                   setReimburseError(''); setReimburseEditId(null); setReimburseSaveAccount(false); setReimburseModal(true)
@@ -1269,10 +1303,10 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </button>
               </>
             )}
-            {canTransit && detail.status !== 'DRAFT' && actionTaken && (
+            {canTransit && detail.status !== 'DRAFT' && (detail.status === 'CANCELLED' || canEditLatest) && (
               <button onClick={openEditAction} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 <Pencil className="h-3.5 w-3.5" />
-                {detail.status === 'CANCELLED' ? 'Edit Cancellation' : detail.paymentRequests.length > 0 ? 'Edit Payment' : 'Edit Reimbursement'}
+                {detail.status === 'CANCELLED' ? 'Edit Cancellation' : latestRecord?.kind === 'payment' ? 'Edit Payment' : 'Edit Reimbursement'}
               </button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
@@ -1288,7 +1322,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 <Camera className="h-3.5 w-3.5" /> Mark In Transit
               </button>
             )}
-            {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !actionTaken && (
+            {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !hasAnyPaymentRecord && (
               <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }}
                 className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
                 Cancel PO
