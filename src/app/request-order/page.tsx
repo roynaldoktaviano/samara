@@ -63,13 +63,13 @@ export default function RequestOrderPage() {
 
 function RequestOrderContent() {
   const searchParams = useSearchParams()
-  const tenantSlug = searchParams.get('tenant')
-  const tenantQS = tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : ''
+  const linkToken = searchParams.get('token')
+  const tenantQS = linkToken ? `?token=${encodeURIComponent(linkToken)}` : ''
 
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [employees, setEmployees] = useState<EmployeeLite[]>([])
   const [locations, setLocations] = useState<LocationLite[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!!linkToken)
 
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<'All' | PurchaseItemType>('All')
@@ -94,19 +94,24 @@ function RequestOrderContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [success, setSuccess] = useState<{ prNumber: string } | null>(null)
+  const [fetchFailed, setFetchFailed] = useState(false)
+  const invalidLink = !linkToken || fetchFailed
 
   useEffect(() => {
+    if (!linkToken) return
     Promise.all([
-      fetch(`/api/hr/request-orders/catalog${tenantQS}`).then(r => r.json()),
-      fetch(`/api/hr/request-orders/employees${tenantQS}`).then(r => r.json()),
-      fetch(`/api/hr/request-orders/locations${tenantQS}`).then(r => r.json()),
-    ]).then(([c, e, l]) => {
+      fetch(`/api/hr/request-orders/catalog${tenantQS}`),
+      fetch(`/api/hr/request-orders/employees${tenantQS}`),
+      fetch(`/api/hr/request-orders/locations${tenantQS}`),
+    ]).then(async ([cr, er, lr]) => {
+      if (!cr.ok || !er.ok || !lr.ok) { setFetchFailed(true); setLoading(false); return }
+      const [c, e, l] = await Promise.all([cr.json(), er.json(), lr.json()])
       setCatalog(Array.isArray(c) ? c : [])
       setEmployees(Array.isArray(e) ? e : [])
       setLocations(Array.isArray(l) ? l : [])
       setLoading(false)
     })
-  }, [tenantQS])
+  }, [tenantQS, linkToken])
 
   const categories = useMemo(() => {
     const inType = activeType === 'All' ? catalog : catalog.filter(i => i.type === activeType)
@@ -194,6 +199,22 @@ function RequestOrderContent() {
 
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes(''); setSuccess(null); setCartOpen(false)
+  }
+
+  if (invalidLink) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fafaf8] p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border p-8 text-center">
+          <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
+            <AlertTriangle className="h-7 w-7 text-red-500" />
+          </div>
+          <h2 className="text-xl font-bold">Link Not Valid</h2>
+          <p className="text-muted-foreground text-sm mt-2">
+            This request order link is missing or no longer valid. Please ask your admin for the current link.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (success) {

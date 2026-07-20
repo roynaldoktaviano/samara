@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 // Temporary, throwaway endpoint — lets an admin peek at what a Freshsales contact
 // view actually contains (field names, count) before we build the real newsletter
@@ -12,8 +13,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const apiKey = process.env.FRESHSALES_API_KEY
-  const domain = process.env.FRESHSALES_DOMAIN
+  const tenantId = (session?.user as { tenantId?: string })?.tenantId ?? ''
+  const [apiKey, domain] = await Promise.all([
+    getTenantSecret(tenantId, 'freshsalesApiKey'),
+    getTenantSecret(tenantId, 'freshsalesDomain'),
+  ])
   if (!apiKey || !domain) {
     return NextResponse.json({ error: 'FRESHSALES_API_KEY / FRESHSALES_DOMAIN not configured' }, { status: 500 })
   }

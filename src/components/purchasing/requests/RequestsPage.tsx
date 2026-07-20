@@ -1,13 +1,36 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send } from 'lucide-react'
+import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
-interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; avgPrice: number; isActive: boolean }
+type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
+
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const MAX = 900
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.8))
+    }
+    img.onerror = reject
+    img.src = url
+  })
+}
+
+interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; imageKey: string | null; avgPrice: number; isActive: boolean }
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
-interface RequestLine { id?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[] }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -51,21 +74,33 @@ export default function RequestsPage() {
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [filterStatus, setFilterStatus] = useState('ALL')
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
-  const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[] }) | null>(null)
+  const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
+  const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
+  const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; transferNumbers: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  // Form state
+  // Form state (create view — catalog + cart, mirrors the /request-order page)
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
   const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState<RequestLine[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', quantity: 1, estimatedCost: 0, supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false }])
+  const [cart, setCart] = useState<RequestLine[]>([])
+  const [cartOpen, setCartOpen] = useState(false)
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('All')
+  const [catalogCategory, setCatalogCategory] = useState('All')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [supplierModal, setSupplierModal] = useState<{ idx: number } | 'editItem' | null>(null)
+  const [supplierModal, setSupplierModal] = useState<'editItem' | null>(null)
   const [supplierModalSearch, setSupplierModalSearch] = useState('')
   const [supplierFilterCity, setSupplierFilterCity] = useState('All')
-  const [itemModal, setItemModal] = useState(false)
-  const [itemModalSearch, setItemModalSearch] = useState('')
-  const [itemModalSelected, setItemModalSelected] = useState<Set<string>>(new Set())
+
+  // Custom request modal (create view)
+  const [customModal, setCustomModal] = useState(false)
+  const [customForm, setCustomForm] = useState({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] as string[] })
+  const customFileRef = useRef<HTMLInputElement>(null)
+  const [compressingCustomImage, setCompressingCustomImage] = useState(false)
+  const { isDragging: isDraggingCustomImage, dropProps: customImageDropProps } = useFileDrop(
+    files => processCustomImages(Array.from(files)), compressingCustomImage
+  )
 
   // Edit item (est. price / supplier) from the detail view — also used to view custom request detail
   const [editItemModal, setEditItemModal] = useState<RequestLine | null>(null)
@@ -108,13 +143,58 @@ export default function RequestsPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function fetchDetail(id: string) {
+    setDetailLoading(true)
+    const res = await fetch(`/api/purchasing/requests/${id}`)
+    if (res.ok) {
+      const data = await res.json()
+      setDetail(data)
+      // Default eligible items to the warehouse with the most stock; the approver
+      // can flip any of them back to "Purchase Order" before approving. Preserve any
+      // choice already made (e.g. re-fetching after editing a supplier shouldn't
+      // silently reset a fulfillment pick the approver already made).
+      setFulfillment(prev => {
+        const next = { ...prev }
+        for (const item of data.items as RequestLine[]) {
+          if (next[item.id!] !== undefined) continue
+          const best = item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]
+          next[item.id!] = best?.locationId ?? null
+        }
+        return next
+      })
+    }
+    setDetailLoading(false)
+  }
+
   async function openDetail(req: PurchaseRequest) {
     setSelected(req)
     setView('detail')
-    setDetailLoading(true)
-    const res = await fetch(`/api/purchasing/requests/${req.id}`)
-    if (res.ok) setDetail(await res.json())
-    setDetailLoading(false)
+    setApproveSummary(null)
+    setFulfillment({})
+    await fetchDetail(req.id)
+  }
+
+  async function approve() {
+    if (!selected || !detail) return
+    const missingSupplier = detail.items.filter(item => !fulfillment[item.id!] && !item.supplierId)
+    if (missingSupplier.length > 0) {
+      alert(`Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}`)
+      return
+    }
+    const transferFulfillments = Object.entries(fulfillment)
+      .filter(([, fromLocationId]) => fromLocationId)
+      .map(([requestItemId, fromLocationId]) => ({ requestItemId, fromLocationId: fromLocationId as string }))
+    const res = await fetch(`/api/purchasing/requests/${selected.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'APPROVED', transferFulfillments }),
+    })
+    const data = await res.json()
+    if (!res.ok) { alert(data.error ?? 'Failed to approve'); return }
+    setSelected(s => s ? { ...s, status: 'APPROVED' } : s)
+    await fetchDetail(selected.id)
+    setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], transferNumbers: data.createdTransferNumbers ?? [] })
+    load()
   }
 
   function openEditItem(item: RequestLine) {
@@ -140,42 +220,70 @@ export default function RequestsPage() {
     setEditItemSaving(false)
     if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return }
     setEditItemModal(null)
-    await openDetail(selected!)
+    await fetchDetail(detail.id)
   }
 
-  function addLine() {
-    setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', quantity: 1, estimatedCost: 0, supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false }])
+  function addToCart(item: PurchaseItem, unit: string) {
+    const key = `${item.id}-${unit}`
+    setCart(prev => {
+      const existing = prev.find(l => l.key === key)
+      if (existing) return prev.map(l => l.key === key ? { ...l, quantity: l.quantity + 1 } : l)
+      return [...prev, {
+        key, itemId: item.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit,
+        itemUnit: unit, unit, quantity: 1, estimatedCost: 0,
+        supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false,
+        notes: '', search: '', open: false, isCustom: false,
+        imageKeys: item.imageKey ? [item.imageKey] : [],
+      }]
+    })
   }
 
-  function removeLine(i: number) {
-    setLines(l => l.filter((_, idx) => idx !== i))
+  function changeCartQty(key: string, delta: number) {
+    setCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, l.quantity + delta) } : l))
   }
 
-  function pickItem(lineIdx: number, item: PurchaseItem) {
-    setLines(l => l.map((line, i) => i !== lineIdx ? line : {
-      ...line,
-      itemId: item.id, itemName: item.name,
-      baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit,
-      itemUnit: item.purchaseUnit,
-      estimatedCost: item.avgPrice > 0 ? item.avgPrice : line.estimatedCost,
-      search: '', open: false,
-      supplierName: line.supplierName,
-    }))
+  function removeCartLine(key: string) {
+    setCart(prev => prev.filter(l => l.key !== key))
   }
 
-  function updateLine(idx: number, field: keyof RequestLine, value: string | number | boolean) {
-    setLines(l => l.map((line, i) => i !== idx ? line : { ...line, [field]: value }))
+  async function processCustomImages(files: File[]) {
+    if (!files.length) return
+    setCompressingCustomImage(true)
+    const compressed = await Promise.all(files.map(compressImage))
+    setCustomForm(f => ({ ...f, images: [...f.images, ...compressed] }))
+    setCompressingCustomImage(false)
   }
 
-  function selectSupplierForTarget(target: number | 'editItem', s: Supplier) {
-    if (target === 'editItem') {
-      setEditItemSupplierId(s.id)
-    } else {
-      setLines(l => l.map((li, i) => i !== target ? li : { ...li, supplierId: s.id, supplierName: s.name }))
-    }
+  async function handleCustomImages(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    await processCustomImages(files)
   }
 
-  async function quickAddSupplier(target: number | 'editItem', name: string) {
+  function removeCustomImage(index: number) {
+    setCustomForm(f => ({ ...f, images: f.images.filter((_, i) => i !== index) }))
+  }
+
+  function addCustomToCart() {
+    if (!customForm.itemName.trim()) return
+    setCart(prev => [...prev, {
+      key: `custom-${Date.now()}`,
+      itemId: '', itemName: customForm.itemName.trim(), baseUnit: '', purchaseUnit: '',
+      itemUnit: customForm.unit.trim() || 'pcs', unit: customForm.unit.trim() || 'pcs',
+      quantity: Number(customForm.quantity) || 1, estimatedCost: 0,
+      supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false,
+      notes: customForm.notes.trim(), search: '', open: false, isCustom: true,
+      imageKeys: customForm.images,
+    }])
+    setCustomForm({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] })
+    setCustomModal(false)
+  }
+
+  function selectSupplierForTarget(s: Supplier) {
+    setEditItemSupplierId(s.id)
+  }
+
+  async function quickAddSupplier(name: string) {
     const res = await fetch('/api/purchasing/suppliers', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -183,28 +291,29 @@ export default function RequestsPage() {
     if (!res.ok) return
     const s: Supplier = await res.json()
     setSuppliers(prev => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)))
-    if (target === 'editItem') {
-      setEditItemSupplierId(s.id)
-    } else {
-      setLines(l => l.map((li, i) => i !== target ? li : { ...li, supplierId: s.id, supplierName: s.name, supplierSearch: '', supplierOpen: false }))
-    }
+    setEditItemSupplierId(s.id)
   }
 
   async function submit() {
     setSaving(true)
     setSaveError('')
-    const invalid = lines.find(l => !l.itemName || !l.quantity || l.quantity <= 0)
-    if (invalid) { setSaveError('Fill in name and quantity for all rows'); setSaving(false); return }
+    if (cart.length === 0) { setSaveError('Add at least one item to the request'); setSaving(false); return }
     const res = await fetch('/api/purchasing/requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deliveryLocationId: deliveryLocationId || undefined, notes, items: lines.map(l => ({ ...l, unit: l.itemUnit || l.baseUnit || 'pcs', supplierId: l.supplierId || null, supplierName: l.supplierName || null })) }),
+      body: JSON.stringify({
+        deliveryLocationId: deliveryLocationId || undefined, notes,
+        items: cart.map(l => ({
+          itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
+          unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
+        })),
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false)
     setView('list')
-    setDeliveryLocationId(''); setNotes(''); setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', quantity: 1, estimatedCost: 0, supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false }])
+    setDeliveryLocationId(''); setNotes(''); setCart([]); setCartOpen(false)
     load()
   }
 
@@ -338,326 +447,26 @@ export default function RequestsPage() {
   )
   }
 
-  // ── Create view ──
+  // ── Create view (catalog + cart, mirrors the /request-order page) ──
   if (view === 'create') {
-    const total = lines.reduce((s, l) => s + l.quantity * l.estimatedCost, 0)
-    const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
-    const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-right`
     return (
-      <div className="space-y-6">
-
-        <div className="flex items-center gap-3">
-          <button onClick={() => setView('list')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
-          <span className="text-muted-foreground">/</span>
-          <span className="text-sm font-medium">Create Purchase Request</span>
-        </div>
-
-        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
-
-        {/* Request Info */}
-        <div className="rounded-xl border bg-white">
-          <div className="px-5 py-4 border-b">
-            <h3 className="text-sm font-semibold">Request Info</h3>
-          </div>
-          <div className="p-5 grid grid-cols-2 gap-4 items-start">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-muted-foreground">Delivery Location</label>
-                {deliveryLocationId && (() => {
-                  const loc = locations.find(l => l.id === deliveryLocationId)
-                  return loc ? (
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                      {loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'} team
-                    </span>
-                  ) : null
-                })()}
-              </div>
-              <select className={inp} value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}>
-                <option value="">— Select location —</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Notes <span className="font-normal">(optional)</span></label>
-              <textarea
-                className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none transition-colors"
-                rows={2} placeholder="Additional notes for the purchasing team..."
-                value={notes} onChange={e => setNotes(e.target.value)} />
-            </div>
-          </div>
-        </div>
-
-        {/* Line items */}
-        <div className="rounded-xl border bg-white overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b">
-            <h3 className="text-sm font-semibold">Items</h3>
-            <div className="flex gap-2">
-              <button onClick={() => { setItemModal(true); setItemModalSearch(''); setItemModalSelected(new Set()) }}
-                className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
-                <Plus className="h-3.5 w-3.5" /> Add Items
-              </button>
-              <button onClick={addLine}
-                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border px-3 py-1.5 rounded-lg transition-colors">
-                + Empty Row
-              </button>
-            </div>
-          </div>
-
-          <table className="w-full text-sm">
-            <thead className="text-xs text-muted-foreground border-b bg-muted/30">
-              <tr>
-                <th className="text-center w-8 px-3 py-2.5 font-medium">#</th>
-                <th className="text-left px-3 py-2.5 font-medium">Item</th>
-                <th className="text-left px-3 py-2.5 font-medium w-44">Qty / Unit</th>
-                <th className="text-left px-3 py-2.5 font-medium">Supplier</th>
-                <th className="text-left px-3 py-2.5 font-medium w-40">Est. Unit Price</th>
-                <th className="text-right px-4 py-2.5 font-medium w-32">Subtotal</th>
-                <th className="w-8" />
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {lines.map((line, idx) => {
-                const subtotal = line.quantity * line.estimatedCost
-                return (
-                  <tr key={idx} className="group hover:bg-muted/20 transition-colors">
-                    <td className="text-center px-3 py-3 text-xs text-muted-foreground">{idx + 1}</td>
-
-                    {/* Item picker — opens modal */}
-                    <td className="px-2 py-2.5">
-                      <button
-                        onClick={() => { setItemModal(true); setItemModalSearch(''); setItemModalSelected(new Set()) }}
-                        className={`${inp} text-left flex items-center gap-2 ${!line.itemName ? 'text-muted-foreground' : ''}`}>
-                        {line.itemName
-                          ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.itemName}</span></>
-                          : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select item...</span></>
-                        }
-                      </button>
-                    </td>
-
-                    {/* Qty + Unit inline */}
-                    <td className="px-2 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min={0.01} step="any"
-                          style={{ width: 72 }}
-                          className="h-9 shrink-0 border rounded-md px-2 text-sm text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          value={line.quantity}
-                          onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} />
-                        {line.baseUnit ? (
-                          line.baseUnit === line.purchaseUnit ? (
-                            <span className="h-9 inline-flex items-center text-xs text-muted-foreground bg-muted px-2.5 rounded-md border whitespace-nowrap">{line.baseUnit}</span>
-                          ) : (
-                            <div className="flex rounded-md border overflow-hidden h-9 shrink-0">
-                              {[line.purchaseUnit, line.baseUnit].map(u => (
-                                <button key={u} onClick={() => updateLine(idx, 'itemUnit', u)}
-                                  className={`h-9 text-xs font-medium px-2.5 transition-colors whitespace-nowrap ${line.itemUnit === u ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
-                                  {u}
-                                </button>
-                              ))}
-                            </div>
-                          )
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Supplier — opens modal */}
-                    <td className="px-2 py-2.5">
-                      <button onClick={() => { setSupplierModal({ idx }); setSupplierModalSearch('') }}
-                        className={`${inp} text-left flex items-center gap-2 ${!line.supplierName ? 'text-muted-foreground' : ''}`}>
-                        {line.supplierName
-                          ? <><Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.supplierName}</span></>
-                          : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select supplier...</span></>
-                        }
-                      </button>
-                    </td>
-
-                    {/* Est. Price */}
-                    <td className="px-2 py-2.5">
-                      <input type="number" min={0} step="any" className={numInp} value={line.estimatedCost}
-                        onChange={e => updateLine(idx, 'estimatedCost', Number(e.target.value))} />
-                    </td>
-
-                    <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
-                      {subtotal > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(subtotal)}` : <span className="text-muted-foreground font-normal">—</span>}
-                    </td>
-
-                    <td className="px-2 py-2.5 text-center">
-                      <button onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                        className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-
-          <div className="flex items-center justify-between px-5 py-4 bg-muted/20 border-t">
-            <span className="text-sm text-muted-foreground">{lines.length} item{lines.length > 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">Estimated Total</span>
-              <span className="text-lg font-bold">Rp {new Intl.NumberFormat('id-ID').format(total)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 pb-4">
-          <button onClick={() => setView('list')} className="px-5 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-          <button onClick={submit} disabled={saving}
-            className="flex items-center gap-2 px-6 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-semibold transition-colors">
-            {saving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</> : 'Save as Draft'}
-          </button>
-        </div>
-
-        {/* ── Supplier picker modal ── */}
-        {supplierModal && (() => {
-          const allCities = ['All', ...Array.from(new Set(suppliers.flatMap(s => (s.locations ?? []).map(l => l.city).filter(Boolean)))).sort()]
-          const filtered = suppliers.filter(s => {
-            const q = supplierModalSearch.toLowerCase()
-            if (q && !s.name.toLowerCase().includes(q)) return false
-            if (supplierFilterCity !== 'All' && !(s.locations ?? []).some(l => l.city === supplierFilterCity)) return false
-            return true
-          })
-          return (
-            <>
-              <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={() => setSupplierModal(null)} />
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-                <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[82vh]">
-                  <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
-                    <h3 className="font-semibold text-base">Select Supplier</h3>
-                    <button onClick={() => setSupplierModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
-                  </div>
-                  <div className="px-4 py-3 border-b shrink-0">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                      <input autoFocus className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        placeholder="Search supplier..." value={supplierModalSearch} onChange={e => setSupplierModalSearch(e.target.value)} />
-                    </div>
-                  </div>
-                  {allCities.length > 1 && (
-                    <div className="px-4 py-2 border-b shrink-0 flex gap-1.5 flex-wrap">
-                      {allCities.map(c => (
-                        <button key={c} onClick={() => setSupplierFilterCity(c)}
-                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${supplierFilterCity === c ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="overflow-y-auto flex-1">
-                    {filtered.map(s => (
-                      <button key={s.id} onClick={() => { selectSupplierForTarget(supplierModal === 'editItem' ? 'editItem' : supplierModal.idx, s); setSupplierModal(null) }}
-                        className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
-                        <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                          <Building2 className="h-4 w-4 text-amber-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm">{s.name}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            {(s.locations ?? []).map((l, i) => (
-                              <span key={i} className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">{l.city}</span>
-                            ))}
-                            {s.contact && <span className="text-xs text-muted-foreground">{s.contact}</span>}
-                          </div>
-                        </div>
-                        {(supplierModal === 'editItem' ? editItemSupplierId === s.id : lines[supplierModal.idx]?.supplierId === s.id) && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
-                      </button>
-                    ))}
-                    {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (
-                      <button onClick={() => quickAddSupplier(supplierModal === 'editItem' ? 'editItem' : supplierModal.idx, supplierModalSearch.trim()).then(() => setSupplierModal(null))}
-                        className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-green-50 transition-colors border-t">
-                        <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                          <Plus className="h-4 w-4 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm text-green-700">Add &quot;{supplierModalSearch.trim()}&quot;</p>
-                          <p className="text-xs text-green-600">Create as new supplier</p>
-                        </div>
-                      </button>
-                    )}
-                    {filtered.length === 0 && !supplierModalSearch.trim() && (
-                      <p className="px-5 py-8 text-sm text-muted-foreground text-center">No suppliers match the filter.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
-          )
-        })()}
-
-        {/* ── Item multi-select modal ── */}
-        {itemModal && (() => {
-          const q = itemModalSearch.toLowerCase()
-          const filteredItems = items.filter(i => i.isActive && (!q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)))
-          const toggle = (id: string) => setItemModalSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-          const addSelected = () => {
-            const toAdd = items.filter(i => itemModalSelected.has(i.id))
-            const newLines = toAdd.map(item => ({
-              itemId: item.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit,
-              itemUnit: item.purchaseUnit, quantity: 1, estimatedCost: item.avgPrice > 0 ? item.avgPrice : 0,
-              supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false, notes: '', search: '', open: false,
-            }))
-            setLines(l => {
-              const hasEmpty = l.length === 1 && !l[0].itemId
-              return hasEmpty ? newLines : [...l, ...newLines]
-            })
-            setItemModal(false)
-          }
-          return (
-            <>
-              <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={() => setItemModal(false)} />
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-                <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[82vh]">
-                  <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
-                    <h3 className="font-semibold text-base">Add Items</h3>
-                    <button onClick={() => setItemModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
-                  </div>
-                  <div className="px-4 py-3 border-b shrink-0">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                      <input autoFocus className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        placeholder="Search item name or SKU..." value={itemModalSearch} onChange={e => setItemModalSearch(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="overflow-y-auto flex-1">
-                    {filteredItems.map(item => (
-                      <label key={item.id} className="flex items-center gap-3 px-5 py-3 hover:bg-amber-50 border-b last:border-0 cursor-pointer transition-colors">
-                        <input type="checkbox" checked={itemModalSelected.has(item.id)} onChange={() => toggle(item.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 accent-amber-500" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.sku} · {item.purchaseUnit}{item.purchaseUnit !== item.baseUnit ? ` / ${item.baseUnit}` : ''}</p>
-                        </div>
-                        {item.avgPrice > 0 && (
-                          <span className="text-sm text-amber-700 font-medium shrink-0">Rp {new Intl.NumberFormat('id-ID').format(item.avgPrice)}</span>
-                        )}
-                      </label>
-                    ))}
-                    {filteredItems.length === 0 && (
-                      <p className="px-5 py-8 text-sm text-muted-foreground text-center">No items found.</p>
-                    )}
-                  </div>
-                  <div className="px-5 py-4 border-t shrink-0 flex items-center justify-between bg-muted/20">
-                    <span className="text-sm text-muted-foreground">
-                      {itemModalSelected.size > 0 ? `${itemModalSelected.size} item selected` : 'Select items above'}
-                    </span>
-                    <div className="flex gap-2">
-                      <button onClick={() => setItemModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-                      <button onClick={addSelected} disabled={itemModalSelected.size === 0}
-                        className="px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                        Add {itemModalSelected.size > 0 ? itemModalSelected.size : ''} Item{itemModalSelected.size !== 1 ? 's' : ''}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )
-        })()}
-      </div>
+      <CreateRequestView
+        items={items} locations={locations}
+        deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+        notes={notes} setNotes={setNotes}
+        cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
+        addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
+        catalogSearch={catalogSearch} setCatalogSearch={setCatalogSearch}
+        catalogType={catalogType} setCatalogType={setCatalogType}
+        catalogCategory={catalogCategory} setCatalogCategory={setCatalogCategory}
+        customModal={customModal} setCustomModal={setCustomModal}
+        customForm={customForm} setCustomForm={setCustomForm}
+        customFileRef={customFileRef} compressingCustomImage={compressingCustomImage}
+        isDraggingCustomImage={isDraggingCustomImage} customImageDropProps={customImageDropProps}
+        handleCustomImages={handleCustomImages} removeCustomImage={removeCustomImage} addCustomToCart={addCustomToCart}
+        saveError={saveError} saving={saving} submit={submit}
+        onBack={() => setView('list')}
+      />
     )
   }
 
@@ -686,7 +495,7 @@ export default function RequestsPage() {
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {selected.status === 'REQUESTED' && (
               <>
-                <button onClick={() => changeStatus(selected.id, 'APPROVED')}
+                <button onClick={approve}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
                   Approve
                 </button>
@@ -710,6 +519,14 @@ export default function RequestsPage() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {approveSummary && (approveSummary.poNumbers.length > 0 || approveSummary.transferNumbers.length > 0) && (
+        <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-1">
+          <p className="font-medium">Request approved.</p>
+          {approveSummary.poNumbers.length > 0 && <p>Purchase Order{approveSummary.poNumbers.length > 1 ? 's' : ''}: {approveSummary.poNumbers.join(', ')}</p>}
+          {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
         </div>
       )}
 
@@ -747,6 +564,7 @@ export default function RequestsPage() {
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
+                  {detail.status === 'REQUESTED' && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   <th className="text-right px-5 py-2.5 font-medium">Est. Price</th>
                   <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
                   <th className="w-10" />
@@ -760,6 +578,7 @@ export default function RequestsPage() {
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
                   const editable = detail.status === 'REQUESTED'
                   const isCustom = !item.itemId
+                  const chosenFromLocationId = fulfillment[item.id!] ?? null
                   return (
                     <tr
                       key={i}
@@ -792,7 +611,22 @@ export default function RequestsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">{item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}</td>
+                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'REQUESTED' && e.stopPropagation()}>
+                        {detail.status !== 'REQUESTED' ? (
+                          item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>
+                        ) : chosenFromLocationId ? (
+                          <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
+                        ) : (
+                          <button
+                            onClick={() => openEditItem(item)}
+                            className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
+                              item.supplierName ? 'bg-white text-foreground border-gray-300 hover:bg-muted' : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                            }`}
+                          >
+                            {item.supplierName ?? 'Select supplier...'}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-right">
                         <span>{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
                         {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor && (
@@ -807,6 +641,29 @@ export default function RequestsPage() {
                           : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
                         }
                       </td>
+                      {detail.status === 'REQUESTED' && (
+                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
+                          {!item.transferEligible || !item.warehouseStock?.length ? (
+                            <span className="text-xs text-muted-foreground">Purchase Order</span>
+                          ) : (
+                            <div className="relative inline-block">
+                              <select
+                                className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1.5 rounded-md border cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                                  chosenFromLocationId ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-white text-muted-foreground border-gray-300 hover:bg-muted'
+                                }`}
+                                value={chosenFromLocationId ?? ''}
+                                onChange={e => setFulfillment(f => ({ ...f, [item.id!]: e.target.value || null }))}
+                              >
+                                <option value="">Purchase Order</option>
+                                {item.warehouseStock.map(w => (
+                                  <option key={w.locationId} value={w.locationId}>Transfer from {w.locationName} ({w.qty})</option>
+                                ))}
+                              </select>
+                              <ChevronDown className={`h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${chosenFromLocationId ? 'text-blue-700' : 'text-muted-foreground'}`} />
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td className="px-5 py-3 text-right text-muted-foreground">Rp {new Intl.NumberFormat('id-ID').format(item.estimatedCost)}</td>
                       <td className="px-5 py-3 text-right font-medium">Rp {new Intl.NumberFormat('id-ID').format(item.quantity * item.estimatedCost)}</td>
                       <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
@@ -822,7 +679,7 @@ export default function RequestsPage() {
               </tbody>
               <tfoot className="bg-muted/30 border-t">
                 <tr>
-                  <td colSpan={5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
+                  <td colSpan={detail.status === 'REQUESTED' ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
                   <td className="px-5 py-3 text-right font-bold" colSpan={2}>
                     Rp {new Intl.NumberFormat('id-ID').format(detail.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0))}
                   </td>
@@ -958,7 +815,7 @@ export default function RequestsPage() {
                     — None —
                   </button>
                   {filtered.map(s => (
-                    <button key={s.id} onClick={() => { selectSupplierForTarget('editItem', s); setSupplierModal(null) }}
+                    <button key={s.id} onClick={() => { selectSupplierForTarget(s); setSupplierModal(null) }}
                       className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
                       <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                         <Building2 className="h-4 w-4 text-amber-600" />
@@ -976,7 +833,7 @@ export default function RequestsPage() {
                     </button>
                   ))}
                   {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (
-                    <button onClick={() => quickAddSupplier('editItem', supplierModalSearch.trim()).then(() => setSupplierModal(null))}
+                    <button onClick={() => quickAddSupplier(supplierModalSearch.trim()).then(() => setSupplierModal(null))}
                       className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-green-50 transition-colors border-t">
                       <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
                         <Plus className="h-4 w-4 text-green-600" />
@@ -1042,6 +899,451 @@ export default function RequestsPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Create view (catalog browse + cart) ──
+
+function CreateRequestView({
+  items, locations,
+  deliveryLocationId, setDeliveryLocationId,
+  notes, setNotes,
+  cart, cartOpen, setCartOpen,
+  addToCart, changeCartQty, removeCartLine,
+  catalogSearch, setCatalogSearch,
+  catalogType, setCatalogType,
+  catalogCategory, setCatalogCategory,
+  customModal, setCustomModal,
+  customForm, setCustomForm,
+  customFileRef, compressingCustomImage,
+  isDraggingCustomImage, customImageDropProps,
+  handleCustomImages, removeCustomImage, addCustomToCart,
+  saveError, saving, submit,
+  onBack,
+}: {
+  items: PurchaseItem[]; locations: StockLocation[]
+  deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
+  notes: string; setNotes: (v: string) => void
+  cart: RequestLine[]; cartOpen: boolean; setCartOpen: (v: boolean) => void
+  addToCart: (item: PurchaseItem, unit: string) => void
+  changeCartQty: (key: string, delta: number) => void
+  removeCartLine: (key: string) => void
+  catalogSearch: string; setCatalogSearch: (v: string) => void
+  catalogType: 'All' | PurchaseItemType; setCatalogType: (v: 'All' | PurchaseItemType) => void
+  catalogCategory: string; setCatalogCategory: (v: string) => void
+  customModal: boolean; setCustomModal: (v: boolean) => void
+  customForm: { itemName: string; quantity: number; unit: string; notes: string; images: string[] }
+  setCustomForm: React.Dispatch<React.SetStateAction<{ itemName: string; quantity: number; unit: string; notes: string; images: string[] }>>
+  customFileRef: React.RefObject<HTMLInputElement | null>
+  compressingCustomImage: boolean
+  isDraggingCustomImage: boolean
+  customImageDropProps: FileDropProps
+  handleCustomImages: (e: React.ChangeEvent<HTMLInputElement>) => void
+  removeCustomImage: (index: number) => void
+  addCustomToCart: () => void
+  saveError: string; saving: boolean; submit: () => void
+  onBack: () => void
+}) {
+  const categories = useMemo(() => {
+    const inType = catalogType === 'All' ? items : items.filter(i => i.type === catalogType)
+    return ['All', ...Array.from(new Set(inType.map(i => i.category)))]
+  }, [items, catalogType])
+
+  const filtered = useMemo(() => items.filter(i =>
+    (catalogType === 'All' || i.type === catalogType) &&
+    (catalogCategory === 'All' || i.category === catalogCategory) &&
+    (!catalogSearch || i.name.toLowerCase().includes(catalogSearch.toLowerCase()) || i.sku.toLowerCase().includes(catalogSearch.toLowerCase()))
+  ), [items, catalogType, catalogCategory, catalogSearch])
+
+  const PAGE_SIZE = 12
+  const [page, setPage] = useState(1)
+  // Jump back to page 1 whenever the filters change — adjusted during render (not
+  // an effect) per https://react.dev/learn/you-might-not-need-an-effect
+  const filterKey = `${catalogType}|${catalogCategory}|${catalogSearch}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  const totalQty = cart.reduce((s, l) => s + l.quantity, 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
+          <span className="text-muted-foreground">/</span>
+          <span className="text-sm font-medium">Create Purchase Request</span>
+        </div>
+        <button
+          onClick={() => setCartOpen(true)}
+          className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium"
+        >
+          <ShoppingCart className="h-4 w-4" />
+          {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
+        </button>
+      </div>
+
+      {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+        {/* ── Catalog ── */}
+        <div className="space-y-4 min-w-0">
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <input
+                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                placeholder="Search item name or SKU..."
+                value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => setCustomModal(true)}
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border-2 border-dashed border-amber-400 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-50 shrink-0"
+            >
+              <ImagePlus className="h-4 w-4" /> Custom Request
+            </button>
+          </div>
+
+          <div className="bg-white border rounded-lg p-3">
+            <div className="inline-flex gap-1 bg-muted rounded-md p-1 mb-2.5 flex-wrap">
+              <button onClick={() => { setCatalogType('All'); setCatalogCategory('All') }}
+                className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${catalogType === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground'}`}>
+                All Items
+              </button>
+              {ITEM_TYPES.map(t => (
+                <button key={t} onClick={() => { setCatalogType(t); setCatalogCategory('All') }}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${catalogType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground'}`}>
+                  {ITEM_TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {categories.map(c => (
+                <button key={c} onClick={() => setCatalogCategory(c)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    catalogCategory === c ? 'bg-amber-600 text-white border-transparent' : 'bg-white text-muted-foreground'
+                  }`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground">
+              <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              {pageItems.map(item => {
+                const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
+                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
+                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
+                return (
+                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col">
+                    <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
+                      {item.imageKey ? <img src={item.imageKey} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
+                    </div>
+                    <div className="p-3 flex flex-col flex-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
+                      <p className="text-sm font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
+                      </p>
+                      <div className="mt-auto pt-2 space-y-1.5">
+                        {baseLine ? (
+                          <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
+                            <button onClick={() => changeCartQty(baseLine.key!, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="text-xs font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
+                            <button onClick={() => changeCartQty(baseLine.key!, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => addToCart(item, item.baseUnit)}
+                            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors">
+                            <Plus className="h-3.5 w-3.5" /> Add {item.baseUnit}
+                          </button>
+                        )}
+
+                        {hasPurchaseUnit && (
+                          purchaseLine ? (
+                            <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
+                              <button onClick={() => changeCartQty(purchaseLine.key!, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Minus className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="text-xs font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
+                              <button onClick={() => changeCartQty(purchaseLine.key!, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => addToCart(item, item.purchaseUnit)}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
+                              <Plus className="h-3.5 w-3.5" /> Add {item.purchaseUnit}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-muted-foreground">
+                {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {Array.from({ length: pageCount }, (_, i) => i + 1)
+                  .filter(n => n === 1 || n === pageCount || Math.abs(n - currentPage) <= 1)
+                  .reduce<(number | 'ellipsis')[]>((acc, n) => {
+                    if (acc.length && n - (acc[acc.length - 1] as number) > 1) acc.push('ellipsis')
+                    acc.push(n)
+                    return acc
+                  }, [])
+                  .map((n, i) => n === 'ellipsis' ? (
+                    <span key={`e${i}`} className="w-8 text-center text-xs text-muted-foreground">…</span>
+                  ) : (
+                    <button key={n} onClick={() => setPage(n)}
+                      className={`h-8 w-8 rounded-md text-xs font-semibold transition-colors ${
+                        n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
+                      }`}>
+                      {n}
+                    </button>
+                  ))}
+                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sidebar (desktop) ── */}
+        <div className="hidden lg:block">
+          <div className="sticky top-4">
+            <RequestCartPanel
+              cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
+              locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+              notes={notes} setNotes={setNotes}
+              submit={submit} saving={saving}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Mobile cart drawer ── */}
+      {cartOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
+              <h3 className="font-semibold">Your Request</h3>
+              <button onClick={() => setCartOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-5">
+              <RequestCartPanel
+                cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
+                locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+                notes={notes} setNotes={setNotes}
+                submit={submit} saving={saving}
+                embedded
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Request Modal ── */}
+      {customModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b">
+              <div>
+                <h3 className="font-bold text-lg">Custom Request</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">For items not in the catalog — this won&apos;t create a new catalog item, it&apos;s just added to your request for purchasing to review</p>
+              </div>
+              <button onClick={() => setCustomModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  rows={3} placeholder="What do you need? Be as specific as possible..."
+                  value={customForm.itemName} onChange={e => setCustomForm(f => ({ ...f, itemName: e.target.value }))} autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
+                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    value={customForm.quantity} onChange={e => setCustomForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit</label>
+                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" placeholder="pcs"
+                    value={customForm.unit} onChange={e => setCustomForm(f => ({ ...f, unit: e.target.value }))} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  rows={2} placeholder="Optional additional detail..."
+                  value={customForm.notes} onChange={e => setCustomForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reference Photos</label>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                  {customForm.images.map((src, i) => (
+                    <div key={i} className="relative aspect-square rounded-lg overflow-hidden border">
+                      <img src={src} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
+                      <button onClick={() => removeCustomImage(i)} className="absolute top-1.5 right-1.5 bg-black/50 text-white rounded-full p-1">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={() => customFileRef.current?.click()} disabled={compressingCustomImage} {...customImageDropProps}
+                    className={`aspect-square flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
+                      isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+                    }`}>
+                    <Camera className="h-5 w-5" />
+                    <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
+                  </button>
+                </div>
+                <input ref={customFileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleCustomImages} />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
+              <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
+              <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
+                className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">
+                Add to Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RequestCartPanel({
+  cart, removeCartLine, changeCartQty,
+  locations, deliveryLocationId, setDeliveryLocationId,
+  notes, setNotes,
+  submit, saving,
+  embedded = false,
+}: {
+  cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
+  locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
+  notes: string; setNotes: (v: string) => void
+  submit: () => void; saving: boolean
+  embedded?: boolean
+}) {
+  return (
+    <div className={`bg-white rounded-xl border flex flex-col ${!embedded ? 'max-h-[calc(100vh-160px)]' : ''}`}>
+      {!embedded && (
+        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0">
+          <ShoppingCart className="h-4 w-4 text-amber-700" />
+          <h3 className="font-semibold text-sm">Your Request {cart.length > 0 && `(${cart.length})`}</h3>
+        </div>
+      )}
+
+      <div className="p-5 space-y-4 overflow-y-auto flex-1">
+        {/* Delivery Location */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery Location</label>
+          <select
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
+          >
+            <option value="">— Select location —</option>
+            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+
+        {/* Items */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items</label>
+          {cart.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+              <ShoppingCart className="h-6 w-6 mx-auto mb-2 opacity-30" />
+              <p className="text-xs">No items yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {cart.map(line => (
+                <div key={line.key} className="flex items-center gap-2.5 border rounded-lg p-2">
+                  <div className="relative w-10 h-10 rounded-md bg-muted/50 shrink-0 overflow-hidden flex items-center justify-center">
+                    {line.imageKeys?.[0] ? <img src={line.imageKeys[0]} alt={line.itemName} className="w-full h-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
+                    {!!line.imageKeys && line.imageKeys.length > 1 && (
+                      <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-semibold px-1 rounded-tl">+{line.imageKeys.length - 1}</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium truncate">{line.itemName}</p>
+                    <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : line.itemUnit}</p>
+                  </div>
+                  {line.isCustom ? (
+                    <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.itemUnit}</span>
+                  ) : (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => changeCartQty(line.key!, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
+                      <span className="text-xs font-semibold tabular-nums w-4 text-center">{line.quantity}</span>
+                      <button onClick={() => changeCartQty(line.key!, 1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
+                    </div>
+                  )}
+                  <button onClick={() => removeCartLine(line.key!)} className="text-muted-foreground hover:text-destructive shrink-0">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+          <textarea
+            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+            rows={2} placeholder="Additional notes for the purchasing team..."
+            value={notes} onChange={e => setNotes(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="p-5 border-t shrink-0">
+        <button
+          onClick={submit} disabled={saving || cart.length === 0}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+        >
+          {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+          {saving ? 'Submitting…' : 'Submit Request'}
+        </button>
+      </div>
     </div>
   )
 }

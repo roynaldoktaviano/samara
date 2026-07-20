@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveTenantBySlug } from '@/lib/resolve-tenant'
+import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
 
 // Public, unauthenticated: minimal vessel/location list for the Request Order page.
-// `?tenant=<slug>` selects which company's locations to show; defaults to 'samara'.
+// `?token=<per-tenant token>` identifies which company's locations to show.
 export async function GET(request: NextRequest) {
-  const db = await resolveTenantBySlug(request.nextUrl.searchParams.get('tenant'))
-  if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+  const resolved = await resolveTenantByRequestOrderToken(request.nextUrl.searchParams.get('token'))
+  if (!resolved) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 401 })
+  const { db } = resolved
   const locations = await db.stockLocation.findMany({
     where: { isActive: true },
     select: { id: true, name: true, type: true },

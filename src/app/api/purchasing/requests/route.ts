@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       status: 'REQUESTED',
       updatedAt: new Date(),
       items: {
-        create: items.map((it: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string }) => ({
+        create: items.map((it: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[] }) => ({
           id: crypto.randomUUID(),
           itemId: it.itemId || null,
           itemName: it.itemName,
@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
           supplierId: it.supplierId || null,
           supplierName: it.supplierName?.trim() || null,
           notes: it.notes?.trim() || null,
+          imageKeys: Array.isArray(it.imageKeys) ? it.imageKeys.filter(Boolean) : [],
         })),
       },
     },

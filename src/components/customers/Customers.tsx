@@ -12,8 +12,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Trash2, X, CreditCard, Calendar, RotateCw } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, Trash2, X, CreditCard, Calendar, RotateCw, Download } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
+import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Guest {
@@ -35,6 +36,7 @@ interface Guest {
   totalBookings: number
   totalSpent: number
   createdAt: string
+  isSubscribed: boolean | null
 }
 
 interface TripEntry {
@@ -58,6 +60,20 @@ interface GuestDetail extends Guest {
   tripHistory: TripEntry[]
 }
 
+interface Inquiry {
+  id: string
+  source: string
+  checkInDate?: string | null
+  checkOutDate?: string | null
+  guestCount?: number | null
+  tripType?: string | null
+  message?: string | null
+  utmSource?: string | null
+  utmMedium?: string | null
+  utmCampaign?: string | null
+  createdAt: string
+}
+
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const statusColor: Record<string, string> = {
   confirmed: 'bg-green-100 text-green-700',
@@ -75,10 +91,12 @@ export default function Guests() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [sheetGuestId, setSheetGuestId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<GuestDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
 
   // single delete
   const [deleteTarget, setDeleteTarget] = useState<Guest | null>(null)
@@ -109,6 +127,8 @@ export default function Guests() {
   const openDetail = async (g: Guest) => {
     setDetailOpen(true)
     setDetailLoading(true)
+    setInquiries(null)
+    fetch(`/api/customers/${g.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
     try {
       const res = await fetch(`/api/customers/${g.id}`)
       if (res.ok) setDetail(await res.json())
@@ -192,9 +212,14 @@ export default function Guests() {
           </div>
           <p className="text-muted-foreground">Manage guest profiles and view trip history</p>
         </div>
-        <Button onClick={() => { setSheetGuestId(null); setSheetOpen(true) }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Guest
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Download className="mr-2 h-4 w-4" /> Import from Freshsales
+          </Button>
+          <Button onClick={() => { setSheetGuestId(null); setSheetOpen(true) }}>
+            <Plus className="mr-2 h-4 w-4" /> Add Guest
+          </Button>
+        </div>
       </div>
 
       {/* Table card */}
@@ -248,6 +273,7 @@ export default function Guests() {
                   )}
                   <TableHead>Name</TableHead>
                   <TableHead>Contact</TableHead>
+                  <TableHead>Subscribed</TableHead>
                   <TableHead>Passport</TableHead>
                   <TableHead>Date of Birth</TableHead>
                   <TableHead>Trips</TableHead>
@@ -269,6 +295,7 @@ export default function Guests() {
                         </div>
                       </TableCell>
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
+                      <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-8" /></TableCell>
@@ -277,7 +304,7 @@ export default function Guests() {
                   ))
                 ) : guests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-muted-foreground">No guests found</TableCell>
+                    <TableCell colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-muted-foreground">No guests found</TableCell>
                   </TableRow>
                 ) : guests.map(g => (
                   <TableRow
@@ -313,6 +340,15 @@ export default function Guests() {
                         {g.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3 text-muted-foreground" />{g.email}</div>}
                         {g.phone && <div className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3 text-muted-foreground" />{g.phone}</div>}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {g.isSubscribed === null ? (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      ) : g.isSubscribed ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-transparent">Subscribed</Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 border-transparent">Unsubscribed</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {g.passport ? <div className="flex items-center gap-1 text-xs"><CreditCard className="h-3 w-3 text-muted-foreground" />{g.passport}</div> : <span className="text-muted-foreground text-xs">—</span>}
@@ -354,6 +390,8 @@ export default function Guests() {
         onClose={() => { setSheetOpen(false); setSheetGuestId(null) }}
         onSaved={() => fetchGuests()}
       />
+
+      <FreshsalesImportModal open={importOpen} onOpenChange={setImportOpen} onImported={() => fetchGuests()} />
 
       {/* ── Detail + Trip History Dialog ─────────────────────────────────── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
@@ -475,6 +513,46 @@ export default function Guests() {
                             )}
                           </div>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Inquiry History */}
+              <div>
+                <p className="text-sm font-semibold mb-3">Inquiry History</p>
+                {inquiries === null ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : inquiries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No form submissions yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {inquiries.map(inq => (
+                      <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium">{inq.source}</span>
+                          <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        {(inq.checkInDate || inq.checkOutDate) && (
+                          <p className="text-xs text-muted-foreground">
+                            {inq.checkInDate ? fmtDate(inq.checkInDate) : '—'}
+                            {' → '}
+                            {inq.checkOutDate ? fmtDate(inq.checkOutDate) : '—'}
+                            {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
+                            {inq.tripType ? ` · ${inq.tripType}` : ''}
+                          </p>
+                        )}
+                        {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                        {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
+                            {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
+                            {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

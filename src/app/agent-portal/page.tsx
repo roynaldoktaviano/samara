@@ -12,8 +12,6 @@ import { cn } from '@/lib/utils'
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
-const AGENT_PASSWORD = 'agentsamara123'
-
 const SAMARA_LOGO = '/agent-portal/logoo.png'
 
 const DUMMY_PHOTO_A = '/agent-portal/samara1.webp'
@@ -282,21 +280,32 @@ export default function AgentPortalPage() {
   const [step, setStep] = useState<Step>('login')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
+  const [loggingIn, setLoggingIn] = useState(false)
   const [yachtId, setYachtId] = useState<string | null>(null)
 
   const selectedYacht = useMemo(() => YACHTS.find(y => y.id === yachtId) ?? null, [yachtId])
 
-  function handleLogin() {
+  async function handleLogin() {
     if (!password.trim()) {
       setLoginError('Enter the password provided to you')
       return
     }
-    if (password !== AGENT_PASSWORD) {
-      setLoginError('Incorrect password')
-      return
-    }
+    setLoggingIn(true)
     setLoginError('')
-    setStep('yacht')
+    try {
+      const res = await fetch('/api/agent-portal/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      if (!res.ok) {
+        setLoginError('Incorrect password')
+        return
+      }
+      setStep('yacht')
+    } finally {
+      setLoggingIn(false)
+    }
   }
 
   function logout() {

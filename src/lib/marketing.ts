@@ -103,12 +103,12 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
  * await from an HTTP handler since it does no outbound email calls itself — the
  * actual dispatch (the slow part) is a separate step, see `dispatchCampaignEmails`.
  */
-export async function prepareCampaignSend(db: PrismaClient, campaignId: string): Promise<{ totalRecipients: number }> {
+export async function prepareCampaignSend(db: PrismaClient, campaignId: string, apiKey: string): Promise<{ totalRecipients: number }> {
   const campaign = await db.emailCampaign.findUnique({ where: { id: campaignId } })
   if (!campaign) throw new Error('Campaign not found')
   if (campaign.status === 'SENT' || campaign.status === 'SENDING') throw new Error('Campaign already sent')
 
-  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured')
+  if (!apiKey) throw new Error('RESEND_API_KEY not configured')
 
   await db.emailCampaign.update({ where: { id: campaignId }, data: { status: 'SENDING' } })
 
@@ -140,11 +140,10 @@ export async function prepareCampaignSend(db: PrismaClient, campaignId: string):
  * whole batch (which, at Resend's ~2 req/s rate limit, can take minutes for a large
  * audience).
  */
-export async function dispatchCampaignEmails(db: PrismaClient, campaignId: string): Promise<void> {
+export async function dispatchCampaignEmails(db: PrismaClient, campaignId: string, apiKey: string): Promise<void> {
   const campaign = await db.emailCampaign.findUnique({ where: { id: campaignId } })
   if (!campaign) throw new Error('Campaign not found')
 
-  const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) throw new Error('RESEND_API_KEY not configured')
 
   const pending = await db.campaignRecipient.findMany({ where: { campaignId, status: 'PENDING' } })
@@ -205,9 +204,9 @@ export async function dispatchCampaignEmails(db: PrismaClient, campaignId: strin
  * completion — used by the scheduled-dispatch cron route, which isn't blocking
  * a browser request and so has no reason to split the phases apart.
  */
-export async function sendCampaign(db: PrismaClient, campaignId: string): Promise<void> {
-  await prepareCampaignSend(db, campaignId)
-  await dispatchCampaignEmails(db, campaignId)
+export async function sendCampaign(db: PrismaClient, campaignId: string, apiKey: string): Promise<void> {
+  await prepareCampaignSend(db, campaignId, apiKey)
+  await dispatchCampaignEmails(db, campaignId, apiKey)
 }
 
 export function previewHtml(blocks: EmailBlock[]): string {

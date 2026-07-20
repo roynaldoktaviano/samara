@@ -6,6 +6,7 @@ import { withRetry } from '@/lib/db'
 import { Resend } from 'resend'
 import { htmlToText } from '@/lib/resend-mailer'
 import { injectPreviewText } from '@/lib/email-builder'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 const ALLOWED_ROLES = ['ADMIN', 'SUPER_ADMIN']
 
@@ -33,7 +34,8 @@ export async function POST(request: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!ALLOWED_ROLES.includes(role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const apiKey = process.env.RESEND_API_KEY
+  const tenantId = (session?.user as { tenantId?: string })?.tenantId ?? ''
+  const apiKey = await getTenantSecret(tenantId, 'resendApiKey')
   if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 })
 
   const body = await request.json()

@@ -28,7 +28,14 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json(leads)
+    const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
+    const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
+    const result = leads.map(l => ({
+      ...l,
+      isSubscribed: l.email ? !unsubscribedSet.has(l.email.toLowerCase()) : null,
+    }))
+
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching leads:', error)
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { firstName, lastName, nationality, email, phone } = body
+    const { firstName, lastName, nationality, email, phone, notes } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) {
@@ -49,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     const lead = await db.lead.create({
-      data: { name, firstName, lastName, nationality, email, phone },
+      data: { name, firstName, lastName, nationality, email, phone, notes },
     })
 
     logActivity({

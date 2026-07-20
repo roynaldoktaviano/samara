@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, ChevronLeft, ChevronRight, Users, Send } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
 import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
 import { createBlock, renderBlocksToHtml, normalizeDesign, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
@@ -79,6 +79,8 @@ export default function CampaignEditor({
   const [scheduledAt, setScheduledAt] = useState('')
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testSending, setTestSending] = useState(false)
 
   const reset = useCallback(() => {
     setStep(0); setId(campaignId)
@@ -86,6 +88,7 @@ export default function CampaignEditor({
     setBlocks([createBlock('text'), createBlock('footer')])
     setSettings(DEFAULT_EMAIL_SETTINGS)
     setAudience(emptyAudience()); setAudienceCount(null); setScheduledAt('')
+    setTestEmail('')
   }, [campaignId])
 
   useEffect(() => {
@@ -141,6 +144,28 @@ export default function CampaignEditor({
     if (step === 2 && open) previewAudience()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, open])
+
+  const sendTest = async () => {
+    if (!testEmail.trim()) { toast.error('Enter an email address to test with'); return }
+    const err = validateStep(0)
+    if (err) { toast.error(err); return }
+    setTestSending(true)
+    try {
+      const res = await fetch('/api/marketing/campaigns/test-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          testEmail: testEmail.trim(), subject, previewText, fromEmail, fromName,
+          blocksJson: { blocks, settings },
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to send test email'); return }
+      toast.success(`Test email sent to ${testEmail.trim()}`)
+    } finally {
+      setTestSending(false)
+    }
+  }
 
   const validateStep = (s: number): string | null => {
     if (s === 0) {
@@ -266,6 +291,13 @@ export default function CampaignEditor({
                 <div className="space-y-1.5">
                   <Label>Preview text</Label>
                   <Input value={previewText} onChange={e => setPreviewText(e.target.value)} placeholder="Shown after the subject in most inboxes" />
+                  <p className={`text-[11px] ${
+                    previewText.length === 0 ? 'text-muted-foreground'
+                      : previewText.length < 40 || previewText.length > 130 ? 'text-amber-600'
+                      : 'text-green-600'
+                  }`}>
+                    {previewText.length} characters — write a full sentence, ideally 40–130 characters. Too short and some inboxes (e.g. Gmail Promotions tab) will ignore it and show a snippet pulled from the email body instead.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -342,6 +374,27 @@ export default function CampaignEditor({
                     <span><strong>{audienceCount ?? 0}</strong> recipient{audienceCount === 1 ? '' : 's'} (deduplicated, unsubscribed excluded)</span>
                   )}
                   <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={previewAudience}>Refresh</Button>
+                </div>
+
+                <div className="border rounded-lg p-4 space-y-2">
+                  <Label className="font-medium text-sm flex items-center gap-2">
+                    <FlaskConical className="h-4 w-4" style={{ color: ACCENT }} />
+                    Send a test email
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Sends this campaign to a single address so you can check it before going out to the real audience. It does not count as a real send.</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="email"
+                      value={testEmail}
+                      onChange={e => setTestEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="h-8 text-sm"
+                    />
+                    <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={sendTest} disabled={testSending}>
+                      {testSending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
+                      Send test
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}

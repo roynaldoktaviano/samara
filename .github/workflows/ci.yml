@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  typecheck-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Both Prisma clients generate from the schema alone — no DB connection needed.
+      - run: npx prisma generate
+      - run: npx prisma generate --schema=prisma/central.schema.prisma
+
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+
+      # A full `next build` needs production DB secrets configured as GitHub repo
+      # secrets first — add DATABASE_URL/CENTRAL_DATABASE_URL etc. under repo
+      # Settings → Secrets, then extend this job with a build step.

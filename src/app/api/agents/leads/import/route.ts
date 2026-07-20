@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES']
 const DEFAULT_VIEW_ID = '113000008394' // "Agents" view in Freshsales
@@ -24,8 +25,11 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const apiKey = process.env.FRESHSALES_API_KEY
-  const domain = process.env.FRESHSALES_DOMAIN
+  const tenantId = (session.user as { tenantId?: string }).tenantId ?? ''
+  const [apiKey, domain] = await Promise.all([
+    getTenantSecret(tenantId, 'freshsalesApiKey'),
+    getTenantSecret(tenantId, 'freshsalesDomain'),
+  ])
   if (!apiKey || !domain) return NextResponse.json({ error: 'FRESHSALES_API_KEY / FRESHSALES_DOMAIN not configured' }, { status: 500 })
 
   const body = await req.json().catch(() => ({}))

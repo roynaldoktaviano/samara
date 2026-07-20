@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Mail, Send, LayoutTemplate, UserPlus } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -56,7 +56,6 @@ import CompanySettings from '@/components/settings/CompanySettings'
 import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
-import Newsletter from '@/components/newsletter/Newsletter'
 import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
 import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
 
@@ -86,7 +85,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'newsletter' | 'marketing-campaigns' | 'marketing-templates'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates'
 
 type NavItem = {
   id: View
@@ -129,7 +128,6 @@ const navigationItems: NavItem[] = [
   { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
   { id: 'agent-leads',   label: 'Agent Leads',     icon: Users,      roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
-  { id: 'newsletter',    label: 'Newsletter',      icon: Mail,       roles: ['ADMIN'],                                  group: 'marketing'  },
   { id: 'marketing-campaigns', label: 'Email Campaigns', icon: Send, roles: ['ADMIN', 'MARKETING'],                     group: 'marketing', feature: 'marketing' },
   { id: 'marketing-templates', label: 'Email Templates', icon: LayoutTemplate, roles: ['ADMIN', 'MARKETING'],           group: 'marketing', feature: 'marketing' },
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
@@ -342,6 +340,7 @@ export default function Home() {
   }, [])
 
   const [pendingRefunds, setPendingRefunds] = useState(0)
+  const [pendingRequestOrders, setPendingRequestOrders] = useState(0)
 
   const fetchPendingPayments = useCallback(async () => {
     try {
@@ -352,6 +351,20 @@ export default function Home() {
       }
     } catch { /* silent */ }
   }, [])
+
+  const fetchPendingRequestOrders = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      const res = await fetch('/api/purchasing/requests')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingRequestOrders(Array.isArray(data)
+          ? data.filter((r: { status: string; requestedByEmployeeId: string | null }) => r.status === 'REQUESTED' && r.requestedByEmployeeId).length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
 
   const fetchPendingRefunds = useCallback(async () => {
     try {
@@ -368,11 +381,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders() }
     const interval = setInterval(refresh, 30000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -549,7 +562,6 @@ export default function Home() {
       case 'finance-delivery-fee-payments': return <DeliveryFeePayments />
       case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements />
       case 'vouchers':      return <Vouchers />
-      case 'newsletter':    return <Newsletter />
       case 'marketing-campaigns': return <CampaignsPage />
       case 'marketing-templates': return <TemplatesPage />
       case 'activity-log':   return <ActivityLog />
@@ -667,10 +679,12 @@ export default function Home() {
                 const Icon = item.icon
                 const showDot =
                   (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
-                  (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0)
+                  (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0) ||
+                  (item.id === 'purchasing-requests' && pendingRequestOrders > 0)
                 const dotCount =
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
+                  item.id === 'purchasing-requests' ? pendingRequestOrders :
                   0
                 return (
                   <SidebarMenuItem key={item.id}>

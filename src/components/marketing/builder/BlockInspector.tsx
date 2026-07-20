@@ -334,7 +334,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">URL</Label>
-            <Input value={block.url} onChange={e => onChange({ ...block, url: e.target.value })} className="h-8 text-sm" />
+            <Input value={block.url} onChange={e => onChange({ ...block, url: e.target.value })} placeholder="https://example.com" className="h-8 text-sm" />
           </div>
           <ColorField label="Background" value={block.bgColor} onChange={bgColor => onChange({ ...block, bgColor })} />
           <ColorField label="Text color" value={block.textColor} onChange={textColor => onChange({ ...block, textColor })} />
@@ -436,12 +436,12 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
                 <Label className="text-xs">URL</Label>
                 <Input value={l.url} onChange={e => {
                   const links = [...block.links]; links[i] = { ...l, url: e.target.value }; onChange({ ...block, links })
-                }} className="h-8 text-sm" />
+                }} placeholder="https://example.com" className="h-8 text-sm" />
               </div>
               <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-red-600" onClick={() => onChange({ ...block, links: block.links.filter((_, idx) => idx !== i) })}>Remove</Button>
             </div>
           ))}
-          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onChange({ ...block, links: [...block.links, { platform: 'Website', url: 'https://' }] })}>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onChange({ ...block, links: [...block.links, { platform: 'Website', url: '' }] })}>
             + Add link
           </Button>
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />

@@ -33,6 +33,8 @@ model Tenant {
   logoUrl     String?
   isActive    Boolean      @default(true)
   features    Json?        // e.g. { "sharingCabin": true }
+  secrets     Json?        // encrypted per-tenant integration credentials — see src/lib/tenant-secrets.ts, never returned decrypted from any list endpoint
+  requestOrderToken String? @unique // unguessable token gating the public /request-order page for this tenant — see src/lib/resolve-tenant.ts
   users       UserTenant[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt

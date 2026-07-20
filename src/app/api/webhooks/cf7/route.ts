@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveTenantBySlug } from '@/lib/resolve-tenant'
+import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
@@ -10,21 +11,44 @@ function pick(data: Record<string, unknown>, ...keys: string[]): string {
   return ''
 }
 
+function parseDate(raw: string): Date | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function parseInt10(raw: string): number | null {
+  const n = parseInt(raw, 10)
+  return isFinite(n) ? n : null
+}
+
+// Strips non-JSON-serializable values (e.g. a File from a multipart upload field)
+// before storing the raw submission as an audit trail.
+function toJsonSafe(data: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(data)) {
+    if (typeof v === 'string') out[k] = v
+  }
+  return out
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // ── Verify secret token ──────────────────────────────────────────────────
-    const secret   = request.nextUrl.searchParams.get('secret')
-    const expected = process.env.CF7_WEBHOOK_SECRET
-    if (!expected || secret !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     // ── Resolve which tenant this lead belongs to ────────────────────────────
     // Each tenant's WordPress site should post to `?secret=...&tenant=<slug>`.
     // Falls back to 'samara' when omitted, so existing form configs keep working.
+    // Resolved before the secret check below, since the secret itself is per-tenant.
     const tenantSlug = request.nextUrl.searchParams.get('tenant')
-    const db = await resolveTenantBySlug(tenantSlug)
-    if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+    const resolved = await resolveTenantBySlugFull(tenantSlug)
+    if (!resolved) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+    const { db, tenant } = resolved
+
+    // ── Verify secret token ──────────────────────────────────────────────────
+    const secret   = request.nextUrl.searchParams.get('secret')
+    const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
+    if (!expected || secret !== expected) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     // ── Parse body (JSON or form-encoded) ────────────────────────────────────
     const contentType = request.headers.get('content-type') ?? ''
@@ -57,6 +81,14 @@ export async function POST(request: NextRequest) {
     const checkOut  = pick(data, 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
     const tripType  = pick(data, 'trip-type',  'trip_type',  'tripType',  'trip')
     const message   = pick(data, 'request',    'message',    'your-message', 'Request', 'Message')
+    // UTM fields — the WordPress form doesn't send these yet as of this writing, but
+    // capturing them defensively costs nothing and this starts working the moment
+    // hidden utm_* fields are added there, with no backend change needed.
+    const utmSource   = pick(data, 'utm_source',   'utm-source')
+    const utmMedium   = pick(data, 'utm_medium',   'utm-medium')
+    const utmCampaign = pick(data, 'utm_campaign', 'utm-campaign')
+    const utmTerm     = pick(data, 'utm_term',     'utm-term')
+    const utmContent  = pick(data, 'utm_content',  'utm-content')
 
     if (!firstName && !email && !phone) {
       return NextResponse.json({ error: 'Insufficient contact data' }, { status: 400 })
@@ -64,64 +96,92 @@ export async function POST(request: NextRequest) {
 
     const fullName = [firstName, lastName].filter(Boolean).join(' ') || email || phone
 
-    // ── Build inquiry note ────────────────────────────────────────────────────
-    const timestamp  = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'short', timeStyle: 'short' })
-    const noteLines  = [
-      `[Website Inquiry — ${timestamp}]`,
-      checkIn   && `Check-in   : ${checkIn}`,
-      checkOut  && `Check-out  : ${checkOut}`,
-      numGuests && `Guests     : ${numGuests}`,
-      tripType  && `Trip type  : ${tripType}`,
-      message   && `Request    : ${message}`,
-    ].filter(Boolean).join('\n')
+    // ── Resolve owner: an existing Guest first, then an existing Lead, else a new Lead ──
+    // Checking Guest first means someone who already converted and inquires again
+    // attaches to their existing Customer instead of spawning a duplicate Lead.
+    let ownerType: 'customer' | 'lead'
+    let ownerId: string
 
-    // ── Upsert customer ───────────────────────────────────────────────────────
-    let existingCustomer = await (email
+    const existingCustomer = await (email
       ? db.customer.findFirst({ where: { email, deletedAt: null } })
       : Promise.resolve(null))
-    if (!existingCustomer && phone) {
-      existingCustomer = await db.customer.findFirst({ where: { phone, deletedAt: null } })
-    }
+    const matchedCustomer = existingCustomer ?? (phone ? await db.customer.findFirst({ where: { phone, deletedAt: null } }) : null)
 
-    let customerId: string
-    if (existingCustomer) {
-      const existingNotes = existingCustomer.operationalNotes ?? ''
-      const updatedNotes  = existingNotes ? `${existingNotes}\n\n${noteLines}` : noteLines
+    if (matchedCustomer) {
+      ownerType = 'customer'
       const updated = await db.customer.update({
-        where: { id: existingCustomer.id },
+        where: { id: matchedCustomer.id },
         data: {
           name: fullName,
           ...(firstName && { firstName }),
           ...(lastName  && { lastName  }),
           ...(email     && { email     }),
           ...(phone     && { phone     }),
-          operationalNotes: updatedNotes,
         },
         select: { id: true },
       })
-      customerId = updated.id
+      ownerId = updated.id
     } else {
-      const created = await db.customer.create({
-        data: {
-          name:             fullName,
-          firstName:        firstName || null,
-          lastName:         lastName  || null,
-          email:            email     || null,
-          phone:            phone     || null,
-          operationalNotes: noteLines,
-        },
-        select: { id: true },
-      })
-      customerId = created.id
+      const existingLead = await (email
+        ? db.lead.findFirst({ where: { email, deletedAt: null } })
+        : Promise.resolve(null))
+      const matchedLead = existingLead ?? (phone ? await db.lead.findFirst({ where: { phone, deletedAt: null } }) : null)
+
+      if (matchedLead) {
+        ownerType = 'lead'
+        const updated = await db.lead.update({
+          where: { id: matchedLead.id },
+          data: {
+            name: fullName,
+            ...(firstName && { firstName }),
+            ...(lastName  && { lastName  }),
+            ...(email     && { email     }),
+            ...(phone     && { phone     }),
+          },
+          select: { id: true },
+        })
+        ownerId = updated.id
+      } else {
+        ownerType = 'lead'
+        const created = await db.lead.create({
+          data: {
+            name:      fullName,
+            firstName: firstName || null,
+            lastName:  lastName  || null,
+            email:     email     || null,
+            phone:     phone     || null,
+          },
+          select: { id: true },
+        })
+        ownerId = created.id
+      }
     }
+
+    await db.inquiry.create({
+      data: {
+        source: 'CF7',
+        ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
+        checkInDate:  parseDate(checkIn),
+        checkOutDate: parseDate(checkOut),
+        guestCount:   numGuests ? parseInt10(numGuests) : null,
+        tripType:     tripType || null,
+        message:      message  || null,
+        utmSource:    utmSource   || null,
+        utmMedium:    utmMedium   || null,
+        utmCampaign:  utmCampaign || null,
+        utmTerm:      utmTerm     || null,
+        utmContent:   utmContent  || null,
+        rawPayload:   toJsonSafe(data),
+      },
+    })
 
     logActivity({
       userId: '', userName: 'Website CF7', userRole: 'SYSTEM',
-      action: 'CREATE', entity: 'Customer', entityId: customerId,
-      detail: `Website inquiry: ${fullName} · ${noteLines.replace(/\n/g, ' ')}`,
+      action: 'CREATE', entity: ownerType === 'customer' ? 'Customer' : 'Lead', entityId: ownerId,
+      detail: `Website inquiry: ${fullName}${message ? ` · ${message}` : ''}`,
     }, db).catch(() => {})
 
-    return NextResponse.json({ ok: true, customerId })
+    return NextResponse.json({ ok: true, ownerType, ownerId })
   } catch (error) {
     console.error('[CF7 webhook]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

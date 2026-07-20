@@ -39,6 +39,7 @@ interface DestinationOpt { id: string; name: string; region?: string | null }
 interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number }
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
+interface LeadOpt { id: string; name: string; phone?: string; email?: string }
 interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
 interface OpenTripOpt{
   id: string; title: string; description?: string
@@ -51,6 +52,11 @@ interface OpenTripOpt{
 
 interface SelectedGuest {
   customerId: string
+  // Set only when this guest was picked from the CRM Leads list rather than an
+  // existing Guest — the server resolves/converts it into a real customerId on
+  // booking creation. Unrelated to `isLead` below (which means "primary/trip-lead
+  // guest of this booking", a totally different concept — do not conflate the two).
+  leadId?: string
   name: string
   phone?: string
   cabinId: string
@@ -182,6 +188,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
   const [agents,    setAgents]    = useState<AgentOpt[]>([])
   const [customers, setCustomers] = useState<CustomerOpt[]>([])
+  const [leads,     setLeads]     = useState<LeadOpt[]>([])
   const [cabins,    setCabins]    = useState<CabinOpt[]>([])
   const [openTrips, setOpenTrips] = useState<OpenTripOpt[]>([])
   const [destinations, setDestinations] = useState<DestinationOpt[]>([])
@@ -353,13 +360,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       fetch('/api/open-trips').then(r => r.json()),
       fetch('/api/vouchers').then(r => r.json()),
       fetch('/api/destinations').then(r => r.json()),
-    ]).then(([y, a, c, ot, v, d]) => {
+      fetch('/api/leads').then(r => r.json()),
+    ]).then(([y, a, c, ot, v, d, l]) => {
       if (y.status  === 'fulfilled') setYachts(Array.isArray(y.value)  ? y.value  : [])
       if (a.status  === 'fulfilled') setAgents(Array.isArray(a.value)  ? a.value  : [])
       if (c.status  === 'fulfilled') setCustomers(Array.isArray(c.value)? c.value : [])
       if (ot.status === 'fulfilled') setOpenTrips(Array.isArray(ot.value)? ot.value: [])
       if (v.status  === 'fulfilled') setActiveVouchers(Array.isArray(v.value) ? v.value.filter((x: any) => x.isActive) : [])
       if (d.status  === 'fulfilled') setDestinations(Array.isArray(d.value) ? d.value : [])
+      if (l.status  === 'fulfilled') setLeads(Array.isArray(l.value)  ? l.value  : [])
       setOpenTripsLoading(false)
     })
   }, [open])
@@ -622,6 +631,16 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     (c.name.toLowerCase().includes(custSearch.toLowerCase()) ||
      (c.phone ?? '').includes(custSearch))
   )
+  // Leads can be picked as a guest too — selecting one doesn't create a Guest yet,
+  // the server converts it into one only once the booking is actually saved. Only
+  // offered when creating a fresh booking — the "complete on-hold booking" PATCH
+  // flow (completeBookingId set) doesn't resolve Lead references, so hide the
+  // option there rather than risk sending it a reference it can't handle.
+  const filteredLeads = completeBookingId ? [] : leads.filter(l =>
+    !guests.some(g => g.leadId === l.id) &&
+    (l.name.toLowerCase().includes(custSearch.toLowerCase()) ||
+     (l.phone ?? '').includes(custSearch))
+  )
 
   /* cabin occupancy map: cabinId → guest count (infants don't count) */
   const cabinOccupancy = guests.reduce<Record<string, number>>((acc, g) => {
@@ -636,6 +655,17 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setGuests(prev => [
       ...prev,
       { customerId: c.id, name: c.name, phone: c.phone, cabinId: '', isLead: prev.length === 0, isChild: c.isChild, isInfant },
+    ])
+    setCSearch('')
+  }
+  // customerId gets a synthetic `lead:<id>` placeholder so this entry keeps working
+  // with every existing customerId-keyed helper below (removeGuest, updateGuest,
+  // cabin assignment, dedup) unchanged — the server resolves the real customerId
+  // (converting the Lead into a Guest) only once the booking is actually created.
+  const addLeadGuest = (l: LeadOpt) => {
+    setGuests(prev => [
+      ...prev,
+      { customerId: `lead:${l.id}`, leadId: l.id, name: l.name, phone: l.phone, cabinId: '', isLead: prev.length === 0 },
     ])
     setCSearch('')
   }
@@ -860,7 +890,9 @@ notes:         resolvedNotes,
         hasSurfing:      tripType === 'PRIVATE_CHARTER' ? hasSurfing : false,
         hasPhotoPackage: hasPhotoPackage,
         notes:           resolvedNotes,
-        guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
+        guests: guests.map(g => g.leadId
+          ? { leadId: g.leadId, cabinId: g.cabinId || undefined, isLead: g.isLead }
+          : { customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead }),
         services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
       }
@@ -1974,11 +2006,11 @@ notes:         resolvedNotes,
           </div>
           {(custSearch || custFocused) && (
             <div className="border rounded-lg bg-popover shadow-md z-10 relative flex flex-col">
-              {filteredCusts.length === 0 ? (
+              {filteredCusts.length === 0 && filteredLeads.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
                   {custSearch && customers.some(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) && bookedCustomerIds.includes(c.id))
                     ? '⚠ Already booked on this trip'
-                    : custSearch ? 'No guest found' : 'All guests already added'}
+                    : custSearch ? 'No guest or lead found' : 'All guests already added'}
                 </div>
               ) : (
                 <div className="overflow-y-auto max-h-48">
@@ -1999,6 +2031,17 @@ notes:         resolvedNotes,
                       </button>
                     )
                   })}
+                  {filteredLeads.slice(0, 10).map(l => (
+                    <button key={`lead-${l.id}`}
+                      onMouseDown={e => { e.preventDefault(); addLeadGuest(l); setCustFocused(false) }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">{l.name}</span>
+                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded shrink-0">Lead</span>
+                      </span>
+                      {l.phone && <span className="text-muted-foreground text-xs shrink-0">{l.phone}</span>}
+                    </button>
+                  ))}
                 </div>
               )}
               <button

@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { requireRole } from '@/lib/auth-guard'
 
 export async function GET() {
-  const db = await getDb()
+  const auth = await requireRole(['ADMIN', 'SUPER_ADMIN', 'FINANCE', 'SALES'])
+  if (!auth.ok) return auth.response
+  const db = await getDb(auth.session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 

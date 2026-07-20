@@ -3,17 +3,9 @@ import { db as defaultDb } from '@/lib/db'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 import { resolveTenantByLookup } from '@/lib/resolve-tenant'
-import { SignJWT, jwtVerify } from 'jose'
+import { SignJWT } from 'jose'
+import { CAL_ACCESS_COOKIE as COOKIE, getCalAccessSecret as getSecret, verifyCalAccess } from '@/lib/cal-access'
 import type { PrismaClient } from '@prisma/client'
-
-// Computed lazily (not at module load) so a missing env var fails the request at runtime
-// with a clear error, rather than silently signing/verifying with a guessable fallback.
-function getSecret(): Uint8Array {
-  const secret = process.env.SSO_JWT_SECRET
-  if (!secret) throw new Error('SSO_JWT_SECRET is not configured')
-  return new TextEncoder().encode(secret)
-}
-const COOKIE = 'cal-access'
 const SUSPICIOUS_BOTS = /bot|crawler|spider|scrape|python|curl|wget|axios|fetch|java|ruby|go-http/i
 
 async function logAccess(db: PrismaClient, agentId: string, ip: string, userAgent: string, isSuspicious: boolean) {
@@ -88,13 +80,9 @@ export async function POST(request: NextRequest) {
 // GET — verify existing cookie, log access
 export async function GET(request: NextRequest) {
   try {
-    const cookie = request.cookies.get('cal-access')?.value
-    if (!cookie) return NextResponse.json({ valid: false })
-
-    const { payload } = await jwtVerify(cookie, getSecret())
-    const agentId   = payload.agentId as string
-    const agentName = payload.agentName as string
-    const tenantId  = payload.tenantId as string | null | undefined
+    const payload = await verifyCalAccess(request)
+    if (!payload) return NextResponse.json({ valid: false })
+    const { agentId, agentName, tenantId } = payload
 
     // Resolve the tenant DB this agent lives in. Cookies issued before this field existed
     // have no tenantId — fall back to scanning by agentId so those sessions keep working.

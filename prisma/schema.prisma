@@ -143,6 +143,7 @@ model Customer {
   drinkPreferences     String?
   guestFormToken       String?              @unique
   guestFormExpiresAt   DateTime?
+  freshsalesContactId  String?              @unique
   medicalData          Json?
   foodData             Json?
   drinksData           Json?
@@ -156,6 +157,7 @@ model Customer {
   guestOf              BookingGuest[]
   waitingListItems     WaitingList[]
   waitingListHistories WaitingListHistory[] @relation("WaitingListHistoryCustomer")
+  inquiries            Inquiry[]
 
   @@index([deletedAt])
   @@index([name])
@@ -164,20 +166,55 @@ model Customer {
 }
 
 model Lead {
-  id           String    @id @default(cuid())
-  name         String
-  firstName    String?
-  lastName     String?
-  nationality  String?
-  email        String?
-  phone        String?
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  name                String
+  firstName           String?
+  lastName            String?
+  nationality         String?
+  email               String?
+  phone               String?
+  notes               String?
+  freshsalesContactId String?   @unique
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  inquiries Inquiry[]
 
   @@index([deletedAt])
   @@index([name])
   @@index([email])
+  @@index([createdAt])
+}
+
+// One row per form/inquiry submission — links to whichever of Lead/Customer
+// currently owns it (exactly one of leadId/customerId set; enforced in app
+// code, not a DB constraint, matching this schema's other either/or relations).
+// Reassigned from leadId to customerId when a Lead converts into a Guest via
+// booking creation — see POST /api/bookings.
+model Inquiry {
+  id           String    @id @default(cuid())
+  source       String
+  leadId       String?
+  customerId   String?
+  checkInDate  DateTime?
+  checkOutDate DateTime?
+  guestCount   Int?
+  tripType     String?
+  message      String?
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  utmTerm      String?
+  utmContent   String?
+  rawPayload   Json?
+  createdAt    DateTime  @default(now())
+
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([leadId])
+  @@index([customerId])
   @@index([createdAt])
 }
 
@@ -1194,6 +1231,7 @@ model PurchaseRequest {
   approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   items               PurchaseRequestItem[]
   orders              PurchaseOrder[]
+  transfers           StockTransfer[]
   notifications       Notification[]
 
   @@index([status])
@@ -1506,6 +1544,7 @@ model StockTransfer {
   fromLocationId       String
   toLocationId         String
   crewRequestId        String?
+  purchaseRequestId    String?
   status               TransferStatus @default(PENDING)
   dispatchPhotoKey     String?
   receivePhotoKey      String?
@@ -1523,6 +1562,7 @@ model StockTransfer {
   fromLocation       StockLocation       @relation("TransferFrom", fields: [fromLocationId], references: [id])
   toLocation         StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])
   crewRequest        CrewRequest?        @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
+  purchaseRequest    PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
   dispatchedBy       User?               @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
   receivedBy         User?               @relation("TransferReceive", fields: [receivedById], references: [id], onDelete: SetNull)
   expectedReceivedBy User?               @relation("TransferExpectedReceive", fields: [expectedReceiverId], references: [id], onDelete: SetNull)
@@ -1531,6 +1571,7 @@ model StockTransfer {
   @@index([status])
   @@index([createdAt])
   @@index([crewRequestId])
+  @@index([purchaseRequestId])
 }
 
 model StockTransferItem {

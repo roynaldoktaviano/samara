@@ -52,14 +52,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body = await request.json()
-    const { firstName, lastName, nationality, email, phone } = body
+    const { firstName, lastName, nationality, email, phone, notes } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
     const lead = await db.lead.update({
       where: { id },
-      data: { name, firstName, lastName, nationality, email, phone },
+      data: { name, firstName, lastName, nationality, email, phone, notes },
     })
 
     logActivity({

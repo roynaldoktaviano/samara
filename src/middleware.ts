@@ -15,7 +15,6 @@ const FEATURE_GATED_API_PREFIXES = [
 
 const PUBLIC_PATHS = [
   '/login',
-  '/external',
   '/api/public',
   '/api/webhooks',
   '/proto',

@@ -50,6 +50,9 @@ interface CampaignWithRecipients {
   id: string
   name: string
   subject: string
+  previewText: string | null
+  fromEmail: string
+  fromName: string | null
   status: string
   totalRecipients: number
   bodyHtml: string
@@ -103,10 +106,14 @@ interface LinkStat {
 
 // Unique clickers per URL (not raw click count — someone clicking the same
 // link twice shouldn't outweigh two different people clicking it once).
+// Excludes the unsubscribe link — Resend's click tracking wraps every <a> in
+// the email including it, but it already has its own "Unsubscribed" stat tile
+// above and doesn't belong in content link performance.
 function computeLinkStats(recipients: Recipient[]): LinkStat[] {
   const byUrl = new Map<string, Set<string>>()
   for (const r of recipients) {
     for (const c of r.clicks) {
+      if (c.url.includes('/unsubscribe?token=')) continue
       if (!byUrl.has(c.url)) byUrl.set(c.url, new Set())
       byUrl.get(c.url)!.add(r.id)
     }
@@ -338,6 +345,13 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">Email content</CardTitle></CardHeader>
+          <div className="px-6 pb-4 space-y-1 text-sm border-b">
+            <div className="flex gap-2"><span className="w-16 shrink-0 text-muted-foreground">From</span><span className="truncate">{campaign.fromName ? `${campaign.fromName} <${campaign.fromEmail}>` : campaign.fromEmail}</span></div>
+            <div className="flex gap-2"><span className="w-16 shrink-0 text-muted-foreground">Subject</span><span className="font-medium truncate">{campaign.subject}</span></div>
+            {campaign.previewText && (
+              <div className="flex gap-2"><span className="w-16 shrink-0 text-muted-foreground">Preview</span><span className="text-muted-foreground truncate">{campaign.previewText}</span></div>
+            )}
+          </div>
           <CardContent className="flex justify-center bg-muted/30 rounded-b-lg py-6 overflow-hidden">
             {/* Fixed 640px intrinsic width keeps the email above its own 600px mobile
                 breakpoint (so hide-mobile/hide-desktop blocks render as desktop), then

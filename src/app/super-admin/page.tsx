@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TENANT_FEATURE_DEFINITIONS, type TenantFeatures } from '@/lib/tenant-features'
+import { TENANT_SECRET_DEFINITIONS, type TenantSecretKey } from '@/lib/tenant-secrets-definitions'
 
 interface Tenant {
   id: string
@@ -16,6 +17,8 @@ interface Tenant {
   features: TenantFeatures | null
   createdAt: string
   _count?: { users: number }
+  secretsStatus?: Record<TenantSecretKey, boolean>
+  requestOrderToken?: string | null
 }
 
 interface TenantUser {
@@ -105,6 +108,110 @@ function TenantFeaturesEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: 
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => void }) {
+  const [drafts, setDrafts] = useState<Partial<Record<TenantSecretKey, string>>>({})
+  const [saving, setSaving] = useState<TenantSecretKey | null>(null)
+  const status = tenant.secretsStatus
+
+  async function save(key: TenantSecretKey) {
+    const value = drafts[key]?.trim()
+    if (!value) return
+    setSaving(key)
+    await fetch('/api/super-admin/tenants', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: tenant.id, secrets: { [key]: value } }),
+    })
+    setSaving(null)
+    setDrafts(d => ({ ...d, [key]: '' }))
+    onUpdate()
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-gray-400">
+        Leave blank to keep using the shared default credential. Set a value here to override it for this tenant only. Values are encrypted at rest and never shown again once saved.
+      </p>
+      {TENANT_SECRET_DEFINITIONS.map(s => (
+        <div key={s.key} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              {s.label}
+              {status?.[s.key] ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Configured</span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Using default</span>
+              )}
+            </div>
+            <div className="text-xs text-gray-400">{s.description}</div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="password"
+              autoComplete="off"
+              className="border border-gray-200 rounded px-2 py-1 text-xs w-48 outline-none focus:border-[#1e3a5f]"
+              placeholder={status?.[s.key] ? '••••••••••' : 'Not set'}
+              value={drafts[s.key] ?? ''}
+              onChange={e => setDrafts(d => ({ ...d, [s.key]: e.target.value }))}
+            />
+            <button
+              onClick={() => save(s.key)}
+              disabled={saving === s.key || !drafts[s.key]?.trim()}
+              className="text-xs bg-[#1e3a5f] text-white px-2 py-1 rounded disabled:opacity-40"
+            >
+              {saving === s.key ? '...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => void }) {
+  const [regenerating, setRegenerating] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const link = tenant.requestOrderToken && typeof window !== 'undefined'
+    ? `${window.location.origin}/request-order?token=${tenant.requestOrderToken}`
+    : ''
+
+  async function regenerate() {
+    if (!confirm('Regenerate this link? The old link will stop working immediately.')) return
+    setRegenerating(true)
+    await fetch('/api/super-admin/tenants', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: tenant.id, regenerateRequestOrderToken: true }),
+    })
+    setRegenerating(false)
+    onUpdate()
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-1">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-gray-700">Request Order Link</div>
+        <div className="text-xs text-gray-400">Shared with staff without an ERP login to submit purchase requests.</div>
+        {link && <div className="text-xs font-mono text-gray-500 mt-1 truncate max-w-md">{link}</div>}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={copyLink} disabled={!link} className="text-xs border border-gray-200 px-2 py-1 rounded hover:bg-gray-50 disabled:opacity-40">
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+        <button onClick={regenerate} disabled={regenerating} className="text-xs bg-[#1e3a5f] text-white px-2 py-1 rounded disabled:opacity-40">
+          {regenerating ? '...' : 'Regenerate'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -308,6 +415,15 @@ export default function SuperAdminPage() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-5 p-5">
                 <h2 className="text-sm font-bold text-[#1e3a5f] mb-3">Feature Flags</h2>
                 <TenantFeaturesEditor tenant={selectedTenant} onUpdate={fetchTenants} />
+              </div>
+
+              {/* Integrations */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-5 p-5">
+                <h2 className="text-sm font-bold text-[#1e3a5f] mb-3">Integrations</h2>
+                <TenantSecretsEditor tenant={selectedTenant} onUpdate={fetchTenants} />
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <RequestOrderLinkPanel tenant={selectedTenant} onUpdate={fetchTenants} />
+                </div>
               </div>
 
               {/* Users table */}

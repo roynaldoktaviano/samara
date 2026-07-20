@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Webhook } from 'svix'
-import { resolveTenantBySlug } from '@/lib/resolve-tenant'
+import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 // Resend delivers events (email.opened, email.delivered, email.bounced, ...) via
 // a Svix-signed webhook. Configure this URL in the Resend dashboard as
@@ -20,7 +21,13 @@ type ResendEvent = {
 }
 
 export async function POST(request: NextRequest) {
-  const secret = process.env.RESEND_WEBHOOK_SECRET
+  // Resolved before signature verification below, since the signing secret itself is per-tenant.
+  const tenantSlug = request.nextUrl.searchParams.get('tenant')
+  const resolved = await resolveTenantBySlugFull(tenantSlug)
+  if (!resolved) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+  const { db, tenant } = resolved
+
+  const secret = await getTenantSecret(tenant.id, 'resendWebhookSecret')
   if (!secret) return NextResponse.json({ error: 'RESEND_WEBHOOK_SECRET not configured' }, { status: 500 })
 
   const rawBody = await request.text()
@@ -41,10 +48,6 @@ export async function POST(request: NextRequest) {
   if (!event.type || !TRACKED_EVENTS.has(event.type) || !emailId) {
     return NextResponse.json({ ok: true, ignored: true })
   }
-
-  const tenantSlug = request.nextUrl.searchParams.get('tenant')
-  const db = await resolveTenantBySlug(tenantSlug)
-  if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
 
   const buildUpdate = (prevOpenedAt: Date | null, prevClickedAt: Date | null) => {
     if (event.type === 'email.opened') {

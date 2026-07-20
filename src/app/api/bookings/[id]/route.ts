@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -49,6 +50,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const tripSheetId = await getTenantSecret((session.user as { tenantId?: string }).tenantId ?? '', 'tripSheetGoogleSheetId')
   try {
     const { id } = await params
     const body   = await request.json()
@@ -172,7 +174,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
     }, db).catch(() => {})
 
-    scheduleTripSheetSync(db)
+    scheduleTripSheetSync(db, tripSheetId)
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error updating booking:', error)
@@ -184,6 +186,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const tripSheetId = await getTenantSecret((session.user as { tenantId?: string }).tenantId ?? '', 'tripSheetGoogleSheetId')
   try {
     const { id }  = await params
     const body    = await request.json()
@@ -269,7 +272,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Complete booking ${existing.bookingCode} — ${guests.length} guest(s), total: ${total}`,
       }, db).catch(() => {})
 
-      scheduleTripSheetSync(db)
+      scheduleTripSheetSync(db, tripSheetId)
       return NextResponse.json({ id, bookingCode: existing.bookingCode, status: paymentStatus(paid, total) })
     }
 
@@ -327,7 +330,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           detail: `Cancel booking ${booking.bookingCode} with confirmed payment → pending refund decision`,
         }, db).catch(() => {})
 
-        scheduleTripSheetSync(db)
+        scheduleTripSheetSync(db, tripSheetId)
         return NextResponse.json({ ...booking, requiresRefundDecision: true })
       }
     }
@@ -356,7 +359,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${cancelReason ? ` (alasan: ${cancelReason})` : ''}`,
     }, db).catch(() => {})
 
-    scheduleTripSheetSync(db)
+    scheduleTripSheetSync(db, tripSheetId)
     return NextResponse.json(booking)
   } catch (error) {
     console.error('Error patching booking:', error)

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
+import { getTenantSecret } from '@/lib/tenant-secrets'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -154,6 +155,7 @@ export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const tripSheetId = await getTenantSecret((session.user as { tenantId?: string }).tenantId ?? '', 'tripSheetGoogleSheetId')
   try {
     const body = await request.json()
     const {
@@ -187,7 +189,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Missing required fields: ${missing.join(', ')}` }, { status: 400 })
     }
 
-    const lead  = isOnHold ? null : (guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0])
+    // Guests picked from Leads (not yet real Guests) get resolved to a Customer here —
+    // reusing an existing Guest if this Lead's contact info already matches one, else
+    // creating a new one now (the wizard's own quick-add flow already creates a Customer
+    // immediately when staff types a brand-new guest, so this is consistent with existing
+    // behavior, not a new risk). The Lead itself is only archived AFTER the booking below
+    // is confirmed created (see convertedLeads / archival step near the end of this
+    // handler) — a failed booking must never leave a Lead silently converted with no
+    // booking behind it.
+    const convertedLeads: { leadId: string; customerId: string }[] = []
+    const resolvedGuests: { customerId: string; cabinId?: string; isLead?: boolean }[] = []
+    if (!isOnHold) {
+      for (const g of guests as { customerId?: string; leadId?: string; cabinId?: string; isLead?: boolean }[]) {
+        if (g.customerId) { resolvedGuests.push({ customerId: g.customerId, cabinId: g.cabinId, isLead: g.isLead }); continue }
+        if (!g.leadId) {
+          return NextResponse.json({ error: 'Each guest needs either a customerId or a leadId' }, { status: 400 })
+        }
+        const crmLead = await db.lead.findUnique({ where: { id: g.leadId } })
+        if (!crmLead || crmLead.deletedAt) {
+          return NextResponse.json({ error: 'Selected lead is no longer available' }, { status: 400 })
+        }
+
+        let customer = crmLead.email
+          ? await db.customer.findFirst({ where: { email: crmLead.email, deletedAt: null } })
+          : null
+        if (!customer && crmLead.phone) {
+          customer = await db.customer.findFirst({ where: { phone: crmLead.phone, deletedAt: null } })
+        }
+
+        if (customer && crmLead.notes) {
+          customer = await db.customer.update({
+            where: { id: customer.id },
+            data: { operationalNotes: customer.operationalNotes ? `${customer.operationalNotes}\n\n${crmLead.notes}` : crmLead.notes },
+          })
+        } else if (!customer) {
+          customer = await db.customer.create({
+            data: {
+              name: crmLead.name, firstName: crmLead.firstName, lastName: crmLead.lastName,
+              email: crmLead.email, phone: crmLead.phone, nationality: crmLead.nationality,
+              operationalNotes: crmLead.notes || null,
+            },
+          })
+        }
+
+        convertedLeads.push({ leadId: crmLead.id, customerId: customer.id })
+        resolvedGuests.push({ customerId: customer.id, cabinId: g.cabinId, isLead: g.isLead })
+      }
+    }
+
+    const lead  = isOnHold ? null : (resolvedGuests.find(g => g.isLead) ?? resolvedGuests[0])
+    if (!isOnHold && !lead) {
+      return NextResponse.json({ error: 'At least one guest is required' }, { status: 400 })
+    }
     const paid  = isFinite(parseFloat(depositPaid)) ? Math.max(0, parseFloat(depositPaid)) : 0
     const total = isFinite(parseFloat(totalPrice))  ? Math.max(0, parseFloat(totalPrice))  : 0
 
@@ -292,7 +345,8 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      leadCustomerId = lead.customerId
+      // Guarded above: !isOnHold implies lead is non-null here.
+      leadCustomerId = lead!.customerId
     }
 
     const booking = await db.booking.create({
@@ -316,7 +370,7 @@ export async function POST(request: NextRequest) {
         finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
         holdUntil:      isOnHold && holdUntil ? new Date(holdUntil) : null,
         status:         isOnHold ? 'on_hold' : paymentStatus(paid, total),
-        guestCount:     isOnHold ? 1 : guests.length,
+        guestCount:     isOnHold ? 1 : resolvedGuests.length,
         crewRequired:   crewRequired ?? false,
         hasDiving:      hasDiving ?? false,
         hasSurfing:     hasSurfing ?? false,
@@ -330,7 +384,7 @@ export async function POST(request: NextRequest) {
         guests: {
           create: isOnHold
             ? [{ customerId: leadCustomerId, isLead: true, cabinId: holdCabinId || null }]
-            : guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
+            : resolvedGuests.map(g => ({
                 customerId: g.customerId,
                 cabinId:    g.cabinId || null,
                 isLead:     g.isLead ?? false,
@@ -346,6 +400,17 @@ export async function POST(request: NextRequest) {
       },
       select: { id: true, bookingCode: true, status: true },
     })
+
+    // Booking is confirmed created — now safe to archive any Leads that were
+    // converted into Guests above (never do this before booking.create succeeds).
+    // Best-effort: the booking itself is already secured, so a failure here is
+    // logged rather than surfaced as a failed booking creation.
+    if (convertedLeads.length > 0) {
+      await Promise.all(convertedLeads.map(({ leadId, customerId }) => Promise.all([
+        db.inquiry.updateMany({ where: { leadId }, data: { leadId: null, customerId } }),
+        db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date() } }),
+      ]))).catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
+    }
 
     // Close any conflicting open trips (private charter override)
     if (tripType === 'PRIVATE_CHARTER' && yachtId && confirmCloseOpenTrips) {
@@ -385,7 +450,7 @@ export async function POST(request: NextRequest) {
       detail: `New booking ${booking.bookingCode}`,
     }, db).catch(() => {})
 
-    scheduleTripSheetSync(db)
+    scheduleTripSheetSync(db, tripSheetId)
     return NextResponse.json(booking, { status: 201 })
   } catch (error) {
     console.error('Error creating booking:', error)

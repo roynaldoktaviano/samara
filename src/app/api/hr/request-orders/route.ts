@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '@prisma/client'
-import { resolveTenantBySlug } from '@/lib/resolve-tenant'
+import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
 
 // Public, unauthenticated: internal employees (who may not have an ERP login) submit
 // requests here. Each submission becomes a DRAFT PurchaseRequest that the purchasing
 // team reviews and formally submits through the normal approval flow.
-// `?tenant=<slug>` selects which company this submission belongs to; defaults to 'samara'.
+// `?token=<per-tenant token>` identifies which company this submission belongs to.
 
 const SYSTEM_REQUESTER_EMAIL = 'system+employee-requests@samara.internal'
 
@@ -44,8 +44,9 @@ interface RequestItemInput {
 }
 
 export async function POST(req: NextRequest) {
-  const db = await resolveTenantBySlug(req.nextUrl.searchParams.get('tenant'))
-  if (!db) return NextResponse.json({ error: 'Unknown or inactive tenant' }, { status: 400 })
+  const resolved = await resolveTenantByRequestOrderToken(req.nextUrl.searchParams.get('token'))
+  if (!resolved) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 401 })
+  const { db } = resolved
 
   const body = await req.json()
   const { employeeId, locationId, notes, items } = body as {

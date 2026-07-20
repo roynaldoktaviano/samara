@@ -123,8 +123,7 @@ function buildVesselSheet(groups: TripSheetGroup[]) {
 }
 
 /** Full-refresh rebuild of the Trip Sheet Google Sheet mirror — one tab per vessel. Idempotent — always overwrites each tab. */
-export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
-  const sheetId = process.env.TRIP_SHEET_GOOGLE_SHEET_ID
+export async function rebuildTripSheetGoogleSheet(db: PrismaClient, sheetId: string | null) {
   const sheetsClient = getSheetsClient()
   if (!sheetId || !sheetsClient) return { ok: false as const, reason: 'not_configured' }
 
@@ -192,7 +191,7 @@ export async function rebuildTripSheetGoogleSheet(db: PrismaClient) {
 }
 
 /** Fire-and-forget trigger for mutation routes — safe to call without awaiting. No-op if not configured. */
-export function scheduleTripSheetSync(db: PrismaClient) {
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.TRIP_SHEET_GOOGLE_SHEET_ID) return
-  rebuildTripSheetGoogleSheet(db).catch(err => console.error('[trip-sheet-sync] failed:', err))
+export function scheduleTripSheetSync(db: PrismaClient, sheetId: string | null) {
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !sheetId) return
+  rebuildTripSheetGoogleSheet(db, sheetId).catch(err => console.error('[trip-sheet-sync] failed:', err))
 }

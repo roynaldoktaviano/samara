@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { requireRole } from '@/lib/auth-guard'
 
 export async function GET() {
-  const db = await getDb()
+  const auth = await requireRole(['ADMIN', 'SUPER_ADMIN', 'SALES'])
+  if (!auth.ok) return auth.response
+  const db = await getDb(auth.session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const guests = await db.bookingGuest.findMany({
       include: { customer: { select: { id: true, name: true, phone: true, email: true } } },
     })
@@ -20,11 +18,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const db = await getDb()
+  const auth = await requireRole(['ADMIN', 'SUPER_ADMIN', 'SALES'])
+  if (!auth.ok) return auth.response
+  const db = await getDb(auth.session)
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const body = await request.json()
     const { bookingId, customerId, cabinId, isLead } = body
 

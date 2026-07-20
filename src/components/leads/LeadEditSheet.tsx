@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
@@ -13,11 +14,11 @@ import { NATIONALITIES } from '@/lib/nationalities'
 /* ── Types ── */
 export interface LeadFormState {
   firstName: string; lastName: string; nationality: string
-  email: string; phone: string
+  email: string; phone: string; notes: string
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
-  firstName: '', lastName: '', nationality: '', email: '', phone: '',
+  firstName: '', lastName: '', nationality: '', email: '', phone: '', notes: '',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -28,6 +29,7 @@ export function toLeadFormState(data: any): LeadFormState {
     nationality: data.nationality ?? '',
     email:       data.email       ?? '',
     phone:       data.phone       ?? '',
+    notes:       data.notes       ?? '',
   }
 }
 
@@ -134,6 +136,9 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
         </Field>
         <Field label="Phone">
           <Input type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" className="h-8 text-sm" />
+        </Field>
+        <Field label="Notes" col2>
+          <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Any additional context about this lead…" rows={3} className="text-sm" />
         </Field>
       </div>
     </div>

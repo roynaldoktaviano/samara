@@ -6,12 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, Trash2, X, Globe, RotateCw } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, Trash2, X, Globe, RotateCw, Download } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
+import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Lead {
@@ -22,6 +24,22 @@ interface Lead {
   email?: string
   phone?: string
   nationality?: string
+  notes?: string
+  createdAt: string
+  isSubscribed: boolean | null
+}
+
+interface Inquiry {
+  id: string
+  source: string
+  checkInDate?: string | null
+  checkOutDate?: string | null
+  guestCount?: number | null
+  tripType?: string | null
+  message?: string | null
+  utmSource?: string | null
+  utmMedium?: string | null
+  utmCampaign?: string | null
   createdAt: string
 }
 
@@ -34,9 +52,11 @@ export default function Leads() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [sheetLeadId, setSheetLeadId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<Lead | null>(null)
+  const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
 
   // single delete
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null)
@@ -67,6 +87,8 @@ export default function Leads() {
   const openDetail = (l: Lead) => {
     setDetail(l)
     setDetailOpen(true)
+    setInquiries(null)
+    fetch(`/api/leads/${l.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
   }
 
   const openEdit = (l: Lead, e: React.MouseEvent) => {
@@ -144,9 +166,14 @@ export default function Leads() {
           </div>
           <p className="text-muted-foreground">Manage lead profiles</p>
         </div>
-        <Button onClick={() => { setSheetLeadId(null); setSheetOpen(true) }}>
-          <Plus className="mr-2 h-4 w-4" /> Add Lead
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Download className="mr-2 h-4 w-4" /> Import from Freshsales
+          </Button>
+          <Button onClick={() => { setSheetLeadId(null); setSheetOpen(true) }}>
+            <Plus className="mr-2 h-4 w-4" /> Add Lead
+          </Button>
+        </div>
       </div>
 
       {/* Table card */}
@@ -200,6 +227,7 @@ export default function Leads() {
                   )}
                   <TableHead>Name</TableHead>
                   <TableHead>Contact</TableHead>
+                  <TableHead>Subscribed</TableHead>
                   <TableHead>Nationality</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -219,13 +247,14 @@ export default function Leads() {
                         </div>
                       </TableCell>
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
+                      <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
                       <TableCell><div className="flex justify-end gap-1"><Skeleton className="h-8 w-8 rounded-md" /><Skeleton className="h-8 w-8 rounded-md" /></div></TableCell>
                     </TableRow>
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 5 : 4} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -255,6 +284,15 @@ export default function Leads() {
                         {l.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3 text-muted-foreground" />{l.email}</div>}
                         {l.phone && <div className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3 text-muted-foreground" />{l.phone}</div>}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {l.isSubscribed === null ? (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      ) : l.isSubscribed ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-transparent">Subscribed</Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 border-transparent">Unsubscribed</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {l.nationality ? <div className="flex items-center gap-1 text-xs"><Globe className="h-3 w-3 text-muted-foreground" />{l.nationality}</div> : <span className="text-muted-foreground text-xs">—</span>}
@@ -290,6 +328,8 @@ export default function Leads() {
         onSaved={() => fetchLeads()}
       />
 
+      <FreshsalesImportModal open={importOpen} onOpenChange={setImportOpen} onImported={() => fetchLeads()} />
+
       {/* ── Detail Dialog ─────────────────────────────────────────────────── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -306,18 +346,62 @@ export default function Leads() {
             </div>
           </DialogHeader>
           {detail && (
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-              {[
-                ['Email', detail.email],
-                ['Phone', detail.phone],
-                ['Nationality', detail.nationality],
-              ].filter(([, v]) => v).map(([label, value]) => (
-                <div key={label}>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-                  <p className="font-medium mt-0.5">{value}</p>
+            <>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                {[
+                  ['Email', detail.email],
+                  ['Phone', detail.phone],
+                  ['Nationality', detail.nationality],
+                ].filter(([, v]) => v).map(([label, value]) => (
+                  <div key={label}>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+                    <p className="font-medium mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
+              {detail.notes && (
+                <div className="text-sm">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Notes</p>
+                  <p className="font-medium mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
                 </div>
-              ))}
-            </div>
+              )}
+              <div className="text-sm">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Inquiry History</p>
+                {inquiries === null ? (
+                  <p className="text-xs text-muted-foreground">Loading…</p>
+                ) : inquiries.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No form submissions yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {inquiries.map(inq => (
+                      <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium">{inq.source}</span>
+                          <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        {(inq.checkInDate || inq.checkOutDate) && (
+                          <p className="text-xs text-muted-foreground">
+                            {inq.checkInDate ? new Date(inq.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                            {' → '}
+                            {inq.checkOutDate ? new Date(inq.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                            {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
+                            {inq.tripType ? ` · ${inq.tripType}` : ''}
+                          </p>
+                        )}
+                        {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                        {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
+                            {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
+                            {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>

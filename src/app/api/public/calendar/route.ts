@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
-import { db as samaraDb } from '@/lib/db'
+import { db as defaultDb } from '@/lib/db'
+import { verifyCalAccess } from '@/lib/cal-access'
+import type { PrismaClient } from '@prisma/client'
 
-async function getDbForSlug(slug: string) {
-  if (!slug || slug === 'samara') return samaraDb
-  const tenant = await centralDb.tenant.findUnique({
-    where: { slug },
-    select: { databaseUrl: true },
-  }).catch(() => null)
-  if (!tenant) return samaraDb
-  return getTenantDb(tenant.databaseUrl)
-}
-
+// Two access paths, deliberately different:
+//  - No cal-access cookie: this is /kalender, the public marketing-site calendar
+//    embed — genuinely unauthenticated by design, but it only ever shows the
+//    DEFAULT tenant's own calendar. No `?tenant=` param is honored here, which is
+//    what closes the original hole (any tenant's calendar was guessable via slug).
+//  - Valid cal-access cookie: an agent viewing /agent/calendar, whose own tenant
+//    (possibly not the default one) is read from the verified JWT, never from
+//    client input.
 export async function GET(req: NextRequest) {
-  const slug = new URL(req.url).searchParams.get('tenant') ?? 'samara'
-  const db = await getDbForSlug(slug)
+  const payload = await verifyCalAccess(req)
+
+  let db: PrismaClient
+  if (payload?.tenantId) {
+    const tenant = await centralDb.tenant.findUnique({ where: { id: payload.tenantId }, select: { databaseUrl: true } })
+    if (!tenant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    db = tenant.databaseUrl === process.env.DATABASE_URL ? defaultDb : getTenantDb(tenant.databaseUrl)
+  } else {
+    db = defaultDb
+  }
 
   try {
     const [bookings, openTrips, yachts] = await Promise.all([

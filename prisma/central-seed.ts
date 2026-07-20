@@ -33,7 +33,7 @@ async function main() {
     create: {
       name: 'Siloina',
       slug: 'siloina',
-      databaseUrl: 'postgresql://neondb_owner:npg_ftKp2Abn9gEO@ep-raspy-bird-aor9pld0-pooler.c-2.ap-southeast-1.aws.neon.tech/siloina?sslmode=require&channel_binding=require',
+      databaseUrl: 'postgresql://neondb_owner:npg_ftKp2Abn9gEO@ep-raspy-bird-aor9pld0-pooler.c-2.ap-southeast-1.aws.neon.tech/siloina?sslmode=require&channel_binding=require&pgbouncer=true&connection_limit=5&pool_timeout=30',
       directUrl: 'postgresql://neondb_owner:npg_ftKp2Abn9gEO@ep-raspy-bird-aor9pld0.c-2.ap-southeast-1.aws.neon.tech/siloina?sslmode=require',
     },
   })

@@ -47,7 +47,6 @@ export default function StockPage() {
     if (res.ok) {
       const d: StockData = await res.json()
       setData(d)
-      if (d.locations.length > 0) setOpenLoc(d.locations[0].location.id)
     }
     setLoading(false)
   }, [])
@@ -173,7 +172,7 @@ export default function StockPage() {
           <select
             className="h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
             value={filterLoc}
-            onChange={e => { setFilterLoc(e.target.value); setOpenLoc(e.target.value === 'all' ? (data.locations[0]?.location.id ?? null) : e.target.value) }}
+            onChange={e => setFilterLoc(e.target.value)}
           >
             <option value="all">All Locations</option>
             {data.locations.map(({ location }) => (

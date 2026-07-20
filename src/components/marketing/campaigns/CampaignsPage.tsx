@@ -114,6 +114,7 @@ export default function CampaignsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Created by</TableHead>
                   <TableHead>Recipients</TableHead>
                   <TableHead>Opened</TableHead>
                   <TableHead>Clicked</TableHead>
@@ -131,6 +132,7 @@ export default function CampaignsPage() {
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{c.subject}</TableCell>
                     <TableCell><Badge className={STATUS_STYLE[c.status]}>{c.status}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{c.createdByName ?? '—'}</TableCell>
                     <TableCell className="text-sm">
                       {c.status === 'SENT' || c.status === 'SENDING'
                         ? `${c.sentCount}/${c.totalRecipients}${c.failedCount ? ` (${c.failedCount} failed)` : ''}`

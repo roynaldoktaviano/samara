@@ -36,6 +36,27 @@ export async function resolveTenantByLookup<T>(
 }
 
 /**
+ * Same slug resolution as resolveTenantBySlug, but also returns the tenant's
+ * central-registry id — needed by callers that look up a per-tenant secret
+ * (getTenantSecret) after resolving the tenant, which resolveTenantBySlug's
+ * PrismaClient-only return can't support. resolveTenantBySlug itself is kept
+ * as a thin wrapper below so its many existing callers (guest-form, booking
+ * form, etc., which only need the client) are untouched.
+ */
+export async function resolveTenantBySlugFull(
+  slug: string | null | undefined,
+): Promise<{ db: PrismaClient; tenant: { id: string; slug: string } } | null> {
+  const resolvedSlug = slug?.trim() || 'samara'
+  const tenant = await centralDb.tenant.findUnique({
+    where: { slug: resolvedSlug },
+    select: { id: true, slug: true, databaseUrl: true, isActive: true },
+  }).catch(() => null)
+  if (!tenant || !tenant.isActive) return null
+  const tdb = tenant.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(tenant.databaseUrl)
+  return { db: tdb, tenant: { id: tenant.id, slug: tenant.slug } }
+}
+
+/**
  * For unauthenticated routes that identify the tenant directly by slug (query
  * param, form field) rather than by scanning — e.g. a webhook or an internal
  * kiosk-style form shared by multiple tenants. Falls back to 'samara' when no
@@ -43,11 +64,24 @@ export async function resolveTenantByLookup<T>(
  * links) working unchanged.
  */
 export async function resolveTenantBySlug(slug: string | null | undefined): Promise<PrismaClient | null> {
-  const resolvedSlug = slug?.trim() || 'samara'
+  return (await resolveTenantBySlugFull(slug))?.db ?? null
+}
+
+/**
+ * For the public Request Order page: tenant is identified by an unguessable
+ * per-tenant token (Tenant.requestOrderToken) rather than a plain, guessable
+ * slug. Central-DB lookup is O(1) since Tenant rows live there directly —
+ * no need to scan tenant databases the way resolveTenantByLookup does.
+ */
+export async function resolveTenantByRequestOrderToken(
+  token: string | null | undefined,
+): Promise<{ db: PrismaClient; tenant: { id: string; slug: string } } | null> {
+  if (!token) return null
   const tenant = await centralDb.tenant.findUnique({
-    where: { slug: resolvedSlug },
-    select: { databaseUrl: true, isActive: true },
+    where: { requestOrderToken: token },
+    select: { id: true, slug: true, databaseUrl: true, isActive: true },
   }).catch(() => null)
   if (!tenant || !tenant.isActive) return null
-  return tenant.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(tenant.databaseUrl)
+  const tdb = tenant.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(tenant.databaseUrl)
+  return { db: tdb, tenant: { id: tenant.id, slug: tenant.slug } }
 }

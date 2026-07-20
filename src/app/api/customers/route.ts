@@ -40,10 +40,14 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
+    const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
+    const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
+
     const result = customers.map(c => ({
       ...c,
       totalBookings: c._count.bookings + c._count.guestOf,
       totalSpent: c.bookings.reduce((s, b) => s + b.totalPrice, 0),
+      isSubscribed: c.email ? !unsubscribedSet.has(c.email.toLowerCase()) : null,
     }))
 
     return NextResponse.json(result)

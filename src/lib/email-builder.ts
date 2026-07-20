@@ -351,7 +351,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'html':
       return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: uniformPadding(16), hideOn: 'none' }
     case 'button':
-      return { id: nextId(), type: 'button', label: 'Click Here', url: 'https://', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
       return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':

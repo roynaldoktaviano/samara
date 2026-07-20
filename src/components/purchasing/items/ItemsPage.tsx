@@ -148,6 +148,34 @@ export default function ItemsPage() {
     setHistoryLoading(false)
   }
 
+  // Edit expiry on a single lot, from the Lot Register
+  const [editLot, setEditLot] = useState<LotEntry | null>(null)
+  const [editLotExpiry, setEditLotExpiry] = useState('')
+  const [editLotSaving, setEditLotSaving] = useState(false)
+  const [editLotError, setEditLotError] = useState('')
+
+  function openEditLot(lot: LotEntry) {
+    setEditLot(lot)
+    setEditLotExpiry(lot.expiresAt ? lot.expiresAt.slice(0, 10) : '')
+    setEditLotError('')
+  }
+
+  async function saveEditLot() {
+    if (!editLot) return
+    setEditLotSaving(true)
+    setEditLotError('')
+    const res = await fetch(`/api/purchasing/stock/lots/${editLot.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresAt: editLotExpiry || null }),
+    })
+    const data = await res.json()
+    setEditLotSaving(false)
+    if (!res.ok) { setEditLotError(data.error ?? 'Failed to save'); return }
+    setEditLot(null)
+    if (historyItem) await openHistory(historyItem)
+  }
+
   const load = useCallback(async () => {
     setLoading(true)
     const res = await fetch('/api/purchasing/items')
@@ -324,7 +352,7 @@ export default function ItemsPage() {
             onClick={() => importRef.current?.click()}
             disabled={importing}
             className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
-            title="Import CSV — Stock/Location columns only set initial stock for newly created items (SKUs that don't exist yet); existing items' stock is untouched"
+            title="Import CSV — Stock/Location columns reconcile stock at that location to match the CSV value, for both new and existing items"
           >
             <Upload className="h-4 w-4" /> {importing ? 'Importing...' : 'Import CSV'}
           </button>
@@ -800,6 +828,19 @@ export default function ItemsPage() {
         </div>
       )}
 
+      {/* Import Loading Modal */}
+      {importing && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-4">
+            <div className="h-10 w-10 border-[3px] border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+            <div>
+              <p className="font-semibold">Importing CSV…</p>
+              <p className="text-sm text-muted-foreground mt-1">Processing rows and reconciling stock — this can take a moment for large files. Please don&apos;t close this tab.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Import Result Modal */}
       {importResult && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -984,13 +1025,22 @@ export default function ItemsPage() {
                                       {new Date(lot.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
                                     </td>
                                     <td className="px-3 py-2">
-                                      {lot.batch && <span className="font-mono text-[10px] bg-gray-100 px-1 rounded mr-1">{lot.batch}</span>}
-                                      {lot.expiresAt && (
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isExpired ? 'bg-red-100 text-red-600' : isNearExpiry ? 'bg-orange-100 text-orange-600' : 'bg-green-50 text-green-600'}`}>
-                                          {isExpired ? 'Expired' : new Date(lot.expiresAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
-                                        </span>
-                                      )}
-                                      {!lot.batch && !lot.expiresAt && <span className="text-muted-foreground">—</span>}
+                                      <div className="flex items-center gap-1">
+                                        {lot.batch && <span className="font-mono text-[10px] bg-gray-100 px-1 rounded">{lot.batch}</span>}
+                                        {lot.expiresAt && (
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isExpired ? 'bg-red-100 text-red-600' : isNearExpiry ? 'bg-orange-100 text-orange-600' : 'bg-green-50 text-green-600'}`}>
+                                            {isExpired ? 'Expired' : new Date(lot.expiresAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                          </span>
+                                        )}
+                                        {!lot.batch && !lot.expiresAt && <span className="text-muted-foreground">—</span>}
+                                        <button
+                                          onClick={() => { const full = lotInfoMap.get(lot.id); if (full) openEditLot(full) }}
+                                          className="ml-auto text-muted-foreground/50 hover:text-amber-600 transition-colors shrink-0"
+                                          title="Set batch / expiry"
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </button>
+                                      </div>
                                     </td>
                                     <td className="px-3 py-2 text-right font-medium">{lot.quantity} <span className="text-muted-foreground font-normal">{historyItem?.baseUnit}</span></td>
                                     <td className="px-3 py-2 text-right text-muted-foreground">Rp {fmt(Math.round(effectiveCost))}</td>
@@ -1042,6 +1092,43 @@ export default function ItemsPage() {
             <div className="px-6 py-4 border-t bg-muted/20 shrink-0 text-right">
               <button onClick={() => setHistoryItem(null)} className="px-5 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Lot expiry modal */}
+      {editLot && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h3 className="font-semibold text-base">Set Expiry</h3>
+              <button onClick={() => setEditLot(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-xs text-muted-foreground">
+                {editLot.locationName} · {editLot.quantity} in this lot{editLot.batch ? ` · ${editLot.batch}` : ''} · received {new Date(editLot.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </p>
+              {editLotError && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editLotError}</div>
+              )}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expiry date</label>
+                <input
+                  type="date"
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={editLotExpiry} onChange={e => setEditLotExpiry(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/20">
+              <button onClick={() => setEditLot(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
+              <button onClick={saveEditLot} disabled={editLotSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
+                {editLotSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

@@ -5,6 +5,8 @@ import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 import { parseTenantFeatures } from '@/lib/tenant-features'
 import { logSuperAdmin } from '@/lib/super-admin-log'
+import { setTenantSecrets, getTenantSecretStatus } from '@/lib/tenant-secrets'
+import crypto from 'crypto'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isSuperAdmin(session: any) {
@@ -25,7 +27,9 @@ export async function GET() {
     tenants.map(async (tenant) => {
       const tenantDb = getTenantDb(tenant.databaseUrl)
       const userCount = await tenantDb.user.count({ where: { role: 'ADMIN' } }).catch(() => 0)
-      return { ...tenant, _count: { users: userCount } }
+      const secretsStatus = await getTenantSecretStatus(tenant.id)
+      const { secrets: _secrets, ...tenantSafe } = tenant
+      return { ...tenantSafe, _count: { users: userCount }, secretsStatus }
     })
   )
 
@@ -51,13 +55,21 @@ export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session || !isSuperAdmin(session)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id, features, ...rest } = await req.json()
+  const { id, features, secrets, regenerateRequestOrderToken, ...rest } = await req.json()
   const data = {
     ...rest,
     ...(features !== undefined ? { features: parseTenantFeatures(features) } : {}),
+    ...(regenerateRequestOrderToken ? { requestOrderToken: crypto.randomBytes(24).toString('hex') } : {}),
   }
-  const tenant = await centralDb.tenant.update({ where: { id }, data })
-  const actionLabel = features !== undefined ? 'TOGGLE_FEATURE' : 'UPDATE_TENANT'
-  logSuperAdmin({ adminEmail: session.user!.email!, action: actionLabel, targetType: 'tenant', targetId: id, detail: JSON.stringify(features ?? rest) })
-  return NextResponse.json(tenant)
+  if (secrets !== undefined) {
+    await setTenantSecrets(id, secrets)
+  }
+  const tenant = Object.keys(data).length > 0
+    ? await centralDb.tenant.update({ where: { id }, data })
+    : await centralDb.tenant.findUnique({ where: { id } })
+  const actionLabel = regenerateRequestOrderToken ? 'REGENERATE_REQUEST_ORDER_TOKEN' : (secrets !== undefined ? 'UPDATE_SECRETS' : (features !== undefined ? 'TOGGLE_FEATURE' : 'UPDATE_TENANT'))
+  const detail = regenerateRequestOrderToken ? 'Regenerated request-order link token' : (secrets !== undefined ? `Updated secrets: ${Object.keys(secrets).join(', ')}` : JSON.stringify(features ?? rest))
+  logSuperAdmin({ adminEmail: session.user!.email!, action: actionLabel, targetType: 'tenant', targetId: id, detail })
+  const { secrets: _secrets, ...tenantSafe } = tenant ?? {}
+  return NextResponse.json(tenantSafe)
 }

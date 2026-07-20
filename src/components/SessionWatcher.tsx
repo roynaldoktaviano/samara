@@ -4,7 +4,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
-const PUBLIC_PATHS = ['/agent/calendar', '/external', '/login']
+const PUBLIC_PATHS = ['/agent/calendar', '/login']
 
 export function SessionWatcher() {
   const { status } = useSession()

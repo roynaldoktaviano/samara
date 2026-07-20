@@ -5,6 +5,8 @@ import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
+import { getTenantSecret } from '@/lib/tenant-secrets'
+import { requireRole } from '@/lib/auth-guard'
 import { BookingStatus } from '@prisma/client'
 
 function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
@@ -14,9 +16,9 @@ function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const auth = await requireRole(['ADMIN', 'SUPER_ADMIN', 'FINANCE', 'SALES'])
+  if (!auth.ok) return auth.response
+  const db = await getDb(auth.session)
   try {
     const { id } = await params
     const payment = await withRetry(db, () => db.payment.findUnique({
@@ -69,6 +71,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const tripSheetId = await getTenantSecret((session.user as { tenantId?: string }).tenantId ?? '', 'tripSheetGoogleSheetId')
   try {
     const { id } = await params
     const body = await request.json()
@@ -184,7 +187,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         })
         .catch(() => {})
 
-      scheduleTripSheetSync(db)
+      scheduleTripSheetSync(db, tripSheetId)
       return NextResponse.json({ ok: true, invoiceNumber })
     }
 
@@ -225,7 +228,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           : `Set invoice ${existing.invoiceNumber} (${existing.booking.bookingCode}) currency to ${currencyCode} @ ${exchangeRate}`,
       }, db).catch(() => {})
 
-      scheduleTripSheetSync(db)
+      scheduleTripSheetSync(db, tripSheetId)
       return NextResponse.json({ ok: true })
     }
 
@@ -278,7 +281,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         })
         .catch(() => {})
 
-      scheduleTripSheetSync(db)
+      scheduleTripSheetSync(db, tripSheetId)
       return NextResponse.json({ ok: true })
     }
 
@@ -381,7 +384,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
 
-      scheduleTripSheetSync(db)
+      scheduleTripSheetSync(db, tripSheetId)
       return NextResponse.json({ ok: true })
     }
 
