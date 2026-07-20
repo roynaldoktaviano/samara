@@ -425,8 +425,33 @@ export const BLOCK_LABELS: Record<EmailBlock['type'], string> = {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+// Gmail's auto-dark-mode heuristic specifically targets pure black/white — it
+// decides an element "needs fixing" for dark mode by detecting stark #000/#fff
+// contrast pairs, then rewrites the color with an INLINE style. An inline style
+// always wins the CSS cascade over any stylesheet rule (even !important + a
+// data-ogsc attribute selector, which is why that alone didn't hold), so the only
+// way to stop the rewrite is to never present the stark color it's looking for in
+// the first place. Nudging by one RGB unit is visually identical but outside
+// whatever threshold triggers the heuristic. Only ever applied to the rendered
+// HTML's inline styles — the color picker and stored template data keep the exact
+// value the user chose.
+function darkModeSafe(hex: string): string {
+  const h = hex.trim().toLowerCase()
+  if (h === '#000' || h === '#000000') return '#010101'
+  if (h === '#fff' || h === '#ffffff') return '#fefefe'
+  return hex
+}
+
 function paddingCss(p: Padding): string {
   return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
+}
+
+// A newline the user types in the button label becomes a mobile-only break point:
+// on desktop it collapses to a plain space (the .hide-mobile span shows, the
+// .hide-desktop <br> is hidden), on mobile it's a real line break (the reverse) —
+// reusing the existing hide-mobile/hide-desktop media-query classes.
+function renderLabelWithMobileBreaks(label: string): string {
+  return esc(label).split('\n').join('<span class="hide-mobile"> </span><br class="hide-desktop">')
 }
 
 function hideOnClass(hideOn: HideOn): string {
@@ -505,10 +530,10 @@ function renderFooterSocialRow(block: FooterBlock): string {
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
     case 'text':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${block.color};font-family:${block.fontFamily};">${block.html}</td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${darkModeSafe(block.color)};font-family:${block.fontFamily};">${block.html}</td></tr>`
 
     case 'heading':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${block.color};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;color:${darkModeSafe(block.color)};font-family:${block.fontFamily};font-weight:700;">${block.html}</td></tr>`
 
     case 'image':
     case 'logo': {
@@ -536,12 +561,12 @@ function renderBlock(block: EmailBlock): string {
 
     case 'button':
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${block.bgColor};color:${block.textColor};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${esc(block.label)}</a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};color:${darkModeSafe(block.textColor)};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;padding:12px 28px;border-radius:${block.borderRadius}px;">${renderLabelWithMobileBreaks(block.label)}</a>
       </td></tr>`
 
     case 'divider': {
       const margin = block.align === 'center' ? '0 auto' : block.align === 'right' ? '0 0 0 auto' : '0 auto 0 0'
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div${classAttr(`div-${block.id}`)} style="border-top:${block.thickness}px solid ${block.color};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div${classAttr(`div-${block.id}`)} style="border-top:${block.thickness}px solid ${darkModeSafe(block.color)};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
     }
 
     case 'spacer':
@@ -562,11 +587,12 @@ function renderBlock(block: EmailBlock): string {
     }
 
     case 'section': {
+      const sectionBg = darkModeSafe(block.backgroundColor)
       const bg = block.backgroundImage
-        ? `background-color:${block.backgroundColor};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
-        : `background-color:${block.backgroundColor};`
+        ? `background-color:${sectionBg};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
+        : `background-color:${sectionBg};`
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} bgcolor="${block.backgroundColor}" style="${bg}"><tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} bgcolor="${sectionBg}" style="${bg}"><tr>
           <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`
@@ -578,13 +604,14 @@ function renderBlock(block: EmailBlock): string {
       </td></tr>`
 
     case 'footer': {
+      const footerBg = darkModeSafe(block.backgroundColor || '#000000')
       const sent = block.companyName && block.address
         ? `<div style="margin-bottom:12px;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</div>`
         : ''
       const unsubscribe = block.showUnsubscribe
         ? `<div>Don't want to receive emails from us? Manage your email preferences <a href="${UNSUBSCRIBE_TOKEN}" style="color:#9ca3af;text-decoration:underline;">here</a>.</div>`
         : ''
-      return `<tr><td class="footer-block" bgcolor="${block.backgroundColor || '#000000'}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${block.backgroundColor || '#000000'};">
+      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#9ca3af;background-color:${footerBg};">
         ${renderFooterSocialRow(block)}
         ${sent}
         ${unsubscribe}
@@ -612,24 +639,30 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     // (background) attributes as it does — targeting those attributes directly is the only
     // way to fight that override back, since it happens regardless of any @media support.
     if (b.type === 'button') {
-      rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}}`)
-      rules.push(darkOverride(`.btn-${b.id}`, `background:${b.bgColor} !important;color:${b.textColor} !important;`))
+      const bg = darkModeSafe(b.bgColor)
+      const fg = darkModeSafe(b.textColor)
+      rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${bg} !important;color:${fg} !important;}}`)
+      rules.push(darkOverride(`.btn-${b.id}`, `background:${bg} !important;color:${fg} !important;`))
     }
     if (b.type === 'text' || b.type === 'heading') {
-      rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}}`)
-      rules.push(darkOverride(`.lc-${b.id}`, `color:${b.color} !important;background-color:transparent !important;`))
+      const fg = darkModeSafe(b.color)
+      rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${fg} !important;background-color:transparent !important;}}`)
+      rules.push(darkOverride(`.lc-${b.id}`, `color:${fg} !important;background-color:transparent !important;`))
     }
     if (b.type === 'divider') {
-      rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${b.color} !important;}}`)
-      rules.push(darkOverride(`.div-${b.id}`, `border-top-color:${b.color} !important;`))
+      const c = darkModeSafe(b.color)
+      rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${c} !important;}}`)
+      rules.push(darkOverride(`.div-${b.id}`, `border-top-color:${c} !important;`))
     }
     if (b.type === 'footer') {
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}}`)
-      rules.push(darkOverride('.footer-block', `background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;`))
+      const bg = darkModeSafe(b.backgroundColor || '#000000')
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;color:#9ca3af !important;}}`)
+      rules.push(darkOverride('.footer-block', `background-color:${bg} !important;color:#9ca3af !important;`))
     }
     if (b.type === 'section') {
-      rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${b.backgroundColor} !important;}}`)
-      rules.push(darkOverride(`.sec-${b.id}`, `background-color:${b.backgroundColor} !important;`))
+      const bg = darkModeSafe(b.backgroundColor)
+      rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${bg} !important;}}`)
+      rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
     if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
@@ -639,6 +672,8 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
 
 export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
+  const pageBg = darkModeSafe(s.pageBackground)
+  const contentBg = darkModeSafe(s.contentBackground)
   const rows = blocks.map(renderBlock).join('\n')
   const extraStyles = collectExtraStyles(blocks).join('\n')
   return `<!doctype html>
@@ -653,20 +688,20 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
       @media (prefers-color-scheme: dark){
-        .email-page,.email-body{background:${s.pageBackground} !important;}
-        .email-content{background:${s.contentBackground} !important;}
+        .email-page,.email-body{background:${pageBg} !important;}
+        .email-content{background:${contentBg} !important;}
       }
-      ${darkOverride('.email-page', `background:${s.pageBackground} !important;`)}
-      ${darkOverride('.email-body', `background:${s.pageBackground} !important;`)}
-      ${darkOverride('.email-content', `background:${s.contentBackground} !important;`)}
+      ${darkOverride('.email-page', `background:${pageBg} !important;`)}
+      ${darkOverride('.email-body', `background:${pageBg} !important;`)}
+      ${darkOverride('.email-content', `background:${contentBg} !important;`)}
       ${extraStyles}
     </style>
   </head>
-  <body class="email-body" style="margin:0;padding:0;background:${s.pageBackground};">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${s.pageBackground}" style="background:${s.pageBackground};">
+  <body class="email-body" style="margin:0;padding:0;background:${pageBg};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${pageBg}" style="background:${pageBg};">
       <tr>
         <td align="center" style="padding:${s.contentPadding}px 12px;">
-          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" bgcolor="${s.contentBackground}" style="max-width:${s.contentWidth}px;width:100%;background:${s.contentBackground};border-radius:8px;overflow:hidden;">
+          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" bgcolor="${contentBg}" style="max-width:${s.contentWidth}px;width:100%;background:${contentBg};border-radius:8px;overflow:hidden;">
             ${rows}
           </table>
         </td>

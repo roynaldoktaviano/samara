@@ -8,9 +8,34 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
+
+// Catches the ways a manual mobile-only line break (see renderLabelWithMobileBreaks
+// in email-builder.ts) can look awkward once it actually breaks on a narrow screen:
+// splitting mid-word, leaving a lone word stranded on its own line, or a line long
+// enough that mobile wraps it again anyway, undoing the manual break's intent.
+function mobileLabelWarnings(label: string): string[] {
+  const lines = label.split('\n')
+  if (lines.length < 2) return []
+  const warnings: string[] = []
+  for (let i = 0; i < lines.length - 1; i++) {
+    const lastChar = lines[i].slice(-1)
+    const firstChar = lines[i + 1].slice(0, 1)
+    if (/\S/.test(lastChar) && /\S/.test(firstChar)) {
+      warnings.push(`Baris ${i + 1} & ${i + 2} terputus di tengah kata ("...${lastChar}" / "${firstChar}...") — pindahkan Enter ke sebelah spasi.`)
+    }
+  }
+  lines.forEach((line, i) => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length
+    if (wordCount === 1) warnings.push(`Baris ${i + 1} cuma 1 kata ("${trimmed}") — bisa kelihatan aneh sendirian, coba gabung ke baris sebelah.`)
+    else if (trimmed.length > 30) warnings.push(`Baris ${i + 1} agak panjang (${trimmed.length} karakter) — kemungkinan tetap wrap ulang otomatis di layar kecil.`)
+  })
+  return warnings
+}
 
 /** Full-bleed section divider bar — groups fields the way "BLOCK OPTIONS" / "ACTION" do in the reference builder. */
 function SectionHeader({ label }: { label: string }) {
@@ -330,7 +355,19 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Label</Label>
-            <Input value={block.label} onChange={e => onChange({ ...block, label: e.target.value })} className="h-8 text-sm" />
+            <Textarea
+              value={block.label}
+              onChange={e => onChange({ ...block, label: e.target.value })}
+              rows={2}
+              className="text-sm resize-none"
+            />
+            <p className="text-[11px] text-muted-foreground">Press Enter where you want the text to break on mobile only — it stays one line on desktop.</p>
+            {mobileLabelWarnings(block.label).map((w, i) => (
+              <p key={i} className="flex items-start gap-1 text-[11px] text-amber-600">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>{w}</span>
+              </p>
+            ))}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">URL</Label>
