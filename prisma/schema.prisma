@@ -1275,6 +1275,19 @@ model Supplier {
   requestItems PurchaseRequestItem[]
 }
 
+// Saved bank accounts for PO reimbursements — lets Purchasing/Admin pick a
+// previously-used account instead of retyping bank details every time.
+model ReimburseAccount {
+  id                String   @id @default(cuid())
+  accountHolderName String
+  bankName          String
+  accountNumber     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([accountHolderName])
+}
+
 model PurchaseRequestItem {
   id            String  @id @default(cuid())
   requestId     String

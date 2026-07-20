@@ -31,6 +31,7 @@ interface PurchaseOrder {
   paymentStatus: string
 }
 interface SupplierOption { id: string; name: string }
+interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
@@ -286,6 +287,58 @@ function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
   )
 }
 
+// Quick-pick for a saved reimbursement bank account — selecting one fills the
+// Bank Name / Account Number / Account Holder Name fields below it. Typing a
+// fresh account is still just done directly in those fields (see the "Save
+// this account" checkbox in the Reimburse modal) — this is purely a picker,
+// not an inline multi-field add like SupplierCombobox's single `name` field.
+function ReimburseAccountCombobox({ accounts, onPick }: {
+  accounts: ReimburseAccountOption[]; onPick: (a: ReimburseAccountOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q
+    ? accounts.filter(a => a.accountHolderName.toLowerCase().includes(q) || a.bankName.toLowerCase().includes(q) || a.accountNumber.includes(q))
+    : accounts
+
+  if (accounts.length === 0) return null
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className="text-muted-foreground">Pick a saved account...</span>
+        <Banknote className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search saved accounts..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
+              {opts.map(a => (
+                <button key={a.id} type="button" onClick={() => { onPick(a); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  <p className="font-medium">{a.accountHolderName}</p>
+                  <p className="text-xs text-muted-foreground">{a.bankName} · {a.accountNumber}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function EmployeeCombobox({ value, employees, onChange }: {
   value: string; employees: EmployeeOption[]; onChange: (id: string) => void
 }) {
@@ -455,6 +508,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [reimburseAccountHolderName, setReimburseAccountHolderName] = useState('')
   const [reimburseSaving, setReimburseSaving] = useState(false)
   const [reimburseError, setReimburseError] = useState('')
+  const [reimburseAccounts, setReimburseAccounts] = useState<ReimburseAccountOption[]>([])
+  const [reimburseSaveAccount, setReimburseSaveAccount] = useState(false)
 
   // receive form
   const [receiveModal, setReceiveModal] = useState(false)
@@ -471,13 +526,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, iRes, sRes, lRes, tRes, eRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees')])
+    const [oRes, iRes, sRes, lRes, tRes, eRes, rRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees'), fetch('/api/purchasing/reimburse-accounts')])
     if (oRes.ok) setOrders(await oRes.json())
     if (iRes.ok) setPurchaseItems((await iRes.json()).filter((i: PurchaseItem) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive !== false))
     if (tRes.ok) setTeam(await tRes.json())
     if (eRes.ok) setEmployees(await eRes.json())
+    if (rRes.ok) setReimburseAccounts(await rRes.json())
     setLoading(false)
   }, [])
 
@@ -1079,9 +1135,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     })
     const data = await res.json()
     if (!res.ok) { setReimburseError(data.error ?? 'Failed'); setReimburseSaving(false); return }
+    if (reimburseSaveAccount) {
+      fetch('/api/purchasing/reimburse-accounts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountHolderName: reimburseAccountHolderName, bankName: reimburseBankName, accountNumber: reimburseAccountNumber }),
+      }).catch(() => {})
+    }
     setReimburseSaving(false); setReimburseModal(false)
     setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
     setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName(''); setReimburseEditId(null)
+    setReimburseSaveAccount(false)
     openDetail(detail); load()
   }
 
@@ -1107,7 +1170,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       setReimburseAmount(String(r.amount)); setReimbursePhotos(r.notePhotoKeys); setReimburseNotes(r.notes ?? '')
       setReimburseRequesterName(r.requesterName); setReimburseBankName(r.bankName)
       setReimburseAccountNumber(r.accountNumber); setReimburseAccountHolderName(r.accountHolderName)
-      setReimburseError(''); setReimburseEditId(r.id); setReimburseModal(true)
+      setReimburseError(''); setReimburseEditId(r.id); setReimburseSaveAccount(false); setReimburseModal(true)
     }
   }
 
@@ -1199,7 +1262,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   setReimburseAmount(poGrandTotal > 0 ? String(poGrandTotal) : ''); setReimbursePhotos([]); setReimburseNotes('')
                   setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
                   setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
-                  setReimburseError(''); setReimburseEditId(null); setReimburseModal(true)
+                  setReimburseError(''); setReimburseEditId(null); setReimburseSaveAccount(false); setReimburseModal(true)
                 }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <Banknote className="h-3.5 w-3.5" /> Reimburse
@@ -1768,10 +1831,14 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
-                  <input type="number" min={0} autoFocus
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="e.g. 1500000"
-                    value={reimburseAmount} onChange={e => setReimburseAmount(e.target.value)} />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
+                    <input type="text" inputMode="numeric" autoFocus
+                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. 1.500.000"
+                      value={reimburseAmount ? new Intl.NumberFormat('id-ID').format(Number(reimburseAmount)) : ''}
+                      onChange={e => setReimburseAmount(e.target.value.replace(/\D/g, ''))} />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1780,6 +1847,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                     placeholder="Requester's full name"
                     value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <ReimburseAccountCombobox
+                    accounts={reimburseAccounts}
+                    onPick={a => {
+                      setReimburseBankName(a.bankName); setReimburseAccountNumber(a.accountNumber); setReimburseAccountHolderName(a.accountHolderName)
+                      setReimburseSaveAccount(false)
+                    }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1806,6 +1883,11 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     placeholder="Name on the bank account"
                     value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
                 </div>
+
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={reimburseSaveAccount} onChange={e => setReimburseSaveAccount(e.target.checked)} />
+                  Save this account for future reimbursements
+                </label>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>

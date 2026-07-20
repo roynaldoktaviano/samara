@@ -91,15 +91,16 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Extract fields ────────────────────────────────────────────────────────
-    const firstName = pick(data, 'first-name', 'first_name', 'firstName', 'your-first-name')
-    const lastName  = pick(data, 'last-name',  'last_name',  'lastName',  'your-last-name')
-    const email     = pick(data, 'email',       'your-email', 'Email')
-    const phone     = pick(data, 'phone',       'phone-wa',   'phone_wa',  'your-phone', 'Phone')
-    const numGuests = pick(data, 'number-of-guests', 'num-guests', 'number_of_guests', 'guests', 'guest-count')
-    const checkIn   = pick(data, 'check-in-date',  'checkin',  'check_in',  'start-date', 'check-in')
-    const checkOut  = pick(data, 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
-    const tripType  = pick(data, 'trip-type',  'trip_type',  'tripType',  'trip')
-    const message   = pick(data, 'request',    'message',    'your-message', 'Request', 'Message')
+    // 'field_*' aliases are the Samara "Request Quote" CF7 form's actual tag names.
+    const firstName = pick(data, 'field_FirstName', 'first-name', 'first_name', 'firstName', 'your-first-name')
+    const lastName  = pick(data, 'field_LastName',  'last-name',  'last_name',  'lastName',  'your-last-name')
+    const email     = pick(data, 'field_Email',     'email',       'your-email', 'Email')
+    const phone     = pick(data, 'field_PhoneWA',   'phone',       'phone-wa',   'phone_wa',  'your-phone', 'Phone')
+    const numGuests = pick(data, 'field_NumbGuests', 'number-of-guests', 'num-guests', 'number_of_guests', 'guests', 'guest-count')
+    const checkIn   = pick(data, 'field_CheckIn',  'check-in-date',  'checkin',  'check_in',  'start-date', 'check-in')
+    const checkOut  = pick(data, 'field_CheckOut', 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
+    const tripType  = pick(data, 'field_TripType', 'trip-type',  'trip_type',  'tripType',  'trip')
+    const message   = pick(data, 'field_Request',  'request',    'message',    'your-message', 'Request', 'Message')
     // UTM fields — the WordPress form doesn't send these yet as of this writing, but
     // capturing them defensively costs nothing and this starts working the moment
     // hidden utm_* fields are added there, with no backend change needed.

@@ -259,7 +259,13 @@ function fixedFooterBlock(): FooterBlock {
 function withFixedFooter(blocks: EmailBlock[]): EmailBlock[] {
   // Raw-HTML authoring mode is a single freeform 'html' block — the fixed footer doesn't apply.
   if (blocks.length === 1 && blocks[0].type === 'html') return blocks
-  return [...blocks.filter(b => b.type !== 'footer'), fixedFooterBlock()]
+  // Keep the existing footer's edited fields (company name, address, social
+  // links) — only position/uniqueness is enforced here (moved to last, no
+  // duplicates). migrateBlock already backfilled any missing fields on it.
+  // A brand-new default footer is only synthesized when none exists at all.
+  const existing = blocks.find((b): b is FooterBlock => b.type === 'footer')
+  const footer = existing ?? fixedFooterBlock()
+  return [...blocks.filter(b => b.type !== 'footer'), footer]
 }
 
 // ── Legacy-data migration ─────────────────────────────────────────────────
