@@ -443,27 +443,19 @@ function renderColumnCell(list: EmailBlock[]): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
 }
 
-function toBase64(str: string): string {
-  // btoa is global in browsers (client canvas render) and Node 16+ (server send/preview render).
-  if (typeof btoa === 'function') return btoa(str)
-  return Buffer.from(str, 'utf-8').toString('base64')
-}
-
-// Feather-style line icons for the footer's social row, encoded as base64 PNG-less
-// data-URI <img> (not raw inline <svg>) — Outlook doesn't support inline SVG at all,
-// and several mobile mail clients silently strip <svg> too, which left the icon
-// circles empty and — since the <a> then had no content and no explicit size —
-// unclickable. A data-URI <img> renders reliably everywhere <img> works, which is
-// effectively universal in HTML email.
+// Feather-style line icons for the footer's social row. Rendered as hosted PNG
+// files (public/email/icon-*.png), not inline <svg> or a data-URI <img> — Outlook
+// doesn't support inline SVG at all, and most mail clients (Gmail included) block
+// data:image/svg+xml URIs outright as an XSS precaution, which is why they were
+// rendering as broken-image boxes. A plain hosted <img src="https://.../icon.png">
+// is the one technique that's reliably supported everywhere.
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
 function footerIcon(kind: FooterIconKind): string {
-  const paths: Record<FooterIconKind, string> = {
-    instagram: '<rect x="3" y="3" width="18" height="18" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#ffffff" stroke="none"/>',
-    whatsapp: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/>',
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`
-  return `<img src="data:image/svg+xml;base64,${toBase64(svg)}" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
+  // no domain to resolve against inside an email and renders as a broken image —
+  // fall back to the ERP's own live domain so this never silently breaks.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
+  return `<img src="${appUrl}/email/icon-${kind}.png" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
