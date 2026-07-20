@@ -438,6 +438,15 @@ function classAttr(...classes: (string | false | undefined)[]): string {
   return cls ? ` class="${cls}"` : ''
 }
 
+// Gmail's auto-dark-mode (mainly its Android/iOS apps, which are the least consistent about
+// honoring the color-scheme/supported-color-schemes opt-out meta tags) marks elements it has
+// force-recolored with data-ogsc (text) / data-ogsb (background) attributes. Google has never
+// documented exactly which element gets the marker — reports vary between the recolored element
+// itself and a wrapping ancestor — so this covers both shapes rather than betting on one.
+function darkOverride(selector: string, decls: string): string {
+  return `[data-ogsc] ${selector},${selector}[data-ogsc],[data-ogsb] ${selector},${selector}[data-ogsb]{${decls}}`
+}
+
 function renderColumnCell(list: EmailBlock[]): string {
   if (list.length === 0) return ''
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
@@ -604,23 +613,23 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     // way to fight that override back, since it happens regardless of any @media support.
     if (b.type === 'button') {
       rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}}`)
-      rules.push(`[data-ogsc] .btn-${b.id},[data-ogsb] .btn-${b.id}{background:${b.bgColor} !important;color:${b.textColor} !important;}`)
+      rules.push(darkOverride(`.btn-${b.id}`, `background:${b.bgColor} !important;color:${b.textColor} !important;`))
     }
     if (b.type === 'text' || b.type === 'heading') {
       rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}}`)
-      rules.push(`[data-ogsc] .lc-${b.id},[data-ogsb] .lc-${b.id}{color:${b.color} !important;background-color:transparent !important;}`)
+      rules.push(darkOverride(`.lc-${b.id}`, `color:${b.color} !important;background-color:transparent !important;`))
     }
     if (b.type === 'divider') {
       rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${b.color} !important;}}`)
-      rules.push(`[data-ogsc] .div-${b.id},[data-ogsb] .div-${b.id}{border-top-color:${b.color} !important;}`)
+      rules.push(darkOverride(`.div-${b.id}`, `border-top-color:${b.color} !important;`))
     }
     if (b.type === 'footer') {
       rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}}`)
-      rules.push(`[data-ogsc] .footer-block,[data-ogsb] .footer-block{background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;}`)
+      rules.push(darkOverride('.footer-block', `background-color:${b.backgroundColor || '#000000'} !important;color:#9ca3af !important;`))
     }
     if (b.type === 'section') {
       rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${b.backgroundColor} !important;}}`)
-      rules.push(`[data-ogsc] .sec-${b.id},[data-ogsb] .sec-${b.id}{background-color:${b.backgroundColor} !important;}`)
+      rules.push(darkOverride(`.sec-${b.id}`, `background-color:${b.backgroundColor} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
     if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
@@ -647,8 +656,9 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
         .email-page,.email-body{background:${s.pageBackground} !important;}
         .email-content{background:${s.contentBackground} !important;}
       }
-      [data-ogsc] .email-page,[data-ogsb] .email-page,[data-ogsc] .email-body,[data-ogsb] .email-body{background:${s.pageBackground} !important;}
-      [data-ogsc] .email-content,[data-ogsb] .email-content{background:${s.contentBackground} !important;}
+      ${darkOverride('.email-page', `background:${s.pageBackground} !important;`)}
+      ${darkOverride('.email-body', `background:${s.pageBackground} !important;`)}
+      ${darkOverride('.email-content', `background:${s.contentBackground} !important;`)}
       ${extraStyles}
     </style>
   </head>
