@@ -455,7 +455,10 @@ function footerIcon(kind: FooterIconKind): string {
   // no domain to resolve against inside an email and renders as a broken image —
   // fall back to the ERP's own live domain so this never silently breaks.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
-  return `<img src="${appUrl}/email/icon-${kind}.png" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
+  // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
+  // this if a cached 404 ever gets stuck on any of these paths again.
+  return `<img src="${appUrl}/email/icon-${kind}.png?v=2" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
