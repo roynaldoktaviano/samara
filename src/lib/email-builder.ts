@@ -511,23 +511,24 @@ function renderColumnCell(list: EmailBlock[]): string {
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
-// files (public/email/icon-*.png), not inline <svg> or a data-URI <img> — Outlook
-// doesn't support inline SVG at all, and most mail clients (Gmail included) block
-// data:image/svg+xml URIs outright as an XSS precaution, which is why they were
-// rendering as broken-image boxes. A plain hosted <img src="https://.../icon.png">
-// is the one technique that's reliably supported everywhere.
+// files (public/email/icon-*-mid.png), not inline <svg> or a data-URI <img> —
+// Outlook doesn't support inline SVG at all, and most mail clients (Gmail
+// included) block data:image/svg+xml URIs outright as an XSS precaution, which
+// is why they were rendering as broken-image boxes. A plain hosted
+// <img src="https://.../icon.png"> is the one technique that's reliably
+// supported everywhere.
 //
-// Two color variants are rendered stacked (icon-dark-safe-toggle class pair below)
-// and toggled by the same dark-mode media query + data-ogsc/ogsb attribute trick
-// as everything else in this file — the white variant (for the authored black
-// footer) is the default, the dark-gray variant only shows up under dark mode.
-// This exists because the footer's near-black background still gets forcibly
+// A single neutral mid-gray (#9ca3af, matching the footer's body-text color)
+// instead of white — the footer's near-black background still gets forcibly
 // recolored to white by Gmail's iOS app despite the darkModeSafe nudge + pin
-// (its heuristic isn't limited to literal #000000 the way the button/text fixes
-// assumed) — when that happens the white icon and light footer text both vanish
-// against the now-white background, so the icon needs an actual different-colored
-// image (a raster <img>'s pixels can't be recolored by CSS) and the text needs a
-// dark-mode color override too (see collectExtraStyles' 'footer' branch).
+// (its heuristic isn't limited to literal #000000 the way the button/text
+// fixes assumed), which made a white icon invisible whenever that happened. A
+// raster <img>'s pixels can't be recolored by CSS, so an earlier version tried
+// stacking two color variants and toggling visibility by media query — but
+// that relies on Gmail cleanly hiding one of them, and when it doesn't both
+// render at once, overlapping into a garbled/skewed-looking icon. One
+// mid-tone image sidesteps that risk entirely: legible-enough on both a black
+// and a white background, no toggle to fail.
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
@@ -537,9 +538,7 @@ function footerIcon(kind: FooterIconKind): string {
   // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
   // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
   // this if a cached 404 ever gets stuck on any of these paths again.
-  const img = (variant: '' | '-dark', cls: string) =>
-    `<img src="${appUrl}/email/icon-${kind}${variant}.png?v=2" width="16" height="16" alt=""${classAttr(cls)} style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
-  return `${img('', 'footer-icon-light')}${img('-dark', 'footer-icon-dark')}`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=2" width="20" height="20" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -559,8 +558,8 @@ function renderFooterSocialRow(block: FooterBlock): string {
     <td style="padding:0 6px;">
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
         <tr>
-          <td width="34" height="34" align="center" valign="middle" class="footer-badge" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
-            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
+          <td width="40" height="40" align="center" valign="middle" class="footer-badge" style="width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
+            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
           </td>
         </tr>
       </table>
@@ -741,12 +740,10 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       // (their footer never leaves the authored black/light-gray look), so this
       // doesn't risk dark-on-dark anywhere the background pin actually holds.
       const darkText = '#374151'
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{border-color:rgba(55,65,81,.35) !important;}.footer-icon-light{display:none !important;}.footer-icon-dark{display:inline-block !important;}}`)
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{border-color:rgba(55,65,81,.35) !important;}}`)
       rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
       rules.push(darkOverride('.footer-block span', `color:${darkText} !important;`))
       rules.push(darkOverride('.footer-badge', 'border-color:rgba(55,65,81,.35) !important;'))
-      rules.push(darkOverride('.footer-icon-light', 'display:none !important;'))
-      rules.push(darkOverride('.footer-icon-dark', 'display:inline-block !important;'))
     }
     if (b.type === 'section') {
       const bg = darkModeSafe(b.backgroundColor)
@@ -776,7 +773,6 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
     <style type="text/css">
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
-      .footer-icon-dark{display:none;}
       @media (prefers-color-scheme: dark){
         .email-page,.email-body{background:${pageBg} !important;}
         .email-content{background:${contentBg} !important;}
