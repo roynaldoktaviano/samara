@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
@@ -212,13 +212,23 @@ function RichTextField({ html, onChange, linkColor }: { html: string; onChange: 
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Text</Label>
-      <div className="flex items-center gap-1 border rounded-md p-1 bg-muted/40">
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}><Bold className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}><Italic className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
+      <div className="flex flex-wrap items-center gap-1 border rounded-md p-1 bg-muted/40">
+        <Button type="button" variant="ghost" size="sm" title="Bold" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}><Bold className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Italic" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}><Italic className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Underline" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}><Underline className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Strikethrough" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')}><Strikethrough className="h-3.5 w-3.5" /></Button>
+        <span className="w-px self-stretch bg-border mx-0.5" />
+        <Button type="button" variant="ghost" size="sm" title="Bullet list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}><List className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Numbered list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}><ListOrdered className="h-3.5 w-3.5" /></Button>
+        <span className="w-px self-stretch bg-border mx-0.5" />
+        <Button type="button" variant="ghost" size="sm" title="Superscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('superscript')}><Superscript className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Subscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('subscript')}><Subscript className="h-3.5 w-3.5" /></Button>
+        <span className="w-px self-stretch bg-border mx-0.5" />
+        <Button type="button" variant="ghost" size="sm" title="Add link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
           const url = window.prompt('Link URL')
           if (url) exec('createLink', url)
         }}><LinkIcon className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Remove link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')}><Link2Off className="h-3.5 w-3.5" /></Button>
       </div>
       <div
         ref={ref}

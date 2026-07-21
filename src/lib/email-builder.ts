@@ -479,6 +479,25 @@ function paddingCss(p: Padding): string {
   return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
 }
 
+// A link inserted into rich text (via RichTextField's createLink) is a bare
+// <a href="..."> with no styling of its own — several mobile mail clients
+// (iOS Mail and Outlook mobile chief among them) don't let an inline <a>
+// inherit its parent <td>'s line-height/font-size the way a plain <span>
+// does, and fall back to their own default instead, which shows up as an
+// uneven gap wherever a link sits inside an otherwise normal paragraph.
+// Stamping the same line-height/font-size/font-family directly onto every
+// <a> closes that gap; .lc-${id} a in collectExtraStyles reinforces it
+// (color included, since Outlook.com strips unrecognized inline props but
+// keeps <style> rules) for the few clients that ignore the inline version.
+function styleAnchors(html: string, style: string): string {
+  return html.replace(/<a\b([^>]*)>/gi, (_match, attrs: string) => {
+    if (/\sstyle\s*=/i.test(attrs)) {
+      return `<a${attrs.replace(/style\s*=\s*(["'])(.*?)\1/i, (_m2, q: string, existing: string) => `style=${q}${existing};${style}${q}`)}>`
+    }
+    return `<a${attrs} style="${style}">`
+  })
+}
+
 // A newline the user types in the button label becomes a real <br> on every
 // device — not a mobile-only break. Whether a break should differ by device is
 // a separate, explicit choice (the block's own hideOn), not something implied
@@ -575,17 +594,21 @@ function renderFooterSocialRow(block: FooterBlock): string {
 
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
-    case 'text':
+    case 'text': {
       // Color lives on an inner <span>, not the <td> — Gmail's dark mode lightens
       // any sufficiently dark text color it finds on a <td>/<body>-level element,
       // regardless of exact value (unlike its background pass, which only targets
       // literal pure black/white and is already handled by darkModeSafe). Moving
       // the color one level down onto a plain <span> dodges that targeted pass,
       // the same trick that fixed the button's forced link-color override.
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
+      const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+    }
 
-    case 'heading':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
+    case 'heading': {
+      const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+    }
 
     case 'image':
     case 'logo': {
@@ -616,7 +639,7 @@ function renderBlock(block: EmailBlock): string {
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
       return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
       </td></tr>`
 
     case 'divider': {
@@ -681,8 +704,10 @@ function renderBlock(block: EmailBlock): string {
 function collectExtraStyles(blocks: EmailBlock[]): string[] {
   const rules: string[] = []
   for (const b of blocks) {
-    if ((b.type === 'text' || b.type === 'heading') && b.linkColor) {
-      rules.push(`.lc-${b.id} a{color:${b.linkColor} !important;}`)
+    if (b.type === 'text' || b.type === 'heading') {
+      // Reinforces the inline styleAnchors() stamp above (see its comment) for
+      // clients that strip inline styles on <a> but keep a <style> block.
+      rules.push(`.lc-${b.id} a{${b.linkColor ? `color:${b.linkColor} !important;` : ''}line-height:${b.lineHeight} !important;font-size:${b.fontSize}px !important;}`)
     }
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
