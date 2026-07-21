@@ -23,36 +23,70 @@ export async function GET(req: Request) {
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap  = new Map(locations.map(l => [l.id, l]))
 
-  // Group by location → item, aggregating across multiple lots. Lots without a
-  // catalog itemId (one-off PO purchases like "Grab" or event flowers) are
-  // grouped by itemName instead, using a synthetic "item" shape so the frontend
-  // can render them the same way — just without SKU/category/minStock.
+  const sourcePoIds = [...new Set(lots.map(l => l.sourcePoId).filter((id): id is string => id !== null))]
+  const sourcePos = sourcePoIds.length
+    ? await db.purchaseOrder.findMany({ where: { id: { in: sourcePoIds } }, select: { id: true, poNumber: true } })
+    : []
+  const poNumberMap = new Map(sourcePos.map(o => [o.id, o.poNumber]))
+
+  // "Stock item" rows (catalog, itemId set) merge across lots into one running
+  // balance per item+location — stock is fungible, so which PO/receipt any
+  // given unit came from isn't tracked once it joins the pile.
+  //
+  // "Non-stock item" rows (itemId null — one-off PO purchases like "Grab" or
+  // event flowers) are the opposite: each receipt got its own untouched lot
+  // (see receipts/route.ts), so every row here maps 1:1 to a lot and stays
+  // traceable to exactly the PO, arrival date, and cost that brought it in.
   type CatalogItem = (typeof items)[0]
-  type AggRow = {
-    item: CatalogItem | { id: null; sku: string; name: string; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; minStock: number; valuationMethod: string }
+  type StockRow = {
+    kind: 'stock'
+    item: CatalogItem
     qty: number
     costPerUnit: number
     lotsCount: number
     nearestExpiry: Date | null
   }
-  const byLocation = new Map<string, { location: (typeof locations)[0]; rows: Map<string, AggRow> }>()
+  type NonStockRow = {
+    kind: 'non-stock'
+    id: string
+    itemName: string
+    unit: string | null
+    qty: number
+    costPerUnit: number
+    sourcePoId: string | null
+    poNumber: string | null
+    receivedAt: Date
+  }
+  type Row = StockRow | NonStockRow
+  const byLocation = new Map<string, { location: (typeof locations)[0]; rows: Map<string, StockRow>; nonStockRows: NonStockRow[] }>()
 
   for (const lot of lots) {
     const loc = locMap.get(lot.locationId)
     if (!loc) continue
-    const item: AggRow['item'] | undefined = lot.itemId
-      ? itemMap.get(lot.itemId)
-      : { id: null, sku: '—', name: lot.itemName ?? 'Unnamed item', category: 'Non-stock item', baseUnit: lot.unit ?? '', purchaseUnit: lot.unit ?? '', conversionFactor: 1, minStock: 0, valuationMethod: 'FIFO' }
-    if (!item) continue
-    const rowKey = lot.itemId ?? `custom:${lot.itemName}`
-
-    if (!byLocation.has(lot.locationId)) byLocation.set(lot.locationId, { location: loc, rows: new Map() })
+    if (!byLocation.has(lot.locationId)) byLocation.set(lot.locationId, { location: loc, rows: new Map(), nonStockRows: [] })
     const locEntry = byLocation.get(lot.locationId)!
 
-    if (!locEntry.rows.has(rowKey)) {
-      locEntry.rows.set(rowKey, { item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null })
+    if (!lot.itemId) {
+      locEntry.nonStockRows.push({
+        kind: 'non-stock',
+        id: lot.id,
+        itemName: lot.itemName ?? 'Unnamed item',
+        unit: lot.unit,
+        qty: lot.quantity,
+        costPerUnit: lot.costPerUnit,
+        sourcePoId: lot.sourcePoId,
+        poNumber: lot.sourcePoId ? (poNumberMap.get(lot.sourcePoId) ?? null) : null,
+        receivedAt: lot.createdAt,
+      })
+      continue
     }
-    const row = locEntry.rows.get(rowKey)!
+
+    const item = itemMap.get(lot.itemId)
+    if (!item) continue
+    if (!locEntry.rows.has(lot.itemId)) {
+      locEntry.rows.set(lot.itemId, { kind: 'stock', item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null })
+    }
+    const row = locEntry.rows.get(lot.itemId)!
     row.qty += lot.quantity
     row.lotsCount += 1
     // Weighted average cost
@@ -64,18 +98,19 @@ export async function GET(req: Request) {
   }
 
   const locationsOut = Array.from(byLocation.values())
-    .map(({ location, rows }) => ({
+    .map(({ location, rows, nonStockRows }) => ({
       location,
-      rows: Array.from(rows.values()),
+      rows: [...Array.from(rows.values()), ...nonStockRows.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())] as Row[],
     }))
     .sort((a, b) => a.location.name.localeCompare(b.location.name))
 
   const allRows = locationsOut.flatMap(l => l.rows)
+  const stockRows = allRows.filter((r): r is StockRow => r.kind === 'stock')
   return NextResponse.json({
     locations: locationsOut,
     summary: {
       totalItems: allRows.length,
-      lowStock: allRows.filter(r => r.item.minStock > 0 && r.qty < r.item.minStock).length,
+      lowStock: stockRows.filter(r => r.item.minStock > 0 && r.qty < r.item.minStock).length,
     },
   })
 }

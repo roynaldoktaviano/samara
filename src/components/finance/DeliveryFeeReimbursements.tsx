@@ -22,7 +22,8 @@ interface Reimbursement {
   paidBy: { name: string } | null
   deliveryFee: {
     feeNumber: string
-    purchaseOrder: { poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null }
+    notes: string | null
+    purchaseOrder: { poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null } | null
   }
 }
 
@@ -143,10 +144,14 @@ export default function DeliveryFeeReimbursements() {
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(r)}>
                 <td className="px-4 py-3 font-mono text-sm font-medium">{r.deliveryFee.feeNumber}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {r.deliveryFee.purchaseOrder.poNumber}{r.deliveryFee.purchaseOrder.supplierName ? ` · ${r.deliveryFee.purchaseOrder.supplierName}` : ''}
-                  {r.deliveryFee.purchaseOrder.deliveryLocation && (
-                    <span className="flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3 shrink-0" />{r.deliveryFee.purchaseOrder.deliveryLocation.name}</span>
-                  )}
+                  {r.deliveryFee.purchaseOrder ? (
+                    <>
+                      {r.deliveryFee.purchaseOrder.poNumber}{r.deliveryFee.purchaseOrder.supplierName ? ` · ${r.deliveryFee.purchaseOrder.supplierName}` : ''}
+                      {r.deliveryFee.purchaseOrder.deliveryLocation && (
+                        <span className="flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3 shrink-0" />{r.deliveryFee.purchaseOrder.deliveryLocation.name}</span>
+                      )}
+                    </>
+                  ) : <span className="italic">No PO — {r.deliveryFee.notes || 'consolidated/cargo'}</span>}
                 </td>
                 <td className="px-4 py-3">{r.requesterName}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">{r.bankName} · {r.accountNumber}</td>
@@ -172,7 +177,11 @@ export default function DeliveryFeeReimbursements() {
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{selected.deliveryFee.feeNumber}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{selected.deliveryFee.purchaseOrder.poNumber}{selected.deliveryFee.purchaseOrder.supplierName ? ` · ${selected.deliveryFee.purchaseOrder.supplierName}` : ''}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {selected.deliveryFee.purchaseOrder
+                      ? `${selected.deliveryFee.purchaseOrder.poNumber}${selected.deliveryFee.purchaseOrder.supplierName ? ` · ${selected.deliveryFee.purchaseOrder.supplierName}` : ''}`
+                      : <span className="italic">No PO — {selected.deliveryFee.notes || 'consolidated/cargo'}</span>}
+                  </p>
                 </div>
                 <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>

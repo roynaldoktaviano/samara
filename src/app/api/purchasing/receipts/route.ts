@@ -131,16 +131,24 @@ export async function POST(req: NextRequest) {
         ? purchaseUnitCost / factor
         : purchaseUnitCost
 
-      const lot = it.itemId
-        ? await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId } })
-        : await tx.stockLot.findFirst({ where: { itemId: null, itemName: it.itemName, locationId } })
-      if (lot) {
-        await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
+      // Catalog items merge into one running-balance lot per item+location (stock
+      // is fungible). Non-catalog items don't merge — each receipt gets its own
+      // lot tagged with sourcePoId, so it stays traceable to exactly the PO/date/
+      // cost that brought it in (see the Item by Location non-stock item view).
+      if (it.itemId) {
+        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId } })
+        if (lot) {
+          await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
+        } else {
+          await tx.stockLot.create({
+            data: { id: crypto.randomUUID(), locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(), itemId: it.itemId },
+          })
+        }
       } else {
         await tx.stockLot.create({
           data: {
             id: crypto.randomUUID(), locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
-            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName, unit: it.unit?.trim() || null }),
+            itemName: it.itemName, unit: it.unit?.trim() || null, sourcePoId: orderId,
           },
         })
       }

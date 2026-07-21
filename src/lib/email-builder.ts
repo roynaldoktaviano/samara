@@ -139,7 +139,7 @@ export interface ButtonMobileOverride {
 export interface ButtonBlock {
   id: string
   type: 'button'
-  label: string
+  label: string // simple inline HTML (bold/italic/underline/strike/sup/sub/<br>) — see migrateBlock's legacy plain-text upgrade
   url: string
   bgColor: string
   textColor: string
@@ -353,6 +353,13 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily,
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.3,
         fontSize: typeof raw.fontSize === 'number' ? raw.fontSize : 15,
+        // Labels used to be plain text (escaped + \n→<br> at render time, see
+        // the old renderMultilineLabel) — now the rich-text label editor stores
+        // real HTML directly, so legacy labels need that same escape done once,
+        // up front. A label already containing '<' or '&' has necessarily been
+        // through this (either migrated before, or typed via the contentEditable
+        // editor, which always serializes typed '<'/'&' as entities) — never both.
+        label: /[<&]/.test(raw.label) ? raw.label : esc(raw.label).replace(/\n/g, '<br>'),
       }
     case 'video':
     case 'html':
@@ -498,14 +505,6 @@ function styleAnchors(html: string, style: string): string {
   })
 }
 
-// A newline the user types in the button label becomes a real <br> on every
-// device — not a mobile-only break. Whether a break should differ by device is
-// a separate, explicit choice (the block's own hideOn), not something implied
-// by pressing Enter.
-function renderMultilineLabel(label: string): string {
-  return esc(label).split('\n').join('<br>')
-}
-
 function hideOnClass(hideOn: HideOn): string {
   return hideOn === 'desktop' ? 'hide-desktop' : hideOn === 'mobile' ? 'hide-mobile' : ''
 }
@@ -549,6 +548,8 @@ function renderColumnCell(list: EmailBlock[]): string {
 // mid-tone image sidesteps that risk entirely: legible-enough on both a black
 // and a white background, no toggle to fail.
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
+const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website' }
+
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
   // no domain to resolve against inside an email and renders as a broken image —
@@ -557,7 +558,11 @@ function footerIcon(kind: FooterIconKind): string {
   // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
   // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
   // this if a cached 404 ever gets stuck on any of these paths again.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=2" width="20" height="20" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  // A non-empty alt matters here specifically: Outlook and most corporate mail
+  // clients block remote images by default until the recipient explicitly loads
+  // them, and a blank alt="" renders as a bare broken-image box with no label —
+  // a real word at least tells the recipient what's missing until then.
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=2" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -639,7 +644,7 @@ function renderBlock(block: EmailBlock): string {
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
       return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
       </td></tr>`
 
     case 'divider': {

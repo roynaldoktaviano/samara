@@ -78,11 +78,10 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           <span
             style={{
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
-              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight, whiteSpace: 'pre-line',
+              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight,
             }}
-          >
-            {block.label || 'Button'}
-          </span>
+            dangerouslySetInnerHTML={{ __html: block.label || 'Button' }}
+          />
         </div>
       )
 
@@ -153,13 +152,13 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
         >
           <div className="flex items-center gap-2" style={{ justifyContent: block.align === 'left' ? 'flex-start' : block.align === 'right' ? 'flex-end' : 'center' }}>
             {block.instagramUrl && (
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Instagram className="h-3 w-3" /></span>
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Instagram className="h-5 w-5" /></span>
             )}
             {block.whatsappNumber && (
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><MessageCircle className="h-3 w-3" /></span>
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><MessageCircle className="h-5 w-5" /></span>
             )}
             {block.websiteUrl && (
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Link2 className="h-3 w-3" /></span>
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Link2 className="h-5 w-5" /></span>
             )}
           </div>
           <div className="space-y-3">

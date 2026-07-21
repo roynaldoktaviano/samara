@@ -5,7 +5,24 @@ import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, Ale
 import { useFileDrop } from '@/hooks/useFileDrop'
 
 interface StockLocation { id: string; name: string; type: string }
-interface StockLotItem { item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number }; qty: number }
+// Normalized picker row — flattens /api/purchasing/stock's discriminated
+// {kind:'stock', item:{...}} / {kind:'non-stock', itemName, sourcePoId, ...}
+// response into one shape the picker can key/filter/render uniformly. A
+// non-stock row's own id (its StockLot id) is what breaks the collision bug
+// stock items don't have: two different custom items at the same location
+// used to both synthesize to the same `item.id: null`.
+interface StockPickerRow {
+  kind: 'stock' | 'non-stock'
+  id: string
+  name: string
+  sku: string
+  baseUnit: string
+  purchaseUnit: string | null
+  conversionFactor: number
+  qty: number
+  sourcePoId?: string | null
+  poNumber?: string | null
+}
 interface TeamUser { id: string; name: string; role: string }
 interface TransferItem { id: string; itemId: string | null; itemName: string; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null; unitCost?: number; requestedValue?: number; dispatchedValue?: number; receivedValue?: number }
 interface StockTransfer {
@@ -86,7 +103,7 @@ export default function TransfersPage() {
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [detail, setDetail] = useState<TransferDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [warehouseStock, setWarehouseStock] = useState<StockLotItem[]>([])
+  const [warehouseStock, setWarehouseStock] = useState<StockPickerRow[]>([])
 
   // Create form
   const [fromLoc, setFromLoc] = useState('')
@@ -100,6 +117,10 @@ export default function TransfersPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerSearch, setPickerSearch] = useState('')
   const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set())
+  // Non-stock (custom PO) items are traceable to the PO that delivered them —
+  // this lets "pick items from a specific delivered PO" work as a filter over
+  // the same location-scoped list, instead of a separate PO-browsing flow.
+  const [pickerPoFilter, setPickerPoFilter] = useState('')
 
   // Dispatch modal
   const [dispatchModal, setDispatchModal] = useState(false)
@@ -139,29 +160,33 @@ export default function TransfersPage() {
     const res = await fetch('/api/purchasing/stock')
     if (!res.ok) return
     const data = await res.json()
-    const locData = data.locations.find((l: { location: StockLocation; rows: StockLotItem[] }) => l.location.id === locId)
-    setWarehouseStock(locData?.rows ?? [])
+    const locData = data.locations.find((l: { location: StockLocation; rows: unknown[] }) => l.location.id === locId)
+    const rows: StockPickerRow[] = (locData?.rows ?? []).map((r: any) => r.kind === 'non-stock'
+      ? { kind: 'non-stock', id: r.id, name: r.itemName, sku: '', baseUnit: r.unit ?? '', purchaseUnit: null, conversionFactor: 1, qty: r.qty, sourcePoId: r.sourcePoId, poNumber: r.poNumber }
+      : { kind: 'stock', id: r.item.id, name: r.item.name, sku: r.item.sku, baseUnit: r.item.baseUnit, purchaseUnit: r.item.purchaseUnit, conversionFactor: r.item.conversionFactor, qty: r.qty }
+    )
+    setWarehouseStock(rows)
     setLines([])
   }
 
   function openPicker() {
-    setPickerSearch('')
-    setPickerSelected(new Set(lines.map(l => l.itemId)))
+    setPickerSearch(''); setPickerPoFilter('')
+    setPickerSelected(new Set(lines.map(l => l.itemId || `name:${l.itemName}`)))
     setPickerOpen(true)
   }
 
   function confirmPicker() {
-    const existing = new Map(lines.map(l => [l.itemId, l]))
-    const next = [...pickerSelected].map(id => {
-      if (existing.has(id)) return existing.get(id)!
-      const s = warehouseStock.find(s => s.item.id === id)!
-      const hasPurchaseUnit = !!(s.item.purchaseUnit && s.item.purchaseUnit !== s.item.baseUnit && s.item.conversionFactor > 1)
+    const existing = new Map(lines.map(l => [l.itemId || `name:${l.itemName}`, l]))
+    const next = [...pickerSelected].map(key => {
+      if (existing.has(key)) return existing.get(key)!
+      const s = warehouseStock.find(s => (s.kind === 'stock' ? s.id : `name:${s.name}`) === key)!
+      const hasPurchaseUnit = s.kind === 'stock' && !!(s.purchaseUnit && s.purchaseUnit !== s.baseUnit && s.conversionFactor > 1)
       return {
-        itemId: id,
-        itemName: s.item.name,
-        baseUnit: s.item.baseUnit,
-        purchaseUnit: s.item.purchaseUnit ?? null,
-        conversionFactor: s.item.conversionFactor,
+        itemId: s.kind === 'stock' ? s.id : '',
+        itemName: s.name,
+        baseUnit: s.baseUnit,
+        purchaseUnit: s.purchaseUnit,
+        conversionFactor: s.conversionFactor,
         inputQty: 1,
         usePurchaseUnit: hasPurchaseUnit,
         availableQty: s.qty,
@@ -329,7 +354,15 @@ export default function TransfersPage() {
   )
 
   // ── Create ──
-  if (view === 'create') return (
+  if (view === 'create') {
+    const poOptions = Array.from(
+      new Map(warehouseStock.filter(s => s.sourcePoId && s.poNumber).map(s => [s.sourcePoId!, s.poNumber!])).entries()
+    ).map(([id, number]) => ({ id, number }))
+    const pickerRows = warehouseStock.filter(s =>
+      (s.name.toLowerCase().includes(pickerSearch.toLowerCase()) || s.sku.toLowerCase().includes(pickerSearch.toLowerCase()))
+      && (!pickerPoFilter || s.sourcePoId === pickerPoFilter)
+    )
+    return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -492,7 +525,7 @@ export default function TransfersPage() {
               </div>
               <button onClick={() => setPickerOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <div className="px-5 py-3 border-b">
+            <div className="px-5 py-3 border-b space-y-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
@@ -503,17 +536,26 @@ export default function TransfersPage() {
                   autoFocus
                 />
               </div>
+              {poOptions.length > 0 && (
+                <select
+                  className="w-full h-8 border rounded-md px-2 text-xs bg-white focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
+                  value={pickerPoFilter}
+                  onChange={e => setPickerPoFilter(e.target.value)}
+                >
+                  <option value="">Semua sumber (stok &amp; PO manapun)</option>
+                  {poOptions.map(po => <option key={po.id} value={po.id}>Dari PO {po.number}</option>)}
+                </select>
+              )}
             </div>
             <div className="max-h-72 overflow-y-auto divide-y">
-              {warehouseStock
-                .filter(s => s.item.name.toLowerCase().includes(pickerSearch.toLowerCase()) || s.item.sku.toLowerCase().includes(pickerSearch.toLowerCase()))
-                .map(s => {
-                  const checked = pickerSelected.has(s.item.id)
+              {pickerRows.map(s => {
+                  const key = s.kind === 'stock' ? s.id : `name:${s.name}`
+                  const checked = pickerSelected.has(key)
                   return (
-                    <button key={s.item.id}
+                    <button key={s.id}
                       onClick={() => setPickerSelected(prev => {
                         const next = new Set(prev)
-                        checked ? next.delete(s.item.id) : next.add(s.item.id)
+                        checked ? next.delete(key) : next.add(key)
                         return next
                       })}
                       className={`w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-muted/30 transition-colors ${checked ? 'bg-[#bdac7e]/6' : ''}`}>
@@ -521,14 +563,16 @@ export default function TransfersPage() {
                         {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{s.item.name}</p>
-                        <p className="text-xs text-muted-foreground">{s.item.sku}</p>
+                        <p className="text-sm font-medium truncate">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.kind === 'stock' ? s.sku : (s.poNumber ? `Non-stock · PO ${s.poNumber}` : 'Non-stock')}
+                        </p>
                       </div>
-                      <span className="text-sm font-semibold tabular-nums shrink-0">{s.qty} <span className="text-xs font-normal text-muted-foreground">{s.item.baseUnit}</span></span>
+                      <span className="text-sm font-semibold tabular-nums shrink-0">{s.qty} <span className="text-xs font-normal text-muted-foreground">{s.baseUnit}</span></span>
                     </button>
                   )
                 })}
-              {warehouseStock.filter(s => s.item.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && (
+              {pickerRows.length === 0 && (
                 <div className="py-10 text-center text-sm text-muted-foreground">Item tidak ditemukan</div>
               )}
             </div>
@@ -542,7 +586,8 @@ export default function TransfersPage() {
         </div>
       )}
     </div>
-  )
+    )
+  }
 
   // ── Detail ──
   return (

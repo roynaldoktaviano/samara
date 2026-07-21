@@ -23,6 +23,7 @@ export async function GET() {
     include: {
       items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
+      booking: { select: { bookingCode: true, tripType: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
       createdBy: { select: { name: true } },
       request: {
         select: {
@@ -67,6 +68,7 @@ export async function GET() {
       requestedByOffice: o.requestedByOffice ?? o.request?.requestedByEmployee?.location?.name ?? null,
       requestedByDepartment: o.requestedByDepartment ?? o.request?.requestedByEmployee?.department ?? null,
       requestedByRole: o.requestedByRole ?? null,
+      booking: o.booking ? { bookingCode: o.booking.bookingCode, tripType: o.booking.tripType, leadGuestName: o.booking.customer.name, yacht: o.booking.yacht } : null,
       request: undefined,
       createdBy: undefined,
     }
@@ -79,8 +81,9 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId } = body
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
+  if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
   // Resolve supplierId by name if not provided, so order history stays linked even for raw API callers
@@ -120,6 +123,7 @@ export async function POST(req: NextRequest) {
       supplierId: resolvedSupplierId,
       supplierName: supplierName.trim(),
       deliveryLocationId: deliveryLocationId || null,
+      bookingId: bookingId || null,
       status: 'ORDERED',
       confirmedByName: actingUser?.name ?? null,
       expectedAt: expectedAt ? new Date(expectedAt) : null,

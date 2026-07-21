@@ -51,7 +51,7 @@ function Stepper({ value, onChange, min = 0, max = 200, step = 1 }: { value: num
       <button type="button" onClick={dec} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-r">−</button>
       <input
         type="number" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value) || 0)}
+        onChange={e => onChange(Math.min(max, Math.max(min, Number(e.target.value) || 0)))}
         className="h-8 w-full min-w-0 text-center text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       <button type="button" onClick={inc} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-l">+</button>
@@ -202,42 +202,83 @@ function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn)
   )
 }
 
-function RichTextField({ html, onChange, linkColor }: { html: string; onChange: (html: string) => void; linkColor?: string }) {
+// Toolbar buttons live outside the contentEditable div, so clicking one is a
+// separate mousedown/click on a different element — browsers can collapse or
+// clear the user's in-progress text selection as part of that, independently
+// of focus (preventDefault on the button's mousedown stops the focus jump but
+// isn't reliably enough to keep the Selection/Range itself intact everywhere).
+// Explicitly saving the Range whenever it changes inside the editor, then
+// re-applying that exact Range right before execCommand runs, makes formatting
+// commands act on precisely what was selected instead of falling back to
+// wherever the caret happens to end up (which reads as "it formatted everything").
+// variant="compact" is for single-line contexts like a button label — no block-level
+// formatting (lists, links: a link nested inside the button's own <a> isn't valid HTML,
+// and a bullet/numbered list doesn't make sense in a short CTA), and Enter inserts a
+// plain <br> instead of contentEditable's default new-paragraph block split.
+function RichTextField({ label = 'Text', html, onChange, linkColor, variant = 'full', minHeight = 80 }: { label?: string; html: string; onChange: (html: string) => void; linkColor?: string; variant?: 'full' | 'compact'; minHeight?: number }) {
   const ref = useRef<HTMLDivElement>(null)
+  const savedRange = useRef<Range | null>(null)
+
+  const saveSelection = () => {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange()
+    }
+  }
+
   const exec = (cmd: string, arg?: string) => {
     ref.current?.focus()
+    const sel = window.getSelection()
+    if (sel && savedRange.current) {
+      sel.removeAllRanges()
+      sel.addRange(savedRange.current)
+    }
     document.execCommand(cmd, false, arg)
+    saveSelection()
     if (ref.current) onChange(ref.current.innerHTML)
   }
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">Text</Label>
+      <Label className="text-xs">{label}</Label>
       <div className="flex flex-wrap items-center gap-1 border rounded-md p-1 bg-muted/40">
         <Button type="button" variant="ghost" size="sm" title="Bold" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}><Bold className="h-3.5 w-3.5" /></Button>
         <Button type="button" variant="ghost" size="sm" title="Italic" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}><Italic className="h-3.5 w-3.5" /></Button>
         <Button type="button" variant="ghost" size="sm" title="Underline" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}><Underline className="h-3.5 w-3.5" /></Button>
         <Button type="button" variant="ghost" size="sm" title="Strikethrough" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')}><Strikethrough className="h-3.5 w-3.5" /></Button>
         <span className="w-px self-stretch bg-border mx-0.5" />
-        <Button type="button" variant="ghost" size="sm" title="Bullet list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}><List className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" title="Numbered list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}><ListOrdered className="h-3.5 w-3.5" /></Button>
-        <span className="w-px self-stretch bg-border mx-0.5" />
+        {variant === 'full' && (
+          <>
+            <Button type="button" variant="ghost" size="sm" title="Bullet list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}><List className="h-3.5 w-3.5" /></Button>
+            <Button type="button" variant="ghost" size="sm" title="Numbered list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}><ListOrdered className="h-3.5 w-3.5" /></Button>
+            <span className="w-px self-stretch bg-border mx-0.5" />
+          </>
+        )}
         <Button type="button" variant="ghost" size="sm" title="Superscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('superscript')}><Superscript className="h-3.5 w-3.5" /></Button>
         <Button type="button" variant="ghost" size="sm" title="Subscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('subscript')}><Subscript className="h-3.5 w-3.5" /></Button>
-        <span className="w-px self-stretch bg-border mx-0.5" />
-        <Button type="button" variant="ghost" size="sm" title="Add link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
-          const url = window.prompt('Link URL')
-          if (url) exec('createLink', url)
-        }}><LinkIcon className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" title="Remove link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')}><Link2Off className="h-3.5 w-3.5" /></Button>
+        {variant === 'full' && (
+          <>
+            <span className="w-px self-stretch bg-border mx-0.5" />
+            <Button type="button" variant="ghost" size="sm" title="Add link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
+              const url = window.prompt('Link URL')
+              if (url) exec('createLink', url)
+            }}><LinkIcon className="h-3.5 w-3.5" /></Button>
+            <Button type="button" variant="ghost" size="sm" title="Remove link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')}><Link2Off className="h-3.5 w-3.5" /></Button>
+          </>
+        )}
       </div>
       <div
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="email-rich-text min-h-[80px] border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
-        style={linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined}
+        className="email-rich-text border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+        style={{ minHeight, ...(linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined) }}
         dangerouslySetInnerHTML={{ __html: html }}
-        onBlur={e => onChange(e.currentTarget.innerHTML)}
+        onMouseUp={saveSelection}
+        onKeyUp={saveSelection}
+        onKeyDown={variant === 'compact' ? e => {
+          if (e.key === 'Enter') { e.preventDefault(); exec('insertLineBreak') }
+        } : undefined}
+        onBlur={e => { saveSelection(); onChange(e.currentTarget.innerHTML) }}
       />
     </div>
   )

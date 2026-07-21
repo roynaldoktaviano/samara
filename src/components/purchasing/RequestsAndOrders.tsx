@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import dynamic from 'next/dynamic'
 
@@ -16,12 +16,19 @@ const TABS = [
 
 type Tab = typeof TABS[number]['key']
 
-export default function RequestsAndOrders() {
+// openPoId lets another page (e.g. Item by Location, via page.tsx) deep-link
+// straight into a specific PO's detail view — there's no URL-based routing
+// anywhere in this app, so this is plain prop-drilling: page.tsx holds the
+// pending id, forces this tab to 'orders', and OrdersPage opens it and reports
+// back via onOpenPoHandled so the same id doesn't re-trigger on next render.
+export default function RequestsAndOrders({ openPoId, onOpenPoHandled }: { openPoId?: string | null; onOpenPoHandled?: () => void } = {}) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   const isWarehouse = role === 'WAREHOUSE'
 
   const [tab, setTab] = useState<Tab>(isWarehouse ? 'orders' : 'requests')
+
+  useEffect(() => { if (openPoId) setTab('orders') }, [openPoId])
 
   const visibleTabs = isWarehouse ? TABS.filter(t => t.key === 'orders') : TABS
 
@@ -43,7 +50,7 @@ export default function RequestsAndOrders() {
           ))}
         </div>
       )}
-      {tab === 'requests' ? <RequestsPage /> : tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} /> : <DeliveryFeesPage />}
+      {tab === 'requests' ? <RequestsPage /> : tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} openPoId={openPoId} onOpenPoHandled={onOpenPoHandled} /> : <DeliveryFeesPage />}
     </div>
   )
 }

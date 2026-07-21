@@ -520,6 +520,7 @@ model Booking {
   slotHistory                   WaitingListHistory[] @relation("BookingSlotHistory")
   promotedWaitingLists          WaitingList[]        @relation("WaitingListPromotedBooking")
   cashierSales                  CashierSale[]
+  purchaseOrders                PurchaseOrder[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -1195,6 +1196,12 @@ model StockLot {
   // one-off purchases like "Grab" or event flowers) — set only when itemId is null.
   itemName    String?
   unit        String?
+  // Which PO this lot was received against — only ever set for non-catalog
+  // ("non-stock") lots. Unlike catalog lots (which merge into one running
+  // balance per item+location, since stock is fungible), each receipt of a
+  // non-catalog item creates its OWN lot instead of merging into a prior one,
+  // so it stays individually traceable to the PO/date/cost that brought it in.
+  sourcePoId  String?
   locationId  String
   quantity    Float     @default(0)
   costPerUnit Float     @default(0)
@@ -1205,9 +1212,11 @@ model StockLot {
 
   item     PurchaseItem?  @relation(fields: [itemId], references: [id])
   location StockLocation @relation(fields: [locationId], references: [id])
+  sourcePo PurchaseOrder? @relation(fields: [sourcePoId], references: [id], onDelete: SetNull)
 
   @@index([itemId, locationId])
   @@index([itemName, locationId])
+  @@index([sourcePoId])
   @@index([expiresAt])
 }
 
@@ -1323,6 +1332,9 @@ model PurchaseOrder {
   supplierId         String?
   supplierName       String?
   deliveryLocationId String?
+  // Which trip/booking this PO's goods are for — optional (a lot of purchasing is
+  // general stock, not tied to one trip), set at creation, editable same as everything else.
+  bookingId          String?
   status             PurchaseOrderStatus @default(ORDERED)
   dispatchPhotoKey   String?
   dispatchedAt       DateTime?
@@ -1361,12 +1373,14 @@ model PurchaseOrder {
   deliveryLocation    StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
   createdBy           User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
   requestedByEmployee Employee?           @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  booking             Booking?            @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
   receipts            GoodsReceipt[]
   notifications       Notification[]
   paymentRequests     POPaymentRequest[]
   reimbursements      POReimbursement[]
   deliveryFees        DeliveryFee[]
+  stockLots           StockLot[]
 
   @@index([createdById])
   @@index([status])
@@ -1374,6 +1388,7 @@ model PurchaseOrder {
   @@index([requestId])
   @@index([deliveryLocationId])
   @@index([requestedByEmployeeId])
+  @@index([bookingId])
 }
 
 enum POPaymentRequestStatus {
@@ -1437,19 +1452,21 @@ model POReimbursement {
   @@index([requestedById])
 }
 
-// A delivery/shipping fee tied to an existing PO — no items of its own, just
-// "which PO's goods this shipment cost covers". Goes through the same
-// Request Payment / Debit Paid / Reimburse flow as a Purchase Order.
+// A delivery/shipping fee, usually tied to an existing PO ("which PO's goods this
+// shipment cost covers") but not required to be — a shipment can consolidate
+// several POs or be a standalone cargo delivery with no single PO behind it.
+// No items of its own. Goes through the same Request Payment / Debit Paid /
+// Reimburse flow as a Purchase Order.
 model DeliveryFee {
   id              String   @id @default(cuid())
   feeNumber       String   @unique
-  purchaseOrderId String
+  purchaseOrderId String?
   notes           String?
   createdById     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  purchaseOrder   PurchaseOrder               @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder?              @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   createdBy       User?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
   paymentRequests DeliveryFeePaymentRequest[]
   reimbursements  DeliveryFeeReimbursement[]
