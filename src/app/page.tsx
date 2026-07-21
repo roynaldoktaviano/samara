@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -85,7 +85,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -94,17 +94,23 @@ type NavItem = {
   roles: string[]
   group: string
   feature?: string  // tenant feature flag required to show this item
+  subGroup?: string // optional sub-heading within a group's sidebar section (e.g. Marketing → "Create & Publish")
 }
 
 const NAV_GROUPS = [
-  { key: 'main',       label: 'Main'       },
-  { key: 'operations', label: 'Operations' },
-  { key: 'finance',    label: 'Finance'    },
-  { key: 'statistics', label: 'Statistics' },
-  { key: 'marketing',  label: 'Marketing'  },
-  { key: 'management', label: 'Management' },
-  { key: 'purchasing', label: 'Purchasing & Inventory' },
-  { key: 'hr',         label: 'People & HR' },
+  { key: 'main',       label: 'Main' },
+  { key: 'operations', label: 'Operations', icon: Ship },
+  { key: 'finance',    label: 'Finance', icon: Wallet },
+  { key: 'statistics', label: 'Statistics', icon: TrendingUp },
+  { key: 'marketing',  label: 'Marketing', icon: Send },
+  { key: 'management', label: 'Management', icon: Shield },
+  { key: 'purchasing', label: 'Purchasing & Inventory', icon: ShoppingCart },
+  { key: 'hr',         label: 'People & HR', icon: IdCard },
+]
+
+const MARKETING_SUB_GROUPS = [
+  { key: 'create-publish', label: 'Create & Publish' },
+  { key: 'measure',        label: 'Measure' },
 ]
 
 const navigationItems: NavItem[] = [
@@ -125,11 +131,22 @@ const navigationItems: NavItem[] = [
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
-  { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
-  { id: 'agent-leads',   label: 'Agent Leads',     icon: Users,      roles: ['ADMIN', 'SALES'],                         group: 'marketing'  },
+  { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'operations' },
+  { id: 'agent-leads',   label: 'Agent Leads',     icon: Users,      roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
-  { id: 'marketing-campaigns', label: 'Email Campaigns', icon: Send, roles: ['ADMIN', 'MARKETING'],                     group: 'marketing', feature: 'marketing' },
-  { id: 'marketing-templates', label: 'Email Templates', icon: LayoutTemplate, roles: ['ADMIN', 'MARKETING'],           group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-dashboard',      label: 'Command Center',   icon: LayoutDashboard, roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-campaigns',      label: 'Email Campaigns',  icon: Send,            roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-calendar',       label: 'Content Calendar', icon: Calendar,        roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-automations',    label: 'Automations',      icon: Zap,             roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-audiences',      label: 'Audiences',        icon: Users,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
+  { id: 'marketing-content-studio', label: 'Content Studio',   icon: PenSquare,       roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-templates',      label: 'Email Templates',  icon: LayoutTemplate,  roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-publishing',     label: 'Publishing Center', icon: Send,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-landing-pages',  label: 'Landing Pages',    icon: Globe,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-assets',         label: 'Asset Library',    icon: Image,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-performance',    label: 'Performance',      icon: LineChart,       roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'measure' },
+  { id: 'marketing-reports',        label: 'Reports',          icon: Layers,          roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'measure' },
+  { id: 'marketing-settings',       label: 'Settings',         icon: Settings,        roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
@@ -265,6 +282,22 @@ function PurchasingComingSoon({ title, desc }: { title: string; desc: string }) 
   )
 }
 
+function MarketingComingSoon({ title, desc, icon: Icon }: { title: string; desc: string; icon: React.ElementType }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
+        <p className="text-muted-foreground text-sm mt-1">{desc}</p>
+      </div>
+      <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
+        <Icon className="h-8 w-8 mx-auto mb-3 opacity-30" />
+        <p className="text-sm font-medium">Coming soon</p>
+        <p className="text-xs mt-1">This feature is currently in development</p>
+      </div>
+    </div>
+  )
+}
+
 const dropdownVariants = {
   hidden:  { opacity: 0, scale: 0.95, y: -6 },
   visible: { opacity: 1, scale: 1,    y: 0  },
@@ -281,6 +314,7 @@ export default function Home() {
   const router = useRouter()
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [profileOpen, setProfileOpen]   = useState(false)
   const [profileName, setProfileName]   = useState('')
@@ -562,8 +596,19 @@ export default function Home() {
       case 'finance-delivery-fee-payments': return <DeliveryFeePayments />
       case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements />
       case 'vouchers':      return <Vouchers />
+      case 'marketing-dashboard': return <MarketingComingSoon title="Command Center" desc="A rollup of every campaign's performance, spend, ROAS, and tasks that need attention." icon={LayoutDashboard} />
       case 'marketing-campaigns': return <CampaignsPage />
+      case 'marketing-calendar': return <MarketingComingSoon title="Content Calendar" desc="See every campaign, email send, and scheduled post in one calendar." icon={Calendar} />
+      case 'marketing-automations': return <MarketingComingSoon title="Automations" desc="Behavior- and trip-data-driven journeys (pre-trip, post-trip, and more)." icon={Zap} />
+      case 'marketing-audiences': return <MarketingComingSoon title="Audiences" desc="Build and save reusable audience segments for use across campaigns." icon={Users} />
+      case 'marketing-content-studio': return <MarketingComingSoon title="Content Studio" desc="Produce and approve content across formats — social, video, ads — in one place." icon={PenSquare} />
       case 'marketing-templates': return <TemplatesPage />
+      case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
+      case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
+      case 'marketing-assets': return <MarketingComingSoon title="Asset Library" desc="One searchable source for approved photos, videos, logos, and campaign files." icon={Image} />
+      case 'marketing-performance': return <MarketingComingSoon title="Performance" desc="A cross-campaign, cross-channel rollup — revenue, ROAS, and channel comparison." icon={LineChart} />
+      case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
+      case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
@@ -663,19 +708,19 @@ export default function Home() {
     <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <div className="flex min-h-screen bg-background w-full" data-tenant={session.user.tenantSlug ?? 'samara'}>
         <Sidebar>
-          <SidebarHeader className="p-4 border-b" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
+          <SidebarHeader className="px-5 py-5 border-b" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
             <div className="flex items-center gap-3">
               <img
                 src={branding.logoUrl}
                 alt={branding.name}
-                className="h-12 w-auto object-contain"
+                className="h-11 w-auto object-contain"
               />
             </div>
           </SidebarHeader>
 
-          <SidebarContent>
+          <SidebarContent className="gap-0">
             {(() => {
-              const renderItems = (items: NavItem[]) => items.map((item) => {
+              const renderItems = (items: NavItem[], asChild = false) => items.map((item) => {
                 const Icon = item.icon
                 const showDot =
                   (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
@@ -686,6 +731,7 @@ export default function Home() {
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
                   item.id === 'purchasing-requests' ? pendingRequestOrders :
                   0
+                const isItemActive = activeView === item.id
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
@@ -693,10 +739,17 @@ export default function Home() {
                         setCurrentView(item.id)
                         if (item.id === 'bookings') markInvoiceReadyAsRead()
                       }}
-                      isActive={activeView === item.id}
+                      isActive={isItemActive}
+                      className={`relative !py-3.5 !px-3 rounded-lg transition-colors ${asChild ? 'pl-8 text-xs' : 'text-[13px]'} ${
+                        isItemActive
+                          ? 'bg-[#bdac7e]/15 text-[#7a6a3f] font-semibold hover:bg-[#bdac7e]/20 hover:text-[#7a6a3f]'
+                          : asChild
+                            ? 'text-gray-500 font-normal hover:bg-gray-100 hover:text-gray-800'
+                            : 'text-gray-700 font-medium hover:bg-gray-100 hover:text-gray-900'
+                      }`}
                     >
                       <div className="relative shrink-0">
-                        <Icon className="h-4 w-4" />
+                        <Icon className={`${asChild ? 'h-3.5 w-3.5' : 'h-[17px] w-[17px]'} ${isItemActive ? 'text-[#8a744a]' : 'text-gray-400'}`} />
                         <AnimatePresence>
                           {showDot && (
                             <motion.span
@@ -712,36 +765,111 @@ export default function Home() {
                           )}
                         </AnimatePresence>
                       </div>
-                      <span>{item.label}</span>
+                      <span className="truncate">{item.label}</span>
+                      {isItemActive && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-[#bdac7e]" />}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
               })
 
               if (isAdmin) {
-                return NAV_GROUPS.map(group => {
-                  const groupItems = visibleNavItems.filter(i => i.group === group.key)
-                  if (!groupItems.length) return null
-                  return (
-                    <SidebarGroup key={group.key}>
-                      <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-                      <SidebarMenu>{renderItems(groupItems)}</SidebarMenu>
-                    </SidebarGroup>
-                  )
-                })
+                const activeGroupKey = navigationItems.find(i => i.id === activeView)?.group
+
+                return (
+                  <SidebarGroup className="!p-3 pt-4">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                      Menu
+                    </SidebarGroupLabel>
+                    <SidebarMenu className="gap-5">
+                      {NAV_GROUPS.map(group => {
+                        const groupItems = visibleNavItems.filter(i => i.group === group.key)
+                        if (!groupItems.length) return null
+
+                        // "Main" is just the single Dashboard entry-point — a plain link, not
+                        // an expandable module like the ones below.
+                        if (group.key === 'main') return <React.Fragment key={group.key}>{renderItems(groupItems)}</React.Fragment>
+
+                        const GroupIcon = group.icon ?? Boxes
+                        const isGroupActive = group.key === activeGroupKey
+                        const isExpanded = isGroupActive || expandedGroups.has(group.key)
+
+                        return (
+                          <div key={group.key} className={`rounded-lg transition-colors ${isExpanded ? 'bg-gray-50 pb-2' : ''}`}>
+                            <SidebarMenuItem>
+                              <SidebarMenuButton
+                                onClick={() => setExpandedGroups(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(group.key)) next.delete(group.key)
+                                  else next.add(group.key)
+                                  return next
+                                })}
+                                className={`!py-3.5 !px-3 rounded-lg text-[14px] transition-colors ${
+                                  isGroupActive
+                                    ? 'text-[#7a6a3f] font-semibold hover:bg-gray-100'
+                                    : 'text-gray-800 font-semibold hover:bg-gray-100'
+                                }`}
+                              >
+                                <GroupIcon className={`h-[17px] w-[17px] shrink-0 ${isGroupActive ? 'text-[#8a744a]' : 'text-gray-500'}`} />
+                                <span className="flex-1 truncate">{group.label}</span>
+                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                            <AnimatePresence initial={false}>
+                              {isExpanded && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.18, ease: 'easeInOut' }}
+                                  className="overflow-hidden"
+                                >
+                                  {group.key === 'marketing' ? (
+                                    <>
+                                      <SidebarMenu className="pt-4 px-1 gap-4">
+                                        {renderItems(groupItems.filter(i => !i.subGroup), true)}
+                                      </SidebarMenu>
+                                      {MARKETING_SUB_GROUPS.map(sub => (
+                                        (() => {
+                                          const subItems = groupItems.filter(i => i.subGroup === sub.key)
+                                          if (!subItems.length) return null
+                                          return (
+                                            <div key={sub.key} className="mt-4">
+                                              <div className="pl-3 pb-2 flex items-center text-[10px] font-semibold uppercase tracking-wider text-[#a8874f]">
+                                                {sub.label}
+                                              </div>
+                                              <SidebarMenu className="px-1 gap-4">{renderItems(subItems, true)}</SidebarMenu>
+                                            </div>
+                                          )
+                                        })()
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <SidebarMenu className="pt-4 px-1 gap-4">{renderItems(groupItems, true)}</SidebarMenu>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        )
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroup>
+                )
               }
 
               return (
-                <SidebarGroup>
-                  <SidebarGroupLabel>Menu</SidebarGroupLabel>
-                  <SidebarMenu>{renderItems(visibleNavItems)}</SidebarMenu>
+                <SidebarGroup className="!p-3 pt-4">
+                  <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    Menu
+                  </SidebarGroupLabel>
+                  <SidebarMenu className="gap-5">{renderItems(visibleNavItems)}</SidebarMenu>
                 </SidebarGroup>
               )
             })()}
           </SidebarContent>
 
-          <SidebarFooter className="px-4 py-3 border-t" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
-            <p className="text-[10.5px] text-center" style={branding.sidebarBg ? { color: 'rgba(255,255,255,0.45)' } : undefined}>
+          <SidebarFooter className="px-5 py-4 border-t" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
+            <p className="text-[10.5px] text-center text-gray-400" style={branding.sidebarBg ? { color: 'rgba(255,255,255,0.45)' } : undefined}>
               © 2026 {branding.name}.
             </p>
           </SidebarFooter>
