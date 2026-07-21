@@ -34,9 +34,14 @@ export async function GET() {
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap = new Map(locations.map(l => [l.id, l]))
 
+  // Low-stock/stale-stock analytics only make sense for catalog items (they're
+  // the only ones with a minStock/reorderQty to compare against) — custom PO
+  // items (lot.itemId === null, e.g. one-off purchases) are excluded here.
+  const catalogLots = lots.filter((l): l is typeof l & { itemId: string } => l.itemId !== null)
+
   // Aggregate qty per item across all locations
   const stockByItem = new Map<string, number>()
-  for (const lot of lots) {
+  for (const lot of catalogLots) {
     stockByItem.set(lot.itemId, (stockByItem.get(lot.itemId) ?? 0) + lot.quantity)
   }
 
@@ -69,8 +74,8 @@ export async function GET() {
     .sort((a, b) => b.daysOverdue - a.daysOverdue)
 
   // 3. Items with no movement in 30 days but have stock
-  const recentItemIds = new Set(movements.map(m => m.itemId))
-  const staleStock = lots
+  const recentItemIds = new Set(movements.map(m => m.itemId).filter((id): id is string => id !== null))
+  const staleStock = catalogLots
     .filter(lot => lot.quantity > 0 && !recentItemIds.has(lot.itemId))
     .map(lot => ({
       item: itemMap.get(lot.itemId),

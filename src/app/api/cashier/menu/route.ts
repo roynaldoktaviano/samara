@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
   ])
 
   const stockMap = new Map<string, number>()
-  for (const lot of lots) stockMap.set(lot.itemId, (stockMap.get(lot.itemId) ?? 0) + lot.quantity)
+  for (const lot of lots) {
+    if (!lot.itemId) continue // custom (non-catalog) PO items aren't sellable POS menu items
+    stockMap.set(lot.itemId, (stockMap.get(lot.itemId) ?? 0) + lot.quantity)
+  }
 
   return NextResponse.json({
     locationId: location.id,
