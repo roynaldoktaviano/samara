@@ -23,9 +23,13 @@ export async function GET(req: Request) {
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap  = new Map(locations.map(l => [l.id, l]))
 
-  // Group by location → item, aggregating across multiple lots
+  // Group by location → item, aggregating across multiple lots. Lots without a
+  // catalog itemId (one-off PO purchases like "Grab" or event flowers) are
+  // grouped by itemName instead, using a synthetic "item" shape so the frontend
+  // can render them the same way — just without SKU/category/minStock.
+  type CatalogItem = (typeof items)[0]
   type AggRow = {
-    item: (typeof items)[0]
+    item: CatalogItem | { id: null; sku: string; name: string; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; minStock: number; valuationMethod: string }
     qty: number
     costPerUnit: number
     lotsCount: number
@@ -34,17 +38,21 @@ export async function GET(req: Request) {
   const byLocation = new Map<string, { location: (typeof locations)[0]; rows: Map<string, AggRow> }>()
 
   for (const lot of lots) {
-    const item = itemMap.get(lot.itemId)
-    const loc  = locMap.get(lot.locationId)
-    if (!item || !loc) continue
+    const loc = locMap.get(lot.locationId)
+    if (!loc) continue
+    const item: AggRow['item'] | undefined = lot.itemId
+      ? itemMap.get(lot.itemId)
+      : { id: null, sku: '—', name: lot.itemName ?? 'Unnamed item', category: 'Non-stock item', baseUnit: lot.unit ?? '', purchaseUnit: lot.unit ?? '', conversionFactor: 1, minStock: 0, valuationMethod: 'FIFO' }
+    if (!item) continue
+    const rowKey = lot.itemId ?? `custom:${lot.itemName}`
 
     if (!byLocation.has(lot.locationId)) byLocation.set(lot.locationId, { location: loc, rows: new Map() })
     const locEntry = byLocation.get(lot.locationId)!
 
-    if (!locEntry.rows.has(lot.itemId)) {
-      locEntry.rows.set(lot.itemId, { item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null })
+    if (!locEntry.rows.has(rowKey)) {
+      locEntry.rows.set(rowKey, { item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null })
     }
-    const row = locEntry.rows.get(lot.itemId)!
+    const row = locEntry.rows.get(rowKey)!
     row.qty += lot.quantity
     row.lotsCount += 1
     // Weighted average cost

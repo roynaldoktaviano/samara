@@ -20,10 +20,12 @@ interface Reimbursement {
   paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
+interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface PurchaseOrder {
   id: string; poNumber: string; supplierName: string | null; status: string
   deliveryLocationId: string | null; deliveryLocation: DeliveryLocation | null
   itemCount: number; totalOrdered: number; totalReceived: number; fullyReceivedCount: number
+  items: OrderItem[]
   notes: string | null; orderedAt: string; expectedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
   createdByName: string | null
@@ -35,7 +37,6 @@ interface ReimburseAccountOption { id: string; accountHolderName: string; bankNa
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
-interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedAt?: string | null
@@ -224,6 +225,10 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+const toDateInputValue = (s: string) => {
+  const d = new Date(s)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 // Display-only mirror of src/lib/po-payment.ts's describeInstallment — labels
 // a payment/reimbursement installment as a DP, a top-up, or the one that
@@ -448,6 +453,46 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
   )
 }
 
+function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
+          <div>
+            <p className="text-sm font-semibold">{order.poNumber}</p>
+            <p className="text-xs text-muted-foreground">{order.supplierName ?? 'TBD'}</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground bg-muted/30 sticky top-0">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Item</th>
+                <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                <th className="text-right px-4 py-2.5 font-medium">Unit Price</th>
+                <th className="text-right px-4 py-2.5 font-medium">Received</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {order.items.map(i => (
+                <tr key={i.id}>
+                  <td className="px-4 py-2.5">{i.itemName}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{fmtMoney(i.unitCost)}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.receivedQty ?? 0}/{i.orderedQty}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function OrdersPage({ warehouseView = false }: { warehouseView?: boolean }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -460,6 +505,16 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [detail, setDetail] = useState<OrderDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+
+  // list filters
+  const [filterSupplier, setFilterSupplier] = useState('')
+  const [filterDestination, setFilterDestination] = useState('')
+  const [filterRequestedBy, setFilterRequestedBy] = useState('')
+  const [filterDate, setFilterDate] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
+  const [itemsPopoverOrder, setItemsPopoverOrder] = useState<PurchaseOrder | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 14
 
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
@@ -682,9 +737,27 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // ── List ──
   const WAREHOUSE_STATUSES = ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
-  const visibleOrders = warehouseView
+  const scopedOrders = warehouseView
     ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status))
     : orders
+  const supplierOptions = Array.from(new Set(scopedOrders.map(o => o.supplierName).filter((n): n is string => !!n))).sort()
+  const destinationOptions = Array.from(new Set(scopedOrders.map(o => o.deliveryLocation?.name).filter((n): n is string => !!n))).sort()
+  const requestedByOptions = Array.from(new Set(scopedOrders.map(o => o.requestedByName).filter((n): n is string => !!n))).sort()
+  const hasActiveFilters = !!(filterSupplier || filterDestination || filterRequestedBy || filterDate || itemSearch.trim())
+  const visibleOrders = scopedOrders.filter(o => {
+    if (filterSupplier && o.supplierName !== filterSupplier) return false
+    if (filterDestination && o.deliveryLocation?.name !== filterDestination) return false
+    if (filterRequestedBy && o.requestedByName !== filterRequestedBy) return false
+    if (filterDate && toDateInputValue(o.orderedAt) !== filterDate) return false
+    if (itemSearch.trim()) {
+      const q = itemSearch.trim().toLowerCase()
+      if (!o.items.some(i => i.itemName.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageOrders = visibleOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   if (view === 'list') return (
     <div className="space-y-4">
@@ -693,6 +766,38 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         {!warehouseView && (
           <button onClick={() => setView('create')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <Plus className="h-4 w-4" /> Create PO
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            className="h-9 w-56 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
+            placeholder="Search item..."
+            value={itemSearch}
+            onChange={e => { setItemSearch(e.target.value); setPage(1) }}
+          />
+        </div>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1) }}>
+          <option value="">All suppliers</option>
+          {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1) }}>
+          <option value="">All destinations</option>
+          {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1) }}>
+          <option value="">All requesters</option>
+          {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <input type="date" className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1) }} />
+        {hasActiveFilters && (
+          <button
+            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1) }}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+          >
+            Clear filters
           </button>
         )}
       </div>
@@ -705,7 +810,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-left px-4 py-3 font-medium">PO Created By</th>
               <th className="text-left px-4 py-3 font-medium">Requested By</th>
-              <th className="text-center px-4 py-3 font-medium">Items</th>
+              <th className="text-left px-4 py-3 font-medium w-36">Items</th>
               <th className="text-left px-4 py-3 font-medium">Received</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
@@ -722,7 +827,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
@@ -731,13 +836,13 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
-              : visibleOrders.map(o => {
+              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : pageOrders.map(o => {
                 const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
                   <tr key={o.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(o)}>
-                    <td className="px-4 py-3 font-mono text-sm font-medium">{o.poNumber}</td>
-                    <td className="px-4 py-3">{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-medium">{o.poNumber}</td>
+                    <td className="px-4 py-3 text-xs">{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
                       {o.deliveryLocation ? (
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
@@ -756,7 +861,20 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                         </div>
                       ) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-center text-muted-foreground">{o.itemCount}</td>
+                    <td className="px-4 py-3 max-w-36">
+                      {o.items.length === 0 ? (
+                        <span className="text-muted-foreground/40 text-xs">—</span>
+                      ) : (
+                        <button
+                          title={o.items.map(i => i.itemName).join(', ')}
+                          onClick={e => { e.stopPropagation(); setItemsPopoverOrder(o) }}
+                          className="block w-full truncate text-left text-xs font-medium text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
+                        >
+                          {o.items[0].itemName}
+                          {o.items.length > 1 && <span className="text-muted-foreground font-normal"> +{o.items.length - 1} more</span>}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-3 min-w-[120px]">
                       {o.itemCount === 0 || o.status === 'DRAFT' ? (
                         <span className="text-muted-foreground/40 text-xs">—</span>
@@ -791,6 +909,33 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
           </tbody>
         </table>
       </div>
+      {!loading && visibleOrders.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {currentPage} of {totalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-muted-foreground px-2">{currentPage} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+      {itemsPopoverOrder && (
+        <ItemsDetailModal order={itemsPopoverOrder} onClose={() => setItemsPopoverOrder(null)} />
+      )}
     </div>
   )
 
@@ -1249,9 +1394,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       </div>
 
       {detail && (
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{detail.poNumber}</h2>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold tracking-tight whitespace-nowrap">{detail.poNumber}</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               {detail.supplierName ?? <span className="italic">No supplier yet</span>} · {fmtDate(detail.orderedAt)} ·{' '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>
@@ -1270,7 +1415,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0 pt-1">
+          <div className="flex items-center gap-2 flex-wrap justify-end pt-1">
             {detail.status !== 'DRAFT' && (
               <button disabled title="PDF export is still being finalized"
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg opacity-50 cursor-not-allowed">

@@ -121,26 +121,39 @@ export async function POST(req: NextRequest) {
         await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
       }
 
-      // Everything below (stock lots, movements, discrepancy checks, standard cost) only
-      // applies to items linked to the master catalog.
-      if (!it.itemId) continue
-
-      const factor = conversionMap.get(it.itemId) ?? 1
+      // Stock lot / movement: applies to catalog items and to custom/non-catalog
+      // PO lines alike (e.g. one-off purchases like "Grab" or event flowers) —
+      // custom lines are keyed by (itemName, locationId) instead of itemId.
+      const factor = it.itemId ? (conversionMap.get(it.itemId) ?? 1) : 1
       const baseQty = purchaseQty * factor                                // e.g. 1 carton × 24 = 24 cans
       const purchaseUnitCost = Number(it.unitCost) || 0                   // actual invoice price
       const baseCostPerUnit = factor > 1 && purchaseUnitCost > 0         // e.g. 48000 / 24 = 2000/can
         ? purchaseUnitCost / factor
         : purchaseUnitCost
 
-      const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId } })
+      const lot = it.itemId
+        ? await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId } })
+        : await tx.stockLot.findFirst({ where: { itemId: null, itemName: it.itemName, locationId } })
       if (lot) {
         await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
       } else {
-        await tx.stockLot.create({ data: { id: crypto.randomUUID(), itemId: it.itemId, locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date() } })
+        await tx.stockLot.create({
+          data: {
+            id: crypto.randomUUID(), locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
+            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName, unit: it.unit?.trim() || null }),
+          },
+        })
       }
       await tx.stockMovement.create({
-        data: { id: crypto.randomUUID(), itemId: it.itemId, toLocationId: locationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: session.user.id },
+        data: {
+          id: crypto.randomUUID(), toLocationId: locationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: session.user.id,
+          ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+        },
       })
+
+      // Everything below (discrepancy checks, standard cost) only applies to
+      // items linked to the master catalog.
+      if (!it.itemId) continue
 
       if (poItem) {
         // Auto-create Receiving Discrepancy exception if qty received ≠ qty remaining

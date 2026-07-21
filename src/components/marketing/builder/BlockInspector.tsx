@@ -156,6 +156,31 @@ function PaddingField({ value, onChange }: { value: Padding; onChange: (p: Paddi
   )
 }
 
+/** Desktop/Mobile tab switcher for a group of fields that support a mobile-only override (see TextMobileOverride/ButtonMobileOverride) — the same 2-icon pattern as HideOnField, but for style values instead of visibility. */
+function DeviceToggle({ device, onChange }: { device: 'desktop' | 'mobile'; onChange: (d: 'desktop' | 'mobile') => void }) {
+  const base = 'flex items-center justify-center gap-1.5 h-7 px-3 rounded-md border text-xs font-medium transition-colors'
+  const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
+  const inactive = 'text-muted-foreground hover:bg-muted/50'
+  return (
+    <div className="inline-flex gap-1.5">
+      <button type="button" onClick={() => onChange('desktop')} className={`${base} ${device === 'desktop' ? active : inactive}`}>
+        <Monitor className="h-3.5 w-3.5" /> Desktop
+      </button>
+      <button type="button" onClick={() => onChange('mobile')} className={`${base} ${device === 'mobile' ? active : inactive}`}>
+        <Smartphone className="h-3.5 w-3.5" /> Mobile
+      </button>
+    </div>
+  )
+}
+
+function ResetMobileLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">
+      Reset mobile overrides
+    </button>
+  )
+}
+
 function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn) => void }) {
   const base = 'flex items-center justify-center gap-1 h-8 rounded-md border text-xs font-medium transition-colors'
   const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
@@ -245,15 +270,32 @@ function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; 
 }
 
 export default function BlockInspector({ block, onChange }: { block: EmailBlock; onChange: (block: EmailBlock) => void }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+
   switch (block.type) {
     case 'text':
+    case 'heading': {
+      const sizeRange = block.type === 'heading' ? { min: 14, max: 60 } : { min: 10, max: 48 }
       return (
         <div className="space-y-3">
           <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={48} />
-          <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
+          <SectionHeader label="Size, align & color" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <>
+              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+              <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} {...sizeRange} />
+              <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
+            </>
+          ) : (
+            <>
+              <AlignField value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } })} />
+              <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} {...sizeRange} />
+              <ColorField label="Text color" value={block.mobile?.color ?? block.color} onChange={color => onChange({ ...block, mobile: { ...block.mobile, color } })} />
+              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+            </>
+          )}
           <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
           <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
@@ -262,23 +304,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
-
-    case 'heading':
-      return (
-        <div className="space-y-3">
-          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
-          <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={14} max={60} />
-          <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
-          <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
-          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
-          <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
-          <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
-          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
-        </div>
-      )
+    }
 
     case 'image':
     case 'logo':
@@ -377,7 +403,22 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ColorField label="Text color" value={block.textColor} onChange={textColor => onChange({ ...block, textColor })} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <SectionHeader label="Size, align & mobile color" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <>
+              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+              <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={30} />
+            </>
+          ) : (
+            <>
+              <AlignField value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } })} />
+              <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} min={10} max={30} />
+              <ColorField label="Background" value={block.mobile?.bgColor ?? block.bgColor} onChange={bgColor => onChange({ ...block, mobile: { ...block.mobile, bgColor } })} />
+              <ColorField label="Text color" value={block.mobile?.textColor ?? block.textColor} onChange={textColor => onChange({ ...block, mobile: { ...block.mobile, textColor } })} />
+              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+            </>
+          )}
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />

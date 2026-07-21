@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Warehouse, Ship, AlertTriangle, Search, X, Layers } from 'lucide-react'
 
 interface StockItem {
-  item: { id: string; sku: string; name: string; category: string; baseUnit: string; minStock: number; valuationMethod: string }
+  item: { id: string | null; sku: string; name: string; category: string; baseUnit: string; minStock: number; valuationMethod: string }
   qty: number
   costPerUnit: number
   lotsCount: number
@@ -57,7 +57,8 @@ export default function StockPage() {
     setLotPanel({ item, locationId, locationName })
     setLotsLoading(true)
     setLots([])
-    const res = await fetch(`/api/purchasing/stock/lots?itemId=${item.id}&locationId=${locationId}`)
+    const qs = item.id ? `itemId=${item.id}` : `itemName=${encodeURIComponent(item.name)}`
+    const res = await fetch(`/api/purchasing/stock/lots?${qs}&locationId=${locationId}`)
     if (res.ok) setLots(await res.json())
     setLotsLoading(false)
   }
@@ -84,7 +85,7 @@ export default function StockPage() {
           const isLow = item.minStock > 0 && qty < item.minStock
           const method = item.valuationMethod ?? 'FIFO'
           return (
-            <tr key={item.id}
+            <tr key={item.id ?? `custom:${item.name}`}
               className={`hover:bg-[#bdac7e]/5 cursor-pointer transition-colors ${isLow ? 'bg-red-50/40' : ''}`}
               onClick={() => openLots(item, locationId, locationName)}>
               <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>

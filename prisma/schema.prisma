@@ -1190,7 +1190,11 @@ model CashierSaleItem {
 
 model StockLot {
   id          String    @id @default(cuid())
-  itemId      String
+  itemId      String?
+  // Fallback label for PO items not linked to the PurchaseItem catalog (e.g.
+  // one-off purchases like "Grab" or event flowers) — set only when itemId is null.
+  itemName    String?
+  unit        String?
   locationId  String
   quantity    Float     @default(0)
   costPerUnit Float     @default(0)
@@ -1199,16 +1203,19 @@ model StockLot {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  item     PurchaseItem  @relation(fields: [itemId], references: [id])
+  item     PurchaseItem?  @relation(fields: [itemId], references: [id])
   location StockLocation @relation(fields: [locationId], references: [id])
 
   @@index([itemId, locationId])
+  @@index([itemName, locationId])
   @@index([expiresAt])
 }
 
 model StockMovement {
   id             String   @id @default(cuid())
-  itemId         String
+  itemId         String?
+  // Fallback label for non-catalog PO items — see StockLot.itemName.
+  itemName       String?
   fromLocationId String?
   toLocationId   String?
   quantity       Float
@@ -1219,10 +1226,11 @@ model StockMovement {
   createdById    String
   createdAt      DateTime @default(now())
 
-  item      PurchaseItem @relation(fields: [itemId], references: [id])
+  item      PurchaseItem? @relation(fields: [itemId], references: [id])
   createdBy User         @relation(fields: [createdById], references: [id])
 
   @@index([itemId])
+  @@index([itemName])
   @@index([type])
   @@index([createdAt])
   @@index([referenceId])

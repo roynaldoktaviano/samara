@@ -21,7 +21,7 @@ export async function GET() {
   const orders = await db.purchaseOrder.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, orderedQty: true, receivedQty: true, unitCost: true } },
+      items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       createdBy: { select: { name: true } },
       request: {
@@ -55,7 +55,7 @@ export async function GET() {
       totalOrdered,
       totalReceived,
       fullyReceivedCount,
-      items: undefined,
+      items: o.items,
       lastReceivedAt: o.receipts[0]?.receivedAt ?? null,
       lastReceivedBy: o.receipts[0]?.receivedBy?.name ?? null,
       receipts: undefined,

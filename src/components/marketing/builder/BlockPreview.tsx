@@ -78,7 +78,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           <span
             style={{
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
-              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: 15, fontWeight: 600, lineHeight: block.lineHeight, whiteSpace: 'pre-line',
+              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight, whiteSpace: 'pre-line',
             }}
           >
             {block.label || 'Button'}

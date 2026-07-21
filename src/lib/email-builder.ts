@@ -38,6 +38,17 @@ export const FONT_OPTIONS: { label: string; value: string }[] = [
 ]
 const DEFAULT_FONT = FONT_OPTIONS[0].value
 
+// Mobile-only overrides for a text/heading block's size, alignment, and color —
+// applied via a max-width:600px media query in the exported HTML (see
+// collectExtraStyles) on top of the block's own (desktop) values. Undefined
+// fields simply inherit the desktop value; the whole object is optional so
+// blocks with no mobile customization carry no extra data.
+export interface TextMobileOverride {
+  fontSize?: number
+  align?: BlockAlign
+  color?: string
+}
+
 export interface TextBlock {
   id: string
   type: 'text'
@@ -51,6 +62,7 @@ export interface TextBlock {
   letterSpacing: number
   padding: Padding
   hideOn: HideOn
+  mobile?: TextMobileOverride
 }
 
 export interface HeadingBlock {
@@ -66,6 +78,7 @@ export interface HeadingBlock {
   letterSpacing: number
   padding: Padding
   hideOn: HideOn
+  mobile?: TextMobileOverride
 }
 
 export interface ImageBlock {
@@ -115,6 +128,14 @@ export interface HtmlBlock {
   hideOn: HideOn
 }
 
+// See TextMobileOverride — same mobile-only-override mechanism, applied to a button's own fields.
+export interface ButtonMobileOverride {
+  fontSize?: number
+  align?: BlockAlign
+  bgColor?: string
+  textColor?: string
+}
+
 export interface ButtonBlock {
   id: string
   type: 'button'
@@ -122,12 +143,14 @@ export interface ButtonBlock {
   url: string
   bgColor: string
   textColor: string
+  fontSize: number
   fontFamily: string
   lineHeight: number
   align: BlockAlign
   borderRadius: number
   padding: Padding
   hideOn: HideOn
+  mobile?: ButtonMobileOverride
 }
 
 export interface DividerBlock {
@@ -329,6 +352,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         hideOn,
         fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily,
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.3,
+        fontSize: typeof raw.fontSize === 'number' ? raw.fontSize : 15,
       }
     case 'video':
     case 'html':
@@ -388,7 +412,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'html':
       return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: uniformPadding(16), hideOn: 'none' }
     case 'button':
-      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, lineHeight: 1.3, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontSize: 15, fontFamily: DEFAULT_FONT, lineHeight: 1.3, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
       return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':
@@ -492,6 +516,18 @@ function renderColumnCell(list: EmailBlock[]): string {
 // data:image/svg+xml URIs outright as an XSS precaution, which is why they were
 // rendering as broken-image boxes. A plain hosted <img src="https://.../icon.png">
 // is the one technique that's reliably supported everywhere.
+//
+// Two color variants are rendered stacked (icon-dark-safe-toggle class pair below)
+// and toggled by the same dark-mode media query + data-ogsc/ogsb attribute trick
+// as everything else in this file — the white variant (for the authored black
+// footer) is the default, the dark-gray variant only shows up under dark mode.
+// This exists because the footer's near-black background still gets forcibly
+// recolored to white by Gmail's iOS app despite the darkModeSafe nudge + pin
+// (its heuristic isn't limited to literal #000000 the way the button/text fixes
+// assumed) — when that happens the white icon and light footer text both vanish
+// against the now-white background, so the icon needs an actual different-colored
+// image (a raster <img>'s pixels can't be recolored by CSS) and the text needs a
+// dark-mode color override too (see collectExtraStyles' 'footer' branch).
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
@@ -501,7 +537,9 @@ function footerIcon(kind: FooterIconKind): string {
   // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
   // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
   // this if a cached 404 ever gets stuck on any of these paths again.
-  return `<img src="${appUrl}/email/icon-${kind}.png?v=2" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  const img = (variant: '' | '-dark', cls: string) =>
+    `<img src="${appUrl}/email/icon-${kind}${variant}.png?v=2" width="16" height="16" alt=""${classAttr(cls)} style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `${img('', 'footer-icon-light')}${img('-dark', 'footer-icon-dark')}`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -521,7 +559,7 @@ function renderFooterSocialRow(block: FooterBlock): string {
     <td style="padding:0 6px;">
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
         <tr>
-          <td width="34" height="34" align="center" valign="middle" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
+          <td width="34" height="34" align="center" valign="middle" class="footer-badge" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
             <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
           </td>
         </tr>
@@ -578,8 +616,8 @@ function renderBlock(block: EmailBlock): string {
       // The text color lives on an inner <span>, not the <a> itself — Gmail's dark
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
+      return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
       </td></tr>`
 
     case 'divider': {
@@ -663,12 +701,29 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${bg} !important;}.btn-${b.id} span{color:${fg} !important;}}`)
       rules.push(darkOverride(`.btn-${b.id}`, `background:${bg} !important;`))
       rules.push(darkOverride(`.btn-${b.id} span`, `color:${fg} !important;`))
+      if (b.mobile) {
+        const btnDecls = [
+          b.mobile.fontSize ? `font-size:${b.mobile.fontSize}px !important;` : '',
+          b.mobile.bgColor ? `background:${darkModeSafe(b.mobile.bgColor)} !important;` : '',
+        ].join('')
+        const wrapDecl = b.mobile.align ? `.btn-wrap-${b.id}{text-align:${b.mobile.align} !important;}` : ''
+        const spanDecl = b.mobile.textColor ? `.btn-${b.id} span{color:${darkModeSafe(b.mobile.textColor)} !important;}` : ''
+        if (btnDecls || wrapDecl || spanDecl) rules.push(`@media only screen and (max-width:600px){${btnDecls ? `.btn-${b.id}{${btnDecls}}` : ''}${wrapDecl}${spanDecl}}`)
+      }
     }
     if (b.type === 'text' || b.type === 'heading') {
       const fg = darkModeSafe(b.color)
       rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{background-color:transparent !important;}.lc-${b.id} span{color:${fg} !important;}}`)
       rules.push(darkOverride(`.lc-${b.id}`, `background-color:transparent !important;`))
       rules.push(darkOverride(`.lc-${b.id} span`, `color:${fg} !important;`))
+      if (b.mobile) {
+        const decls = [
+          b.mobile.fontSize ? `font-size:${b.mobile.fontSize}px !important;` : '',
+          b.mobile.align ? `text-align:${b.mobile.align} !important;` : '',
+        ].join('')
+        const spanDecl = b.mobile.color ? `.lc-${b.id} span{color:${darkModeSafe(b.mobile.color)} !important;}` : ''
+        if (decls || spanDecl) rules.push(`@media only screen and (max-width:600px){${decls ? `.lc-${b.id}{${decls}}` : ''}${spanDecl}}`)
+      }
     }
     if (b.type === 'divider') {
       const c = darkModeSafe(b.color)
@@ -677,9 +732,21 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if (b.type === 'footer') {
       const bg = darkModeSafe(b.backgroundColor || '#000000')
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:#9ca3af !important;}}`)
+      // Text and icons switch to dark-readable colors under dark mode instead of
+      // just re-pinning the original light ones — see the comment on footerIcon:
+      // Gmail's iOS app still forces this near-black background to white despite
+      // the pin below, so the light-on-dark pairing needs to become dark-on-light
+      // to stay legible when that happens. Compliant clients that actually honor
+      // the light-only color-scheme meta tag never evaluate this rule at all
+      // (their footer never leaves the authored black/light-gray look), so this
+      // doesn't risk dark-on-dark anywhere the background pin actually holds.
+      const darkText = '#374151'
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{border-color:rgba(55,65,81,.35) !important;}.footer-icon-light{display:none !important;}.footer-icon-dark{display:inline-block !important;}}`)
       rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
-      rules.push(darkOverride('.footer-block span', 'color:#9ca3af !important;'))
+      rules.push(darkOverride('.footer-block span', `color:${darkText} !important;`))
+      rules.push(darkOverride('.footer-badge', 'border-color:rgba(55,65,81,.35) !important;'))
+      rules.push(darkOverride('.footer-icon-light', 'display:none !important;'))
+      rules.push(darkOverride('.footer-icon-dark', 'display:inline-block !important;'))
     }
     if (b.type === 'section') {
       const bg = darkModeSafe(b.backgroundColor)
@@ -709,6 +776,7 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
     <style type="text/css">
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
+      .footer-icon-dark{display:none;}
       @media (prefers-color-scheme: dark){
         .email-page,.email-body{background:${pageBg} !important;}
         .email-content{background:${contentBg} !important;}
