@@ -155,14 +155,27 @@ interface LinkStat {
   clickers: number
 }
 
+// Same 30-second-click-burst heuristic as the server's isLikelyAutomated (see
+// route.ts) — security scanners pre-fetch every link within seconds of delivery,
+// so a recipient's own clicks look automated the same way regardless of which
+// link we're tallying.
+function isLikelyAutomatedClicks(clicks: { clickedAt: string }[]): boolean {
+  if (clicks.length < 2) return false
+  const times = clicks.map(c => new Date(c.clickedAt).getTime()).sort((a, b) => a - b)
+  return times[times.length - 1] - times[0] <= 30_000
+}
+
 // Unique clickers per URL (not raw click count — someone clicking the same
 // link twice shouldn't outweigh two different people clicking it once).
 // Excludes the unsubscribe link — Resend's click tracking wraps every <a> in
 // the email including it, but it already has its own "Unsubscribed" stat tile
 // above and doesn't belong in content link performance.
-function computeLinkStats(recipients: ChartRow[]): LinkStat[] {
+// `real` drops recipients whose clicks look automated, same as the real
+// open/click rate tiles above.
+function computeLinkStats(recipients: ChartRow[], real: boolean): LinkStat[] {
   const byUrl = new Map<string, Set<string>>()
   for (const r of recipients) {
+    if (real && isLikelyAutomatedClicks(r.clicks)) continue
     for (const c of r.clicks) {
       if (c.url.includes('/unsubscribe?token=')) continue
       if (!byUrl.has(c.url)) byUrl.set(c.url, new Set())
@@ -174,12 +187,34 @@ function computeLinkStats(recipients: ChartRow[]): LinkStat[] {
     .sort((a, b) => b.clickers - a.clickers)
 }
 
-function LinkPerformance({ stats, totalRecipients }: { stats: LinkStat[]; totalRecipients: number }) {
-  if (stats.length === 0) return null
+function LinkPerformance({ stats, totalRecipients, view, onViewChange }: {
+  stats: LinkStat[]
+  totalRecipients: number
+  view: 'real' | 'raw'
+  onViewChange: (view: 'real' | 'raw') => void
+}) {
   return (
     <Card>
-      <CardHeader className="pb-3"><CardTitle className="text-base">Link performance</CardTitle></CardHeader>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-base">Link performance</CardTitle>
+          <div className="flex rounded-full border border-gray-200 p-0.5 text-xs">
+            {(['real', 'raw'] as const).map(v => (
+              <button
+                key={v}
+                onClick={() => onViewChange(v)}
+                className={`px-2.5 py-1 rounded-full font-medium capitalize transition-colors ${
+                  view === v ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-gray-50'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      </CardHeader>
       <CardContent className="space-y-3">
+        {stats.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No clicks yet</p>}
         {stats.map(s => {
           const pct = totalRecipients > 0 ? Math.round((s.clickers / totalRecipients) * 100) : 0
           return (
@@ -316,6 +351,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [continuing, setContinuing] = useState(false)
   const [unsubscribing, setUnsubscribing] = useState<Set<string> | 'all' | null>(null)
+  const [linkView, setLinkView] = useState<'real' | 'raw'>('real')
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -416,14 +452,14 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const failed = counts.FAILED
   const bounced = counts.BOUNCED
   const unsubscribed = campaign.unsubscribedList
-  const linkStats = computeLinkStats(campaign.chartRows)
+  const linkStats = computeLinkStats(campaign.chartRows, linkView === 'real')
   const trendData = dailyTrend(campaign.chartRows)
   const hourData = opensByHour(campaign.chartRows)
 
   const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
   const deliveryRate = pct(delivered)
-  const openRate = pct(opened)
-  const clickRate = pct(clicked)
+  const realOpenRate = pct(campaign.engagementStats.realOpened)
+  const realClickRate = pct(campaign.engagementStats.realClicked)
   const bounceRate = pct(bounced)
 
   return (
@@ -450,8 +486,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
         <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
-        <RateTile label="Open Rate" value={openRate} sub={`${opened} of ${total} · ~${campaign.engagementStats.realOpened} real`} color={GREEN} />
-        <RateTile label="Click Rate" value={clickRate} sub={`${clicked} of ${total} · ~${campaign.engagementStats.realClicked} real`} color={BLUE} />
+        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} · ${opened} raw`} color={GREEN} />
+        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} · ${clicked} raw`} color={BLUE} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -530,7 +566,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
         </div>
       </div>
 
-      <LinkPerformance stats={linkStats} totalRecipients={campaign.totalRecipients} />
+      <LinkPerformance stats={linkStats} totalRecipients={campaign.totalRecipients} view={linkView} onViewChange={setLinkView} />
 
       {campaign.unsubscribeClickers.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/40">
