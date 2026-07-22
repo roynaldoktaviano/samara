@@ -25,7 +25,7 @@ export const metadata: Metadata = {
  openGraph: {
     title: "Samara Liveaboard ERP",
     description: "Internal operations and fleet management system",
-    url: "https://erp.samaraliveaboard.com",
+    url: "https://erp.samarayachting.com",
     siteName: "Samara ERP",
     type: "website",
   },

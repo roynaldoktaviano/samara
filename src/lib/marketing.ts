@@ -179,7 +179,7 @@ export async function dispatchCampaignEmails(db: PrismaClient, campaignId: strin
 
   const pending = await db.campaignRecipient.findMany({ where: { campaignId, status: 'PENDING' } })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
   await sendBulkEmail({
     apiKey,
     from: campaign.fromEmail,

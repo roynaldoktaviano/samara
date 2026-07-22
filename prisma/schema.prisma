@@ -751,6 +751,7 @@ enum CampaignStatus {
   DRAFT
   SCHEDULED
   SENDING
+  PAUSED   // send was interrupted mid-flight (e.g. server restart) — resumable, see src/instrumentation.ts
   SENT
   FAILED
   CANCELED

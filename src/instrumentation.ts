@@ -1,19 +1,12 @@
 // Next.js's official hook to run code once when the server process starts —
-// works with the standalone build, needs no custom server file. Used here to
-// self-invoke the campaign dispatcher on an interval, since this app runs as a
-// self-hosted Node process and vercel.json's cron declaration has no effect.
+// works with the standalone build, needs no custom server file. The actual
+// Node-only logic (startup recovery + the campaign-dispatch scheduler) lives in
+// a separate module, dynamically imported only on the nodejs runtime — keeping
+// this file free of Node-only imports so it stays safe to also compile for the
+// Edge Runtime, per Next.js's recommended instrumentation.ts pattern.
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return
-
-  const intervalMs = 10 * 60 * 1000
-  setInterval(async () => {
-    try {
-      const port = process.env.PORT || 3000
-      await fetch(`http://127.0.0.1:${port}/api/marketing/campaigns/dispatch`, {
-        headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
-      })
-    } catch (err) {
-      console.error('[scheduler] dispatch tick failed:', err)
-    }
-  }, intervalMs)
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { startNodeInstrumentation } = await import('./instrumentation-node')
+    await startNodeInstrumentation()
+  }
 }

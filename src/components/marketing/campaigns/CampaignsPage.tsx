@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
-import { Send, Plus, Pencil, Trash2, Ban, Eye } from 'lucide-react'
+import { Send, Plus, Pencil, Trash2, Ban, Eye, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import CampaignEditor from './CampaignEditor'
 import CampaignDetailView from './CampaignDetailView'
@@ -17,7 +17,7 @@ interface Campaign {
   id: string
   name: string
   subject: string
-  status: 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELED'
+  status: 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'PAUSED' | 'SENT' | 'FAILED' | 'CANCELED'
   fromEmail: string
   fromName: string | null
   scheduledAt: string | null
@@ -35,6 +35,7 @@ const STATUS_STYLE: Record<Campaign['status'], string> = {
   DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
   SCHEDULED: 'bg-blue-100 text-blue-700 border-blue-200',
   SENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+  PAUSED: 'bg-orange-100 text-orange-700 border-orange-200',
   SENT: 'bg-green-100 text-green-700 border-green-200',
   FAILED: 'bg-red-100 text-red-700 border-red-200',
   CANCELED: 'bg-gray-100 text-gray-500 border-gray-200',
@@ -85,6 +86,18 @@ export default function CampaignsPage() {
     setCancelTarget(null)
   }
 
+  const [continuingId, setContinuingId] = useState<string | null>(null)
+  const continueSend = async (c: Campaign) => {
+    setContinuingId(c.id)
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${c.id}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      if (res.ok) { toast.success('Resuming send — picking up where it left off'); fetchCampaigns() }
+      else toast.error((await res.json().catch(() => null))?.error ?? 'Failed to resume send')
+    } finally {
+      setContinuingId(null)
+    }
+  }
+
   if (viewingId) {
     return <CampaignDetailView campaignId={viewingId} onBack={() => setViewingId(null)} />
   }
@@ -123,31 +136,36 @@ export default function CampaignsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {campaigns.map(c => (
+                {campaigns.map(c => {
+                  const hasSendData = c.status === 'SENT' || c.status === 'SENDING' || c.status === 'PAUSED'
+                  return (
                   <TableRow
                     key={c.id}
-                    className={c.status === 'SENT' || c.status === 'SENDING' ? 'cursor-pointer' : undefined}
-                    onClick={() => (c.status === 'SENT' || c.status === 'SENDING') && openDetail(c)}
+                    className={hasSendData ? 'cursor-pointer' : undefined}
+                    onClick={() => hasSendData && openDetail(c)}
                   >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{c.subject}</TableCell>
                     <TableCell><Badge className={STATUS_STYLE[c.status]}>{c.status}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{c.createdByName ?? '—'}</TableCell>
                     <TableCell className="text-sm">
-                      {c.status === 'SENT' || c.status === 'SENDING'
+                      {hasSendData
                         ? `${c.sentCount}/${c.totalRecipients}${c.failedCount ? ` (${c.failedCount} failed)` : ''}`
                         : c.totalRecipients || '—'}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {c.status === 'SENT' || c.status === 'SENDING' ? `${c.openedCount}/${c.sentCount}` : '—'}
+                      {hasSendData ? `${c.openedCount}/${c.sentCount}` : '—'}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {c.status === 'SENT' || c.status === 'SENDING' ? `${c.clickedCount}/${c.sentCount}` : '—'}
+                      {hasSendData ? `${c.clickedCount}/${c.sentCount}` : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmt(c.sentAt ?? c.scheduledAt)}</TableCell>
                     <TableCell className="text-right space-x-1" onClick={e => e.stopPropagation()}>
-                      {(c.status === 'SENT' || c.status === 'SENDING') && (
+                      {hasSendData && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openDetail(c)} title="View detail"><Eye className="h-3.5 w-3.5" /></Button>
+                      )}
+                      {c.status === 'PAUSED' && (
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-orange-600" disabled={continuingId === c.id} onClick={() => continueSend(c)} title="Continue sending to the rest of the audience"><Play className="h-3.5 w-3.5" /></Button>
                       )}
                       {(c.status === 'DRAFT' || c.status === 'SCHEDULED') && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(c)}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -160,7 +178,7 @@ export default function CampaignsPage() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           )}

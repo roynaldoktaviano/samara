@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowLeft, Eye, MousePointerClick, UserX, Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { ArrowLeft, Eye, MousePointerClick, UserX, Loader2, Play, ChevronLeft, ChevronRight, Search, Bot } from 'lucide-react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 const GREEN = '#16a34a'
@@ -44,6 +45,32 @@ interface Recipient {
   clicks: ClickEvent[]
   opens: OpenEvent[]
   sentAt: string | null
+  likelyAutomated: boolean
+}
+
+interface ChartRow {
+  id: string
+  sentAt: string | null
+  opens: { openedAt: string }[]
+  clicks: { url: string; clickedAt: string }[]
+}
+
+interface UnsubscribedEntry {
+  id: string
+  name: string | null
+  email: string
+  unsubscribedAt: string | null
+}
+
+type RecipientTab = 'ALL' | 'SENT' | 'OPENED' | 'PENDING' | 'BOUNCED' | 'FAILED' | 'UNSUBSCRIBED'
+
+interface RecipientCounts {
+  SENT: number
+  OPENED: number
+  PENDING: number
+  BOUNCED: number
+  FAILED: number
+  UNSUBSCRIBED: number
 }
 
 interface CampaignWithRecipients {
@@ -55,8 +82,21 @@ interface CampaignWithRecipients {
   fromName: string | null
   status: string
   totalRecipients: number
+  sentCount: number
   bodyHtml: string
   recipients: Recipient[]
+  recipientCounts: RecipientCounts
+  engagementStats: { realOpened: number; realClicked: number }
+  chartRows: ChartRow[]
+  unsubscribedList: UnsubscribedEntry[]
+  page: number
+  totalPages: number
+  totalCount: number
+}
+
+const TAB_LABEL: Record<RecipientTab, string> = {
+  ALL: 'All', SENT: 'Sent', OPENED: 'Opened', PENDING: 'Pending',
+  BOUNCED: 'Bounced', FAILED: 'Failed', UNSUBSCRIBED: 'Unsubscribed',
 }
 
 const STATUS_STYLE: Record<Recipient['status'], string> = {
@@ -109,7 +149,7 @@ interface LinkStat {
 // Excludes the unsubscribe link — Resend's click tracking wraps every <a> in
 // the email including it, but it already has its own "Unsubscribed" stat tile
 // above and doesn't belong in content link performance.
-function computeLinkStats(recipients: Recipient[]): LinkStat[] {
+function computeLinkStats(recipients: ChartRow[]): LinkStat[] {
   const byUrl = new Map<string, Set<string>>()
   for (const r of recipients) {
     for (const c of r.clicks) {
@@ -151,7 +191,7 @@ function LinkPerformance({ stats, totalRecipients }: { stats: LinkStat[]; totalR
 // Per-day Sent/Opened/Clicked series for the trend chart — Sent will usually land on
 // a single day (a campaign is a one-time blast), while Opened/Clicked trail across
 // the days after as recipients check their inbox.
-function dailyTrend(recipients: Recipient[]) {
+function dailyTrend(recipients: ChartRow[]) {
   const sent = new Map<string, number>()
   const opened = new Map<string, number>()
   const clicked = new Map<string, number>()
@@ -173,7 +213,7 @@ function dailyTrend(recipients: Recipient[]) {
   }))
 }
 
-function opensByHour(recipients: Recipient[]) {
+function opensByHour(recipients: ChartRow[]) {
   const counts = new Array(24).fill(0)
   for (const r of recipients) {
     for (const o of r.opens) {
@@ -257,18 +297,43 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const [campaign, setCampaign] = useState<CampaignWithRecipients | null>(null)
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState<SendProgress | null>(null)
+  const [tab, setTab] = useState<RecipientTab>('SENT')
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [continuing, setContinuing] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   const fetchDetail = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/marketing/campaigns/${campaignId}`)
+      const qs = new URLSearchParams({ status: tab, page: String(page), limit: '50' })
+      if (debouncedSearch) qs.set('search', debouncedSearch)
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}?${qs}`)
       if (res.ok) setCampaign(await res.json())
     } finally {
       setLoading(false)
     }
-  }, [campaignId])
+  }, [campaignId, tab, page, debouncedSearch])
 
   useEffect(() => { fetchDetail() }, [fetchDetail])
+
+  const changeTab = (next: RecipientTab) => { setTab(next); setPage(1) }
+  const changeSearch = (v: string) => { setSearch(v); setPage(1) }
+
+  const continueSend = async () => {
+    setContinuing(true)
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      if (res.ok) fetchDetail()
+    } finally {
+      setContinuing(false)
+    }
+  }
 
   // While the campaign is actively sending, poll a lightweight counts-only endpoint
   // every few seconds to drive the progress bar/ETA, and pull the full detail again
@@ -299,16 +364,17 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   }
 
   const recipients = campaign.recipients
+  const counts = campaign.recipientCounts
   const total = campaign.totalRecipients
-  const delivered = recipients.filter(r => r.status === 'SENT').length
-  const opened = recipients.filter(r => r.openedAt).length
-  const clicked = recipients.filter(r => r.clickedAt).length
-  const failed = recipients.filter(r => r.status === 'FAILED').length
-  const bounced = recipients.filter(r => r.status === 'BOUNCED').length
-  const unsubscribed = recipients.filter(r => r.status === 'SKIPPED_UNSUBSCRIBED')
-  const linkStats = computeLinkStats(recipients)
-  const trendData = dailyTrend(recipients)
-  const hourData = opensByHour(recipients)
+  const delivered = counts.SENT
+  const opened = counts.OPENED
+  const clicked = campaign.chartRows.filter(r => r.clicks.length > 0).length
+  const failed = counts.FAILED
+  const bounced = counts.BOUNCED
+  const unsubscribed = campaign.unsubscribedList
+  const linkStats = computeLinkStats(campaign.chartRows)
+  const trendData = dailyTrend(campaign.chartRows)
+  const hourData = opensByHour(campaign.chartRows)
 
   const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
   const deliveryRate = pct(delivered)
@@ -318,13 +384,21 @@ export default function CampaignDetailView({ campaignId, onBack }: {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div>
-        <Button variant="ghost" size="sm" onClick={onBack} className="mb-2 -ml-2"><ArrowLeft className="h-4 w-4 mr-1.5" />Back to campaigns</Button>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">{campaign.name}</h1>
-          <Badge variant="outline">{campaign.status}</Badge>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Button variant="ghost" size="sm" onClick={onBack} className="mb-2 -ml-2"><ArrowLeft className="h-4 w-4 mr-1.5" />Back to campaigns</Button>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">{campaign.name}</h1>
+            <Badge variant="outline">{campaign.status}</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">{campaign.subject}</p>
         </div>
-        <p className="text-sm text-muted-foreground">{campaign.subject}</p>
+        {campaign.status === 'PAUSED' && (
+          <Button size="sm" className="bg-orange-600 hover:bg-orange-700" disabled={continuing} onClick={continueSend}>
+            <Play className="h-3.5 w-3.5 mr-1.5" />
+            {continuing ? 'Resuming...' : `Continue sending (${counts.PENDING} left)`}
+          </Button>
+        )}
       </div>
 
       {campaign.status === 'SENDING' && progress && <SendingBanner progress={progress} />}
@@ -332,8 +406,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
         <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
-        <RateTile label="Open Rate" value={openRate} sub={`${opened} of ${total}`} color={GREEN} />
-        <RateTile label="Click Rate" value={clickRate} sub={`${clicked} of ${total}`} color={BLUE} />
+        <RateTile label="Open Rate" value={openRate} sub={`${opened} of ${total} · ~${campaign.engagementStats.realOpened} real`} color={GREEN} />
+        <RateTile label="Click Rate" value={clickRate} sub={`${clicked} of ${total} · ~${campaign.engagementStats.realClicked} real`} color={BLUE} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -434,7 +508,37 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       )}
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Recipients ({recipients.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-base">Recipients ({campaign.totalCount})</CardTitle>
+            <div className="relative w-full sm:w-64">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={e => changeSearch(e.target.value)}
+                placeholder="Search by email..."
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {(['SENT', 'OPENED', 'PENDING', 'BOUNCED', 'FAILED', 'UNSUBSCRIBED'] as RecipientTab[]).map(t => {
+              const count = counts[t as Exclude<RecipientTab, 'ALL'>]
+              if (count === 0 && t !== tab) return null
+              return (
+                <button
+                  key={t}
+                  onClick={() => changeTab(t)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    tab === t ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {TAB_LABEL[t]} ({count})
+                </button>
+              )
+            })}
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -461,6 +565,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                           <button type="button" className="flex items-center gap-1 text-blue-600 hover:underline">
                             <Eye className="h-3 w-3" />
                             {fmt(r.openedAt)}{r.openCount > 1 ? ` (${r.openCount}x)` : ''}
+                            {r.likelyAutomated && <Bot className="h-3 w-3 text-orange-500 shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-72 p-3" align="start">
@@ -483,6 +588,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                           <button type="button" className="flex items-center gap-1 text-blue-600 hover:underline">
                             <MousePointerClick className="h-3 w-3" />
                             {fmt(r.clickedAt)}{r.clickCount > 1 ? ` (${r.clickCount}x)` : ''}
+                            {r.likelyAutomated && <Bot className="h-3 w-3 text-orange-500 shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-80 p-3" align="start">
@@ -503,8 +609,24 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                   <TableCell className="text-xs text-muted-foreground max-w-65 whitespace-normal wrap-break-word">{r.errorMessage ?? '—'}</TableCell>
                 </TableRow>
               ))}
+              {recipients.length === 0 && (
+                <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">No recipients in this tab</TableCell></TableRow>
+              )}
             </TableBody>
           </Table>
+          {campaign.totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <p className="text-xs text-muted-foreground">Page {campaign.page} of {campaign.totalPages}</p>
+              <div className="flex gap-1.5">
+                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= campaign.totalPages} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
