@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
+import { receiveTransferLeg } from '@/lib/purchasing/transferActions'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -152,94 +152,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (action === 'receive') {
-    if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Transfer belum dikirim' }, { status: 409 })
-    if (!receivePhotoKey) return NextResponse.json({ error: 'Foto penerimaan wajib diupload' }, { status: 400 })
     const receiveItems = items as { itemId: string | null; itemName: string; receivedQty: number }[]
-
-    const toLoc = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true } })
-
-    await db.$transaction(async (tx) => {
-      for (const it of receiveItems) {
-        if (!it.receivedQty) continue
-        const qty = Number(it.receivedQty)
-        if (qty <= 0) continue
-
-        // Find dispatched qty for discrepancy check
-        const transferItem = transfer.items.find(ti => it.itemId ? ti.itemId === it.itemId : ti.itemName === it.itemName)
-        const dispatchedQty = transferItem?.dispatchedQty ?? 0
-
-        const lotWhere = it.itemId
-          ? { itemId: it.itemId, locationId: transfer.toLocationId }
-          : { itemId: null, itemName: it.itemName, locationId: transfer.toLocationId }
-        const lot = await tx.stockLot.findFirst({ where: lotWhere })
-        if (lot) {
-          await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: qty }, updatedAt: new Date() } })
-        } else {
-          await tx.stockLot.create({
-            data: {
-              id: crypto.randomUUID(), locationId: transfer.toLocationId, quantity: qty, costPerUnit: 0, updatedAt: new Date(),
-              ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-            },
-          })
-        }
-        await tx.stockMovement.create({
-          data: {
-            id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, quantity: qty, type: 'TRANSFER_IN', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
-            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-          },
-        })
-        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { receivedQty: qty } })
-
-        // Auto-create Transfer Discrepancy exception if qty doesn't match
-        if (dispatchedQty > 0 && qty !== dispatchedQty) {
-          await tx.inventoryException.create({
-            data: {
-              id: crypto.randomUUID(),
-              type: 'TRANSFER_DISCREPANCY',
-              itemId: it.itemId || null,
-              itemName: it.itemName,
-              locationId: transfer.toLocationId,
-              locationName: toLoc?.name ?? '—',
-              qty: Math.abs(qty - dispatchedQty),
-              reason: `Dikirim ${dispatchedQty}, diterima ${qty}`,
-              referenceId: id,
-              referenceType: 'StockTransfer',
-              status: 'OPEN',
-              updatedAt: new Date(),
-            },
-          })
-        }
-      }
-      await tx.stockTransfer.update({
-        where: { id },
-        data: {
-          status: 'RECEIVED',
-          receivedByName: receivedByName ?? null,
-          receivePhotoKey,
-          receivedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      })
-
-      // If this transfer was one leg of a PO's transit route, chain the next leg (or, if
-      // this was the final stop, let the PO finalize to RECEIVED/PARTIALLY_RECEIVED).
-      if (transfer.purchaseOrderId && transfer.originGoodsReceiptId) {
-        const routeLocationIds = await getRouteLocationIds(tx, transfer.purchaseOrderId)
-        const nextHop = routeLocationIds ? resolveNextHop(routeLocationIds, transfer.toLocationId) : null
-        if (nextHop) {
-          await spawnNextTransitLeg(tx, {
-            purchaseOrderId: transfer.purchaseOrderId,
-            originGoodsReceiptId: transfer.originGoodsReceiptId,
-            legSequence: (transfer.legSequence ?? 1) + 1,
-            fromLocationId: transfer.toLocationId,
-            toLocationId: nextHop,
-            items: receiveItems.map(it => ({ itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0 })),
-          })
-        } else {
-          await attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
-        }
-      }
+    const result = await receiveTransferLeg(db, id, {
+      items: receiveItems,
+      receivePhotoKey,
+      receivedByName: receivedByName ?? null,
+      receivedById: session.user.id,
+      movementCreatedById: session.user.id,
     })
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
     return NextResponse.json({ ok: true })
   }
 

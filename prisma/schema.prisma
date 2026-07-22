@@ -1619,31 +1619,35 @@ model PurchaseOrderTransitStop {
 }
 
 model StockTransfer {
-  id                   String         @id @default(cuid())
-  transferNumber       String         @unique
-  fromLocationId       String
-  toLocationId         String
-  crewRequestId        String?
-  purchaseRequestId    String?
+  id                    String         @id @default(cuid())
+  transferNumber        String         @unique
+  fromLocationId        String
+  toLocationId          String
+  crewRequestId         String?
+  purchaseRequestId     String?
   // Set when this transfer is one leg of a PO's multi-stop transit route (auto-created,
   // see src/lib/purchasing/transitChain.ts). originGoodsReceiptId stays the same across every
   // leg spawned from one shipment, so partial deliveries get independent chains.
-  purchaseOrderId      String?
-  originGoodsReceiptId String?
-  legSequence          Int?
-  status               TransferStatus @default(PENDING)
-  dispatchPhotoKey     String?
-  receivePhotoKey      String?
-  dispatchedById       String?
-  receivedById         String?
-  expectedReceiverId   String?
-  expectedReceiverName String?
-  receivedByName       String?
-  notes                String?
-  dispatchedAt         DateTime?
-  receivedAt           DateTime?
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  purchaseOrderId       String?
+  originGoodsReceiptId  String?
+  legSequence           Int?
+  status                TransferStatus @default(PENDING)
+  dispatchPhotoKey      String?
+  receivePhotoKey       String?
+  dispatchedById        String?
+  receivedById          String?
+  expectedReceiverId    String?
+  expectedReceiverName  String?
+  receivedByName        String?
+  notes                 String?
+  dispatchedAt          DateTime?
+  receivedAt            DateTime?
+  // No-login crew confirmation link — see src/app/crew-receive/[token]/page.tsx and
+  // src/app/api/crew-receive/[token]/route.ts. Mirrors Customer.guestFormToken.
+  receiveToken          String?        @unique
+  receiveTokenExpiresAt DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   fromLocation       StockLocation       @relation("TransferFrom", fields: [fromLocationId], references: [id])
   toLocation         StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])

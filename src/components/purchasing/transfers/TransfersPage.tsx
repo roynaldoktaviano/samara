@@ -145,6 +145,14 @@ export default function TransfersPage() {
   const [receiveSaving, setReceiveSaving] = useState(false)
   const [receiveError, setReceiveError] = useState('')
 
+  // Crew receive link — no-login link crew can open to confirm receiving this transfer
+  // themselves, see src/app/crew-receive/[token]/page.tsx.
+  const [crewLinkModal, setCrewLinkModal] = useState(false)
+  const [crewLink, setCrewLink] = useState('')
+  const [crewLinkLoading, setCrewLinkLoading] = useState(false)
+  const [crewLinkError, setCrewLinkError] = useState('')
+  const [crewLinkCopied, setCrewLinkCopied] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     const [tRes, lRes, uRes] = await Promise.all([
@@ -249,6 +257,16 @@ export default function TransfersPage() {
     }))
     const prefill = detail.expectedReceiverName ?? detail.expectedReceivedBy?.name ?? ''
     setReceivePhoto(''); setReceiverName(prefill); setReceiverNameOriginal(prefill); setReceiverNameEditing(false); setReceiveError(''); setReceiveModal(true)
+  }
+
+  async function openCrewLink() {
+    if (!detail) return
+    setCrewLink(''); setCrewLinkError(''); setCrewLinkCopied(false); setCrewLinkLoading(true); setCrewLinkModal(true)
+    const res = await fetch(`/api/purchasing/transfers/${detail.id}/receive-link`, { method: 'POST' })
+    const data = await res.json()
+    setCrewLinkLoading(false)
+    if (!res.ok) { setCrewLinkError(data.error ?? 'Gagal membuat link'); return }
+    setCrewLink(data.link)
   }
 
   async function submitDispatch() {
@@ -629,6 +647,9 @@ export default function TransfersPage() {
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
               {detail.status === 'PENDING' && <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>}
               {detail.status === 'DISPATCHED' && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
+              {detail.status === 'DISPATCHED' && (
+                <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
+              )}
               {detail.status === 'PENDING' && (
                 <button onClick={async () => { await fetch(`/api/purchasing/transfers/${detail.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }); setView('list'); load() }} className="px-3 py-1.5 text-sm border text-muted-foreground rounded-md hover:bg-muted">Cancel</button>
               )}
@@ -1021,6 +1042,43 @@ export default function TransfersPage() {
               <button onClick={submitReceive} disabled={receiveSaving} className="px-4 py-2 text-sm text-white rounded-md font-medium disabled:opacity-50 bg-green-600 hover:bg-green-700">
                 {receiveSaving ? 'Menyimpan...' : 'Confirm Receipt'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {crewLinkModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-semibold text-lg">Crew Receive Link</h3>
+              <button onClick={() => setCrewLinkModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Kirim link ini ke crew (misal via WhatsApp) — mereka bisa konfirmasi penerimaan barang langsung tanpa login ke ERP. Berlaku 14 hari.
+              </p>
+              {crewLinkError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{crewLinkError}</div>}
+              {crewLinkLoading ? (
+                <div className="text-sm text-muted-foreground py-4 text-center">Membuat link...</div>
+              ) : crewLink && (
+                <>
+                  <div className="border rounded-md px-3 py-2.5 text-sm font-mono bg-muted/30 break-all">{crewLink}</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(crewLink); setCrewLinkCopied(true); setTimeout(() => setCrewLinkCopied(false), 2000) }}
+                      className="flex-1 px-4 py-2 text-sm border rounded-md hover:bg-muted font-medium">
+                      {crewLinkCopied ? 'Tersalin!' : 'Copy Link'}
+                    </button>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Tolong konfirmasi penerimaan barang ${detail?.transferNumber ?? ''} di sini: ${crewLink}`)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium text-center">
+                      Share via WhatsApp
+                    </a>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -30,6 +30,9 @@ const PUBLIC_PATHS = [
   '/guest-form',
   '/api/guest-form',
   '/api/booking-form',
+  // Crew-facing receive confirmation — access controlled by its own per-shipment token, not staff login
+  '/crew-receive',
+  '/api/crew-receive',
   // Email unsubscribe — reached from a link in a sent email, no staff login
   '/unsubscribe',
   '/api/marketing/unsubscribe',
