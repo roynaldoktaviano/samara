@@ -66,14 +66,15 @@ export async function GET() {
 
   // Recent movements — resolve location names via locMap
   const recentMovements = rawMovements.map(m => {
-    const cf = m.item?.conversionFactor ?? itemMap.get(m.itemId)?.conversionFactor ?? 1
-    const purchaseUnit = m.item?.purchaseUnit ?? itemMap.get(m.itemId)?.purchaseUnit ?? null
-    const baseUnit = m.item?.baseUnit ?? itemMap.get(m.itemId)?.baseUnit ?? ''
+    const fallbackItem = m.itemId ? itemMap.get(m.itemId) : undefined
+    const cf = m.item?.conversionFactor ?? fallbackItem?.conversionFactor ?? 1
+    const purchaseUnit = m.item?.purchaseUnit ?? fallbackItem?.purchaseUnit ?? null
+    const baseUnit = m.item?.baseUnit ?? fallbackItem?.baseUnit ?? ''
     const hasPurchaseUnit = purchaseUnit && purchaseUnit !== baseUnit && cf > 0
     return {
       id: m.id,
       date: m.createdAt,
-      itemName: m.item?.name ?? itemMap.get(m.itemId)?.name ?? '—',
+      itemName: m.item?.name ?? fallbackItem?.name ?? m.itemName ?? '—',
       baseUnit,
       purchaseUnit: hasPurchaseUnit ? purchaseUnit : null,
       purchaseQty: hasPurchaseUnit ? m.quantity / cf : null,
@@ -87,7 +88,7 @@ export async function GET() {
   })
 
   // Expiry watch
-  const lotItemIds = [...new Set(nearExpiryLots.map(l => l.itemId))]
+  const lotItemIds = [...new Set(nearExpiryLots.map(l => l.itemId).filter((id): id is string => id !== null))]
   const lotItems = await db.purchaseItem.findMany({ where: { id: { in: lotItemIds } }, select: { id: true, name: true, baseUnit: true } })
   const lotItemMap = new Map(lotItems.map(i => [i.id, i]))
 
@@ -96,8 +97,8 @@ export async function GET() {
     .slice(0, 10)
     .map(l => ({
       id: l.id,
-      itemName: lotItemMap.get(l.itemId)?.name ?? '—',
-      baseUnit: lotItemMap.get(l.itemId)?.baseUnit ?? '',
+      itemName: (l.itemId ? lotItemMap.get(l.itemId)?.name : l.itemName) ?? '—',
+      baseUnit: (l.itemId ? lotItemMap.get(l.itemId)?.baseUnit : l.unit) ?? '',
       locationName: locMap.get(l.locationId) ?? '—',
       quantity: l.quantity,
       expiresAt: l.expiresAt,

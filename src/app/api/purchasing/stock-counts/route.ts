@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         create: lots.map(lot => ({
           id: crypto.randomUUID(),
           itemId: lot.itemId,
-          itemName: lot.item.name,
+          itemName: lot.item?.name ?? lot.itemName ?? 'Unknown item',
           systemQty: lot.quantity,
           countedQty: lot.quantity, // pre-fill with system qty
         })),

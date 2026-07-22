@@ -16,9 +16,11 @@ export async function GET() {
     db.stockLot.findMany({ where: { quantity: { gt: 0 } }, select: { itemId: true, quantity: true, costPerUnit: true } }),
   ])
 
-  // Aggregate total stock and weighted avg price per item
+  // Aggregate total stock and weighted avg price per item — custom (non-catalog)
+  // PO items have no PurchaseItem row to attach this to, so they're excluded.
   const stockMap = new Map<string, { totalQty: number; totalValue: number }>()
   for (const lot of lots) {
+    if (!lot.itemId) continue
     const cur = stockMap.get(lot.itemId) ?? { totalQty: 0, totalValue: 0 }
     stockMap.set(lot.itemId, {
       totalQty: cur.totalQty + lot.quantity,

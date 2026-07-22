@@ -25,10 +25,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: { id: true, name: true, type: true } }),
     db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { id: true, name: true, type: true } }),
   ])
-  const stockLots = await db.stockLot.findMany({
-    where: { locationId: transfer.fromLocationId, itemId: { in: transfer.items.map(i => i.itemId).filter(Boolean) as string[] } },
-  })
-  const stockMap = new Map(stockLots.map(l => [l.itemId, l.quantity]))
+  // All lots currently at the source location — catalog items keyed by itemId,
+  // non-catalog ("non-stock") items keyed by itemName (they can have several
+  // lots, one per receiving PO, so their availableQty is the sum across them).
+  const stockLots = await db.stockLot.findMany({ where: { locationId: transfer.fromLocationId } })
+  const stockMap = new Map<string, number>()
+  for (const lot of stockLots) {
+    const key = lot.itemId ?? `name:${lot.itemName}`
+    stockMap.set(key, (stockMap.get(key) ?? 0) + lot.quantity)
+  }
   const items = transfer.items.map(i => {
     const unitCost = i.item?.standardCost ?? 0
     return {
@@ -36,7 +41,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       baseUnit: i.item?.baseUnit ?? null,
       purchaseUnit: i.item?.purchaseUnit ?? null,
       conversionFactor: i.item?.conversionFactor ?? 1,
-      availableQty: i.itemId ? (stockMap.get(i.itemId) ?? 0) : null,
+      availableQty: stockMap.get(i.itemId ?? `name:${i.itemName}`) ?? 0,
       unitCost,
       requestedValue: i.requestedQty * unitCost,
       dispatchedValue: i.dispatchedQty * unitCost,
@@ -74,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'dispatch') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Transfer sudah diproses' }, { status: 409 })
     if (!dispatchPhotoKey) return NextResponse.json({ error: 'Foto dispatch wajib diupload' }, { status: 400 })
-    const dispatchItems = items as { itemId: string; itemName: string; dispatchedQty: number }[]
+    const dispatchItems = items as { itemId: string | null; itemName: string; dispatchedQty: number }[]
 
     const [fromLoc] = await Promise.all([
       db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: { name: true } }),
@@ -82,10 +87,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     await db.$transaction(async (tx) => {
       for (const it of dispatchItems) {
-        if (!it.itemId || !it.dispatchedQty) continue
+        if (!it.dispatchedQty) continue
         const qty = Number(it.dispatchedQty)
         if (qty <= 0) continue
-        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: transfer.fromLocationId } })
+        const lotWhere = it.itemId
+          ? { itemId: it.itemId, locationId: transfer.fromLocationId }
+          : { itemId: null, itemName: it.itemName, locationId: transfer.fromLocationId }
+        const lot = await tx.stockLot.findFirst({ where: lotWhere })
         const currentQty = lot?.quantity ?? 0
 
         // Auto-create Negative Stock exception if insufficient
@@ -94,7 +102,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             data: {
               id: crypto.randomUUID(),
               type: 'NEGATIVE_STOCK',
-              itemId: it.itemId,
+              itemId: it.itemId || null,
               itemName: it.itemName,
               locationId: transfer.fromLocationId,
               locationName: fromLoc?.name ?? '—',
@@ -111,12 +119,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: qty }, updatedAt: new Date() } })
         } else {
-          await tx.stockLot.create({ data: { id: crypto.randomUUID(), itemId: it.itemId, locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: 0, updatedAt: new Date() } })
+          await tx.stockLot.create({
+            data: {
+              id: crypto.randomUUID(), locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: 0, updatedAt: new Date(),
+              ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            },
+          })
         }
         await tx.stockMovement.create({
-          data: { id: crypto.randomUUID(), itemId: it.itemId, fromLocationId: transfer.fromLocationId, quantity: qty, type: 'TRANSFER_OUT', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id },
+          data: {
+            id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, quantity: qty, type: 'TRANSFER_OUT', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
+            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+          },
         })
-        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId }, data: { dispatchedQty: qty } })
+        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { dispatchedQty: qty } })
       }
       await tx.stockTransfer.update({
         where: { id },
@@ -136,30 +152,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'receive') {
     if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Transfer belum dikirim' }, { status: 409 })
     if (!receivePhotoKey) return NextResponse.json({ error: 'Foto penerimaan wajib diupload' }, { status: 400 })
-    const receiveItems = items as { itemId: string; itemName: string; receivedQty: number }[]
+    const receiveItems = items as { itemId: string | null; itemName: string; receivedQty: number }[]
 
     const toLoc = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true } })
 
     await db.$transaction(async (tx) => {
       for (const it of receiveItems) {
-        if (!it.itemId || !it.receivedQty) continue
+        if (!it.receivedQty) continue
         const qty = Number(it.receivedQty)
         if (qty <= 0) continue
 
         // Find dispatched qty for discrepancy check
-        const transferItem = transfer.items.find(ti => ti.itemId === it.itemId)
+        const transferItem = transfer.items.find(ti => it.itemId ? ti.itemId === it.itemId : ti.itemName === it.itemName)
         const dispatchedQty = transferItem?.dispatchedQty ?? 0
 
-        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: transfer.toLocationId } })
+        const lotWhere = it.itemId
+          ? { itemId: it.itemId, locationId: transfer.toLocationId }
+          : { itemId: null, itemName: it.itemName, locationId: transfer.toLocationId }
+        const lot = await tx.stockLot.findFirst({ where: lotWhere })
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: qty }, updatedAt: new Date() } })
         } else {
-          await tx.stockLot.create({ data: { id: crypto.randomUUID(), itemId: it.itemId, locationId: transfer.toLocationId, quantity: qty, costPerUnit: 0, updatedAt: new Date() } })
+          await tx.stockLot.create({
+            data: {
+              id: crypto.randomUUID(), locationId: transfer.toLocationId, quantity: qty, costPerUnit: 0, updatedAt: new Date(),
+              ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            },
+          })
         }
         await tx.stockMovement.create({
-          data: { id: crypto.randomUUID(), itemId: it.itemId, fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, quantity: qty, type: 'TRANSFER_IN', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id },
+          data: {
+            id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, quantity: qty, type: 'TRANSFER_IN', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
+            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+          },
         })
-        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId }, data: { receivedQty: qty } })
+        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { receivedQty: qty } })
 
         // Auto-create Transfer Discrepancy exception if qty doesn't match
         if (dispatchedQty > 0 && qty !== dispatchedQty) {
@@ -167,7 +194,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             data: {
               id: crypto.randomUUID(),
               type: 'TRANSFER_DISCREPANCY',
-              itemId: it.itemId,
+              itemId: it.itemId || null,
               itemName: it.itemName,
               locationId: transfer.toLocationId,
               locationName: toLoc?.name ?? '—',

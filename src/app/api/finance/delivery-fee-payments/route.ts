@@ -14,7 +14,7 @@ export async function GET() {
   const requests = await db.deliveryFeePaymentRequest.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
-      deliveryFee: { select: { feeNumber: true, purchaseOrder: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } } } },
+      deliveryFee: { select: { feeNumber: true, notes: true, purchaseOrder: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } } } },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
     },

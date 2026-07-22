@@ -23,7 +23,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const isDirect = !!paidByPurchasing
   const amountFormatted = `Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))}`
-  const label = `${fee.feeNumber} (${fee.purchaseOrder.poNumber}${fee.purchaseOrder.supplierName ? ` — ${fee.purchaseOrder.supplierName}` : ''})`
+  const label = fee.purchaseOrder
+    ? `${fee.feeNumber} (${fee.purchaseOrder.poNumber}${fee.purchaseOrder.supplierName ? ` — ${fee.purchaseOrder.supplierName}` : ''})`
+    : fee.feeNumber
 
   const paymentRequest = await db.deliveryFeePaymentRequest.create({
     data: {
@@ -47,13 +49,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'DF_PAID_BY_PURCHASING',
       'Delivery Fee Debit Paid',
       `${label} was paid directly by the purchasing team (debit) — ${amountFormatted}`,
-      fee.purchaseOrderId,
+      fee.purchaseOrderId ?? fee.id,
     ).catch(console.error)
   } else {
     notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'DF_PAYMENT_REQUESTED',
       'Delivery Fee Payment Request',
       `${label} needs payment approval (${amountFormatted})`,
-      fee.purchaseOrderId,
+      fee.purchaseOrderId ?? fee.id,
     ).catch(console.error)
   }
 

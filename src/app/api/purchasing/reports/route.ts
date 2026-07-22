@@ -75,8 +75,8 @@ export async function GET() {
     .sort((a, b) => new Date(a.expiresAt!).getTime() - new Date(b.expiresAt!).getTime())
     .map(l => ({
       lotId: l.id,
-      itemName: l.item.name,
-      baseUnit: l.item.baseUnit,
+      itemName: l.item?.name ?? l.itemName ?? '—',
+      baseUnit: l.item?.baseUnit ?? l.unit ?? '',
       locationName: locMap.get(l.locationId)?.name ?? '—',
       batch: l.batch,
       quantity: l.quantity,
@@ -89,8 +89,8 @@ export async function GET() {
   const movementLedger = movements.map(m => ({
     id: m.id,
     date: m.createdAt,
-    itemName: m.item.name,
-    baseUnit: m.item.baseUnit,
+    itemName: m.item?.name ?? m.itemName ?? '—',
+    baseUnit: m.item?.baseUnit ?? '',
     type: m.type,
     quantity: m.quantity,
     supplierName: m.referenceId ? (grSupplierMap.get(m.referenceId) ?? null) : null,
@@ -103,7 +103,7 @@ export async function GET() {
   // ── Tab 5: Exception proxy (low stock items) ──
   const stockTotals = new Map<string, number>()
   for (const lot of lots) {
-    if (lot.quantity > 0) stockTotals.set(lot.itemId, (stockTotals.get(lot.itemId) ?? 0) + lot.quantity)
+    if (lot.quantity > 0 && lot.itemId) stockTotals.set(lot.itemId, (stockTotals.get(lot.itemId) ?? 0) + lot.quantity)
   }
   const lowStockExceptions = items
     .filter(i => i.minStock > 0 && (stockTotals.get(i.id) ?? 0) < i.minStock)

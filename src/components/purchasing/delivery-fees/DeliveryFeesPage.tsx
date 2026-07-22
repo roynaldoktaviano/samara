@@ -18,7 +18,7 @@ interface Reimbursement {
 }
 interface DeliveryFee {
   id: string; feeNumber: string; notes: string | null; createdAt: string; createdByName: string | null
-  purchaseOrder: { poNumber: string; supplierName: string | null }
+  purchaseOrder: { poNumber: string; supplierName: string | null } | null
   paymentStatus: string
 }
 interface OrderOption { id: string; poNumber: string; supplierName: string | null }
@@ -33,7 +33,7 @@ interface PoSummary {
   discountValue?: number
 }
 interface DeliveryFeeDetail extends DeliveryFee {
-  purchaseOrder: PoSummary
+  purchaseOrder: PoSummary | null
   paymentRequests: PaymentRequest[]
   reimbursements: Reimbursement[]
 }
@@ -205,7 +205,7 @@ export default function DeliveryFeesPage() {
 
   async function submit() {
     setSaving(true); setSaveError('')
-    if (!poId) { setSaveError('Please select a purchase order'); setSaving(false); return }
+    if (!poId && !notes.trim()) { setSaveError('Add a note describing this delivery when no PO is linked'); setSaving(false); return }
     const res = await fetch('/api/purchasing/delivery-fees', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ purchaseOrderId: poId, notes }),
@@ -324,7 +324,9 @@ export default function DeliveryFeesPage() {
               ) : fees.map(f => (
                 <tr key={f.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(f)}>
                   <td className="px-4 py-3 font-mono text-sm font-medium">{f.feeNumber}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{f.purchaseOrder.poNumber}{f.purchaseOrder.supplierName ? ` · ${f.purchaseOrder.supplierName}` : ''}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {f.purchaseOrder ? `${f.purchaseOrder.poNumber}${f.purchaseOrder.supplierName ? ` · ${f.purchaseOrder.supplierName}` : ''}` : <span className="italic">No PO — {f.notes || 'consolidated/cargo'}</span>}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{f.createdByName ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{fmtDate(f.createdAt)}</td>
                   <td className="px-4 py-3">
@@ -361,7 +363,7 @@ export default function DeliveryFeesPage() {
           </div>
           <div className="p-5 space-y-4">
             <div className="space-y-1.5 relative">
-              <label className="text-sm font-medium">Purchase Order <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium text-muted-foreground">Purchase Order <span className="font-normal">(optional)</span></label>
               {poPickerOpen ? (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setPoPickerOpen(false)} />
@@ -386,15 +388,23 @@ export default function DeliveryFeesPage() {
                   </div>
                 </>
               ) : (
-                <button onClick={() => { setPoPickerOpen(true); setPoSearch('') }}
-                  className={`${inp} text-left flex items-center gap-2 ${!poLabel ? 'text-muted-foreground' : ''}`}>
-                  {poLabel
-                    ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{poLabel}</span></>
-                    : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select purchase order...</span></>
-                  }
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setPoPickerOpen(true); setPoSearch('') }}
+                    className={`${inp} text-left flex items-center gap-2 ${!poLabel ? 'text-muted-foreground' : ''}`}>
+                    {poLabel
+                      ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{poLabel}</span></>
+                      : <><Search className="h-3.5 w-3.5 shrink-0" /><span>No PO — standalone/consolidated delivery</span></>
+                    }
+                  </button>
+                  {poId && (
+                    <button onClick={() => { setPoId(''); setPoLabel(''); setPoPreview(null) }}
+                      className="shrink-0 text-xs text-muted-foreground hover:text-red-600 underline underline-offset-2 transition-colors">
+                      Clear
+                    </button>
+                  )}
+                </div>
               )}
-              <p className="text-[11px] text-muted-foreground">Which PO's goods this shipment/delivery cost is for.</p>
+              <p className="text-[11px] text-muted-foreground">Leave blank for a shipment that consolidates several POs, or a cargo delivery with no specific PO — describe it in Notes below instead.</p>
             </div>
 
             {poPreviewLoading ? (
@@ -402,9 +412,10 @@ export default function DeliveryFeesPage() {
             ) : poPreview && <PoSummaryCard po={poPreview} />}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Notes</label>
+              <label className="text-sm font-medium">Notes {!poId && <span className="text-red-500">*</span>}</label>
               <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none"
-                rows={2} placeholder="Courier, shipment details, etc. (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+                rows={2} placeholder={poId ? 'Courier, shipment details, etc. (optional)' : 'Describe this delivery — e.g. "Consolidated cargo for PO-2607-012 & 013"'}
+                value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         </div>
@@ -439,8 +450,14 @@ export default function DeliveryFeesPage() {
             <div>
               <h2 className="text-xl font-bold">{detail.feeNumber}</h2>
               <p className="text-sm text-muted-foreground mt-0.5">
-                For {detail.purchaseOrder.poNumber}{detail.purchaseOrder.supplierName ? ` · ${detail.purchaseOrder.supplierName}` : ''}
-                {detail.purchaseOrder.deliveryLocation && ` · ${detail.purchaseOrder.deliveryLocation.name}`}
+                {detail.purchaseOrder ? (
+                  <>
+                    For {detail.purchaseOrder.poNumber}{detail.purchaseOrder.supplierName ? ` · ${detail.purchaseOrder.supplierName}` : ''}
+                    {detail.purchaseOrder.deliveryLocation && ` · ${detail.purchaseOrder.deliveryLocation.name}`}
+                  </>
+                ) : (
+                  <span className="italic">Not linked to a specific PO — consolidated/cargo delivery</span>
+                )}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Created {fmtDate(detail.createdAt)}{detail.createdByName && ` · by ${detail.createdByName}`}
@@ -477,10 +494,12 @@ export default function DeliveryFeesPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Purchase Order</h3>
-            <PoSummaryCard po={detail.purchaseOrder} />
-          </div>
+          {detail.purchaseOrder && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Purchase Order</h3>
+              <PoSummaryCard po={detail.purchaseOrder} />
+            </div>
+          )}
 
           {detail.paymentRequests.length > 0 && (
             <div className="space-y-2">
@@ -608,7 +627,7 @@ export default function DeliveryFeesPage() {
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{paymentEditId ? 'Edit ' : ''}{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{detail.feeNumber} · {detail.purchaseOrder.poNumber}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.feeNumber}{detail.purchaseOrder ? ` · ${detail.purchaseOrder.poNumber}` : ''}</p>
                 </div>
                 <button onClick={() => setPaymentModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
@@ -675,7 +694,7 @@ export default function DeliveryFeesPage() {
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{reimburseEditId ? 'Edit Reimbursement' : 'Reimburse'}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{detail.feeNumber} · {detail.purchaseOrder.poNumber}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.feeNumber}{detail.purchaseOrder ? ` · ${detail.purchaseOrder.poNumber}` : ''}</p>
                 </div>
                 <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>

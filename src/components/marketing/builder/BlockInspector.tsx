@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Link as LinkIcon, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
@@ -51,7 +51,7 @@ function Stepper({ value, onChange, min = 0, max = 200, step = 1 }: { value: num
       <button type="button" onClick={dec} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-r">−</button>
       <input
         type="number" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value) || 0)}
+        onChange={e => onChange(Math.min(max, Math.max(min, Number(e.target.value) || 0)))}
         className="h-8 w-full min-w-0 text-center text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       <button type="button" onClick={inc} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-l">+</button>
@@ -156,6 +156,31 @@ function PaddingField({ value, onChange }: { value: Padding; onChange: (p: Paddi
   )
 }
 
+/** Desktop/Mobile tab switcher for a group of fields that support a mobile-only override (see TextMobileOverride/ButtonMobileOverride) — the same 2-icon pattern as HideOnField, but for style values instead of visibility. */
+function DeviceToggle({ device, onChange }: { device: 'desktop' | 'mobile'; onChange: (d: 'desktop' | 'mobile') => void }) {
+  const base = 'flex items-center justify-center gap-1.5 h-7 px-3 rounded-md border text-xs font-medium transition-colors'
+  const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
+  const inactive = 'text-muted-foreground hover:bg-muted/50'
+  return (
+    <div className="inline-flex gap-1.5">
+      <button type="button" onClick={() => onChange('desktop')} className={`${base} ${device === 'desktop' ? active : inactive}`}>
+        <Monitor className="h-3.5 w-3.5" /> Desktop
+      </button>
+      <button type="button" onClick={() => onChange('mobile')} className={`${base} ${device === 'mobile' ? active : inactive}`}>
+        <Smartphone className="h-3.5 w-3.5" /> Mobile
+      </button>
+    </div>
+  )
+}
+
+function ResetMobileLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">
+      Reset mobile overrides
+    </button>
+  )
+}
+
 function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn) => void }) {
   const base = 'flex items-center justify-center gap-1 h-8 rounded-md border text-xs font-medium transition-colors'
   const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
@@ -177,32 +202,83 @@ function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn)
   )
 }
 
-function RichTextField({ html, onChange, linkColor }: { html: string; onChange: (html: string) => void; linkColor?: string }) {
+// Toolbar buttons live outside the contentEditable div, so clicking one is a
+// separate mousedown/click on a different element — browsers can collapse or
+// clear the user's in-progress text selection as part of that, independently
+// of focus (preventDefault on the button's mousedown stops the focus jump but
+// isn't reliably enough to keep the Selection/Range itself intact everywhere).
+// Explicitly saving the Range whenever it changes inside the editor, then
+// re-applying that exact Range right before execCommand runs, makes formatting
+// commands act on precisely what was selected instead of falling back to
+// wherever the caret happens to end up (which reads as "it formatted everything").
+// variant="compact" is for single-line contexts like a button label — no block-level
+// formatting (lists, links: a link nested inside the button's own <a> isn't valid HTML,
+// and a bullet/numbered list doesn't make sense in a short CTA), and Enter inserts a
+// plain <br> instead of contentEditable's default new-paragraph block split.
+function RichTextField({ label = 'Text', html, onChange, linkColor, variant = 'full', minHeight = 80 }: { label?: string; html: string; onChange: (html: string) => void; linkColor?: string; variant?: 'full' | 'compact'; minHeight?: number }) {
   const ref = useRef<HTMLDivElement>(null)
+  const savedRange = useRef<Range | null>(null)
+
+  const saveSelection = () => {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode)) {
+      savedRange.current = sel.getRangeAt(0).cloneRange()
+    }
+  }
+
   const exec = (cmd: string, arg?: string) => {
     ref.current?.focus()
+    const sel = window.getSelection()
+    if (sel && savedRange.current) {
+      sel.removeAllRanges()
+      sel.addRange(savedRange.current)
+    }
     document.execCommand(cmd, false, arg)
+    saveSelection()
     if (ref.current) onChange(ref.current.innerHTML)
   }
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">Text</Label>
-      <div className="flex items-center gap-1 border rounded-md p-1 bg-muted/40">
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}><Bold className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}><Italic className="h-3.5 w-3.5" /></Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
-          const url = window.prompt('Link URL')
-          if (url) exec('createLink', url)
-        }}><LinkIcon className="h-3.5 w-3.5" /></Button>
+      <Label className="text-xs">{label}</Label>
+      <div className="flex flex-wrap items-center gap-1 border rounded-md p-1 bg-muted/40">
+        <Button type="button" variant="ghost" size="sm" title="Bold" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}><Bold className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Italic" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}><Italic className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Underline" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}><Underline className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Strikethrough" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')}><Strikethrough className="h-3.5 w-3.5" /></Button>
+        <span className="w-px self-stretch bg-border mx-0.5" />
+        {variant === 'full' && (
+          <>
+            <Button type="button" variant="ghost" size="sm" title="Bullet list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}><List className="h-3.5 w-3.5" /></Button>
+            <Button type="button" variant="ghost" size="sm" title="Numbered list" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}><ListOrdered className="h-3.5 w-3.5" /></Button>
+            <span className="w-px self-stretch bg-border mx-0.5" />
+          </>
+        )}
+        <Button type="button" variant="ghost" size="sm" title="Superscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('superscript')}><Superscript className="h-3.5 w-3.5" /></Button>
+        <Button type="button" variant="ghost" size="sm" title="Subscript" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('subscript')}><Subscript className="h-3.5 w-3.5" /></Button>
+        {variant === 'full' && (
+          <>
+            <span className="w-px self-stretch bg-border mx-0.5" />
+            <Button type="button" variant="ghost" size="sm" title="Add link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => {
+              const url = window.prompt('Link URL')
+              if (url) exec('createLink', url)
+            }}><LinkIcon className="h-3.5 w-3.5" /></Button>
+            <Button type="button" variant="ghost" size="sm" title="Remove link" className="h-7 w-7 p-0" onMouseDown={e => e.preventDefault()} onClick={() => exec('unlink')}><Link2Off className="h-3.5 w-3.5" /></Button>
+          </>
+        )}
       </div>
       <div
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="email-rich-text min-h-[80px] border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
-        style={linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined}
+        className="email-rich-text border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+        style={{ minHeight, ...(linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined) }}
         dangerouslySetInnerHTML={{ __html: html }}
-        onBlur={e => onChange(e.currentTarget.innerHTML)}
+        onMouseUp={saveSelection}
+        onKeyUp={saveSelection}
+        onKeyDown={variant === 'compact' ? e => {
+          if (e.key === 'Enter') { e.preventDefault(); exec('insertLineBreak') }
+        } : undefined}
+        onBlur={e => { saveSelection(); onChange(e.currentTarget.innerHTML) }}
       />
     </div>
   )
@@ -245,15 +321,32 @@ function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; 
 }
 
 export default function BlockInspector({ block, onChange }: { block: EmailBlock; onChange: (block: EmailBlock) => void }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+
   switch (block.type) {
     case 'text':
+    case 'heading': {
+      const sizeRange = block.type === 'heading' ? { min: 14, max: 60 } : { min: 10, max: 48 }
       return (
         <div className="space-y-3">
           <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={48} />
-          <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
+          <SectionHeader label="Size, align & color" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <>
+              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+              <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} {...sizeRange} />
+              <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
+            </>
+          ) : (
+            <>
+              <AlignField value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } })} />
+              <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} {...sizeRange} />
+              <ColorField label="Text color" value={block.mobile?.color ?? block.color} onChange={color => onChange({ ...block, mobile: { ...block.mobile, color } })} />
+              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+            </>
+          )}
           <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
           <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
@@ -262,23 +355,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
-
-    case 'heading':
-      return (
-        <div className="space-y-3">
-          <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
-          <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
-          <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={14} max={60} />
-          <ColorField label="Text color" value={block.color} onChange={color => onChange({ ...block, color })} />
-          <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
-          <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
-          <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
-          <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
-          <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
-        </div>
-      )
+    }
 
     case 'image':
     case 'logo':
@@ -377,7 +454,22 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ColorField label="Text color" value={block.textColor} onChange={textColor => onChange({ ...block, textColor })} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <SectionHeader label="Size, align & mobile color" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <>
+              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+              <NumberField label="Font size" value={block.fontSize} onChange={fontSize => onChange({ ...block, fontSize })} min={10} max={30} />
+            </>
+          ) : (
+            <>
+              <AlignField value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } })} />
+              <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} min={10} max={30} />
+              <ColorField label="Background" value={block.mobile?.bgColor ?? block.bgColor} onChange={bgColor => onChange({ ...block, mobile: { ...block.mobile, bgColor } })} />
+              <ColorField label="Text color" value={block.mobile?.textColor ?? block.textColor} onChange={textColor => onChange({ ...block, mobile: { ...block.mobile, textColor } })} />
+              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+            </>
+          )}
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />

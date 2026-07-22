@@ -55,12 +55,21 @@ export async function POST(req: NextRequest) {
   if (fromLocationId === toLocationId) return NextResponse.json({ error: 'Lokasi asal dan tujuan tidak boleh sama' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
-  // Validate stock availability
+  // Validate stock availability — non-catalog ("non-stock") items can have
+  // several lots at once (one per receiving PO, see receipts/route.ts), so
+  // availability is the sum across all of them, not a single lot's quantity.
   for (const it of items) {
-    if (!it.itemId) continue
-    const lot = await db.stockLot.findFirst({ where: { itemId: it.itemId, locationId: fromLocationId } })
-    if (!lot || lot.quantity < Number(it.requestedQty)) {
-      return NextResponse.json({ error: `Stok "${it.itemName}" tidak cukup (tersedia: ${lot?.quantity ?? 0})` }, { status: 409 })
+    if (it.itemId) {
+      const lot = await db.stockLot.findFirst({ where: { itemId: it.itemId, locationId: fromLocationId } })
+      if (!lot || lot.quantity < Number(it.requestedQty)) {
+        return NextResponse.json({ error: `Stok "${it.itemName}" tidak cukup (tersedia: ${lot?.quantity ?? 0})` }, { status: 409 })
+      }
+    } else {
+      const lots = await db.stockLot.findMany({ where: { itemId: null, itemName: it.itemName, locationId: fromLocationId } })
+      const available = lots.reduce((s, l) => s + l.quantity, 0)
+      if (available < Number(it.requestedQty)) {
+        return NextResponse.json({ error: `Stok "${it.itemName}" tidak cukup (tersedia: ${available})` }, { status: 409 })
+      }
     }
   }
 

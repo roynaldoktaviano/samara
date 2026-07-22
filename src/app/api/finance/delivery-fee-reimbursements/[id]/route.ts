@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const reimbursement = await db.deliveryFeeReimbursement.findUnique({
     where: { id },
     include: {
-      deliveryFee: { select: { feeNumber: true, purchaseOrder: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } } } },
+      deliveryFee: { select: { feeNumber: true, notes: true, purchaseOrder: { select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } } } } },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
     },
@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const existing = await db.deliveryFeeReimbursement.findUnique({ where: { id }, select: { status: true, deliveryFee: { select: { purchaseOrderId: true } } } })
+  const existing = await db.deliveryFeeReimbursement.findUnique({ where: { id }, select: { status: true, deliveryFeeId: true, deliveryFee: { select: { purchaseOrderId: true } } } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (existing.status === 'PAID') return NextResponse.json({ error: 'This reimbursement has already been marked as paid' }, { status: 409 })
 
@@ -53,10 +53,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { deliveryFee: { select: { feeNumber: true, purchaseOrder: { select: { poNumber: true, supplierName: true } } } } },
   })
 
+  const dfLabel = updated.deliveryFee.purchaseOrder
+    ? `${updated.deliveryFee.feeNumber} (${updated.deliveryFee.purchaseOrder.poNumber}${updated.deliveryFee.purchaseOrder.supplierName ? ` — ${updated.deliveryFee.purchaseOrder.supplierName}` : ''})`
+    : updated.deliveryFee.feeNumber
   notifyByRole(db, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'], 'DF_REIMBURSEMENT_PAID',
     'Delivery Fee Reimbursement Paid',
-    `${updated.deliveryFee.feeNumber} (${updated.deliveryFee.purchaseOrder.poNumber}${updated.deliveryFee.purchaseOrder.supplierName ? ` — ${updated.deliveryFee.purchaseOrder.supplierName}` : ''}) reimbursement to ${updated.requesterName} has been paid (Rp ${new Intl.NumberFormat('id-ID').format(updated.amount)})`,
-    existing.deliveryFee.purchaseOrderId,
+    `${dfLabel} reimbursement to ${updated.requesterName} has been paid (Rp ${new Intl.NumberFormat('id-ID').format(updated.amount)})`,
+    existing.deliveryFee.purchaseOrderId ?? existing.deliveryFeeId,
   ).catch(console.error)
 
   return NextResponse.json(updated)

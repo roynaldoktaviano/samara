@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -20,22 +20,32 @@ interface Reimbursement {
   paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
+interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface PurchaseOrder {
-  id: string; poNumber: string; supplierName: string | null; status: string
+  id: string; poNumber: string; supplierId: string | null; supplierName: string | null; status: string
   deliveryLocationId: string | null; deliveryLocation: DeliveryLocation | null
   itemCount: number; totalOrdered: number; totalReceived: number; fullyReceivedCount: number
+  items: OrderItem[]
   notes: string | null; orderedAt: string; expectedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
   createdByName: string | null
+  requestedByEmployeeId: string | null
   requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
   paymentStatus: string
+  bookingId: string | null
+  booking: { bookingCode: string; tripType: string; leadGuestName: string; yacht: { name: string } | null } | null
 }
 interface SupplierOption { id: string; name: string }
+interface TripOption {
+  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
+  destination: string | null; status: string
+  yacht: { id: string; name: string } | null
+  leadGuestName: string; guestNames: string[]
+}
 interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
-interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedAt?: string | null
@@ -224,6 +234,10 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+const toDateInputValue = (s: string) => {
+  const d = new Date(s)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 // Display-only mirror of src/lib/po-payment.ts's describeInstallment — labels
 // a payment/reimbursement installment as a DP, a top-up, or the one that
@@ -422,6 +436,88 @@ function EmployeeCombobox({ value, employees, onChange }: {
   )
 }
 
+function TripCombobox({ value, valueLabel, trips, onChange }: {
+  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [yachtFilter, setYachtFilter] = useState('')
+  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
+  const q = search.trim().toLowerCase()
+  const opts = trips.filter(t => {
+    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
+    if (!q) return true
+    return t.bookingCode.toLowerCase().includes(q)
+      || (t.destination ?? '').toLowerCase().includes(q)
+      || t.leadGuestName.toLowerCase().includes(q)
+      || t.guestNames.some(n => n.toLowerCase().includes(q))
+  }).slice(0, 30)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip (optional)...'}</span>
+        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-72 flex flex-col">
+            <div className="p-2 border-b shrink-0 space-y-1.5">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <select className="w-full h-8 border rounded px-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
+                <option value="">All yachts</option>
+                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+            <div className="overflow-y-auto">
+              {value && (
+                <button type="button" onClick={() => { onChange('', ''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  Clear selection
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No trips found</p>
+              )}
+              {opts.map(t => {
+                const label = `${t.bookingCode}${t.yacht ? ` — ${t.yacht.name}` : ''}`
+                return (
+                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-start gap-2 border-b last:border-0 transition-colors">
+                    <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{t.bookingCode}</span>
+                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
+                        </span>
+                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.yacht?.name ?? '—'} · {fmtDate(t.startDate)}–{fmtDate(t.endDate)}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   const isPdf = isPdfDataUrl(photoKey)
   return (
@@ -448,7 +544,47 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
   )
 }
 
-export default function OrdersPage({ warehouseView = false }: { warehouseView?: boolean }) {
+function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
+          <div>
+            <p className="text-sm font-semibold">{order.poNumber}</p>
+            <p className="text-xs text-muted-foreground">{order.supplierName ?? 'TBD'}</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground bg-muted/30 sticky top-0">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Item</th>
+                <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                <th className="text-right px-4 py-2.5 font-medium">Unit Price</th>
+                <th className="text-right px-4 py-2.5 font-medium">Received</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {order.items.map(i => (
+                <tr key={i.id}>
+                  <td className="px-4 py-2.5">{i.itemName}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{fmtMoney(i.unitCost)}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.receivedQty ?? 0}/{i.orderedQty}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHandled }: { warehouseView?: boolean; openPoId?: string | null; onOpenPoHandled?: () => void }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   // canReceive is now computed per-order based on deliveryLocation.managedBy
@@ -461,17 +597,30 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [detail, setDetail] = useState<OrderDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
+  // list filters
+  const [filterSupplier, setFilterSupplier] = useState('')
+  const [filterDestination, setFilterDestination] = useState('')
+  const [filterRequestedBy, setFilterRequestedBy] = useState('')
+  const [filterDate, setFilterDate] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
+  const [itemsPopoverOrder, setItemsPopoverOrder] = useState<PurchaseOrder | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 14
+
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [trips, setTrips] = useState<TripOption[]>([])
 
   // create form
   const [supplier, setSupplier] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
+  const [bookingId, setBookingId] = useState('')
+  const [bookingLabel, setBookingLabel] = useState('')
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
@@ -503,11 +652,8 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
   const [cancelSaving, setCancelSaving] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
-  // edit PO (general fields) modal
+  // edit PO modal — reuses the create-form's supplier/lines/extraCharges/etc state (see renderOrderFormFields)
   const [editPOModal, setEditPOModal] = useState(false)
-  const [editPOSupplier, setEditPOSupplier] = useState('')
-  const [editPOExpectedAt, setEditPOExpectedAt] = useState('')
-  const [editPONotes, setEditPONotes] = useState('')
   const [editPOSaving, setEditPOSaving] = useState(false)
   const [editPOError, setEditPOError] = useState('')
 
@@ -552,7 +698,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, iRes, sRes, lRes, tRes, eRes, rRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees'), fetch('/api/purchasing/reimburse-accounts')])
+    const [oRes, iRes, sRes, lRes, tRes, eRes, rRes, tripsRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees'), fetch('/api/purchasing/reimburse-accounts'), fetch('/api/purchasing/trips')])
     if (oRes.ok) setOrders(await oRes.json())
     if (iRes.ok) setPurchaseItems((await iRes.json()).filter((i: PurchaseItem) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
@@ -560,10 +706,20 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     if (tRes.ok) setTeam(await tRes.json())
     if (eRes.ok) setEmployees(await eRes.json())
     if (rRes.ok) setReimburseAccounts(await rRes.json())
+    if (tripsRes.ok) setTrips(await tripsRes.json())
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Deep-link from Item by Location's "click PO number" — open straight into
+  // that PO's detail, then report back so the same id doesn't re-trigger.
+  useEffect(() => {
+    if (!openPoId) return
+    openDetail({ id: openPoId } as PurchaseOrder)
+    onOpenPoHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPoId])
 
   async function openDetail(o: PurchaseOrder) {
     setView('detail'); setDetailLoading(true)
@@ -597,22 +753,33 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       search: '', open: false,
     }))
   }
-  function pickCustomItem(idx: number, name: string) {
+  function pickCustomItem(idx: number, name: string, unit = '') {
     setLines(l => l.map((line, i) => i !== idx ? line : {
       ...line,
       itemId: '', itemName: name.trim(),
-      baseUnit: '', purchaseUnit: '', itemUnit: '',
+      baseUnit: '', purchaseUnit: '', itemUnit: unit,
       search: '', open: false,
     }))
+  }
+
+  // Create and Edit share the same supplier/lines/extraCharges/etc state (see
+  // renderOrderFormFields) — this clears it back to a blank slate, needed before
+  // opening Create so leftover data from a cancelled Edit session doesn't leak in.
+  function resetOrderForm() {
+    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setBookingId(''); setBookingLabel(''); setExpectedAt(''); setNotes('')
+    setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+    setExtraCharges([])
+    setDiscountType('PERCENT'); setDiscountValue(0)
   }
 
   async function submit() {
     setSaving(true); setSaveError('')
     if (!supplier.trim()) { setSaveError('Supplier name is required'); setSaving(false); return }
+    if (!requestedByEmployeeId) { setSaveError('Requested By is required'); setSaving(false); return }
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, expectedAt: expectedAt || undefined, notes,
+        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, bookingId: bookingId || undefined, expectedAt: expectedAt || undefined, notes,
         requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
@@ -623,10 +790,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false); setView('list')
-    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setExpectedAt(''); setNotes('')
-    setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
-    setExtraCharges([])
-    setDiscountType('PERCENT'); setDiscountValue(0)
+    resetOrderForm()
     load()
   }
 
@@ -682,17 +846,67 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
 
   // ── List ──
   const WAREHOUSE_STATUSES = ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
-  const visibleOrders = warehouseView
+  const scopedOrders = warehouseView
     ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status))
     : orders
+  const supplierOptions = Array.from(new Set(scopedOrders.map(o => o.supplierName).filter((n): n is string => !!n))).sort()
+  const destinationOptions = Array.from(new Set(scopedOrders.map(o => o.deliveryLocation?.name).filter((n): n is string => !!n))).sort()
+  const requestedByOptions = Array.from(new Set(scopedOrders.map(o => o.requestedByName).filter((n): n is string => !!n))).sort()
+  const hasActiveFilters = !!(filterSupplier || filterDestination || filterRequestedBy || filterDate || itemSearch.trim())
+  const visibleOrders = scopedOrders.filter(o => {
+    if (filterSupplier && o.supplierName !== filterSupplier) return false
+    if (filterDestination && o.deliveryLocation?.name !== filterDestination) return false
+    if (filterRequestedBy && o.requestedByName !== filterRequestedBy) return false
+    if (filterDate && toDateInputValue(o.orderedAt) !== filterDate) return false
+    if (itemSearch.trim()) {
+      const q = itemSearch.trim().toLowerCase()
+      if (!o.items.some(i => i.itemName.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageOrders = visibleOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   if (view === 'list') return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{visibleOrders.length} purchase order</p>
         {!warehouseView && (
-          <button onClick={() => setView('create')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <button onClick={() => { resetOrderForm(); setView('create') }} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <Plus className="h-4 w-4" /> Create PO
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            className="h-9 w-56 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
+            placeholder="Search item..."
+            value={itemSearch}
+            onChange={e => { setItemSearch(e.target.value); setPage(1) }}
+          />
+        </div>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1) }}>
+          <option value="">All suppliers</option>
+          {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1) }}>
+          <option value="">All destinations</option>
+          {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1) }}>
+          <option value="">All requesters</option>
+          {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <input type="date" className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1) }} />
+        {hasActiveFilters && (
+          <button
+            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1) }}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+          >
+            Clear filters
           </button>
         )}
       </div>
@@ -701,15 +915,15 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
-              <th className="text-left px-4 py-3 font-medium">Supplier</th>
-              <th className="text-left px-4 py-3 font-medium">Destination</th>
-              <th className="text-left px-4 py-3 font-medium">PO Created By</th>
-              <th className="text-left px-4 py-3 font-medium">Requested By</th>
-              <th className="text-center px-4 py-3 font-medium">Items</th>
+              <th className="text-left px-4 py-3 font-medium w-72">Items</th>
               <th className="text-left px-4 py-3 font-medium">Received</th>
+              <th className="text-left px-4 py-3 font-medium w-28">Supplier</th>
+              <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Payment</th>
+              <th className="text-left px-4 py-3 font-medium">PO Created By</th>
+              <th className="text-left px-4 py-3 font-medium">Requested By</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -722,7 +936,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
+                  <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
@@ -731,33 +945,27 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
-              : visibleOrders.map(o => {
+              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : pageOrders.map(o => {
                 const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
                   <tr key={o.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(o)}>
-                    <td className="px-4 py-3 font-mono text-sm font-medium">{o.poNumber}</td>
-                    <td className="px-4 py-3">{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {o.deliveryLocation ? (
-                        <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
-                      ) : '—'}
+                    <td className="px-4 py-3 font-mono text-xs font-medium">{o.poNumber}</td>
+                    <td className="px-4 py-3 max-w-72">
+                      {o.items.length === 0 ? (
+                        <span className="text-muted-foreground/40 text-xs">—</span>
+                      ) : (
+                        <button
+                          title={o.items.map(i => i.itemName).join(', ')}
+                          onClick={e => { e.stopPropagation(); setItemsPopoverOrder(o) }}
+                          className="block w-full truncate text-left text-xs font-medium text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
+                        >
+                          {o.items[0].itemName}
+                          {o.items.length > 1 && <span className="text-muted-foreground font-normal"> +{o.items.length - 1} more</span>}
+                        </button>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.createdByName ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {o.requestedByName ? (
-                        <div>
-                          <p>{o.requestedByName}</p>
-                          {(o.requestedByOffice || o.requestedByDepartment) && (
-                            <p className="text-[10px] text-muted-foreground/70">
-                              {[o.requestedByOffice, o.requestedByDepartment].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-center text-muted-foreground">{o.itemCount}</td>
-                    <td className="px-4 py-3 min-w-[120px]">
+                    <td className="px-4 py-3 min-w-30">
                       {o.itemCount === 0 || o.status === 'DRAFT' ? (
                         <span className="text-muted-foreground/40 text-xs">—</span>
                       ) : (
@@ -774,6 +982,12 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                         </div>
                       )}
                     </td>
+                    <td className="px-4 py-3 max-w-28 truncate text-xs" title={o.supplierName ?? undefined}>{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {o.deliveryLocation ? (
+                        <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.orderedAt)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
@@ -784,6 +998,19 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
                     </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.createdByName ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {o.requestedByName ? (
+                        <div>
+                          <p>{o.requestedByName}</p>
+                          {(o.requestedByOffice || o.requestedByDepartment) && (
+                            <p className="text-[10px] text-muted-foreground/70">
+                              {[o.requestedByOffice, o.requestedByDepartment].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
                   </tr>
                 )
@@ -791,28 +1018,59 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
           </tbody>
         </table>
       </div>
+      {!loading && visibleOrders.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {currentPage} of {totalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-muted-foreground px-2">{currentPage} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+      {itemsPopoverOrder && (
+        <ItemsDetailModal order={itemsPopoverOrder} onClose={() => setItemsPopoverOrder(null)} />
+      )}
     </div>
   )
 
   // ── Create ──
-  if (view === 'create') {
+  // Shared by Create PO and Edit PO — both read/write the same supplier/lines/extraCharges/etc
+  // state, so this is the one place that renders those fields instead of two JSX copies to keep
+  // in sync. `locked` disables Items/Extra Charges/Discount (still shown, read-only) — used for
+  // Edit once the PO has receipts or payment records, since rewriting the total after money has
+  // moved against it would desync GoodsReceiptItem cost history and already-requested/paid
+  // amounts (see the matching guard in PATCH /api/purchasing/orders/[id]).
+  function renderOrderFormFields(locked = false) {
     const itemsTotal = lines.reduce((s, l) => s + l.orderedQty * l.unitCost, 0)
     const chargesTotal = extraCharges.reduce((s, c) => s + c.amount, 0)
     const discountAmount = Math.min(itemsTotal, discountType === 'PERCENT' ? itemsTotal * (discountValue / 100) : discountValue)
     const afterDiscount = itemsTotal - discountAmount
     const total = afterDiscount + chargesTotal
-    const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+    const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+    // Non-stock items (custom PO lines with no itemId) aren't in the master
+    // catalog, so they'd normally have to be retyped from scratch every time —
+    // surfacing names already used on past POs lets a repeat non-stock buy
+    // (e.g. "Grab", "Event flowers") get picked instead of retyped.
+    const historicalCustomItems = Array.from(
+      new Map(orders.flatMap(o => o.items).filter(i => !i.itemId).map(i => [i.itemName, i.unit ?? ''])).entries()
+    ).map(([name, unit]) => ({ name, unit }))
     return (
-      <div className="space-y-6">
-
-        <div className="flex items-center gap-3">
-          <button onClick={() => setView('list')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
-          <span className="text-muted-foreground">/</span>
-          <span className="text-sm font-medium">Create Purchase Order</span>
-        </div>
-
-        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
-
+      <>
         {/* Order Info */}
         <div className="rounded-xl border bg-white">
           <div className="px-5 py-4 border-b">
@@ -848,7 +1106,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 <input type="date" className={inp} value={expectedAt} onChange={e => setExpectedAt(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-muted-foreground">Requested By <span className="font-normal">(optional)</span></label>
+                <label className="text-sm font-medium">Requested By <span className="text-red-500">*</span></label>
                 <EmployeeCombobox value={requestedByEmployeeId} employees={employees} onChange={setRequestedByEmployeeId} />
                 {requestedByEmployeeId && (() => {
                   const emp = employees.find(e => e.id === requestedByEmployeeId)
@@ -858,6 +1116,10 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     </p>
                   ) : null
                 })()}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">For Trip <span className="font-normal">(optional)</span></label>
+                <TripCombobox value={bookingId} valueLabel={bookingLabel} trips={trips} onChange={(id, label) => { setBookingId(id); setBookingLabel(label) }} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -873,11 +1135,19 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         <div className="rounded-xl border bg-white">
           <div className="flex items-center justify-between px-5 py-4 border-b rounded-t-xl">
             <h3 className="text-sm font-semibold">Items</h3>
-            <button onClick={addLine}
-              className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
-              <Plus className="h-3.5 w-3.5" /> Add Row
-            </button>
+            {!locked && (
+              <button onClick={addLine}
+                className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                <Plus className="h-3.5 w-3.5" /> Add Row
+              </button>
+            )}
           </div>
+
+          {locked && (
+            <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 border-b text-xs text-amber-800">
+              <Lock className="h-3.5 w-3.5 shrink-0" /> Items &amp; pricing are locked — this PO already has receipts or payment records.
+            </div>
+          )}
 
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground border-b bg-muted/30">
@@ -896,6 +1166,10 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 const sugg = line.search.length >= 1
                   ? purchaseItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()) || i.sku.toLowerCase().includes(line.search.toLowerCase())).slice(0, 8)
                   : purchaseItems.slice(0, 8)
+                const customSugg = (line.search.length >= 1
+                  ? historicalCustomItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()))
+                  : historicalCustomItems
+                ).slice(0, 5)
                 const subtotal = line.orderedQty * line.unitCost
                 const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-right`
                 return (
@@ -929,7 +1203,22 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                                   {item.avgPrice > 0 && <span className="text-xs text-amber-700 font-medium">{fmtMoney(item.avgPrice)}</span>}
                                 </button>
                               ))}
-                              {line.search.trim() && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase()) && (
+                              {customSugg.length > 0 && (
+                                <div className="border-t">
+                                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Previously used (non-stock)</p>
+                                  {customSugg.map(c => (
+                                    <button key={c.name} onClick={() => pickCustomItem(idx, c.name, c.unit)}
+                                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                      <span className="font-medium flex-1">{c.name}</span>
+                                      {c.unit && <span className="text-muted-foreground text-xs">{c.unit}</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              {line.search.trim()
+                                && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase())
+                                && !historicalCustomItems.some(c => c.name.toLowerCase() === line.search.trim().toLowerCase()) && (
                                 <button onClick={() => pickCustomItem(idx, line.search)}
                                   className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 flex items-center gap-2.5 border-t transition-colors">
                                   <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
@@ -941,7 +1230,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                           </div>
                         </>
                       ) : (
-                        <button onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: true, search: '' }))}
+                        <button disabled={locked} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: true, search: '' }))}
                           className={`${inp} text-left flex items-center gap-2 ${!line.itemName ? 'text-muted-foreground' : ''}`}>
                           {line.itemName
                             ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.itemName}</span></>
@@ -952,7 +1241,7 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                     </td>
 
                     <td className="px-2 py-2.5">
-                      <input type="number" min={0.01} step="any" className={numInp} value={line.orderedQty}
+                      <input disabled={locked} type="number" min={0.01} step="any" className={numInp} value={line.orderedQty}
                         onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, orderedQty: Number(e.target.value) }))} />
                     </td>
                     <td className="px-2 py-2.5">
@@ -962,32 +1251,34 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                         ) : (
                           <div className="flex rounded-md border overflow-hidden h-9">
                             {[line.purchaseUnit, line.baseUnit].map(u => (
-                              <button key={u} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemUnit: u }))}
-                                className={`flex-1 text-xs font-medium px-2 transition-colors ${line.itemUnit === u ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+                              <button key={u} disabled={locked} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemUnit: u }))}
+                                className={`flex-1 text-xs font-medium px-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${line.itemUnit === u ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
                                 {u}
                               </button>
                             ))}
                           </div>
                         )
                       ) : line.itemName ? (
-                        <input className={inp} placeholder="e.g. bouquet" value={line.itemUnit}
+                        <input disabled={locked} className={inp} placeholder="e.g. bouquet" value={line.itemUnit}
                           onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemUnit: e.target.value }))} />
                       ) : (
                         <span className="h-9 flex items-center px-3 text-sm text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-2 py-2.5">
-                      <input type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0.00"
+                      <input disabled={locked} type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0.00"
                         onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
                       {subtotal > 0 ? fmtMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}
                     </td>
                     <td className="px-2 py-2.5 text-center">
-                      <button onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                        className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {!locked && (
+                        <button onClick={() => removeLine(idx)} disabled={lines.length === 1}
+                          className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -1004,42 +1295,49 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             {extraCharges.map((c, i) => (
               <div key={i} className="flex items-center justify-end gap-2">
                 <input
-                  className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                  disabled={locked}
+                  className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60"
                   placeholder="e.g. VAT, MOQ Fee 15%"
                   value={c.label}
                   onChange={e => updateCharge(i, { label: e.target.value })}
                 />
                 <input
+                  disabled={locked}
                   type="number" step="any"
-                  className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   placeholder="0"
                   value={c.amount || ''}
                   onChange={e => updateCharge(i, { amount: Number(e.target.value) || 0 })}
                 />
-                <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {!locked && (
+                  <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             ))}
 
-            <div className="flex justify-end">
-              <button onClick={addCharge}
-                className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
-                <Plus className="h-3.5 w-3.5" /> Add Pricing (Tax, Fee, etc.)
-              </button>
-            </div>
+            {!locked && (
+              <div className="flex justify-end">
+                <button onClick={addCharge}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                  <Plus className="h-3.5 w-3.5" /> Add Pricing (Tax, Fee, etc.)
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Discount</span>
               <div className="flex rounded-md border overflow-hidden h-8">
-                <button type="button" onClick={() => setDiscountType('PERCENT')}
-                  className={`px-2.5 text-xs font-medium transition-colors ${discountType === 'PERCENT' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
-                <button type="button" onClick={() => setDiscountType('FIXED')}
-                  className={`px-2.5 text-xs font-medium transition-colors border-l ${discountType === 'FIXED' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
+                <button type="button" disabled={locked} onClick={() => setDiscountType('PERCENT')}
+                  className={`px-2.5 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'PERCENT' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
+                <button type="button" disabled={locked} onClick={() => setDiscountType('FIXED')}
+                  className={`px-2.5 text-xs font-medium transition-colors border-l disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'FIXED' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
               </div>
               <input
+                disabled={locked}
                 type="number" step="any" min={0}
-                className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0"
                 value={discountValue || ''}
                 onChange={e => setDiscountValue(Number(e.target.value) || 0)}
@@ -1053,6 +1351,23 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
             </div>
           </div>
         </div>
+      </>
+    )
+  }
+
+  if (view === 'create') {
+    return (
+      <div className="space-y-6">
+
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView('list')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
+          <span className="text-muted-foreground">/</span>
+          <span className="text-sm font-medium">Create Purchase Order</span>
+        </div>
+
+        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
+
+        {renderOrderFormFields()}
 
         <div className="flex justify-end gap-3 pb-4">
           <button onClick={() => setView('list')} className="px-5 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
@@ -1208,20 +1523,57 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
     }
   }
 
+  // Financial fields become read-only once money has actually moved against this PO —
+  // mirrors the guard in PATCH /api/purchasing/orders/[id], which rejects item/pricing
+  // changes under the same condition.
+  const poFinancialsLocked = (o: OrderDetail) => o.items.some(i => (i.receivedQty ?? 0) > 0) || o.paymentRequests.length > 0 || o.reimbursements.length > 0
+
   function openEditPO() {
     if (!detail) return
-    setEditPOSupplier(detail.supplierName ?? '')
-    setEditPOExpectedAt(detail.expectedAt ? detail.expectedAt.split('T')[0] : '')
-    setEditPONotes(detail.notes ?? '')
+    setSupplier(detail.supplierName ?? ''); setSupplierId(detail.supplierId ?? '')
+    setDeliveryLocationId(detail.deliveryLocationId ?? '')
+    setBookingId(detail.bookingId ?? '')
+    setBookingLabel(detail.booking ? `${detail.booking.bookingCode}${detail.booking.yacht ? ` — ${detail.booking.yacht.name}` : ''}` : '')
+    setExpectedAt(detail.expectedAt ? detail.expectedAt.split('T')[0] : '')
+    setRequestedByEmployeeId(detail.requestedByEmployeeId ?? '')
+    setNotes(detail.notes ?? '')
+    setLines(detail.items.length > 0 ? detail.items.map(it => {
+      const catalogItem = it.itemId ? purchaseItems.find(p => p.id === it.itemId) : undefined
+      return {
+        itemId: it.itemId ?? '', itemName: it.itemName,
+        baseUnit: catalogItem?.baseUnit ?? '', purchaseUnit: catalogItem?.purchaseUnit ?? '',
+        itemUnit: it.unit ?? catalogItem?.purchaseUnit ?? '',
+        orderedQty: it.orderedQty, unitCost: it.unitCost,
+        search: '', open: false,
+      }
+    }) : [{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+    setExtraCharges(detail.extraCharges ?? [])
+    setDiscountType(detail.discountType ?? 'PERCENT')
+    setDiscountValue(detail.discountValue ?? 0)
     setEditPOError(''); setEditPOModal(true)
   }
 
   async function submitEditPO() {
     if (!detail) return
     setEditPOSaving(true); setEditPOError('')
+    if (!supplier.trim()) { setEditPOError('Supplier name is required'); setEditPOSaving(false); return }
+    if (!requestedByEmployeeId) { setEditPOError('Requested By is required'); setEditPOSaving(false); return }
+    const locked = poFinancialsLocked(detail)
     const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ supplierName: editPOSupplier, expectedAt: editPOExpectedAt || undefined, notes: editPONotes }),
+      body: JSON.stringify({
+        supplierId: supplierId || undefined, supplierName: supplier,
+        deliveryLocationId: deliveryLocationId || '',
+        requestedByEmployeeId: requestedByEmployeeId || '',
+        bookingId: bookingId || '',
+        expectedAt: expectedAt || undefined, notes,
+        ...(!locked && {
+          items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
+          extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
+          discountType: discountValue > 0 ? discountType : undefined,
+          discountValue: discountValue > 0 ? discountValue : undefined,
+        }),
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setEditPOError(data.error ?? 'Failed'); setEditPOSaving(false); return }
@@ -1249,9 +1601,9 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
       </div>
 
       {detail && (
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{detail.poNumber}</h2>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold tracking-tight whitespace-nowrap">{detail.poNumber}</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               {detail.supplierName ?? <span className="italic">No supplier yet</span>} · {fmtDate(detail.orderedAt)} ·{' '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>
@@ -1269,15 +1621,23 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
                 )}
               </p>
             )}
+            {detail.booking && (
+              <p className="text-muted-foreground text-xs mt-0.5 flex items-center gap-1">
+                <Ship className="h-3 w-3 shrink-0" />
+                For Trip <span className="font-medium text-foreground">{detail.booking.bookingCode}</span>
+                {detail.booking.yacht && <span> · {detail.booking.yacht.name}</span>}
+                {detail.booking.tripType === 'PRIVATE_CHARTER' && <span> · {detail.booking.leadGuestName}</span>}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-2 shrink-0 pt-1">
+          <div className="flex items-center gap-2 flex-wrap justify-end pt-1">
             {detail.status !== 'DRAFT' && (
               <button disabled title="PDF export is still being finalized"
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg opacity-50 cursor-not-allowed">
                 <FileDown className="h-3.5 w-3.5" /> Download PDF
               </button>
             )}
-            {canTransit && detail.status !== 'DRAFT' && (
+            {canTransit && detail.status !== 'DRAFT' && detail.paymentStatus !== 'PAID' && (
               <button onClick={openEditPO} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 <Pencil className="h-3.5 w-3.5" /> Edit PO
               </button>
@@ -1729,44 +2089,24 @@ export default function OrdersPage({ warehouseView = false }: { warehouseView?: 
         </>
       )}
 
-      {/* Edit PO Modal */}
+      {/* Edit PO Modal — same fields as Create PO, since this is meant to be a full CRUD edit, not a 3-field patch */}
       {editPOModal && detail && (
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setEditPOModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">Edit PO</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
                 </div>
                 <button onClick={() => setEditPOModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 overflow-y-auto">
                 {editPOError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{editPOError}</div>}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Supplier</label>
-                  <input
-                    className="w-full h-9 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    value={editPOSupplier} onChange={e => setEditPOSupplier(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Expected Arrival</label>
-                  <input
-                    type="date"
-                    className="w-full h-9 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    value={editPOExpectedAt} onChange={e => setEditPOExpectedAt(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Notes</label>
-                  <textarea
-                    rows={3}
-                    className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    placeholder="Payment terms, delivery instructions..."
-                    value={editPONotes} onChange={e => setEditPONotes(e.target.value)} />
-                </div>
+                {renderOrderFormFields(poFinancialsLocked(detail))}
               </div>
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setEditPOModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitEditPO} disabled={editPOSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">

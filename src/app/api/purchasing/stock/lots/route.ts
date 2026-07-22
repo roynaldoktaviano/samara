@@ -13,11 +13,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const itemId = searchParams.get('itemId')
+  const itemName = searchParams.get('itemName')
   const locationId = searchParams.get('locationId')
-  if (!itemId || !locationId) return NextResponse.json({ error: 'itemId and locationId required' }, { status: 400 })
+  if ((!itemId && !itemName) || !locationId) return NextResponse.json({ error: 'itemId or itemName, and locationId, are required' }, { status: 400 })
 
   const lots = await db.stockLot.findMany({
-    where: { itemId, locationId, quantity: { gt: 0 } },
+    where: itemId ? { itemId, locationId, quantity: { gt: 0 } } : { itemId: null, itemName, locationId, quantity: { gt: 0 } },
     orderBy: [{ expiresAt: 'asc' }, { createdAt: 'asc' }],
   })
 

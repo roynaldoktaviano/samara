@@ -50,17 +50,21 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const body = await req.json()
   const { purchaseOrderId, notes } = body
-  if (!purchaseOrderId) return NextResponse.json({ error: 'Purchase order is required' }, { status: 400 })
-
-  const order = await db.purchaseOrder.findUnique({ where: { id: purchaseOrderId }, select: { id: true } })
-  if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+  // No longer required — a shipment can consolidate several POs or be a standalone
+  // cargo delivery with no single PO behind it, in which case notes carries the description.
+  if (purchaseOrderId) {
+    const order = await db.purchaseOrder.findUnique({ where: { id: purchaseOrderId }, select: { id: true } })
+    if (!order) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+  } else if (!notes?.trim()) {
+    return NextResponse.json({ error: 'Add a note describing this delivery when no PO is linked' }, { status: 400 })
+  }
 
   const feeNumber = await generateFeeNumber(db)
   const fee = await db.deliveryFee.create({
     data: {
       id: crypto.randomUUID(),
       feeNumber,
-      purchaseOrderId,
+      purchaseOrderId: purchaseOrderId || null,
       notes: notes?.trim() || null,
       createdById: session.user.id,
       updatedAt: new Date(),

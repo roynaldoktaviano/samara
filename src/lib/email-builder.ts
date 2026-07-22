@@ -38,6 +38,17 @@ export const FONT_OPTIONS: { label: string; value: string }[] = [
 ]
 const DEFAULT_FONT = FONT_OPTIONS[0].value
 
+// Mobile-only overrides for a text/heading block's size, alignment, and color —
+// applied via a max-width:600px media query in the exported HTML (see
+// collectExtraStyles) on top of the block's own (desktop) values. Undefined
+// fields simply inherit the desktop value; the whole object is optional so
+// blocks with no mobile customization carry no extra data.
+export interface TextMobileOverride {
+  fontSize?: number
+  align?: BlockAlign
+  color?: string
+}
+
 export interface TextBlock {
   id: string
   type: 'text'
@@ -51,6 +62,7 @@ export interface TextBlock {
   letterSpacing: number
   padding: Padding
   hideOn: HideOn
+  mobile?: TextMobileOverride
 }
 
 export interface HeadingBlock {
@@ -66,6 +78,7 @@ export interface HeadingBlock {
   letterSpacing: number
   padding: Padding
   hideOn: HideOn
+  mobile?: TextMobileOverride
 }
 
 export interface ImageBlock {
@@ -115,19 +128,29 @@ export interface HtmlBlock {
   hideOn: HideOn
 }
 
+// See TextMobileOverride — same mobile-only-override mechanism, applied to a button's own fields.
+export interface ButtonMobileOverride {
+  fontSize?: number
+  align?: BlockAlign
+  bgColor?: string
+  textColor?: string
+}
+
 export interface ButtonBlock {
   id: string
   type: 'button'
-  label: string
+  label: string // simple inline HTML (bold/italic/underline/strike/sup/sub/<br>) — see migrateBlock's legacy plain-text upgrade
   url: string
   bgColor: string
   textColor: string
+  fontSize: number
   fontFamily: string
   lineHeight: number
   align: BlockAlign
   borderRadius: number
   padding: Padding
   hideOn: HideOn
+  mobile?: ButtonMobileOverride
 }
 
 export interface DividerBlock {
@@ -329,6 +352,14 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         hideOn,
         fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily,
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.3,
+        fontSize: typeof raw.fontSize === 'number' ? raw.fontSize : 15,
+        // Labels used to be plain text (escaped + \n→<br> at render time, see
+        // the old renderMultilineLabel) — now the rich-text label editor stores
+        // real HTML directly, so legacy labels need that same escape done once,
+        // up front. A label already containing '<' or '&' has necessarily been
+        // through this (either migrated before, or typed via the contentEditable
+        // editor, which always serializes typed '<'/'&' as entities) — never both.
+        label: /[<&]/.test(raw.label) ? raw.label : esc(raw.label).replace(/\n/g, '<br>'),
       }
     case 'video':
     case 'html':
@@ -388,7 +419,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'html':
       return { id: nextId(), type: 'html', code: '<p>Custom HTML...</p>', padding: uniformPadding(16), hideOn: 'none' }
     case 'button':
-      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontFamily: DEFAULT_FONT, lineHeight: 1.3, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'button', label: 'Click Here', url: '', bgColor: '#bdac7e', textColor: '#ffffff', fontSize: 15, fontFamily: DEFAULT_FONT, lineHeight: 1.3, align: 'center', borderRadius: 6, padding: uniformPadding(16), hideOn: 'none' }
     case 'divider':
       return { id: nextId(), type: 'divider', color: '#e5e7eb', thickness: 1, width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'spacer':
@@ -455,12 +486,23 @@ function paddingCss(p: Padding): string {
   return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
 }
 
-// A newline the user types in the button label becomes a real <br> on every
-// device — not a mobile-only break. Whether a break should differ by device is
-// a separate, explicit choice (the block's own hideOn), not something implied
-// by pressing Enter.
-function renderMultilineLabel(label: string): string {
-  return esc(label).split('\n').join('<br>')
+// A link inserted into rich text (via RichTextField's createLink) is a bare
+// <a href="..."> with no styling of its own — several mobile mail clients
+// (iOS Mail and Outlook mobile chief among them) don't let an inline <a>
+// inherit its parent <td>'s line-height/font-size the way a plain <span>
+// does, and fall back to their own default instead, which shows up as an
+// uneven gap wherever a link sits inside an otherwise normal paragraph.
+// Stamping the same line-height/font-size/font-family directly onto every
+// <a> closes that gap; .lc-${id} a in collectExtraStyles reinforces it
+// (color included, since Outlook.com strips unrecognized inline props but
+// keeps <style> rules) for the few clients that ignore the inline version.
+function styleAnchors(html: string, style: string): string {
+  return html.replace(/<a\b([^>]*)>/gi, (_match, attrs: string) => {
+    if (/\sstyle\s*=/i.test(attrs)) {
+      return `<a${attrs.replace(/style\s*=\s*(["'])(.*?)\1/i, (_m2, q: string, existing: string) => `style=${q}${existing};${style}${q}`)}>`
+    }
+    return `<a${attrs} style="${style}">`
+  })
 }
 
 function hideOnClass(hideOn: HideOn): string {
@@ -487,12 +529,27 @@ function renderColumnCell(list: EmailBlock[]): string {
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
-// files (public/email/icon-*.png), not inline <svg> or a data-URI <img> — Outlook
-// doesn't support inline SVG at all, and most mail clients (Gmail included) block
-// data:image/svg+xml URIs outright as an XSS precaution, which is why they were
-// rendering as broken-image boxes. A plain hosted <img src="https://.../icon.png">
-// is the one technique that's reliably supported everywhere.
+// files (public/email/icon-*-mid.png), not inline <svg> or a data-URI <img> —
+// Outlook doesn't support inline SVG at all, and most mail clients (Gmail
+// included) block data:image/svg+xml URIs outright as an XSS precaution, which
+// is why they were rendering as broken-image boxes. A plain hosted
+// <img src="https://.../icon.png"> is the one technique that's reliably
+// supported everywhere.
+//
+// A single neutral mid-gray (#9ca3af, matching the footer's body-text color)
+// instead of white — the footer's near-black background still gets forcibly
+// recolored to white by Gmail's iOS app despite the darkModeSafe nudge + pin
+// (its heuristic isn't limited to literal #000000 the way the button/text
+// fixes assumed), which made a white icon invisible whenever that happened. A
+// raster <img>'s pixels can't be recolored by CSS, so an earlier version tried
+// stacking two color variants and toggling visibility by media query — but
+// that relies on Gmail cleanly hiding one of them, and when it doesn't both
+// render at once, overlapping into a garbled/skewed-looking icon. One
+// mid-tone image sidesteps that risk entirely: legible-enough on both a black
+// and a white background, no toggle to fail.
 type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
+const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website' }
+
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
   // no domain to resolve against inside an email and renders as a broken image —
@@ -501,7 +558,11 @@ function footerIcon(kind: FooterIconKind): string {
   // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
   // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
   // this if a cached 404 ever gets stuck on any of these paths again.
-  return `<img src="${appUrl}/email/icon-${kind}.png?v=2" width="16" height="16" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  // A non-empty alt matters here specifically: Outlook and most corporate mail
+  // clients block remote images by default until the recipient explicitly loads
+  // them, and a blank alt="" renders as a bare broken-image box with no label —
+  // a real word at least tells the recipient what's missing until then.
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=2" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -521,8 +582,8 @@ function renderFooterSocialRow(block: FooterBlock): string {
     <td style="padding:0 6px;">
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
         <tr>
-          <td width="34" height="34" align="center" valign="middle" style="width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
-            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
+          <td width="40" height="40" align="center" valign="middle" class="footer-badge" style="width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
+            <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
           </td>
         </tr>
       </table>
@@ -538,17 +599,21 @@ function renderFooterSocialRow(block: FooterBlock): string {
 
 function renderBlock(block: EmailBlock): string {
   switch (block.type) {
-    case 'text':
+    case 'text': {
       // Color lives on an inner <span>, not the <td> — Gmail's dark mode lightens
       // any sufficiently dark text color it finds on a <td>/<body>-level element,
       // regardless of exact value (unlike its background pass, which only targets
       // literal pure black/white and is already handled by darkModeSafe). Moving
       // the color one level down onto a plain <span> dodges that targeted pass,
       // the same trick that fixed the button's forced link-color override.
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
+      const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+    }
 
-    case 'heading':
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${block.html}</span></td></tr>`
+    case 'heading': {
+      const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
+      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+    }
 
     case 'image':
     case 'logo': {
@@ -578,8 +643,8 @@ function renderBlock(block: EmailBlock): string {
       // The text color lives on an inner <span>, not the <a> itself — Gmail's dark
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:15px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${renderMultilineLabel(block.label)}</span></a>
+      return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
       </td></tr>`
 
     case 'divider': {
@@ -644,8 +709,10 @@ function renderBlock(block: EmailBlock): string {
 function collectExtraStyles(blocks: EmailBlock[]): string[] {
   const rules: string[] = []
   for (const b of blocks) {
-    if ((b.type === 'text' || b.type === 'heading') && b.linkColor) {
-      rules.push(`.lc-${b.id} a{color:${b.linkColor} !important;}`)
+    if (b.type === 'text' || b.type === 'heading') {
+      // Reinforces the inline styleAnchors() stamp above (see its comment) for
+      // clients that strip inline styles on <a> but keep a <style> block.
+      rules.push(`.lc-${b.id} a{${b.linkColor ? `color:${b.linkColor} !important;` : ''}line-height:${b.lineHeight} !important;font-size:${b.fontSize}px !important;}`)
     }
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
@@ -663,12 +730,29 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(`@media (prefers-color-scheme: dark){.btn-${b.id}{background:${bg} !important;}.btn-${b.id} span{color:${fg} !important;}}`)
       rules.push(darkOverride(`.btn-${b.id}`, `background:${bg} !important;`))
       rules.push(darkOverride(`.btn-${b.id} span`, `color:${fg} !important;`))
+      if (b.mobile) {
+        const btnDecls = [
+          b.mobile.fontSize ? `font-size:${b.mobile.fontSize}px !important;` : '',
+          b.mobile.bgColor ? `background:${darkModeSafe(b.mobile.bgColor)} !important;` : '',
+        ].join('')
+        const wrapDecl = b.mobile.align ? `.btn-wrap-${b.id}{text-align:${b.mobile.align} !important;}` : ''
+        const spanDecl = b.mobile.textColor ? `.btn-${b.id} span{color:${darkModeSafe(b.mobile.textColor)} !important;}` : ''
+        if (btnDecls || wrapDecl || spanDecl) rules.push(`@media only screen and (max-width:600px){${btnDecls ? `.btn-${b.id}{${btnDecls}}` : ''}${wrapDecl}${spanDecl}}`)
+      }
     }
     if (b.type === 'text' || b.type === 'heading') {
       const fg = darkModeSafe(b.color)
       rules.push(`@media (prefers-color-scheme: dark){.lc-${b.id}{background-color:transparent !important;}.lc-${b.id} span{color:${fg} !important;}}`)
       rules.push(darkOverride(`.lc-${b.id}`, `background-color:transparent !important;`))
       rules.push(darkOverride(`.lc-${b.id} span`, `color:${fg} !important;`))
+      if (b.mobile) {
+        const decls = [
+          b.mobile.fontSize ? `font-size:${b.mobile.fontSize}px !important;` : '',
+          b.mobile.align ? `text-align:${b.mobile.align} !important;` : '',
+        ].join('')
+        const spanDecl = b.mobile.color ? `.lc-${b.id} span{color:${darkModeSafe(b.mobile.color)} !important;}` : ''
+        if (decls || spanDecl) rules.push(`@media only screen and (max-width:600px){${decls ? `.lc-${b.id}{${decls}}` : ''}${spanDecl}}`)
+      }
     }
     if (b.type === 'divider') {
       const c = darkModeSafe(b.color)
@@ -677,9 +761,19 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if (b.type === 'footer') {
       const bg = darkModeSafe(b.backgroundColor || '#000000')
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:#9ca3af !important;}}`)
+      // Text and icons switch to dark-readable colors under dark mode instead of
+      // just re-pinning the original light ones — see the comment on footerIcon:
+      // Gmail's iOS app still forces this near-black background to white despite
+      // the pin below, so the light-on-dark pairing needs to become dark-on-light
+      // to stay legible when that happens. Compliant clients that actually honor
+      // the light-only color-scheme meta tag never evaluate this rule at all
+      // (their footer never leaves the authored black/light-gray look), so this
+      // doesn't risk dark-on-dark anywhere the background pin actually holds.
+      const darkText = '#374151'
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{border-color:rgba(55,65,81,.35) !important;}}`)
       rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
-      rules.push(darkOverride('.footer-block span', 'color:#9ca3af !important;'))
+      rules.push(darkOverride('.footer-block span', `color:${darkText} !important;`))
+      rules.push(darkOverride('.footer-badge', 'border-color:rgba(55,65,81,.35) !important;'))
     }
     if (b.type === 'section') {
       const bg = darkModeSafe(b.backgroundColor)

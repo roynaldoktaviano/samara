@@ -26,7 +26,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!accountHolderName?.trim()) return NextResponse.json({ error: 'Account holder name is required' }, { status: 400 })
 
   const amountFormatted = `Rp ${new Intl.NumberFormat('id-ID').format(Number(amount))}`
-  const label = `${fee.feeNumber} (${fee.purchaseOrder.poNumber}${fee.purchaseOrder.supplierName ? ` — ${fee.purchaseOrder.supplierName}` : ''})`
+  const label = fee.purchaseOrder
+    ? `${fee.feeNumber} (${fee.purchaseOrder.poNumber}${fee.purchaseOrder.supplierName ? ` — ${fee.purchaseOrder.supplierName}` : ''})`
+    : fee.feeNumber
 
   const reimbursement = await db.deliveryFeeReimbursement.create({
     data: {
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'DF_REIMBURSEMENT_REQUESTED',
     'Delivery Fee Reimbursement Requested',
     `${label} has a reimbursement request from ${requesterName.trim()} (${amountFormatted})`,
-    fee.purchaseOrderId,
+    fee.purchaseOrderId ?? fee.id,
   ).catch(console.error)
 
   return NextResponse.json(reimbursement, { status: 201 })

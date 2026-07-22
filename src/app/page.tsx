@@ -152,7 +152,7 @@ const navigationItems: NavItem[] = [
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
   { id: 'purchasing-overview',   label: 'Purchasing',        icon: ShoppingCart,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-requests',  label: 'Requests & POs',    icon: ClipboardList,  roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-stock',     label: 'Stock by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-stock',     label: 'Item by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-item-types',   label: 'Item Types',       icon: Tag,         roles: ['ADMIN'], group: 'purchasing', feature: 'purchasing' },
@@ -314,6 +314,10 @@ export default function Home() {
   const router = useRouter()
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
+  // Lets Item by Location's "click PO number" deep-link into a specific PO's
+  // detail view on the Requests & POs page — there's no URL routing between
+  // top-level views in this app, so this is the plain state-lifting equivalent.
+  const [pendingPoId, setPendingPoId] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [profileOpen, setProfileOpen]   = useState(false)
@@ -614,11 +618,11 @@ export default function Home() {
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
       case 'purchasing-overview':   return <PurchasingOverview />
-      case 'purchasing-requests':  return <PurchasingRequestsPage />
+      case 'purchasing-requests':  return <PurchasingRequestsPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />
-      case 'purchasing-stock':     return <PurchasingStockPage />
+      case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-requests') }} />
       case 'purchasing-transfers':    return <PurchasingTransfersPage />
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
