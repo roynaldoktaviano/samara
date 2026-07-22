@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -18,6 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       dispatchedBy: { select: { id: true, name: true } },
       receivedBy: { select: { id: true, name: true } },
       expectedReceivedBy: { select: { id: true, name: true } },
+      purchaseOrder: { select: { id: true, poNumber: true } },
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -218,6 +220,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           updatedAt: new Date(),
         },
       })
+
+      // If this transfer was one leg of a PO's transit route, chain the next leg (or, if
+      // this was the final stop, let the PO finalize to RECEIVED/PARTIALLY_RECEIVED).
+      if (transfer.purchaseOrderId && transfer.originGoodsReceiptId) {
+        const routeLocationIds = await getRouteLocationIds(tx, transfer.purchaseOrderId)
+        const nextHop = routeLocationIds ? resolveNextHop(routeLocationIds, transfer.toLocationId) : null
+        if (nextHop) {
+          await spawnNextTransitLeg(tx, {
+            purchaseOrderId: transfer.purchaseOrderId,
+            originGoodsReceiptId: transfer.originGoodsReceiptId,
+            legSequence: (transfer.legSequence ?? 1) + 1,
+            fromLocationId: transfer.toLocationId,
+            toLocationId: nextHop,
+            items: receiveItems.map(it => ({ itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0 })),
+          })
+        } else {
+          await attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
+        }
+      }
     })
     return NextResponse.json({ ok: true })
   }

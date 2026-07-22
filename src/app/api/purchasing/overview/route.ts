@@ -16,10 +16,14 @@ export async function GET() {
 
   const [lots, transfers, exceptions, orders, rawMovements, locations, items] = await Promise.all([
     db.stockLot.findMany({ where: { quantity: { not: 0 } } }),
-    db.stockTransfer.findMany({ where: { status: { in: ['PENDING', 'DISPATCHED'] } } }),
+    db.stockTransfer.findMany({
+      where: { status: { in: ['PENDING', 'DISPATCHED'] } },
+      include: { items: { select: { dispatchedQty: true, item: { select: { standardCost: true } } } } },
+    }),
     db.inventoryException.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
     db.purchaseOrder.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
+      include: { items: { select: { orderedQty: true, receivedQty: true, unitCost: true } } },
     }),
     db.stockMovement.findMany({
       orderBy: { createdAt: 'desc' },
@@ -37,9 +41,25 @@ export async function GET() {
   const positiveLots = lots.filter(l => l.quantity > 0)
   const totalValue = positiveLots.reduce((s, l) => s + l.quantity * l.costPerUnit, 0)
 
-  const inTransitCount = transfers.filter(t => t.status === 'DISPATCHED').length
-  // In-transit value: use stock lots at DISPATCHED transfers (approximate via open transfers)
-  const inTransitValue = 0 // StockTransferItem has no unitCost field; leave as 0 or compute separately
+  // "In Transit" covers everything currently moving toward us or between our own
+  // locations: POs dispatched from the supplier (not yet fully received) PLUS internal
+  // StockTransfer legs actually on the move (DISPATCHED) — a PO shipped straight to one
+  // delivery location never gets a StockTransfer row at all, so counting transfers alone
+  // undercounts it.
+  const dispatchedTransfers = transfers.filter(t => t.status === 'DISPATCHED')
+  const poInTransit = orders.filter(o => ['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(o.status))
+  const inTransitCount = poInTransit.length + dispatchedTransfers.length
+  // Non-catalog ("non-stock") items have no PurchaseItem.standardCost to value against —
+  // same limitation the Transfers list's totalValue has (src/app/api/purchasing/transfers/route.ts).
+  const transferInTransitValue = dispatchedTransfers.reduce(
+    (sum, t) => sum + t.items.reduce((s, i) => s + i.dispatchedQty * (i.item?.standardCost ?? 0), 0),
+    0,
+  )
+  const poInTransitValue = poInTransit.reduce(
+    (sum, o) => sum + o.items.reduce((s, i) => s + Math.max(0, i.orderedQty - i.receivedQty) * i.unitCost, 0),
+    0,
+  )
+  const inTransitValue = transferInTransitValue + poInTransitValue
 
   const openExceptions = exceptions.filter(e => e.status === 'OPEN')
   const negativeStock = lots.filter(l => l.quantity < 0).length
@@ -117,7 +137,7 @@ export async function GET() {
     },
     controlCentre: {
       poAwaitingReceipt: orders.filter(o => ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(o.status)).length,
-      transfersInTransit: inTransitCount,
+      transfersInTransit: dispatchedTransfers.length,
       negativeStockExceptions: negativeExceptions,
       transferDiscrepancies,
       nearExpiryLots: nearExpiryLots.length,

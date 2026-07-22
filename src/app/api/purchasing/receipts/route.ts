@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
+import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -48,17 +49,29 @@ export async function POST(req: NextRequest) {
   // Permission + status check
   const poForPermission = await db.purchaseOrder.findUnique({
     where: { id: orderId },
-    select: { status: true, deliveryLocation: { select: { managedBy: true } } },
+    select: {
+      status: true,
+      deliveryLocationId: true,
+      deliveryLocation: { select: { managedBy: true } },
+      transitStops: { orderBy: { sequence: 'asc' }, select: { locationId: true, location: { select: { managedBy: true, name: true } } } },
+    },
   })
   if (!poForPermission) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
   if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(poForPermission.status))
     return NextResponse.json({ error: 'Barang hanya dapat diterima setelah PO berstatus In Transit' }, { status: 400 })
-  const managedBy = poForPermission.deliveryLocation?.managedBy ?? 'WAREHOUSE'
-  const receiveAllowed = managedBy === 'PURCHASING'
+
+  // When the PO has a transit route, goods from the supplier can only land at the first
+  // transit stop — the client-supplied locationId is ignored/overridden for routed POs.
+  const firstStop = poForPermission.transitStops[0]
+  const hasRoute = !!firstStop
+  const effectiveLocationId = hasRoute ? firstStop.locationId : locationId
+  const receivingLocationManagedBy = (hasRoute ? firstStop.location.managedBy : poForPermission.deliveryLocation?.managedBy) ?? 'WAREHOUSE'
+  const receivingLocationName = hasRoute ? firstStop.location.name : null
+  const receiveAllowed = receivingLocationManagedBy === 'PURCHASING'
     ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
     : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
   if (!receiveAllowed.includes(role))
-    return NextResponse.json({ error: `Only ${managedBy.toLowerCase()} team can receive items for this PO` }, { status: 403 })
+    return NextResponse.json({ error: `Only ${receivingLocationManagedBy.toLowerCase()} team can receive items for this PO` }, { status: 403 })
 
   const grNumber = await generateGrNumber(db)
 
@@ -71,11 +84,12 @@ export async function POST(req: NextRequest) {
     }),
     db.purchaseOrder.findUnique({
       where: { id: orderId },
-      select: { poNumber: true, supplierName: true, deliveryLocationId: true, deliveryLocation: { select: { name: true } } },
+      select: { poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } } },
     }),
   ])
   const conversionMap = new Map(purchaseItemsData.map(i => [i.id, i.conversionFactor]))
   const itemDataMap = new Map(purchaseItemsData.map(i => [i.id, i]))
+  const locationNameForExceptions = receivingLocationName ?? poData?.deliveryLocation?.name ?? effectiveLocationId
 
   const receipt = await db.$transaction(async (tx) => {
     const gr = await tx.goodsReceipt.create({
@@ -85,7 +99,7 @@ export async function POST(req: NextRequest) {
         orderId,
         receivedById: session.user.id,
         receiverName: receiverName?.trim() || null,
-        locationId,
+        locationId: effectiveLocationId,
         notes: notes?.trim() || null,
         receivePhotoKey: receivePhotoKey || null,
         receivedAt: new Date(),
@@ -136,25 +150,25 @@ export async function POST(req: NextRequest) {
       // lot tagged with sourcePoId, so it stays traceable to exactly the PO/date/
       // cost that brought it in (see the Item by Location non-stock item view).
       if (it.itemId) {
-        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId } })
+        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: effectiveLocationId } })
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
         } else {
           await tx.stockLot.create({
-            data: { id: crypto.randomUUID(), locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(), itemId: it.itemId },
+            data: { id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(), itemId: it.itemId },
           })
         }
       } else {
         await tx.stockLot.create({
           data: {
-            id: crypto.randomUUID(), locationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
+            id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
             itemName: it.itemName, unit: it.unit?.trim() || null, sourcePoId: orderId,
           },
         })
       }
       await tx.stockMovement.create({
         data: {
-          id: crypto.randomUUID(), toLocationId: locationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: session.user.id,
+          id: crypto.randomUUID(), toLocationId: effectiveLocationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: session.user.id,
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
         },
       })
@@ -176,8 +190,8 @@ export async function POST(req: NextRequest) {
               type: 'RECEIVING_DISCREPANCY',
               itemId: it.itemId,
               itemName: it.itemName,
-              locationId,
-              locationName: poData?.deliveryLocation?.name ?? locationId,
+              locationId: effectiveLocationId,
+              locationName: locationNameForExceptions,
               qty: Math.abs(discrepancy),
               value: Math.abs(discrepancy) * unitCostForValue,
               reason: `${discrepancy < 0 ? 'Short' : 'Over'} delivery on ${poData?.poNumber ?? orderId} from ${poData?.supplierName ?? 'supplier'}. Expected ${remaining} ${itemInfo?.baseUnit ?? ''}, received ${purchaseQty} ${itemInfo?.baseUnit ?? ''}.`,
@@ -205,8 +219,8 @@ export async function POST(req: NextRequest) {
             type: 'RECEIVING_DISCREPANCY',
             itemId: it.itemId,
             itemName: it.itemName,
-            locationId,
-            locationName: poData?.deliveryLocation?.name ?? locationId,
+            locationId: effectiveLocationId,
+            locationName: locationNameForExceptions,
             qty: purchaseQty,
             value: purchaseQty * (Number(it.unitCost) || itemDataMap.get(it.itemId)?.standardCost || 0),
             reason: `${outcomeLabel[outcome]}: ${purchaseQty} ${itemDataMap.get(it.itemId)?.baseUnit ?? ''} on ${poData?.poNumber ?? orderId} from ${poData?.supplierName ?? 'supplier'}`,
@@ -224,12 +238,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update PO status
-    const poItems = await tx.purchaseOrderItem.findMany({ where: { orderId } })
-    const allReceived = poItems.every(pi => pi.receivedQty >= pi.orderedQty)
-    const anyReceived = poItems.some(pi => pi.receivedQty > 0)
-    const newStatus = allReceived ? 'RECEIVED' : anyReceived ? 'PARTIALLY_RECEIVED' : undefined
-    if (newStatus) await tx.purchaseOrder.update({ where: { id: orderId }, data: { status: newStatus, updatedAt: new Date() } })
+    // If this PO has a transit route, spawn the next leg (first stop -> next stop/final
+    // destination) as a normal StockTransfer — still needs its own dispatch+receive.
+    if (hasRoute) {
+      const routeLocationIds = [...poForPermission.transitStops.map(s => s.locationId), poForPermission.deliveryLocationId!]
+      const nextHop = resolveNextHop(routeLocationIds, effectiveLocationId)
+      if (nextHop) {
+        await spawnNextTransitLeg(tx, {
+          purchaseOrderId: orderId,
+          originGoodsReceiptId: gr.id,
+          legSequence: 1,
+          fromLocationId: effectiveLocationId,
+          toLocationId: nextHop,
+          items: gr.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, requestedQty: i.receivedQty })),
+        })
+      }
+    }
+
+    // Update PO status — no-ops while any transit leg for this PO is still open, including
+    // the one just spawned above, so a routed PO only finalizes once goods physically reach
+    // the final destination.
+    const newStatus = await attemptFinalizePOStatus(tx, orderId)
 
     return { gr, newStatus }
   })

@@ -193,38 +193,38 @@ model Lead {
 // Reassigned from leadId to customerId when a Lead converts into a Guest via
 // booking creation — see POST /api/bookings.
 model Inquiry {
-  id           String    @id @default(cuid())
-  source       String
-  leadId       String?
-  customerId   String?
-  checkInDate  DateTime?
-  checkOutDate DateTime?
-  guestCount   Int?
-  tripType     String?
-  message      String?
-  website      String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
-  url          String? // full URL of the page the form was submitted from
+  id                 String    @id @default(cuid())
+  source             String
+  leadId             String?
+  customerId         String?
+  checkInDate        DateTime?
+  checkOutDate       DateTime?
+  guestCount         Int?
+  tripType           String?
+  message            String?
+  website            String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
+  url                String? // full URL of the page the form was submitted from
   // "Original" touch — first_source/first_medium/first_campaign in Freshsales
-  utmSource    String?
-  utmMedium    String?
-  utmCampaign  String?
-  utmTerm      String?
-  utmContent   String?
-  gclid        String?
-  leadSource   String? // Freshsales "Lead Source" (cf_lead_source)
-  refererField String? // Freshsales "Referer Field" (cf_referer_field)
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  utmTerm            String?
+  utmContent         String?
+  gclid              String?
+  leadSource         String? // Freshsales "Lead Source" (cf_lead_source)
+  refererField       String? // Freshsales "Referer Field" (cf_referer_field)
   mobileNumberBackup String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
-  reference    String? // Freshsales "Reference" (cf_reference)
+  reference          String? // Freshsales "Reference" (cf_reference)
   // "Created from" touch — last_source/last_medium/last_campaign in Freshsales
-  lastSource   String?
-  lastMedium   String?
-  lastCampaign String?
+  lastSource         String?
+  lastMedium         String?
+  lastCampaign       String?
   // "Most recent" touch — latest_source/latest_medium/latest_campaign in Freshsales
-  latestSource   String?
-  latestMedium   String?
-  latestCampaign String?
-  rawPayload   Json?
-  createdAt    DateTime  @default(now())
+  latestSource       String?
+  latestMedium       String?
+  latestCampaign     String?
+  rawPayload         Json?
+  createdAt          DateTime  @default(now())
 
   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -752,7 +752,7 @@ enum CampaignStatus {
   DRAFT
   SCHEDULED
   SENDING
-  PAUSED   // send was interrupted mid-flight (e.g. server restart) — resumable, see src/instrumentation.ts
+  PAUSED // send was interrupted mid-flight (e.g. server restart) — resumable, see src/instrumentation.ts
   SENT
   FAILED
   CANCELED
@@ -1130,16 +1130,17 @@ model StockLocation {
   isActive     Boolean           @default(true)
   createdAt    DateTime          @default(now())
 
-  yacht            Yacht?            @relation(fields: [yachtId], references: [id], onDelete: SetNull)
-  parent           StockLocation?    @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children         StockLocation[]   @relation("LocationParent")
+  yacht            Yacht?                     @relation(fields: [yachtId], references: [id], onDelete: SetNull)
+  parent           StockLocation?             @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children         StockLocation[]            @relation("LocationParent")
   stockLots        StockLot[]
-  transfersFrom    StockTransfer[]   @relation("TransferFrom")
-  transfersTo      StockTransfer[]   @relation("TransferTo")
+  transfersFrom    StockTransfer[]            @relation("TransferFrom")
+  transfersTo      StockTransfer[]            @relation("TransferTo")
   receipts         GoodsReceipt[]
   stockCounts      StockCount[]
-  purchaseRequests PurchaseRequest[] @relation("PRDelivery")
-  purchaseOrders   PurchaseOrder[]   @relation("PODelivery")
+  purchaseRequests PurchaseRequest[]          @relation("PRDelivery")
+  purchaseOrders   PurchaseOrder[]            @relation("PODelivery")
+  transitStops     PurchaseOrderTransitStop[]
   cashierSales     CashierSale[]
   employees        Employee[]
 
@@ -1215,7 +1216,7 @@ model StockLot {
   updatedAt   DateTime  @updatedAt
 
   item     PurchaseItem?  @relation(fields: [itemId], references: [id])
-  location StockLocation @relation(fields: [locationId], references: [id])
+  location StockLocation  @relation(fields: [locationId], references: [id])
   sourcePo PurchaseOrder? @relation(fields: [sourcePoId], references: [id], onDelete: SetNull)
 
   @@index([itemId, locationId])
@@ -1240,7 +1241,7 @@ model StockMovement {
   createdAt      DateTime @default(now())
 
   item      PurchaseItem? @relation(fields: [itemId], references: [id])
-  createdBy User         @relation(fields: [createdById], references: [id])
+  createdBy User          @relation(fields: [createdById], references: [id])
 
   @@index([itemId])
   @@index([itemName])
@@ -1372,12 +1373,12 @@ model PurchaseOrder {
   requestedByDepartment String?
   requestedByRole       String?
 
-  request             PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  supplier            Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  deliveryLocation    StockLocation?      @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  createdBy           User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  requestedByEmployee Employee?           @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
-  booking             Booking?            @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  request             PurchaseRequest?           @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier            Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  deliveryLocation    StockLocation?             @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  createdBy           User?                      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  requestedByEmployee Employee?                  @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  booking             Booking?                   @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
   receipts            GoodsReceipt[]
   notifications       Notification[]
@@ -1385,6 +1386,8 @@ model PurchaseOrder {
   reimbursements      POReimbursement[]
   deliveryFees        DeliveryFee[]
   stockLots           StockLot[]
+  transitStops        PurchaseOrderTransitStop[]
+  transitTransfers    StockTransfer[]
 
   @@index([createdById])
   @@index([status])
@@ -1569,10 +1572,11 @@ model GoodsReceipt {
   receivedAt      DateTime @default(now())
   createdAt       DateTime @default(now())
 
-  order      PurchaseOrder      @relation(fields: [orderId], references: [id])
-  receivedBy User               @relation(fields: [receivedById], references: [id])
-  location   StockLocation      @relation(fields: [locationId], references: [id])
-  items      GoodsReceiptItem[]
+  order            PurchaseOrder      @relation(fields: [orderId], references: [id])
+  receivedBy       User               @relation(fields: [receivedById], references: [id])
+  location         StockLocation      @relation(fields: [locationId], references: [id])
+  items            GoodsReceiptItem[]
+  transitTransfers StockTransfer[]
 
   @@index([orderId])
   @@index([receivedAt])
@@ -1597,6 +1601,23 @@ model GoodsReceiptItem {
   @@index([receiptId])
 }
 
+// Ordered intermediate stops for a PO's shipping route, between the supplier and
+// PurchaseOrder.deliveryLocationId (the final destination, unchanged). Each hop between
+// consecutive stops (and the final stop -> deliveryLocationId) is executed as a normal
+// StockTransfer, auto-chained — see src/lib/purchasing/transitChain.ts.
+model PurchaseOrderTransitStop {
+  id         String        @id @default(cuid())
+  poId       String
+  order      PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  sequence   Int
+  locationId String
+  location   StockLocation @relation(fields: [locationId], references: [id])
+  createdAt  DateTime      @default(now())
+
+  @@unique([poId, sequence])
+  @@index([poId])
+}
+
 model StockTransfer {
   id                   String         @id @default(cuid())
   transferNumber       String         @unique
@@ -1604,6 +1625,12 @@ model StockTransfer {
   toLocationId         String
   crewRequestId        String?
   purchaseRequestId    String?
+  // Set when this transfer is one leg of a PO's multi-stop transit route (auto-created,
+  // see src/lib/purchasing/transitChain.ts). originGoodsReceiptId stays the same across every
+  // leg spawned from one shipment, so partial deliveries get independent chains.
+  purchaseOrderId      String?
+  originGoodsReceiptId String?
+  legSequence          Int?
   status               TransferStatus @default(PENDING)
   dispatchPhotoKey     String?
   receivePhotoKey      String?
@@ -1622,6 +1649,8 @@ model StockTransfer {
   toLocation         StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])
   crewRequest        CrewRequest?        @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
   purchaseRequest    PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  purchaseOrder      PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  originGoodsReceipt GoodsReceipt?       @relation(fields: [originGoodsReceiptId], references: [id], onDelete: SetNull)
   dispatchedBy       User?               @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
   receivedBy         User?               @relation("TransferReceive", fields: [receivedById], references: [id], onDelete: SetNull)
   expectedReceivedBy User?               @relation("TransferExpectedReceive", fields: [expectedReceiverId], references: [id], onDelete: SetNull)
@@ -1631,6 +1660,8 @@ model StockTransfer {
   @@index([createdAt])
   @@index([crewRequestId])
   @@index([purchaseRequestId])
+  @@index([purchaseOrderId])
+  @@index([originGoodsReceiptId])
 }
 
 model StockTransferItem {

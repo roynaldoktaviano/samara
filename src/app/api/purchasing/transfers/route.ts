@@ -22,8 +22,12 @@ export async function GET() {
     include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })
   const locIds = [...new Set([...transfers.map(t => t.fromLocationId), ...transfers.map(t => t.toLocationId)])]
-  const locations = await db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } })
+  const [locations, purchaseOrders] = await Promise.all([
+    db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } }),
+    db.purchaseOrder.findMany({ where: { id: { in: transfers.map(t => t.purchaseOrderId).filter((x): x is string => !!x) } }, select: { id: true, poNumber: true } }),
+  ])
   const locMap = new Map(locations.map(l => [l.id, l]))
+  const poMap = new Map(purchaseOrders.map(o => [o.id, o]))
   return NextResponse.json(transfers.map(t => {
     const first = t.items[0]?.itemName ?? null
     const extra = t.items.length > 1 ? t.items.length - 1 : 0
@@ -40,6 +44,7 @@ export async function GET() {
       hasReceivePhoto: !!t.receivePhotoKey,
       fromLocation: locMap.get(t.fromLocationId) ?? null,
       toLocation: locMap.get(t.toLocationId) ?? null,
+      purchaseOrder: t.purchaseOrderId ? (poMap.get(t.purchaseOrderId) ?? null) : null,
     }
   }))
 }

@@ -44,6 +44,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           paidBy: { select: { name: true } },
         },
       },
+      transitStops: { orderBy: { sequence: 'asc' }, select: { locationId: true, sequence: true, location: { select: { id: true, name: true, type: true } } } },
+      transitTransfers: {
+        orderBy: { legSequence: 'asc' },
+        select: {
+          id: true, legSequence: true, status: true, dispatchedAt: true, receivedAt: true,
+          dispatchPhotoKey: true, receivePhotoKey: true, receivedByName: true,
+          dispatchedBy: { select: { name: true } },
+          fromLocation: { select: { name: true } }, toLocation: { select: { name: true } },
+          items: { select: { id: true, itemId: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true } },
+        },
+      },
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -66,6 +77,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const grandTotal = computePOGrandTotal(order)
   const { paymentStatus, paidTotal, requestedTotal, remaining } = summarizePOPayments(grandTotal, order.paymentRequests, order.reimbursements)
 
+  // Derived label for routed POs — same rule as the list endpoint (see
+  // src/app/api/purchasing/orders/route.ts and src/lib/purchasing/transitChain.ts).
+  let currentLegLabel: string | null = null
+  if (order.transitStops.length > 0 && order.status !== 'RECEIVED' && order.status !== 'CANCELLED') {
+    const openLeg = order.transitTransfers.find(t => t.status === 'PENDING' || t.status === 'DISPATCHED')
+    if (openLeg) {
+      currentLegLabel = openLeg.status === 'PENDING' ? `Transit in ${openLeg.fromLocation.name}` : `On deliver to ${openLeg.toLocation.name}`
+    } else if (order.dispatchedAt) {
+      currentLegLabel = `On deliver to ${order.transitStops[0].location.name}`
+    }
+  }
+
   return NextResponse.json({
     ...order,
     receipts,
@@ -79,6 +102,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     paidTotal,
     requestedTotal,
     remaining,
+    currentLegLabel,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
     booking: order.booking ? { bookingCode: order.booking.bookingCode, tripType: order.booking.tripType, leadGuestName: order.booking.customer.name, yacht: order.booking.yacht } : null,
@@ -94,12 +118,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const {
     status, supplierName, expectedAt, notes, dispatchPhotoKey, cancellationReason,
-    supplierId, deliveryLocationId, requestedByEmployeeId, items, extraCharges, discountType, discountValue, bookingId,
+    supplierId, deliveryLocationId, requestedByEmployeeId, items, extraCharges, discountType, discountValue, bookingId, transitStops,
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
     supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string
     items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
+    transitStops?: string[]
+  }
+
+  // Shipping route (transit stops) can only be edited before the PO has been dispatched —
+  // once goods are moving, the route is locked in and any repositioning happens via the
+  // auto-chained transfers instead (see src/lib/purchasing/transitChain.ts).
+  let cleanTransitStopIds: string[] | undefined
+  if (transitStops !== undefined) {
+    const poForRoute = await db.purchaseOrder.findUnique({ where: { id }, select: { dispatchedAt: true, deliveryLocationId: true } })
+    if (!poForRoute) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
+    if (poForRoute.dispatchedAt)
+      return NextResponse.json({ error: 'Shipping route can no longer be edited after the PO has been dispatched' }, { status: 400 })
+    const effectiveDeliveryLocationId = deliveryLocationId !== undefined ? (deliveryLocationId || null) : poForRoute.deliveryLocationId
+    cleanTransitStopIds = [...new Set((Array.isArray(transitStops) ? transitStops : []).filter((x): x is string => typeof x === 'string' && !!x))]
+    if (effectiveDeliveryLocationId && cleanTransitStopIds.includes(effectiveDeliveryLocationId))
+      return NextResponse.json({ error: 'Transit stop tidak boleh sama dengan Delivery Location' }, { status: 400 })
+    if (cleanTransitStopIds.length > 0) {
+      const validCount = await db.stockLocation.count({ where: { id: { in: cleanTransitStopIds } } })
+      if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'Salah satu transit stop tidak valid' }, { status: 400 })
+    }
   }
 
   // Requested By is mandatory (same as Supplier) — unlike deliveryLocationId, an
@@ -240,6 +284,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           orderedQty: Number(it.orderedQty), unitCost: Number(it.unitCost) || 0,
         })),
       })
+    }
+    if (cleanTransitStopIds !== undefined) {
+      await tx.purchaseOrderTransitStop.deleteMany({ where: { poId: id } })
+      if (cleanTransitStopIds.length > 0) {
+        await tx.purchaseOrderTransitStop.createMany({
+          data: cleanTransitStopIds.map((locationId, idx) => ({ id: crypto.randomUUID(), poId: id, sequence: idx + 1, locationId })),
+        })
+      }
     }
     return tx.purchaseOrder.update({
       where: { id },

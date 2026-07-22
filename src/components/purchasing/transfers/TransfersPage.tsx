@@ -37,6 +37,11 @@ interface StockTransfer {
   receivedBy?: { id: string; name: string } | null
   expectedReceivedBy?: { id: string; name: string } | null
   createdAt: string; dispatchedAt: string | null; receivedAt: string | null
+  // Set when this transfer is one auto-chained leg of a PO's shipping route — see
+  // src/lib/purchasing/transitChain.ts.
+  purchaseOrderId?: string | null
+  legSequence?: number | null
+  purchaseOrder?: { id: string; poNumber: string } | null
 }
 interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null }
 
@@ -321,7 +326,14 @@ export default function TransfersPage() {
               <tr><td colSpan={8} className="text-center py-12 text-sm text-muted-foreground">No transfers yet.</td></tr>
             ) : transfers.map(t => (
               <tr key={t.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(t)}>
-                <td className="px-4 py-3 font-mono text-sm font-medium">{t.transferNumber}</td>
+                <td className="px-4 py-3 font-mono text-sm font-medium">
+                  {t.transferNumber}
+                  {t.purchaseOrder && (
+                    <p className="font-sans text-[10px] text-muted-foreground font-normal mt-0.5">
+                      PO {t.purchaseOrder.poNumber}{t.legSequence ? ` · Leg ${t.legSequence}` : ''}
+                    </p>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 text-sm">
                     <span className="text-muted-foreground truncate max-w-[80px]">{t.fromLocation?.name ?? '—'}</span>
@@ -600,6 +612,12 @@ export default function TransfersPage() {
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
                 <span>{detail.fromLocation?.name}</span><ArrowRight className="h-3.5 w-3.5" /><span>{detail.toLocation?.name}</span>
               </div>
+              {detail.purchaseOrder && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Auto-created from PO <span className="font-medium text-foreground">{detail.purchaseOrder.poNumber}</span>
+                  {detail.legSequence ? ` — leg ${detail.legSequence}` : ''}
+                </p>
+              )}
               {!!detail.totalValue && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {detail.status === 'DISPATCHED' ? 'Nilai barang in transit: ' : detail.status === 'RECEIVED' ? 'Nilai barang diterima: ' : 'Nilai barang: '}

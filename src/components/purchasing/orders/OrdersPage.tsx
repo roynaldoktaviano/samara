@@ -21,6 +21,15 @@ interface Reimbursement {
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
 interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
+interface TransitStop { locationId: string; sequence: number; location: { id: string; name: string; type: string } }
+interface TransitLegItem { id: string; itemId: string | null; itemName: string; requestedQty: number; dispatchedQty: number; receivedQty: number }
+interface TransitLeg {
+  id: string; legSequence: number | null; status: string; dispatchedAt: string | null; receivedAt: string | null
+  dispatchPhotoKey: string | null; receivePhotoKey: string | null; receivedByName: string | null
+  dispatchedBy: { name: string | null } | null
+  fromLocation: { name: string }; toLocation: { name: string }
+  items: TransitLegItem[]
+}
 interface PurchaseOrder {
   id: string; poNumber: string; supplierId: string | null; supplierName: string | null; status: string
   deliveryLocationId: string | null; deliveryLocation: DeliveryLocation | null
@@ -34,6 +43,8 @@ interface PurchaseOrder {
   paymentStatus: string
   bookingId: string | null
   booking: { bookingCode: string; tripType: string; leadGuestName: string; yacht: { name: string } | null } | null
+  transitStops?: TransitStop[]
+  currentLegLabel?: string | null
 }
 interface SupplierOption { id: string; name: string }
 interface TripOption {
@@ -66,6 +77,7 @@ interface OrderDetail extends PurchaseOrder {
   paidTotal: number
   requestedTotal: number
   remaining: number
+  transitTransfers: TransitLeg[]
 }
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
@@ -149,10 +161,14 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
       }
       return paymentSteps
     })(),
+    // Routed POs (detail.transitStops.length > 0) ship Supplier -> first stop as the normal
+    // dispatch+receipt flow below, then continue first stop -> ... -> deliveryLocationId as
+    // one auto-chained StockTransfer leg per hop (detail.transitTransfers) — see
+    // src/lib/purchasing/transitChain.ts.
     {
       key: 'transit',
       done: ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(detail.status),
-      label: 'In Transit',
+      label: detail.transitStops && detail.transitStops.length > 0 ? `Dispatched — on deliver to ${detail.transitStops[0].location.name}` : 'In Transit',
       date: detail.dispatchedAt ? fmt(detail.dispatchedAt) : null,
       sub: [detail.dispatchedByName],
       photos: detail.dispatchPhotoKey ? [detail.dispatchPhotoKey] : [],
@@ -161,12 +177,48 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
     ...detail.receipts.map((r, i) => ({
       key: `gr-${r.id}`,
       done: true,
-      label: detail.receipts.length === 1 ? 'Received' : `Receipt ${i + 1}`,
+      label: detail.transitStops && detail.transitStops.length > 0
+        ? `Arrived at ${detail.transitStops[0].location.name}`
+        : (detail.receipts.length === 1 ? 'Received' : `Receipt ${i + 1}`),
       date: fmt(r.receivedAt),
       sub: [r.receiverName, `${r.items.length} item${r.items.length !== 1 ? 's' : ''}`],
       photos: r.receivePhotoKey ? [r.receivePhotoKey] : [],
       photoLabel: 'View receipt photo',
     })),
+    // One Dispatched/Arrived step-pair per planned hop beyond the first stop (first stop ->
+    // next stop -> ... -> final destination) — placeholders (done: false) until that leg
+    // actually exists as a StockTransfer.
+    ...(() => {
+      if (!detail.transitStops || detail.transitStops.length === 0) return []
+      const routeLocationIds = [...detail.transitStops.map(s => s.locationId), detail.deliveryLocationId].filter((x): x is string => !!x)
+      const locationName = (locId: string) => detail.transitStops!.find(s => s.locationId === locId)?.location.name ?? detail.deliveryLocation?.name ?? locId
+      const legSteps: Step[] = []
+      for (let i = 0; i < routeLocationIds.length - 1; i++) {
+        const legSequence = i + 1
+        const fromName = locationName(routeLocationIds[i])
+        const toName = locationName(routeLocationIds[i + 1])
+        const leg = detail.transitTransfers.find(t => t.legSequence === legSequence)
+        legSteps.push({
+          key: `leg-${legSequence}-dispatch`,
+          done: !!leg?.dispatchedAt,
+          label: `Dispatched from ${fromName}`,
+          date: leg?.dispatchedAt ? fmt(leg.dispatchedAt) : null,
+          sub: [`to ${toName}`, leg?.dispatchedBy?.name ? `by ${leg.dispatchedBy.name}` : null],
+          photos: leg?.dispatchPhotoKey ? [leg.dispatchPhotoKey] : [],
+          photoLabel: 'View dispatch photo',
+        })
+        legSteps.push({
+          key: `leg-${legSequence}-arrive`,
+          done: !!leg?.receivedAt,
+          label: `Arrived at ${toName}`,
+          date: leg?.receivedAt ? fmt(leg.receivedAt) : null,
+          sub: [leg?.receivedByName ? `by ${leg.receivedByName}` : null],
+          photos: leg?.receivePhotoKey ? [leg.receivePhotoKey] : [],
+          photoLabel: 'View receive photo',
+        })
+      }
+      return legSteps
+    })(),
     ...(!['RECEIVED', 'CANCELLED'].includes(detail.status) && detail.receipts.length === 0 ? [{
       key: 'receive',
       done: false,
@@ -623,6 +675,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [bookingLabel, setBookingLabel] = useState('')
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
+  // Ordered intermediate stops between the supplier and deliveryLocationId (the final
+  // destination) — each hop is auto-chained into a normal StockTransfer, see
+  // src/lib/purchasing/transitChain.ts.
+  const [transitStopIds, setTransitStopIds] = useState<string[]>([])
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
   const [extraCharges, setExtraCharges] = useState<{ label: string; amount: number }[]>([])
   const [discountType, setDiscountType] = useState<'PERCENT' | 'FIXED'>('PERCENT')
@@ -694,16 +750,26 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const { isDragging: isDraggingReceivePhoto, dropProps: receivePhotoDropProps } = useFileDrop(files => { if (files[0]) handleReceivePhotoFile(files[0]) })
   const [receiveSaving, setReceiveSaving] = useState(false)
   const [receiveError, setReceiveError] = useState('')
-  const [team, setTeam] = useState<{ id: string; name: string }[]>([])
+
+  // Transit leg dispatch/receive — acts on the auto-chained StockTransfer for the PO's
+  // current route hop directly from this page (data still lives in StockTransfer, see
+  // src/lib/purchasing/transitChain.ts), so the PO creator/receiver never has to leave
+  // the PO to move goods through the rest of the route.
+  const [legActionModal, setLegActionModal] = useState<{ leg: TransitLeg; action: 'dispatch' | 'receive' } | null>(null)
+  const [legPhoto, setLegPhoto] = useState<string | null>(null)
+  const legFileInputRef = useRef<HTMLInputElement>(null)
+  const { isDragging: isDraggingLegPhoto, dropProps: legPhotoDropProps } = useFileDrop(files => { if (files[0]) handleLegPhotoFile(files[0]) })
+  const [legReceiverName, setLegReceiverName] = useState('')
+  const [legSaving, setLegSaving] = useState(false)
+  const [legError, setLegError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, iRes, sRes, lRes, tRes, eRes, rRes, tripsRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/team'), fetch('/api/purchasing/employees'), fetch('/api/purchasing/reimburse-accounts'), fetch('/api/purchasing/trips')])
+    const [oRes, iRes, sRes, lRes, eRes, rRes, tripsRes] = await Promise.all([fetch('/api/purchasing/orders'), fetch('/api/purchasing/items'), fetch('/api/purchasing/suppliers'), fetch('/api/purchasing/locations'), fetch('/api/purchasing/employees'), fetch('/api/purchasing/reimburse-accounts'), fetch('/api/purchasing/trips')])
     if (oRes.ok) setOrders(await oRes.json())
     if (iRes.ok) setPurchaseItems((await iRes.json()).filter((i: PurchaseItem) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive !== false))
-    if (tRes.ok) setTeam(await tRes.json())
     if (eRes.ok) setEmployees(await eRes.json())
     if (rRes.ok) setReimburseAccounts(await rRes.json())
     if (tripsRes.ok) setTrips(await tripsRes.json())
@@ -770,6 +836,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
     setExtraCharges([])
     setDiscountType('PERCENT'); setDiscountValue(0)
+    setTransitStopIds([])
   }
 
   async function submit() {
@@ -785,6 +852,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
         discountType: discountValue > 0 ? discountType : undefined,
         discountValue: discountValue > 0 ? discountValue : undefined,
+        transitStops: transitStopIds,
       }),
     })
     const data = await res.json()
@@ -809,7 +877,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       const all = await lRes.json()
       const active = all.filter((l: StockLocation) => l.isActive !== false)
       setLocations(active)
-      setReceiveLocation(detail.deliveryLocationId ?? active[0]?.id ?? '')
+      // Goods from the supplier can only land at the first transit stop when the PO has a
+      // route — the API enforces this server-side too (src/lib/purchasing/transitChain.ts).
+      const firstStopId = detail.transitStops?.[0]?.locationId
+      setReceiveLocation(firstStopId ?? detail.deliveryLocationId ?? active[0]?.id ?? '')
     }
   }
 
@@ -990,7 +1061,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.orderedAt)}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
                       {o.lastReceivedBy && (
                         <p className="text-[10px] text-muted-foreground mt-0.5">by {o.lastReceivedBy}</p>
                       )}
@@ -1056,6 +1127,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // moved against it would desync GoodsReceiptItem cost history and already-requested/paid
   // amounts (see the matching guard in PATCH /api/purchasing/orders/[id]).
   function renderOrderFormFields(locked = false) {
+    // Route can only be edited before dispatch — matches the server-side guard in
+    // PATCH /api/purchasing/orders/[id]. Only applies in Edit (Create has no detail yet).
+    const routeLocked = editPOModal && !!detail?.dispatchedAt
     const itemsTotal = lines.reduce((s, l) => s + l.orderedQty * l.unitCost, 0)
     const chargesTotal = extraCharges.reduce((s, c) => s + c.amount, 0)
     const discountAmount = Math.min(itemsTotal, discountType === 'PERCENT' ? itemsTotal * (discountValue / 100) : discountValue)
@@ -1122,6 +1196,54 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <TripCombobox value={bookingId} valueLabel={bookingLabel} trips={trips} onChange={(id, label) => { setBookingId(id); setBookingLabel(label) }} />
               </div>
             </div>
+
+            {/* Shipping Route — optional transit stops between the supplier and the Delivery
+                Location above. Each hop is auto-chained into a normal Transfer once goods
+                arrive at the first stop — see /purchasing/transfers. Locked once dispatched. */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">Shipping Route <span className="font-normal">(optional — routes goods through one or more transit stops before Delivery Location)</span></label>
+              {routeLocked && (
+                <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  <Lock className="h-3.5 w-3.5 shrink-0" /> Route is locked — this PO has already been dispatched.
+                </div>
+              )}
+              {transitStopIds.length > 0 && (
+                <div className="space-y-1.5">
+                  {transitStopIds.map((locId, idx) => {
+                    const loc = locations.find(l => l.id === locId)
+                    return (
+                      <div key={locId} className="flex items-center gap-2 border rounded-md px-3 py-1.5 bg-muted/30 text-sm">
+                        <span className="text-xs font-semibold text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                        <span className="flex-1 truncate">{loc?.name ?? locId}</span>
+                        {!routeLocked && (
+                          <>
+                            <button type="button" disabled={idx === 0}
+                              onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]; return next })}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↑</button>
+                            <button type="button" disabled={idx === transitStopIds.length - 1}
+                              onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]; return next })}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↓</button>
+                            <button type="button" onClick={() => setTransitStopIds(ids => ids.filter(id => id !== locId))}
+                              className="text-red-500 hover:text-red-700 px-1"><X className="h-3.5 w-3.5" /></button>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <p className="text-xs text-muted-foreground">
+                    Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— pilih Delivery Location —'}</span>
+                  </p>
+                </div>
+              )}
+              {!routeLocked && (
+                <select className={inp} value=""
+                  onChange={e => { const v = e.target.value; if (v) setTransitStopIds(ids => [...ids, v]) }}>
+                  <option value="">+ Add transit stop…</option>
+                  {locations.filter(l => l.id !== deliveryLocationId && !transitStopIds.includes(l.id)).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Notes <span className="font-normal">(optional)</span></label>
               <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none transition-colors"
@@ -1407,6 +1529,49 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     openDetail(detail); load()
   }
 
+  function handleLegPhotoFile(file: File) {
+    const canvas = document.createElement('canvas')
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1200
+      const ratio = Math.min(MAX / img.width, MAX / img.height, 1)
+      canvas.width = img.width * ratio
+      canvas.height = img.height * ratio
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      setLegPhoto(canvas.toDataURL('image/jpeg', 0.75))
+    }
+    img.src = URL.createObjectURL(file)
+  }
+
+  function openLegAction(leg: TransitLeg, action: 'dispatch' | 'receive') {
+    setLegPhoto(null); setLegError('')
+    setLegReceiverName(action === 'receive' ? ((session?.user as { name?: string })?.name ?? '') : '')
+    setLegActionModal({ leg, action })
+  }
+
+  async function submitLegAction() {
+    if (!legActionModal) return
+    const { leg, action } = legActionModal
+    if (!legPhoto) { setLegError('Foto wajib diupload'); return }
+    setLegSaving(true); setLegError('')
+    const items = leg.items.map(i => ({
+      itemId: i.itemId, itemName: i.itemName,
+      ...(action === 'dispatch' ? { dispatchedQty: i.requestedQty } : { receivedQty: i.dispatchedQty }),
+    }))
+    const res = await fetch(`/api/purchasing/transfers/${leg.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action, items,
+        ...(action === 'dispatch' ? { dispatchPhotoKey: legPhoto } : { receivePhotoKey: legPhoto, receivedByName: legReceiverName.trim() || undefined }),
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setLegError(data.error ?? 'Failed'); setLegSaving(false); return }
+    setLegSaving(false); setLegActionModal(null); setLegPhoto(null)
+    if (detail) openDetail(detail)
+    load()
+  }
+
   async function confirmDraft() {
     if (!detail) return
     if (!draftSupplier.trim()) { setDraftError('Supplier name is required'); return }
@@ -1550,6 +1715,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     setExtraCharges(detail.extraCharges ?? [])
     setDiscountType(detail.discountType ?? 'PERCENT')
     setDiscountValue(detail.discountValue ?? 0)
+    setTransitStopIds(detail.transitStops?.map(s => s.locationId) ?? [])
     setEditPOError(''); setEditPOModal(true)
   }
 
@@ -1567,6 +1733,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         requestedByEmployeeId: requestedByEmployeeId || '',
         bookingId: bookingId || '',
         expectedAt: expectedAt || undefined, notes,
+        // Shipping route is locked server-side once the PO has dispatched — don't send it
+        // in that case (the API rejects any transitStops touch after dispatchedAt).
+        ...(!detail.dispatchedAt && { transitStops: transitStopIds }),
         ...(!locked && {
           items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
           extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
@@ -1607,7 +1776,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             <p className="text-muted-foreground text-sm mt-0.5">
               {detail.supplierName ?? <span className="italic">No supplier yet</span>} · {fmtDate(detail.orderedAt)} ·{' '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>
-                {STATUS_LABEL[detail.status] ?? detail.status}
+                {detail.currentLegLabel ?? STATUS_LABEL[detail.status] ?? detail.status}
               </span>
             </p>
             <p className="text-muted-foreground text-xs mt-1">
@@ -1669,13 +1838,26 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 {detail.status === 'CANCELLED' ? 'Edit Cancellation' : latestRecord?.kind === 'payment' ? 'Edit Payment' : 'Edit Reimbursement'}
               </button>
             )}
-            {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && (() => {
+            {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty) && (() => {
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
               const allowed = managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
               return allowed.includes(role)
             })() && (
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
+            {/* Continue the shipping route without leaving the PO — acts on the auto-chained
+                StockTransfer leg directly (see src/lib/purchasing/transitChain.ts). */}
+            {(() => {
+              const openLeg = detail.transitTransfers?.find(t => t.status === 'PENDING' || t.status === 'DISPATCHED')
+              if (!openLeg) return null
+              const action = openLeg.status === 'PENDING' ? 'dispatch' : 'receive'
+              return (
+                <button onClick={() => openLegAction(openLeg, action)}
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
+                  {action === 'dispatch' ? `Dispatch to ${openLeg.toLocation.name}` : `Confirm Arrival at ${openLeg.toLocation.name}`}
+                </button>
+              )
+            })()}
             {detail.status === 'ORDERED' && canTransit && (detail.paymentRequests.some(p => p.status === 'PAID') || detail.reimbursements.some(r => r.status === 'PAID')) && (
               <button onClick={() => { setTransitPhoto(null); setTransitError(''); setTransitModal(true) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
@@ -2047,6 +2229,84 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         </>
       )}
 
+      {/* Transit Leg Dispatch/Receive Modal — acts on the PO's current auto-chained
+          StockTransfer leg (see src/lib/purchasing/transitChain.ts) without leaving the PO. */}
+      {legActionModal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setLegActionModal(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">
+                    {legActionModal.action === 'dispatch'
+                      ? `Dispatch to ${legActionModal.leg.toLocation.name}`
+                      : `Confirm Arrival at ${legActionModal.leg.toLocation.name}`}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{legActionModal.leg.fromLocation.name} → {legActionModal.leg.toLocation.name}</p>
+                </div>
+                <button onClick={() => setLegActionModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {legError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{legError}</div>}
+
+                <div className="rounded-xl border divide-y">
+                  {legActionModal.leg.items.map(it => (
+                    <div key={it.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span>{it.itemName}</span>
+                      <span className="text-muted-foreground">{legActionModal.action === 'dispatch' ? it.requestedQty : it.dispatchedQty}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {legActionModal.action === 'receive' && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Received By</label>
+                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="Receiver name" value={legReceiverName} onChange={e => setLegReceiverName(e.target.value)} />
+                  </div>
+                )}
+
+                <input ref={legFileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleLegPhotoFile(f) }} />
+
+                {legPhoto ? (
+                  <div className="space-y-3">
+                    <img src={legPhoto} alt="Proof" className="w-full rounded-xl object-cover max-h-64 border" />
+                    <button onClick={() => { setLegPhoto(null); legFileInputRef.current?.click() }}
+                      className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
+                      Replace photo
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => legFileInputRef.current?.click()} {...legPhotoDropProps}
+                    className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
+                      isDraggingLegPhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                    }`}>
+                    <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
+                      <Camera className="h-6 w-6 text-green-500" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium text-sm">{isDraggingLegPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
+                      <p className="text-xs mt-0.5">{legActionModal.action === 'dispatch' ? 'Proof of dispatch' : 'Proof of arrival'}</p>
+                    </div>
+                  </button>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setLegActionModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={submitLegAction} disabled={!legPhoto || legSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
+                  {legSaving
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    : (legActionModal.action === 'dispatch' ? 'Confirm Dispatch' : 'Confirm Arrival')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Cancel Modal */}
       {cancelModal && detail && (
         <>
@@ -2323,24 +2583,16 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 {/* Location + Receiver */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-semibold">Delivery Location</label>
+                    <label className="text-sm font-semibold">{detail.transitStops && detail.transitStops.length > 0 ? 'Receiving At (transit stop)' : 'Delivery Location'}</label>
                     <div className="w-full border rounded-xl px-3 py-2.5 text-sm bg-muted/40 text-foreground">
                       {locations.find(l => l.id === receiveLocation)?.name ?? '—'}
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-semibold">Received By</label>
-                    {team.length > 0 ? (
-                      <select className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                        value={receiverName} onChange={e => setReceiverName(e.target.value)}>
-                        <option value="">— Select receiver —</option>
-                        {team.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                      </select>
-                    ) : (
-                      <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                        placeholder="Receiver name"
-                        value={receiverName} onChange={e => setReceiverName(e.target.value)} />
-                    )}
+                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="Receiver name"
+                      value={receiverName} onChange={e => setReceiverName(e.target.value)} />
                   </div>
                 </div>
 

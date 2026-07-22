@@ -38,6 +38,13 @@ export async function GET() {
       },
       paymentRequests: { select: { amount: true, status: true } },
       reimbursements: { select: { amount: true, status: true } },
+      transitStops: { orderBy: { sequence: 'asc' }, select: { locationId: true, sequence: true, location: { select: { id: true, name: true, type: true } } } },
+      transitTransfers: {
+        where: { status: { in: ['PENDING', 'DISPATCHED'] } },
+        orderBy: { legSequence: 'desc' },
+        take: 1,
+        select: { status: true, legSequence: true, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } } },
+      },
     },
   })
   return NextResponse.json(orders.map(o => {
@@ -50,6 +57,18 @@ export async function GET() {
     // against the order's real total, not just "any record exists".
     const grandTotal = computePOGrandTotal(o)
     const { paymentStatus } = summarizePOPayments(grandTotal, o.paymentRequests, o.reimbursements)
+    // Derived label for routed POs — status stays IN_TRANSIT for the whole journey (see
+    // src/lib/purchasing/transitChain.ts), so the actual current leg is computed here from
+    // the most recent open transfer instead of a stored enum value.
+    let currentLegLabel: string | null = null
+    if (o.transitStops.length > 0 && o.status !== 'RECEIVED' && o.status !== 'CANCELLED') {
+      const openLeg = o.transitTransfers[0]
+      if (openLeg) {
+        currentLegLabel = openLeg.status === 'PENDING' ? `Transit in ${openLeg.fromLocation.name}` : `On deliver to ${openLeg.toLocation.name}`
+      } else if (o.dispatchedAt) {
+        currentLegLabel = `On deliver to ${o.transitStops[0].location.name}`
+      }
+    }
     return {
       ...o,
       itemCount: o.items.length,
@@ -71,6 +90,9 @@ export async function GET() {
       booking: o.booking ? { bookingCode: o.booking.bookingCode, tripType: o.booking.tripType, leadGuestName: o.booking.customer.name, yacht: o.booking.yacht } : null,
       request: undefined,
       createdBy: undefined,
+      transitStops: o.transitStops.map(s => ({ locationId: s.locationId, sequence: s.sequence, location: s.location })),
+      transitTransfers: undefined,
+      currentLegLabel,
     }
   }))
 }
@@ -81,10 +103,23 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, transitStops } = body
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+
+  // Ordered list of intermediate transit stops between the supplier and deliveryLocationId
+  // (the final destination) — see src/lib/purchasing/transitChain.ts for how each hop is
+  // executed as an auto-chained StockTransfer.
+  const cleanTransitStopIds = [...new Set(
+    Array.isArray(transitStops) ? transitStops.filter((x: unknown): x is string => typeof x === 'string' && !!x) : []
+  )]
+  if (deliveryLocationId && cleanTransitStopIds.includes(deliveryLocationId))
+    return NextResponse.json({ error: 'Transit stop tidak boleh sama dengan Delivery Location' }, { status: 400 })
+  if (cleanTransitStopIds.length > 0) {
+    const validCount = await db.stockLocation.count({ where: { id: { in: cleanTransitStopIds } } })
+    if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'Salah satu transit stop tidak valid' }, { status: 400 })
+  }
 
   // Resolve supplierId by name if not provided, so order history stays linked even for raw API callers
   const cleanExtraCharges = Array.isArray(extraCharges)
@@ -150,8 +185,13 @@ export async function POST(req: NextRequest) {
           unitCost: Number(it.unitCost) || 0,
         })),
       },
+      ...(cleanTransitStopIds.length > 0 && {
+        transitStops: {
+          create: cleanTransitStopIds.map((locationId, idx) => ({ id: crypto.randomUUID(), sequence: idx + 1, locationId })),
+        },
+      }),
     },
-    include: { items: true },
+    include: { items: true, transitStops: true },
   })
   return NextResponse.json(order, { status: 201 })
 }
