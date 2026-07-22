@@ -845,6 +845,9 @@ model CampaignRecipient {
 
   @@unique([campaignId, email])
   @@index([campaignId])
+  @@index([campaignId, status])
+  @@index([campaignId, status, openedAt])
+  @@index([campaignId, status, sentAt])
   @@index([unsubscribeToken])
 }
 

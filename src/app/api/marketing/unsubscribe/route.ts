@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { token } = await req.json()
+  // Two callers hit this: the confirm page (JSON body `{ token }`, no query string)
+  // and mail clients' native one-click unsubscribe button (RFC 8058 — POSTs
+  // `List-Unsubscribe=One-Click` as its body straight from the List-Unsubscribe
+  // header URL, so the token has to travel via query string instead).
+  const token = req.nextUrl.searchParams.get('token') ?? (await req.json().catch(() => null))?.token
   if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 })
 
   const found = await resolveTenantByLookup(client =>

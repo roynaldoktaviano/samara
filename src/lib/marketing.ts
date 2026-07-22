@@ -186,13 +186,16 @@ export async function dispatchCampaignEmails(db: PrismaClient, campaignId: strin
     fromName: campaign.fromName ?? undefined,
     subject: campaign.subject,
     recipients: pending.map(r => {
-      const unsubscribeUrl = `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`
-      let html = injectUnsubscribeUrl(campaign.bodyHtml, unsubscribeUrl)
+      const unsubscribePageUrl = `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`
+      let html = injectUnsubscribeUrl(campaign.bodyHtml, unsubscribePageUrl)
       if (campaign.previewText) html = injectPreviewText(html, campaign.previewText)
       return {
         email: r.email,
         htmlFor: html,
-        unsubscribeUrl,
+        // List-Unsubscribe header must point at the API route, not the confirm page —
+        // Gmail/Outlook's native one-click button POSTs straight to this URL with no
+        // page load, so a page component (no POST handler) would 405 and silently fail.
+        unsubscribeUrl: `${appUrl}/api/marketing/unsubscribe?token=${r.unsubscribeToken}`,
       }
     }),
     onSent: async (email, itemResult) => {

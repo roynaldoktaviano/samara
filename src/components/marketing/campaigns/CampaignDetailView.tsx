@@ -62,6 +62,13 @@ interface UnsubscribedEntry {
   unsubscribedAt: string | null
 }
 
+interface UnsubscribeClicker {
+  id: string
+  name: string | null
+  email: string
+  clickedAt: string
+}
+
 type RecipientTab = 'ALL' | 'SENT' | 'OPENED' | 'PENDING' | 'BOUNCED' | 'FAILED' | 'UNSUBSCRIBED'
 
 interface RecipientCounts {
@@ -84,11 +91,15 @@ interface CampaignWithRecipients {
   totalRecipients: number
   sentCount: number
   bodyHtml: string
-  recipients: Recipient[]
   recipientCounts: RecipientCounts
   engagementStats: { realOpened: number; realClicked: number }
   chartRows: ChartRow[]
   unsubscribedList: UnsubscribedEntry[]
+  unsubscribeClickers: UnsubscribeClicker[]
+}
+
+interface RecipientsData {
+  recipients: Recipient[]
   page: number
   totalPages: number
   totalCount: number
@@ -295,32 +306,50 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   onBack: () => void
 }) {
   const [campaign, setCampaign] = useState<CampaignWithRecipients | null>(null)
+  const [recipientsData, setRecipientsData] = useState<RecipientsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [recipientsLoading, setRecipientsLoading] = useState(true)
   const [progress, setProgress] = useState<SendProgress | null>(null)
   const [tab, setTab] = useState<RecipientTab>('SENT')
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [continuing, setContinuing] = useState(false)
+  const [unsubscribing, setUnsubscribing] = useState<Set<string> | 'all' | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  const fetchDetail = useCallback(async () => {
+  // Campaign-wide data (stats, charts, unsubscribed list) — doesn't depend on the
+  // recipient tab/page/search, so it only needs to load once per campaign.
+  const fetchCampaign = useCallback(async () => {
     setLoading(true)
     try {
-      const qs = new URLSearchParams({ status: tab, page: String(page), limit: '50' })
-      if (debouncedSearch) qs.set('search', debouncedSearch)
-      const res = await fetch(`/api/marketing/campaigns/${campaignId}?${qs}`)
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}`)
       if (res.ok) setCampaign(await res.json())
     } finally {
       setLoading(false)
     }
+  }, [campaignId])
+
+  // Just the recipient table for the current tab/page/search — refetched on every
+  // tab click without re-pulling the campaign-wide chart/unsubscribed data above.
+  const fetchRecipients = useCallback(async () => {
+    setRecipientsLoading(true)
+    try {
+      const qs = new URLSearchParams({ status: tab, page: String(page), limit: '50' })
+      if (debouncedSearch) qs.set('search', debouncedSearch)
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}/recipients?${qs}`)
+      if (res.ok) setRecipientsData(await res.json())
+    } finally {
+      setRecipientsLoading(false)
+    }
   }, [campaignId, tab, page, debouncedSearch])
 
-  useEffect(() => { fetchDetail() }, [fetchDetail])
+  useEffect(() => { fetchCampaign() }, [fetchCampaign])
+  useEffect(() => { fetchRecipients() }, [fetchRecipients])
 
   const changeTab = (next: RecipientTab) => { setTab(next); setPage(1) }
   const changeSearch = (v: string) => { setSearch(v); setPage(1) }
@@ -329,9 +358,24 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     setContinuing(true)
     try {
       const res = await fetch(`/api/marketing/campaigns/${campaignId}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      if (res.ok) fetchDetail()
+      if (res.ok) { fetchCampaign(); fetchRecipients() }
     } finally {
       setContinuing(false)
+    }
+  }
+
+  // Manually pushes through recipients who clicked the unsubscribe link but never
+  // actually got marked unsubscribed (their mail client's native one-click button
+  // silently failed before that flow accepted it — see the unsubscribe API route).
+  const unsubscribeRecipients = async (ids: string[], marker: Set<string> | 'all') => {
+    setUnsubscribing(marker)
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}/unsubscribe-recipients`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipientIds: ids }),
+      })
+      if (res.ok) { fetchCampaign(); fetchRecipients() }
+    } finally {
+      setUnsubscribing(null)
     }
   }
 
@@ -347,12 +391,12 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       const data: SendProgress = await res.json()
       if (cancelled) return
       setProgress(data)
-      if (data.status !== 'SENDING') fetchDetail()
+      if (data.status !== 'SENDING') { fetchCampaign(); fetchRecipients() }
     }
     poll()
     const interval = setInterval(poll, 2500)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [campaign?.status, campaignId, fetchDetail])
+  }, [campaign?.status, campaignId, fetchCampaign, fetchRecipients])
 
   if (loading || !campaign) {
     return (
@@ -363,7 +407,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     )
   }
 
-  const recipients = campaign.recipients
+  const recipients = recipientsData?.recipients ?? []
   const counts = campaign.recipientCounts
   const total = campaign.totalRecipients
   const delivered = counts.SENT
@@ -488,6 +532,54 @@ export default function CampaignDetailView({ campaignId, onBack }: {
 
       <LinkPerformance stats={linkStats} totalRecipients={campaign.totalRecipients} />
 
+      {campaign.unsubscribeClickers.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/40">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserX className="h-4 w-4 text-amber-600" />
+                Clicked unsubscribe, not yet processed ({campaign.unsubscribeClickers.length})
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-amber-300 text-amber-800 hover:bg-amber-100"
+                disabled={unsubscribing !== null}
+                onClick={() => unsubscribeRecipients(campaign.unsubscribeClickers.map(r => r.id), 'all')}
+              >
+                {unsubscribing === 'all' ? 'Unsubscribing...' : `Unsubscribe all (${campaign.unsubscribeClickers.length})`}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground pt-1">
+              These recipients clicked the unsubscribe link but their status was never updated — likely their mail app&apos;s built-in one-click button, fixed for future sends. Process them manually below.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {campaign.unsubscribeClickers.map(r => {
+              const busy = unsubscribing === 'all' || (unsubscribing instanceof Set && unsubscribing.has(r.id))
+              return (
+                <div key={r.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0 last:pb-0">
+                  <div>
+                    <span className="font-medium">{r.name ?? r.email}</span>
+                    {r.name && <span className="text-muted-foreground ml-1.5">{r.email}</span>}
+                    <span className="text-xs text-muted-foreground ml-2">clicked {fmt(r.clickedAt)}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    disabled={busy}
+                    onClick={() => unsubscribeRecipients([r.id], new Set([r.id]))}
+                  >
+                    {busy ? '...' : 'Unsubscribe'}
+                  </Button>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {unsubscribed.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -510,7 +602,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <CardTitle className="text-base">Recipients ({campaign.totalCount})</CardTitle>
+            <CardTitle className="text-base">Recipients ({recipientsData?.totalCount ?? 0})</CardTitle>
             <div className="relative w-full sm:w-64">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -539,8 +631,13 @@ export default function CampaignDetailView({ campaignId, onBack }: {
             })}
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
+        <CardContent className="p-0 relative">
+          {recipientsLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          <Table className={recipientsLoading ? 'opacity-50' : undefined}>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -614,14 +711,14 @@ export default function CampaignDetailView({ campaignId, onBack }: {
               )}
             </TableBody>
           </Table>
-          {campaign.totalPages > 1 && (
+          {recipientsData && recipientsData.totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <p className="text-xs text-muted-foreground">Page {campaign.page} of {campaign.totalPages}</p>
+              <p className="text-xs text-muted-foreground">Page {recipientsData.page} of {recipientsData.totalPages}</p>
               <div className="flex gap-1.5">
                 <Button variant="outline" size="sm" className="h-7 px-2" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= campaign.totalPages} onClick={() => setPage(p => p + 1)}>
+                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= recipientsData.totalPages} onClick={() => setPage(p => p + 1)}>
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
