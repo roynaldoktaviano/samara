@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Eye, MousePointerClick, UserX, Loader2, Play, ChevronLeft, ChevronRight, Search, Bot } from 'lucide-react'
+import { ArrowLeft, Eye, MousePointerClick, Loader2, Play, ChevronLeft, ChevronRight, Search, Bot } from 'lucide-react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { UNSUBSCRIBE_URL_MARKER } from '@/lib/campaign-recipients'
 
 const GREEN = '#16a34a'
 const BLUE = '#2563eb'
@@ -16,6 +17,7 @@ const AMBER = '#eda100'
 const RED = '#dc2626'
 const TZ = 'Asia/Jakarta'
 const PREVIEW_SCALE = 0.72
+const PAGE_SIZE = 20
 
 interface ClickEvent {
   id: string
@@ -55,20 +57,6 @@ interface ChartRow {
   clicks: { url: string; clickedAt: string }[]
 }
 
-interface UnsubscribedEntry {
-  id: string
-  name: string | null
-  email: string
-  unsubscribedAt: string | null
-}
-
-interface UnsubscribeClicker {
-  id: string
-  name: string | null
-  email: string
-  clickedAt: string
-}
-
 type RecipientTab = 'ALL' | 'SENT' | 'OPENED' | 'PENDING' | 'BOUNCED' | 'FAILED' | 'UNSUBSCRIBED'
 
 interface RecipientCounts {
@@ -93,9 +81,8 @@ interface CampaignWithRecipients {
   bodyHtml: string
   recipientCounts: RecipientCounts
   engagementStats: { realOpened: number; realClicked: number }
+  pendingUnsubscribeCount: number
   chartRows: ChartRow[]
-  unsubscribedList: UnsubscribedEntry[]
-  unsubscribeClickers: UnsubscribeClicker[]
 }
 
 interface RecipientsData {
@@ -126,7 +113,7 @@ const STATUS_LABEL: Record<Recipient['status'], string> = {
   SKIPPED_UNSUBSCRIBED: 'Unsubscribed',
 }
 
-const fmt = (d: string | null) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }) : '—'
+const fmt = (d: string | null) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }) : '-'
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: TZ })
 
 function StatTile({ label, value, suffix = '', color }: { label: string; value: number; suffix?: string; color?: string }) {
@@ -156,20 +143,19 @@ interface LinkStat {
 }
 
 // Same 30-second-click-burst heuristic as the server's isLikelyAutomated (see
-// route.ts) — security scanners pre-fetch every link within seconds of delivery,
-// so a recipient's own clicks look automated the same way regardless of which
-// link we're tallying.
+// campaign-recipients.ts) - security scanners pre-fetch every link within seconds
+// of delivery, so a recipient's own clicks look automated the same way regardless
+// of which link we're tallying.
 function isLikelyAutomatedClicks(clicks: { clickedAt: string }[]): boolean {
   if (clicks.length < 2) return false
   const times = clicks.map(c => new Date(c.clickedAt).getTime()).sort((a, b) => a - b)
   return times[times.length - 1] - times[0] <= 30_000
 }
 
-// Unique clickers per URL (not raw click count — someone clicking the same
+// Unique clickers per URL (not raw click count - someone clicking the same
 // link twice shouldn't outweigh two different people clicking it once).
-// Excludes the unsubscribe link — Resend's click tracking wraps every <a> in
-// the email including it, but it already has its own "Unsubscribed" stat tile
-// above and doesn't belong in content link performance.
+// Excludes the unsubscribe link - it's tracked separately in the recipient
+// table's Unsubscribed tab, not as content link performance.
 // `real` drops recipients whose clicks look automated, same as the real
 // open/click rate tiles above.
 function computeLinkStats(recipients: ChartRow[], real: boolean): LinkStat[] {
@@ -177,7 +163,7 @@ function computeLinkStats(recipients: ChartRow[], real: boolean): LinkStat[] {
   for (const r of recipients) {
     if (real && isLikelyAutomatedClicks(r.clicks)) continue
     for (const c of r.clicks) {
-      if (c.url.includes('/unsubscribe?token=')) continue
+      if (c.url.includes(UNSUBSCRIBE_URL_MARKER)) continue
       if (!byUrl.has(c.url)) byUrl.set(c.url, new Set())
       byUrl.get(c.url)!.add(r.id)
     }
@@ -187,33 +173,37 @@ function computeLinkStats(recipients: ChartRow[], real: boolean): LinkStat[] {
     .sort((a, b) => b.clickers - a.clickers)
 }
 
-function LinkPerformance({ stats, totalRecipients, view, onViewChange }: {
+function LinkPerformance({ stats, totalRecipients, view, onViewChange, pending }: {
   stats: LinkStat[]
   totalRecipients: number
   view: 'real' | 'raw'
   onViewChange: (view: 'real' | 'raw') => void
+  pending: boolean
 }) {
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">Link performance</CardTitle>
-          <div className="flex rounded-full border border-gray-200 p-0.5 text-xs">
-            {(['real', 'raw'] as const).map(v => (
-              <button
-                key={v}
-                onClick={() => onViewChange(v)}
-                className={`px-2.5 py-1 rounded-full font-medium capitalize transition-colors ${
-                  view === v ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-gray-50'
-                }`}
-              >
-                {v}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {pending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            <div className="flex rounded-full border border-gray-200 p-0.5 text-xs">
+              {(['real', 'raw'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => onViewChange(v)}
+                  className={`px-2.5 py-1 rounded-full font-medium capitalize transition-colors ${
+                    view === v ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-gray-50'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className={`space-y-3 transition-opacity ${pending ? 'opacity-50' : ''}`}>
         {stats.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No clicks yet</p>}
         {stats.map(s => {
           const pct = totalRecipients > 0 ? Math.round((s.clickers / totalRecipients) * 100) : 0
@@ -234,7 +224,7 @@ function LinkPerformance({ stats, totalRecipients, view, onViewChange }: {
   )
 }
 
-// Per-day Sent/Opened/Clicked series for the trend chart — Sent will usually land on
+// Per-day Sent/Opened/Clicked series for the trend chart - Sent will usually land on
 // a single day (a campaign is a one-time blast), while Opened/Clicked trail across
 // the days after as recipients check their inbox.
 function dailyTrend(recipients: ChartRow[]) {
@@ -291,7 +281,7 @@ interface SendProgress {
 }
 
 // Resend rate-limits to ~2 req/s (a fixed 550ms gap between sends, plus occasional
-// retry backoff) — used as the fallback pace estimate before enough real samples
+// retry backoff) - used as the fallback pace estimate before enough real samples
 // have come in to compute an actual rate from elapsed time.
 const FALLBACK_SECONDS_PER_EMAIL = 0.65
 
@@ -319,7 +309,7 @@ function SendingBanner({ progress }: { progress: SendProgress }) {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Sending campaign… {progress.done} of {progress.total} ({pct}%)
+            Sending campaign... {progress.done} of {progress.total} ({pct}%)
           </div>
           {remaining > 0 && (
             <span className="text-xs text-amber-700 shrink-0">~{fmtDuration(etaSeconds)} remaining</span>
@@ -350,7 +340,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [continuing, setContinuing] = useState(false)
-  const [unsubscribing, setUnsubscribing] = useState<Set<string> | 'all' | null>(null)
+  const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set())
+  const [unsubscribingAll, setUnsubscribingAll] = useState(false)
   const [linkView, setLinkView] = useState<'real' | 'raw'>('real')
 
   useEffect(() => {
@@ -358,24 +349,26 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     return () => clearTimeout(t)
   }, [search])
 
-  // Campaign-wide data (stats, charts, unsubscribed list) — doesn't depend on the
-  // recipient tab/page/search, so it only needs to load once per campaign.
-  const fetchCampaign = useCallback(async () => {
-    setLoading(true)
+  // Campaign-wide data (stats, charts) - doesn't depend on the recipient
+  // tab/page/search, so it only needs to load once per campaign. `silent` skips
+  // the loading flag for background refreshes that shouldn't blank the page
+  // (e.g. re-syncing counts after a single-row action elsewhere on the page).
+  const fetchCampaign = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await fetch(`/api/marketing/campaigns/${campaignId}`)
       if (res.ok) setCampaign(await res.json())
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [campaignId])
 
-  // Just the recipient table for the current tab/page/search — refetched on every
-  // tab click without re-pulling the campaign-wide chart/unsubscribed data above.
+  // Just the recipient table for the current tab/page/search - refetched on every
+  // tab click without re-pulling the campaign-wide chart data above.
   const fetchRecipients = useCallback(async () => {
     setRecipientsLoading(true)
     try {
-      const qs = new URLSearchParams({ status: tab, page: String(page), limit: '50' })
+      const qs = new URLSearchParams({ status: tab, page: String(page), limit: String(PAGE_SIZE) })
       if (debouncedSearch) qs.set('search', debouncedSearch)
       const res = await fetch(`/api/marketing/campaigns/${campaignId}/recipients?${qs}`)
       if (res.ok) setRecipientsData(await res.json())
@@ -387,8 +380,12 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   useEffect(() => { fetchCampaign() }, [fetchCampaign])
   useEffect(() => { fetchRecipients() }, [fetchRecipients])
 
-  const changeTab = (next: RecipientTab) => { setTab(next); setPage(1) }
-  const changeSearch = (v: string) => { setSearch(v); setPage(1) }
+  // setRecipientsLoading fires synchronously in the click handler itself (not just
+  // inside fetchRecipients) so the table dims/spinner shows in the same paint as
+  // the tab switch, instead of waiting a render cycle for the effect to catch up.
+  const changeTab = (next: RecipientTab) => { setRecipientsLoading(true); setTab(next); setPage(1) }
+  const changeSearch = (v: string) => { setRecipientsLoading(true); setSearch(v); setPage(1) }
+  const goToPage = (next: number) => { setRecipientsLoading(true); setPage(next) }
 
   const continueSend = async () => {
     setContinuing(true)
@@ -400,18 +397,48 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     }
   }
 
-  // Manually pushes through recipients who clicked the unsubscribe link but never
+  // Manually pushes through a recipient who clicked the unsubscribe link but never
   // actually got marked unsubscribed (their mail client's native one-click button
-  // silently failed before that flow accepted it — see the unsubscribe API route).
-  const unsubscribeRecipients = async (ids: string[], marker: Set<string> | 'all') => {
-    setUnsubscribing(marker)
+  // silently failed before that flow accepted it - see the unsubscribe API route).
+  // Patches just this row in place instead of refetching the whole recipient table,
+  // and syncs the campaign-wide counts silently so nothing on the page visibly reloads.
+  const confirmUnsubscribe = async (id: string) => {
+    setUnsubscribingIds(prev => new Set(prev).add(id))
     try {
       const res = await fetch(`/api/marketing/campaigns/${campaignId}/unsubscribe-recipients`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipientIds: ids }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipientIds: [id] }),
       })
-      if (res.ok) { fetchCampaign(); fetchRecipients() }
+      if (res.ok) {
+        const unsubscribedAt = new Date().toISOString()
+        setRecipientsData(prev => prev ? {
+          ...prev,
+          recipients: prev.recipients.map(r => r.id === id ? { ...r, status: 'SKIPPED_UNSUBSCRIBED' as const, unsubscribedAt } : r),
+        } : prev)
+        fetchCampaign(true)
+      }
     } finally {
-      setUnsubscribing(null)
+      setUnsubscribingIds(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
+  // Sweeps every recipient in the campaign matching a scope - clicked-unsubscribe
+  // for the Unsubscribed tab, or bounced/failed addresses so they're suppressed
+  // from future blasts too - regardless of which page is currently loaded. Unlike
+  // confirmUnsubscribe this can touch rows outside the current page, so it
+  // refetches the recipient table instead of patching a single row in place.
+  const unsubscribeAllByScope = async (scope: 'clicked' | 'bounced' | 'failed') => {
+    setUnsubscribingAll(true)
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${campaignId}/unsubscribe-recipients`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
+      })
+      if (res.ok) { fetchCampaign(true); fetchRecipients() }
+    } finally {
+      setUnsubscribingAll(false)
     }
   }
 
@@ -434,6 +461,21 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     return () => { cancelled = true; clearInterval(interval) }
   }, [campaign?.status, campaignId, fetchCampaign, fetchRecipients])
 
+  // Memoized — these loop over every non-pending recipient (thousands+ on a large
+  // campaign), so recomputing them on renders that only touch tab/page/search
+  // (unrelated to chartRows) was blocking the tab-switch loading state from
+  // painting for a second or two. Kept above the loading early-return below so
+  // hook order stays stable across renders (rules of hooks); chartRows falls
+  // back to [] while campaign hasn't loaded yet.
+  const chartRows = campaign?.chartRows ?? []
+  const clicked = useMemo(() => chartRows.filter(r => r.clicks.length > 0).length, [chartRows])
+  // Deferred so clicking Real/Raw flips the button and shows the spinner
+  // instantly instead of waiting on the (potentially large) recompute below.
+  const deferredLinkView = useDeferredValue(linkView)
+  const linkStats = useMemo(() => computeLinkStats(chartRows, deferredLinkView === 'real'), [chartRows, deferredLinkView])
+  const trendData = useMemo(() => dailyTrend(chartRows), [chartRows])
+  const hourData = useMemo(() => opensByHour(chartRows), [chartRows])
+
   if (loading || !campaign) {
     return (
       <div className="p-4 md:p-6">
@@ -448,13 +490,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const total = campaign.totalRecipients
   const delivered = counts.SENT
   const opened = counts.OPENED
-  const clicked = campaign.chartRows.filter(r => r.clicks.length > 0).length
   const failed = counts.FAILED
   const bounced = counts.BOUNCED
-  const unsubscribed = campaign.unsubscribedList
-  const linkStats = computeLinkStats(campaign.chartRows, linkView === 'real')
-  const trendData = dailyTrend(campaign.chartRows)
-  const hourData = opensByHour(campaign.chartRows)
 
   const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
   const deliveryRate = pct(delivered)
@@ -486,14 +523,14 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
         <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
-        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} · ${opened} raw`} color={GREEN} />
-        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} · ${clicked} raw`} color={BLUE} />
+        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} - ${opened} raw`} color={GREEN} />
+        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} - ${clicked} raw`} color={BLUE} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <StatTile label="Bounce Rate" value={bounceRate} suffix="%" color={bounced > 0 ? RED : undefined} />
         <StatTile label="Failed" value={failed} color={failed > 0 ? RED : undefined} />
-        <StatTile label="Unsubscribed" value={unsubscribed.length} color="#6b7280" />
+        <StatTile label="Unsubscribed" value={counts.UNSUBSCRIBED} color="#6b7280" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -566,74 +603,13 @@ export default function CampaignDetailView({ campaignId, onBack }: {
         </div>
       </div>
 
-      <LinkPerformance stats={linkStats} totalRecipients={campaign.totalRecipients} view={linkView} onViewChange={setLinkView} />
-
-      {campaign.unsubscribeClickers.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/40">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserX className="h-4 w-4 text-amber-600" />
-                Clicked unsubscribe, not yet processed ({campaign.unsubscribeClickers.length})
-              </CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-amber-300 text-amber-800 hover:bg-amber-100"
-                disabled={unsubscribing !== null}
-                onClick={() => unsubscribeRecipients(campaign.unsubscribeClickers.map(r => r.id), 'all')}
-              >
-                {unsubscribing === 'all' ? 'Unsubscribing...' : `Unsubscribe all (${campaign.unsubscribeClickers.length})`}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground pt-1">
-              These recipients clicked the unsubscribe link but their status was never updated — likely their mail app&apos;s built-in one-click button, fixed for future sends. Process them manually below.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {campaign.unsubscribeClickers.map(r => {
-              const busy = unsubscribing === 'all' || (unsubscribing instanceof Set && unsubscribing.has(r.id))
-              return (
-                <div key={r.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0 last:pb-0">
-                  <div>
-                    <span className="font-medium">{r.name ?? r.email}</span>
-                    {r.name && <span className="text-muted-foreground ml-1.5">{r.email}</span>}
-                    <span className="text-xs text-muted-foreground ml-2">clicked {fmt(r.clickedAt)}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    disabled={busy}
-                    onClick={() => unsubscribeRecipients([r.id], new Set([r.id]))}
-                  >
-                    {busy ? '...' : 'Unsubscribe'}
-                  </Button>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-      {unsubscribed.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><UserX className="h-4 w-4 text-gray-500" />Unsubscribed ({unsubscribed.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {unsubscribed.map(r => (
-              <div key={r.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0 last:pb-0">
-                <div>
-                  <span className="font-medium">{r.name ?? r.email}</span>
-                  {r.name && <span className="text-muted-foreground ml-1.5">{r.email}</span>}
-                </div>
-                <span className="text-xs text-muted-foreground">{fmt(r.unsubscribedAt)}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      <LinkPerformance
+        stats={linkStats}
+        totalRecipients={campaign.totalRecipients}
+        view={linkView}
+        onViewChange={setLinkView}
+        pending={deferredLinkView !== linkView}
+      />
 
       <Card>
         <CardHeader className="pb-3">
@@ -649,7 +625,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
               />
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1.5">
             {(['SENT', 'OPENED', 'PENDING', 'BOUNCED', 'FAILED', 'UNSUBSCRIBED'] as RecipientTab[]).map(t => {
               const count = counts[t as Exclude<RecipientTab, 'ALL'>]
               if (count === 0 && t !== tab) return null
@@ -665,6 +642,40 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                 </button>
               )
             })}
+          </div>
+          {tab === 'UNSUBSCRIBED' && campaign.pendingUnsubscribeCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              disabled={unsubscribingAll}
+              onClick={() => unsubscribeAllByScope('clicked')}
+            >
+              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all clicked (${campaign.pendingUnsubscribeCount})`}
+            </Button>
+          )}
+          {tab === 'BOUNCED' && counts.BOUNCED > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              disabled={unsubscribingAll}
+              onClick={() => unsubscribeAllByScope('bounced')}
+            >
+              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all bounced (${counts.BOUNCED})`}
+            </Button>
+          )}
+          {tab === 'FAILED' && counts.FAILED > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              disabled={unsubscribingAll}
+              onClick={() => unsubscribeAllByScope('failed')}
+            >
+              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all failed (${counts.FAILED})`}
+            </Button>
+          )}
           </div>
         </CardHeader>
         <CardContent className="p-0 relative">
@@ -686,11 +697,22 @@ export default function CampaignDetailView({ campaignId, onBack }: {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {recipients.map(r => (
+              {recipients.map(r => {
+                const clickedUnsubscribeLink = r.clicks.some(c => c.url.includes(UNSUBSCRIBE_URL_MARKER))
+                // Bounced/failed addresses can be unsubscribed too, so future
+                // campaigns stop retrying a dead or invalid address.
+                const canUnsubscribe = r.status !== 'SKIPPED_UNSUBSCRIBED'
+                  && (clickedUnsubscribeLink || r.status === 'BOUNCED' || r.status === 'FAILED')
+                return (
                 <TableRow key={r.id}>
-                  <TableCell className="text-sm">{r.name ?? '—'}</TableCell>
+                  <TableCell className="text-sm">{r.name ?? '-'}</TableCell>
                   <TableCell className="text-sm">{r.email}</TableCell>
-                  <TableCell><Badge className={STATUS_STYLE[r.status]}>{STATUS_LABEL[r.status]}</Badge></TableCell>
+                  <TableCell>
+                    <Badge className={STATUS_STYLE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                    {r.status !== 'SKIPPED_UNSUBSCRIBED' && clickedUnsubscribeLink && (
+                      <Badge className="ml-1 bg-amber-100 text-amber-700 border-amber-200">Clicked unsubscribe</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.openedAt ? (
                       <Popover>
@@ -706,13 +728,13 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {r.opens.map(o => (
                               <div key={o.id} className="text-xs border-b pb-1.5 last:border-0">
-                                <div className="text-muted-foreground">{fmt(o.openedAt)}{o.ipAddress ? ` · ${o.ipAddress}` : ''}</div>
+                                <div className="text-muted-foreground">{fmt(o.openedAt)}{o.ipAddress ? ` - ${o.ipAddress}` : ''}</div>
                               </div>
                             ))}
                           </div>
                         </PopoverContent>
                       </Popover>
-                    ) : '—'}
+                    ) : '-'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.clickedAt ? (
@@ -729,19 +751,33 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {r.clicks.map(c => (
                               <div key={c.id} className="text-xs border-b pb-1.5 last:border-0">
-                                <div className="text-muted-foreground">{fmt(c.clickedAt)}{c.ipAddress ? ` · ${c.ipAddress}` : ''}</div>
+                                <div className="text-muted-foreground">{fmt(c.clickedAt)}{c.ipAddress ? ` - ${c.ipAddress}` : ''}</div>
                                 <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline wrap-break-word block">{c.url}</a>
                               </div>
                             ))}
                           </div>
                         </PopoverContent>
                       </Popover>
-                    ) : '—'}
+                    ) : '-'}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground font-mono">{latestIp(r) ?? '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-65 whitespace-normal wrap-break-word">{r.errorMessage ?? '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">{latestIp(r) ?? '-'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-65 whitespace-normal wrap-break-word">
+                    {r.errorMessage && <p className="mb-1">{r.errorMessage}</p>}
+                    {canUnsubscribe ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        disabled={unsubscribingIds.has(r.id)}
+                        onClick={() => confirmUnsubscribe(r.id)}
+                      >
+                        {unsubscribingIds.has(r.id) ? '...' : clickedUnsubscribeLink ? 'Confirm unsubscribe' : 'Unsubscribe'}
+                      </Button>
+                    ) : (!r.errorMessage && '-')}
+                  </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
               {recipients.length === 0 && (
                 <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">No recipients in this tab</TableCell></TableRow>
               )}
@@ -751,10 +787,10 @@ export default function CampaignDetailView({ campaignId, onBack }: {
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <p className="text-xs text-muted-foreground">Page {recipientsData.page} of {recipientsData.totalPages}</p>
               <div className="flex gap-1.5">
-                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= recipientsData.totalPages} onClick={() => setPage(p => p + 1)}>
+                <Button variant="outline" size="sm" className="h-7 px-2" disabled={page >= recipientsData.totalPages} onClick={() => goToPage(page + 1)}>
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </div>

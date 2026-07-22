@@ -3,21 +3,15 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { renderBlocksToHtml, normalizeDesign } from '@/lib/email-builder'
-import { isLikelyAutomated, type RecipientTab } from '@/lib/campaign-recipients'
+import { isLikelyAutomated, UNSUBSCRIBE_URL_MARKER, type RecipientTab } from '@/lib/campaign-recipients'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
-// Resend wraps every <a> in the email for click tracking, including the
-// unsubscribe link itself — so a click here is a real signal of unsubscribe
-// intent, independent of whether the actual status update went through
-// (e.g. recipients who used their mail client's native one-click button
-// before that flow was fixed to accept it — see marketing.ts/unsubscribe route).
-const UNSUBSCRIBE_URL_MARKER = '/unsubscribe?token='
-
-// Campaign-wide data that doesn't depend on the recipient-table tab/page/search —
-// fetched once per page load. The tab-scoped recipient list lives at
-// GET /api/marketing/campaigns/[id]/recipients so switching tabs doesn't re-run
-// the heavy chart/unsubscribed-list queries below on every click.
+// Campaign-wide data that doesn't depend on the recipient-table tab/page/search --
+// fetched once per page load. The tab-scoped recipient list (including the
+// "Unsubscribed" tab, which also surfaces unsubscribe-link clicks that never got
+// confirmed) lives at GET /api/marketing/campaigns/[id]/recipients so switching
+// tabs doesn't re-run the heavy chart queries below on every click.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
@@ -28,10 +22,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const campaign = await db.emailCampaign.findUnique({ where: { id } })
   if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const [statusGroups, openedCount, chartRows, unsubscribedList] = await Promise.all([
+  const [statusGroups, openedCount, unsubscribedCount, pendingUnsubscribeCount, chartRows] = await Promise.all([
     db.campaignRecipient.groupBy({ by: ['status'], where: { campaignId: id }, _count: { id: true } }),
     db.campaignRecipient.count({ where: { campaignId: id, status: 'SENT', openedAt: { not: null } } }),
-    // Lightweight rows (no email/name) for the trend/hour/link-performance charts —
+    db.campaignRecipient.count({
+      where: {
+        campaignId: id,
+        OR: [
+          { status: 'SKIPPED_UNSUBSCRIBED' },
+          { clicks: { some: { url: { contains: UNSUBSCRIBE_URL_MARKER } } } },
+        ],
+      },
+    }),
+    // Clicked the unsubscribe link but the status update never landed -- how many
+    // the "Unsubscribe all" bulk action on the Unsubscribed tab would sweep up.
+    db.campaignRecipient.count({
+      where: { campaignId: id, status: { not: 'SKIPPED_UNSUBSCRIBED' }, clicks: { some: { url: { contains: UNSUBSCRIBE_URL_MARKER } } } },
+    }),
+    // Lightweight rows (no email/name) for the trend/hour/link-performance charts --
     // pulled from every non-pending recipient rather than just the current table
     // page, since pending recipients can never have sends/opens/clicks anyway.
     // Also used to compute "real" (bot-filtered) engagement counts below.
@@ -39,56 +47,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { campaignId: id, status: { not: 'PENDING' } },
       select: {
         id: true,
-        name: true,
-        email: true,
-        status: true,
         sentAt: true,
         opens: { select: { openedAt: true } },
         clicks: { select: { url: true, clickedAt: true } },
       },
     }),
-    db.campaignRecipient.findMany({
-      where: { campaignId: id, status: 'SKIPPED_UNSUBSCRIBED' },
-      select: { id: true, name: true, email: true, unsubscribedAt: true },
-      orderBy: { unsubscribedAt: 'desc' },
-    }),
   ])
 
   const counts: Record<Exclude<RecipientTab, 'ALL'>, number> = {
-    SENT: 0, PENDING: 0, BOUNCED: 0, FAILED: 0, UNSUBSCRIBED: 0, OPENED: openedCount,
+    SENT: 0, PENDING: 0, BOUNCED: 0, FAILED: 0, UNSUBSCRIBED: unsubscribedCount, OPENED: openedCount,
   }
   for (const g of statusGroups) {
     if (g.status === 'SENT') counts.SENT = g._count.id
     else if (g.status === 'PENDING') counts.PENDING = g._count.id
     else if (g.status === 'BOUNCED') counts.BOUNCED = g._count.id
     else if (g.status === 'FAILED') counts.FAILED = g._count.id
-    else if (g.status === 'SKIPPED_UNSUBSCRIBED') counts.UNSUBSCRIBED = g._count.id
   }
 
-  // "Real" engagement — same counts, minus recipients whose only opens/clicks
+  // "Real" engagement -- same counts, minus recipients whose only opens/clicks
   // look automated (see isLikelyAutomated above).
   let realOpened = 0
   let realClicked = 0
-  const unsubscribeClickers: { id: string; name: string | null; email: string; clickedAt: string }[] = []
   for (const r of chartRows) {
     const automated = isLikelyAutomated(r.clicks)
     if (r.opens.length > 0 && !automated) realOpened++
     if (r.clicks.length > 0 && !automated) realClicked++
-
-    if (r.status !== 'SKIPPED_UNSUBSCRIBED' && !automated) {
-      const unsubClick = r.clicks.find(c => c.url.includes(UNSUBSCRIBE_URL_MARKER))
-      if (unsubClick) unsubscribeClickers.push({ id: r.id, name: r.name, email: r.email, clickedAt: unsubClick.clickedAt.toISOString() })
-    }
   }
-  unsubscribeClickers.sort((a, b) => b.clickedAt.localeCompare(a.clickedAt))
 
   return NextResponse.json({
     ...campaign,
     recipientCounts: counts,
     engagementStats: { realOpened, realClicked },
+    pendingUnsubscribeCount,
     chartRows,
-    unsubscribedList,
-    unsubscribeClickers,
   })
 }
 
