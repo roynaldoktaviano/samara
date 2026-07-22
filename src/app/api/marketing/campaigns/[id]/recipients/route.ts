@@ -34,6 +34,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         clicks: { orderBy: { clickedAt: 'desc' } },
         opens: { orderBy: { openedAt: 'desc' } },
       },
+      // sourceType/sourceId (via the default select-all include above) let the
+      // Failed tab offer a "delete guest/lead" action straight to the source
+      // contact, since a hard bounce/failure usually means a dead address.
     }),
     db.campaignRecipient.count({ where }),
   ])

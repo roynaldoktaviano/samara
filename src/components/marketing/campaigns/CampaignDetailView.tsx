@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +38,8 @@ interface Recipient {
   email: string
   name: string | null
   status: 'PENDING' | 'SENT' | 'FAILED' | 'BOUNCED' | 'SKIPPED_UNSUBSCRIBED'
+  sourceType: 'CUSTOMER' | 'LEAD' | 'AGENT' | 'AGENT_LEAD_CONTACT' | 'MANUAL'
+  sourceId: string | null
   errorMessage: string | null
   openedAt: string | null
   openCount: number
@@ -224,6 +227,11 @@ function LinkPerformance({ stats, totalRecipients, view, onViewChange, pending }
   )
 }
 
+// Fixed 6-day window (today plus the 5 days before it, in TZ) shown on the
+// trend chart - a longer-running campaign's opens/clicks can trail for weeks,
+// which flattens the recent trend into a barely-visible sliver.
+const TREND_WINDOW_DAYS = 6
+
 // Per-day Sent/Opened/Clicked series for the trend chart - Sent will usually land on
 // a single day (a campaign is a one-time blast), while Opened/Clicked trail across
 // the days after as recipients check their inbox.
@@ -240,8 +248,13 @@ function dailyTrend(recipients: ChartRow[]) {
     for (const o of r.opens) bump(opened, o.openedAt)
     for (const c of r.clicks) bump(clicked, c.clickedAt)
   }
-  const keys = new Set([...sent.keys(), ...opened.keys(), ...clicked.keys()])
-  return Array.from(keys).sort((a, b) => a.localeCompare(b)).map(key => ({
+  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+  const [ty, tm, td] = todayKey.split('-').map(Number)
+  const todayUTC = Date.UTC(ty, tm - 1, td)
+  const keys = Array.from({ length: TREND_WINDOW_DAYS }, (_, i) =>
+    new Date(todayUTC - (TREND_WINDOW_DAYS - 1 - i) * 86_400_000).toLocaleDateString('en-CA', { timeZone: TZ })
+  )
+  return keys.map(key => ({
     date: fmtDate(key),
     sent: sent.get(key) ?? 0,
     opened: opened.get(key) ?? 0,
@@ -341,8 +354,13 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [continuing, setContinuing] = useState(false)
   const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set())
+  const [suppressedIds, setSuppressedIds] = useState<Set<string>>(new Set())
   const [unsubscribingAll, setUnsubscribingAll] = useState(false)
   const [linkView, setLinkView] = useState<'real' | 'raw'>('real')
+  const [deletingContactIds, setDeletingContactIds] = useState<Set<string>>(new Set())
+  const [deletedContactIds, setDeletedContactIds] = useState<Set<string>>(new Set())
+  const { data: session } = useSession()
+  const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -397,23 +415,30 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     }
   }
 
-  // Manually pushes through a recipient who clicked the unsubscribe link but never
-  // actually got marked unsubscribed (their mail client's native one-click button
-  // silently failed before that flow accepted it - see the unsubscribe API route).
-  // Patches just this row in place instead of refetching the whole recipient table,
-  // and syncs the campaign-wide counts silently so nothing on the page visibly reloads.
-  const confirmUnsubscribe = async (id: string) => {
+  // Two distinct actions depending on why the row qualifies (see the API route
+  // for the full rationale): a recipient who clicked the unsubscribe link
+  // themselves gets a real status flip to SKIPPED_UNSUBSCRIBED (moves to the
+  // Unsubscribed tab); a bounced/failed recipient we're suppressing on their
+  // behalf keeps their BOUNCED/FAILED status/tab - only the local button state
+  // changes to reflect they've been suppressed from future sends. Patches just
+  // this row in place instead of refetching the whole recipient table, and
+  // syncs the campaign-wide counts silently so nothing on the page visibly reloads.
+  const confirmUnsubscribe = async (id: string, isClickBased: boolean) => {
     setUnsubscribingIds(prev => new Set(prev).add(id))
     try {
       const res = await fetch(`/api/marketing/campaigns/${campaignId}/unsubscribe-recipients`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipientIds: [id] }),
       })
       if (res.ok) {
-        const unsubscribedAt = new Date().toISOString()
-        setRecipientsData(prev => prev ? {
-          ...prev,
-          recipients: prev.recipients.map(r => r.id === id ? { ...r, status: 'SKIPPED_UNSUBSCRIBED' as const, unsubscribedAt } : r),
-        } : prev)
+        if (isClickBased) {
+          const unsubscribedAt = new Date().toISOString()
+          setRecipientsData(prev => prev ? {
+            ...prev,
+            recipients: prev.recipients.map(r => r.id === id ? { ...r, status: 'SKIPPED_UNSUBSCRIBED' as const, unsubscribedAt } : r),
+          } : prev)
+        } else {
+          setSuppressedIds(prev => new Set(prev).add(id))
+        }
         fetchCampaign(true)
       }
     } finally {
@@ -439,6 +464,33 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       if (res.ok) { fetchCampaign(true); fetchRecipients() }
     } finally {
       setUnsubscribingAll(false)
+    }
+  }
+
+  // A hard bounce/failure usually means the address is dead - lets an admin
+  // remove the underlying guest/lead straight from the Failed tab instead of
+  // going to find it in the Guests/Leads page. Admin-only (same as the
+  // dedicated delete endpoints), soft-delete, and irreversible from here, so
+  // it's confirmed before firing.
+  const deleteContact = async (sourceType: 'CUSTOMER' | 'LEAD', sourceId: string) => {
+    const label = sourceType === 'CUSTOMER' ? 'guest' : 'lead'
+    if (!window.confirm(`Delete this ${label}? This can't be undone from here.`)) return
+    setDeletingContactIds(prev => new Set(prev).add(sourceId))
+    try {
+      const endpoint = sourceType === 'CUSTOMER' ? `/api/customers/${sourceId}` : `/api/leads/${sourceId}`
+      const res = await fetch(endpoint, { method: 'DELETE' })
+      if (res.ok) {
+        setDeletedContactIds(prev => new Set(prev).add(sourceId))
+      } else {
+        const data = await res.json().catch(() => null)
+        window.alert(data?.error ?? `Failed to delete ${label}`)
+      }
+    } finally {
+      setDeletingContactIds(prev => {
+        const next = new Set(prev)
+        next.delete(sourceId)
+        return next
+      })
     }
   }
 
@@ -497,6 +549,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
   const deliveryRate = pct(delivered)
   const realOpenRate = pct(campaign.engagementStats.realOpened)
   const realClickRate = pct(campaign.engagementStats.realClicked)
+  const openRateRaw = pct(opened)
+  const clickRateRaw = pct(clicked)
   const bounceRate = pct(bounced)
 
   return (
@@ -523,8 +577,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
         <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
-        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} - ${opened} raw`} color={GREEN} />
-        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} - ${clicked} raw`} color={BLUE} />
+        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} - ${opened} raw (${openRateRaw}%)`} color={GREEN} />
+        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} - ${clicked} raw (${clickRateRaw}%)`} color={BLUE} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -563,8 +617,8 @@ export default function CampaignDetailView({ campaignId, onBack }: {
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Sent, opened & clicked over time</CardTitle></CardHeader>
             <CardContent>
-              {trendData.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-10">No activity yet</p>
+              {trendData.every(d => d.sent === 0 && d.opened === 0 && d.clicked === 0) ? (
+                <p className="text-sm text-muted-foreground text-center py-10">No activity in the last {TREND_WINDOW_DAYS} days</p>
               ) : (
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={trendData}>
@@ -699,9 +753,12 @@ export default function CampaignDetailView({ campaignId, onBack }: {
             <TableBody>
               {recipients.map(r => {
                 const clickedUnsubscribeLink = r.clicks.some(c => c.url.includes(UNSUBSCRIBE_URL_MARKER))
-                // Bounced/failed addresses can be unsubscribed too, so future
-                // campaigns stop retrying a dead or invalid address.
-                const canUnsubscribe = r.status !== 'SKIPPED_UNSUBSCRIBED'
+                // Bounced/failed addresses can be suppressed too, so future
+                // campaigns stop retrying a dead or invalid address - but unlike
+                // a real click, that doesn't move them to the Unsubscribed tab
+                // (see confirmUnsubscribe/the API route), so once suppressed
+                // there's nothing left to show a live button for.
+                const canUnsubscribe = r.status !== 'SKIPPED_UNSUBSCRIBED' && !suppressedIds.has(r.id)
                   && (clickedUnsubscribeLink || r.status === 'BOUNCED' || r.status === 'FAILED')
                 return (
                 <TableRow key={r.id}>
@@ -763,17 +820,36 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                   <TableCell className="text-xs text-muted-foreground font-mono">{latestIp(r) ?? '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-65 whitespace-normal wrap-break-word">
                     {r.errorMessage && <p className="mb-1">{r.errorMessage}</p>}
-                    {canUnsubscribe ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        disabled={unsubscribingIds.has(r.id)}
-                        onClick={() => confirmUnsubscribe(r.id)}
-                      >
-                        {unsubscribingIds.has(r.id) ? '...' : clickedUnsubscribeLink ? 'Confirm unsubscribe' : 'Unsubscribe'}
-                      </Button>
-                    ) : (!r.errorMessage && '-')}
+                    <div className="flex flex-wrap gap-1">
+                      {suppressedIds.has(r.id) && <span className="text-muted-foreground">Suppressed from future sends</span>}
+                      {canUnsubscribe && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          disabled={unsubscribingIds.has(r.id)}
+                          onClick={() => confirmUnsubscribe(r.id, clickedUnsubscribeLink)}
+                        >
+                          {unsubscribingIds.has(r.id) ? '...' : clickedUnsubscribeLink ? 'Confirm unsubscribe' : 'Unsubscribe'}
+                        </Button>
+                      )}
+                      {isAdmin && r.status === 'FAILED' && r.sourceId && (r.sourceType === 'CUSTOMER' || r.sourceType === 'LEAD') && (
+                        deletedContactIds.has(r.sourceId) ? (
+                          <span className="text-red-600">{r.sourceType === 'CUSTOMER' ? 'Guest' : 'Lead'} deleted</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                            disabled={deletingContactIds.has(r.sourceId)}
+                            onClick={() => deleteContact(r.sourceType as 'CUSTOMER' | 'LEAD', r.sourceId!)}
+                          >
+                            {deletingContactIds.has(r.sourceId) ? '...' : `Delete ${r.sourceType === 'CUSTOMER' ? 'guest' : 'lead'}`}
+                          </Button>
+                        )
+                      )}
+                      {!r.errorMessage && !canUnsubscribe && !suppressedIds.has(r.id) && !(isAdmin && r.status === 'FAILED' && r.sourceId && (r.sourceType === 'CUSTOMER' || r.sourceType === 'LEAD')) && '-'}
+                    </div>
                   </TableCell>
                 </TableRow>
                 )
