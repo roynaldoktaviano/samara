@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   const form = await req.formData()
   const file = form.get('file')
   const yachtId = form.get('yachtId')
-  const category = form.get('category')
+  const categoryId = form.get('categoryId')
   if (!(file instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
   const isImage = file.type.startsWith('image/')
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File must be under 20MB' }, { status: 400 })
 
   const folder = typeof yachtId === 'string' && yachtId ? yachtId : 'fleet'
-  const cat = typeof category === 'string' && category ? category : 'misc'
+  const cat = typeof categoryId === 'string' && categoryId ? categoryId : 'misc'
   const blob = await put(`media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file, { access: 'public' })
 
   return NextResponse.json({ url: blob.url, sizeBytes: file.size, mimeType: file.type })

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAgentPortalAccess } from '@/lib/agent-portal-access'
-import { resolveTenantById } from '@/lib/resolve-tenant'
+import { resolveAgentPortalSession } from '@/lib/agent-portal-access'
 
 export async function GET(request: NextRequest) {
-  const payload = await verifyAgentPortalAccess(request)
-  if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await resolveTenantById(payload.tenantId)
-  if (!db) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const session = await resolveAgentPortalSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
 
   try {
     const yachts = await db.yacht.findMany({

@@ -5,7 +5,6 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
-const CATEGORIES = ['brochure', 'itinerary', 'deck_plan', 'rates_terms', 'press_kit', 'testimonial', 'photo', 'video', 'reel']
 const TYPES = ['image', 'document', 'video']
 
 async function requireAccess() {
@@ -26,8 +25,12 @@ export async function GET(request: NextRequest) {
 
     const files = await db.mediaFile.findMany({
       where: yachtId ? { OR: [{ yachtId }, { yachtId: null }] } : undefined,
-      include: { uploadedBy: { select: { name: true, email: true } }, yacht: { select: { id: true, name: true } } },
-      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        uploadedBy: { select: { name: true, email: true } },
+        yacht: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
     })
     return NextResponse.json(files)
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to fetch media files' }, { status: 500 }) }
@@ -41,9 +44,11 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json().catch(() => ({}))
-    const { yachtId, category, type, name, url, folder, sizeBytes, mimeType } = body
+    const { yachtId, categoryId, type, name, url, folder, sizeBytes, mimeType } = body
 
-    if (!category || !CATEGORIES.includes(category)) return NextResponse.json({ error: 'Invalid category' }, { status: 400 })
+    if (!categoryId || typeof categoryId !== 'string') return NextResponse.json({ error: 'Category is required' }, { status: 400 })
+    const category = await db.mediaCategory.findUnique({ where: { id: categoryId } })
+    if (!category) return NextResponse.json({ error: 'Invalid category' }, { status: 400 })
     if (!type || !TYPES.includes(type)) return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
     if (!name || typeof name !== 'string') return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     if (!url || typeof url !== 'string') return NextResponse.json({ error: 'URL is required' }, { status: 400 })
@@ -51,7 +56,7 @@ export async function POST(request: NextRequest) {
     const file = await db.mediaFile.create({
       data: {
         yachtId: yachtId || null,
-        category, type, name, url,
+        categoryId, type, name, url,
         folder: folder || null,
         sizeBytes: typeof sizeBytes === 'number' ? sizeBytes : null,
         mimeType: mimeType || null,
@@ -64,7 +69,7 @@ export async function POST(request: NextRequest) {
       userId: session.user.id, userName: session.user.name ?? session.user.email ?? 'Unknown',
       userRole: (session.user as { role?: string }).role ?? '',
       action: 'CREATE', entity: 'MediaFile', entityId: file.id,
-      detail: `Upload media kit file: ${file.name} (${category})`,
+      detail: `Upload media kit file: ${file.name} (${category.name})`,
     }, db).catch(() => {})
 
     return NextResponse.json(file, { status: 201 })

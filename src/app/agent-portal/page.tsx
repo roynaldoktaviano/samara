@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Lock, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, MapPin, FileStack,
-  CalendarDays, LogOut, FileSpreadsheet, Newspaper, Quote, X, FolderOpen,
-  Video, Clapperboard, Play, Loader2,
+  Lock, ChevronLeft, ChevronRight, FileText, MapPin, FileStack,
+  CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
@@ -32,13 +31,14 @@ interface YachtOption {
   image: string | null
 }
 
-type MediaCategory = 'brochure' | 'itinerary' | 'deck_plan' | 'rates_terms' | 'press_kit' | 'testimonial' | 'photo' | 'video' | 'reel'
 type MediaFileType = 'image' | 'document' | 'video'
+
+interface MediaCategoryRecord { id: string; name: string }
 
 interface MediaFile {
   id: string
   yachtId: string | null
-  category: MediaCategory
+  categoryId: string
   type: MediaFileType
   name: string
   url: string
@@ -46,18 +46,6 @@ interface MediaFile {
   mimeType: string | null
   folder: string | null
 }
-
-const MEDIA_CATEGORY_META: { id: MediaCategory; label: string; icon: React.ElementType }[] = [
-  { id: 'brochure',    label: 'Brochures',    icon: FileText },
-  { id: 'itinerary',   label: 'Itineraries',  icon: MapPin },
-  { id: 'deck_plan',   label: 'Deck Plans',   icon: FileStack },
-  { id: 'rates_terms', label: 'Rates & T&Cs', icon: FileSpreadsheet },
-  { id: 'press_kit',   label: 'Press Kit',    icon: Newspaper },
-  { id: 'testimonial', label: 'Testimonials', icon: Quote },
-  { id: 'photo',       label: 'Photos',       icon: ImageIcon },
-  { id: 'video',       label: 'Videos',       icon: Video },
-  { id: 'reel',        label: 'Reels',        icon: Clapperboard },
-]
 
 function formatSize(bytes: number | null) {
   if (bytes == null) return null
@@ -163,6 +151,7 @@ export default function AgentPortalPage() {
   const [yachtId, setYachtId] = useState<string | null>(null)
   const [yachts, setYachts] = useState<YachtOption[]>([])
   const [yachtsLoading, setYachtsLoading] = useState(false)
+  const [agentName, setAgentName] = useState('')
 
   const selectedYacht = useMemo(() => yachts.find(y => y.id === yachtId) ?? null, [yachts, yachtId])
 
@@ -183,6 +172,7 @@ export default function AgentPortalPage() {
         const res = await fetch('/api/agent-portal/session')
         const data = await res.json().catch(() => ({ valid: false }))
         if (data.valid) {
+          setAgentName(data.agentName ?? '')
           await loadYachts()
           setStep('yacht')
         }
@@ -205,11 +195,12 @@ export default function AgentPortalPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
         setLoginError(data.error ?? 'Incorrect email or password')
         return
       }
+      setAgentName(data.agentName ?? '')
       setPassword('')
       await loadYachts()
       setStep('yacht')
@@ -225,6 +216,7 @@ export default function AgentPortalPage() {
     setLoginError('')
     setYachtId(null)
     setYachts([])
+    setAgentName('')
     setStep('login')
   }
 
@@ -245,6 +237,7 @@ export default function AgentPortalPage() {
       <YachtScreen
         yachts={yachts}
         loading={yachtsLoading}
+        agentName={agentName}
         onSelect={(id, target) => { setYachtId(id); setStep(target) }}
         onLogout={logout}
       />
@@ -282,7 +275,8 @@ export default function AgentPortalPage() {
             </button>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            {agentName && <span className="text-xs text-white/50 hidden sm:inline truncate max-w-[140px]">Hi, {agentName}</span>}
             <button onClick={logout} className="text-xs text-white/50 hover:text-white transition-colors shrink-0">
               Log out
             </button>
@@ -362,8 +356,8 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
   )
 }
 
-function YachtScreen({ yachts, loading, onSelect, onLogout }: {
-  yachts: YachtOption[]; loading: boolean
+function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
+  yachts: YachtOption[]; loading: boolean; agentName: string
   onSelect: (id: string, target: 'media' | 'calendar') => void; onLogout: () => void
 }) {
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -405,12 +399,19 @@ function YachtScreen({ yachts, loading, onSelect, onLogout }: {
         <div className="flex items-center bg-black/30 backdrop-blur-sm rounded-full pl-3 pr-4 py-2">
           <img src={SAMARA_LOGO} alt="Samara" className="h-4 sm:h-5 w-auto object-contain" />
         </div>
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-1.5 text-white/80 hover:text-white text-xs font-medium bg-black/30 backdrop-blur-sm px-4 py-2.5 rounded-full transition-colors"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Log out
-        </button>
+        <div className="flex items-center gap-3">
+          {agentName && (
+            <span className="hidden sm:inline text-white/70 text-xs font-medium bg-black/30 backdrop-blur-sm px-4 py-2.5 rounded-full truncate max-w-[180px]">
+              Hi, {agentName}
+            </span>
+          )}
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1.5 text-white/80 hover:text-white text-xs font-medium bg-black/30 backdrop-blur-sm px-4 py-2.5 rounded-full transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Log out
+          </button>
+        </div>
       </div>
 
       {/* Left content */}
@@ -504,11 +505,22 @@ function YachtScreen({ yachts, loading, onSelect, onLogout }: {
 }
 
 function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
-  const [activeCat, setActiveCat] = useState<MediaCategory>('brochure')
+  const [categories, setCategories] = useState<MediaCategoryRecord[]>([])
+  const [activeCatId, setActiveCatId] = useState<string>('')
   const [files, setFiles] = useState<MediaFile[]>([])
   const [loading, setLoading] = useState(true)
   const [activeFolder, setActiveFolder] = useState<string | null>(null)
   const [preview, setPreview] = useState<MediaFile | null>(null)
+
+  useEffect(() => {
+    fetch('/api/agent-portal/categories')
+      .then(r => r.ok ? r.json() : [])
+      .then((cats: MediaCategoryRecord[]) => {
+        setCategories(cats)
+        setActiveCatId(prev => prev || cats[0]?.id || '')
+      })
+      .catch(() => setCategories([]))
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -519,16 +531,18 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       .finally(() => setLoading(false))
   }, [yacht.id])
 
-  useEffect(() => { setActiveFolder(null) }, [activeCat])
+  useEffect(() => { setActiveFolder(null) }, [activeCatId])
 
-  function selectCategory(id: MediaCategory) {
-    setActiveCat(id)
+  function selectCategory(id: string) {
+    setActiveCatId(id)
   }
 
-  const categoryFiles = files.filter(f => f.category === activeCat)
+  const activeCategory = categories.find(c => c.id === activeCatId) ?? null
+  const categoryFiles = files.filter(f => f.categoryId === activeCatId)
   const folders = Array.from(new Set(categoryFiles.filter(f => f.folder).map(f => f.folder as string)))
   const hasFolders = folders.length > 0
-  const currentFiles = hasFolders ? (activeFolder ? categoryFiles.filter(f => f.folder === activeFolder) : []) : categoryFiles
+  const looseFiles = categoryFiles.filter(f => !f.folder)
+  const currentFiles = activeFolder ? categoryFiles.filter(f => f.folder === activeFolder) : looseFiles
 
   function fileCard(f: MediaFile) {
     return (
@@ -566,22 +580,24 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       </div>
 
       <div className="flex justify-between gap-x-6 gap-y-2 flex-wrap border-b mb-8 max-w-3xl mx-auto">
-        {MEDIA_CATEGORY_META.map(c => (
+        {categories.map(c => (
           <button
             key={c.id}
             onClick={() => selectCategory(c.id)}
             className={cn(
               'relative pb-3 text-sm whitespace-nowrap transition-colors',
-              activeCat === c.id ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground'
+              activeCatId === c.id ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground'
             )}
           >
-            {c.label}
-            {activeCat === c.id && <span className="absolute left-0 right-0 -bottom-px h-px" style={{ background: GOLD_DARK }} />}
+            {c.name}
+            {activeCatId === c.id && <span className="absolute left-0 right-0 -bottom-px h-px" style={{ background: GOLD_DARK }} />}
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {!activeCategory ? (
+        <p className="text-sm text-muted-foreground text-center py-10">Nothing here yet.</p>
+      ) : loading ? (
         <p className="text-sm text-muted-foreground text-center py-10">Loading…</p>
       ) : hasFolders ? (
         <div>
@@ -590,7 +606,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
               onClick={() => setActiveFolder(null)}
               className={cn('flex items-center gap-1.5 transition-colors', !activeFolder ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
             >
-              <FolderOpen className="h-3.5 w-3.5" /> {MEDIA_CATEGORY_META.find(c => c.id === activeCat)?.label}
+              <FolderOpen className="h-3.5 w-3.5" /> {activeCategory.name}
             </button>
             {activeFolder && (
               <>
@@ -601,11 +617,11 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
           </div>
 
           {!activeFolder ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
               {folders.map(folder => (
                 <button key={folder} onClick={() => setActiveFolder(folder)} className="group text-left">
-                  <div className="aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300 group-hover:text-neutral-400 transition-colors">
-                    <FolderOpen className="h-8 w-8" />
+                  <div className="aspect-[4/3] bg-neutral-50 rounded-lg flex items-center justify-center">
+                    <FolderOpen className="h-16 w-16 text-neutral-300 group-hover:text-neutral-400 transition-colors" />
                   </div>
                   <p className="text-sm mt-3 leading-tight">{folder}</p>
                   <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">
@@ -613,6 +629,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
                   </p>
                 </button>
               ))}
+              {looseFiles.map(fileCard)}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">

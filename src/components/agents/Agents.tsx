@@ -15,12 +15,14 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
   Loader2, Mail, Building2, Percent, RotateCw,
   Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight, ChevronLeft,
   Link2, Copy, ShieldOff, ShieldCheck, BarChart2, AlertTriangle,
-  Download, Upload, FileDown, KeyRound,
+  Download, Upload, FileDown, KeyRound, ListChecks,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -218,6 +220,14 @@ export default function Agents() {
   const [portalConfirm,            setPortalConfirm]            = useState<{ agent: AgentRecord; action: 'deactivate' | 'activate' } | null>(null)
   const [portalActing,             setPortalActing]             = useState(false)
 
+  // agent portal media-kit category visibility (assigned salesperson or admin)
+  const [categoryDialogAgent,      setCategoryDialogAgent]      = useState<AgentRecord | null>(null)
+  const [allCategories,            setAllCategories]            = useState<{ id: string; name: string }[]>([])
+  const [categoryRestricted,       setCategoryRestricted]       = useState(false)
+  const [categorySelectedIds,      setCategorySelectedIds]      = useState<Set<string>>(new Set())
+  const [categoryLoading,          setCategoryLoading]          = useState(false)
+  const [categorySaving,           setCategorySaving]           = useState(false)
+
   const fetchAgents = useCallback(async () => {
     setLoading(true)
     try {
@@ -339,6 +349,49 @@ export default function Agents() {
       if (res.ok) { await fetchAgents(); setPortalConfirm(null) }
     } catch (e) { console.error(e) }
     finally { setPortalActing(false) }
+  }
+
+  const openCategoryDialog = async (agent: AgentRecord) => {
+    setCategoryDialogAgent(agent)
+    setCategoryLoading(true)
+    try {
+      const [categoriesRes, visibilityRes] = await Promise.all([
+        fetch('/api/marketing/categories'),
+        fetch(`/api/agents/${agent.id}/portal-categories`),
+      ])
+      const cats: { id: string; name: string }[] = categoriesRes.ok ? await categoriesRes.json() : allCategories
+      setAllCategories(cats)
+      if (visibilityRes.ok) {
+        const data = await visibilityRes.json()
+        const restricted = !!data.restricted
+        setCategoryRestricted(restricted)
+        // Unrestricted means the agent currently sees every category — pre-check them all so
+        // switching to "Choose specific" starts from that same state, not an empty checklist.
+        setCategorySelectedIds(new Set<string>(restricted ? (data.visibleCategoryIds ?? []) : cats.map(c => c.id)))
+      }
+    } catch (e) { console.error(e) }
+    finally { setCategoryLoading(false) }
+  }
+
+  const toggleCategorySelected = (id: string) => {
+    setCategorySelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const handleSaveCategories = async () => {
+    if (!categoryDialogAgent) return
+    setCategorySaving(true)
+    try {
+      const res = await fetch(`/api/agents/${categoryDialogAgent.id}/portal-categories`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restricted: categoryRestricted, categoryIds: Array.from(categorySelectedIds) }),
+      })
+      if (res.ok) setCategoryDialogAgent(null)
+    } catch (e) { console.error(e) }
+    finally { setCategorySaving(false) }
   }
 
   const openStats = async (agent: AgentRecord) => {
@@ -991,6 +1044,13 @@ export default function Agents() {
                                   </button>
                                 </>
                               )}
+                              <button
+                                onClick={() => openCategoryDialog(a)}
+                                className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                title="Media Kit categories shown to this agent"
+                              >
+                                <ListChecks className="h-3 w-3" />
+                              </button>
                             </div>
                           )}
                         </td>
@@ -2037,6 +2097,61 @@ export default function Agents() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Media Kit Category Visibility ── */}
+      <Dialog open={!!categoryDialogAgent} onOpenChange={v => !v && setCategoryDialogAgent(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-[#bdac7e]" /> Media Kit Categories — {categoryDialogAgent?.name}
+            </DialogTitle>
+            <DialogDescription>Choose which Media Kit categories this agent sees in their portal.</DialogDescription>
+          </DialogHeader>
+          {categoryLoading ? (
+            <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <div className="space-y-3 py-2">
+              <RadioGroup value={categoryRestricted ? 'restricted' : 'all'} onValueChange={v => setCategoryRestricted(v === 'restricted')}>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="all" id="cat-all" />
+                  <Label htmlFor="cat-all" className="font-normal cursor-pointer">Show all categories</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="restricted" id="cat-restricted" />
+                  <Label htmlFor="cat-restricted" className="font-normal cursor-pointer">Choose specific categories</Label>
+                </div>
+              </RadioGroup>
+
+              {categoryRestricted && (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto rounded-lg border p-3">
+                  {allCategories.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No categories yet.</p>
+                  ) : allCategories.map(c => (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`cat-${c.id}`}
+                        checked={categorySelectedIds.has(c.id)}
+                        onCheckedChange={() => toggleCategorySelected(c.id)}
+                      />
+                      <Label htmlFor={`cat-${c.id}`} className="font-normal cursor-pointer">{c.name}</Label>
+                    </div>
+                  ))}
+                  {categorySelectedIds.size === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">No categories selected — this agent will see nothing in Media Kit.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCategoryDialogAgent(null)}>Cancel</Button>
+            <Button disabled={categorySaving || categoryLoading} onClick={handleSaveCategories} style={{ backgroundColor: ACCENT }} className="text-white">
+              {categorySaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Calendar Stats Modal ── */}
       <AlertDialog open={!!statsAgent} onOpenChange={v => !v && setStatsAgent(null)}>

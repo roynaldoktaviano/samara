@@ -266,6 +266,7 @@ model Agent {
   contacts                 AgentContact[]
   calendarAccessLogs       CalendarAccessLog[]
   leadsPromoted            AgentLead[]
+  visibleCategories        AgentVisibleCategory[]
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
 
@@ -381,6 +382,7 @@ model Yacht {
   cashierSales      CashierSale[]
   destinationPrices YachtDestinationPrice[]
   mediaFiles        MediaFile[]
+  mediaFolders      MediaFolder[]
 }
 
 enum MediaFileType {
@@ -389,23 +391,25 @@ enum MediaFileType {
   video
 }
 
-enum MediaCategory {
-  brochure
-  itinerary
-  deck_plan
-  rates_terms
-  press_kit
-  testimonial
-  photo
-  video
-  reel
+// Marketing-managed — rename/add/remove freely from the ERP, not a fixed enum.
+model MediaCategory {
+  id        String   @id @default(cuid())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mediaFiles     MediaFile[]
+  mediaFolders   MediaFolder[]
+  agentVisibility AgentVisibleCategory[]
 }
 
 model MediaFile {
   id           String        @id @default(cuid())
   yachtId      String?
   yacht        Yacht?        @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  category     MediaCategory
+  categoryId   String
+  category     MediaCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   type         MediaFileType
   name         String
   url          String
@@ -419,7 +423,37 @@ model MediaFile {
   updatedAt    DateTime      @updatedAt
 
   @@index([yachtId])
-  @@index([category])
+  @@index([categoryId])
+}
+
+// Tracked separately from MediaFile.folder (a plain string) so an empty folder — created
+// but not yet holding any file — still persists instead of only existing transiently in
+// the browser tab that created it.
+model MediaFolder {
+  id         String        @id @default(cuid())
+  yachtId    String?
+  yacht      Yacht?        @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   MediaCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  name       String
+  createdAt  DateTime      @default(now())
+
+  @@index([yachtId])
+  @@index([categoryId])
+}
+
+// Per-agent override of which Media Kit categories they see in the Agent Portal. An agent
+// with zero rows here sees every category (default, unrestricted) — only once at least one
+// row exists does this become an explicit allow-list. See AgentPortalPage MediaKitScreen.
+model AgentVisibleCategory {
+  id         String        @id @default(cuid())
+  agentId    String
+  agent      Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   MediaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime      @default(now())
+
+  @@unique([agentId, categoryId])
 }
 
 model Destination {
