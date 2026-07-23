@@ -57,26 +57,18 @@ function isAgentPortalPath(pathname: string) {
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // TEMPORARY — remove once the agent.* subdomain routing is confirmed working in production.
-  // Visit /__mw-debug on any host to see exactly what the middleware receives at runtime.
-  if (pathname === '/__mw-debug') {
-    return NextResponse.json({
-      rawHostHeader: req.headers.get('host'),
-      computedHostname: req.headers.get('host')?.split(':')[0] ?? '',
-      xForwardedHost: req.headers.get('x-forwarded-host'),
-      xForwardedProto: req.headers.get('x-forwarded-proto'),
-      envAgentPortalHost: process.env.AGENT_PORTAL_HOST ?? null,
-      url: req.url,
-      nextUrlHostname: req.nextUrl.hostname,
-    })
-  }
-
   // Agent Portal is split onto its own subdomain (AGENT_PORTAL_HOST, e.g. agent.samarayachting.com):
   //  - On that host, ONLY agent-portal routes are servable — the root path is rewritten to
   //    /agent-portal so agents get a clean URL, and everything else 404s (no ERP access here).
   //  - On every other host (the main ERP domain), agent-portal routes are blocked outright —
   //    agents must not be able to reach the portal via erp.samarayachting.com/agent-portal.
-  const hostname = req.headers.get('host')?.split(':')[0] ?? ''
+  // Prefer X-Forwarded-Host over Host: on this app's production reverse proxy chain (Cloudflare
+  // → Cloudways' Apache/Nginx → Node), the Host header the app actually receives is rewritten to
+  // the internal upstream address (e.g. "127.0.0.1:3000"), not the original public hostname —
+  // only X-Forwarded-Host carries it. Some proxies append to it per hop ("a.com, a.com"), so take
+  // just the first value. Falls back to Host: for local dev, where there's no proxy in front at all.
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const hostname = (forwardedHost || req.headers.get('host') || '').split(':')[0]
   const agentPortalHost = process.env.AGENT_PORTAL_HOST
   if (agentPortalHost && hostname === agentPortalHost) {
     if (pathname === '/') return NextResponse.rewrite(new URL('/agent-portal', req.url))
