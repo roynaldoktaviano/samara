@@ -71,9 +71,11 @@ export default async function middleware(req: NextRequest) {
   const hostname = (forwardedHost || req.headers.get('host') || '').split(':')[0]
   const agentPortalHost = process.env.AGENT_PORTAL_HOST
   if (agentPortalHost && hostname === agentPortalHost) {
-    if (pathname === '/') return NextResponse.rewrite(new URL('/agent-portal', req.url))
     if (isAgentPortalPath(pathname)) return NextResponse.next()
-    return new NextResponse('Not found', { status: 404 })
+    // Anything else on this host (including /login, which is otherwise matcher-excluded
+    // below so the ERP's own login page keeps working) always lands on the agent portal —
+    // this domain has exactly one purpose.
+    return NextResponse.rewrite(new URL('/agent-portal', req.url))
   }
   if (agentPortalHost && isAgentPortalPath(pathname)) {
     return new NextResponse('Not found', { status: 404 })
@@ -117,5 +119,8 @@ export default async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|kalender|api/auth|api/public|_next/static|_next/image|favicon.ico|.*\\.webp|.*\\.png|.*\\.jpg|.*\\.svg).*)'],
+  // 'login' is intentionally NOT excluded here (unlike before) — it needs to reach the
+  // middleware function so the agent-host rewrite above can intercept agent.*'s /login too.
+  // isPublic() still lets it through untouched on every other host, so ERP behavior is unchanged.
+  matcher: ['/((?!kalender|api/auth|api/public|_next/static|_next/image|favicon.ico|.*\\.webp|.*\\.png|.*\\.jpg|.*\\.svg).*)'],
 }
