@@ -57,6 +57,20 @@ function isAgentPortalPath(pathname: string) {
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // TEMPORARY — remove once the agent.* subdomain routing is confirmed working in production.
+  // Visit /__mw-debug on any host to see exactly what the middleware receives at runtime.
+  if (pathname === '/__mw-debug') {
+    return NextResponse.json({
+      rawHostHeader: req.headers.get('host'),
+      computedHostname: req.headers.get('host')?.split(':')[0] ?? '',
+      xForwardedHost: req.headers.get('x-forwarded-host'),
+      xForwardedProto: req.headers.get('x-forwarded-proto'),
+      envAgentPortalHost: process.env.AGENT_PORTAL_HOST ?? null,
+      url: req.url,
+      nextUrlHostname: req.nextUrl.hostname,
+    })
+  }
+
   // Agent Portal is split onto its own subdomain (AGENT_PORTAL_HOST, e.g. agent.samarayachting.com):
   //  - On that host, ONLY agent-portal routes are servable — the root path is rewritten to
   //    /agent-portal so agents get a clean URL, and everything else 404s (no ERP access here).
