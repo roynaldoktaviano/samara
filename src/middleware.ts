@@ -23,8 +23,9 @@ const PUBLIC_PATHS = [
   // Internal Request Order page — used by staff without an ERP login (crew, field staff, etc.)
   '/request-order',
   '/api/hr/request-orders',
-  // Agent Portal preview — has its own password login, separate from staff NextAuth
+  // Agent Portal — has its own per-agent password login, separate from staff NextAuth
   '/agent-portal',
+  '/api/agent-portal',
   '/media-kit',
   // Guest-facing form — access controlled by its own per-guest token, not staff login
   '/guest-form',

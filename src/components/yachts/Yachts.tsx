@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -367,7 +366,7 @@ export default function Yachts() {
             </div>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="px-6 py-5">
 
               {/* ── Step 1: Boat Info ── */}
@@ -634,7 +633,7 @@ export default function Yachts() {
               )}
 
             </div>
-          </ScrollArea>
+          </div>
 
           {error && (
             <p className="px-6 py-2 text-sm text-destructive bg-destructive/5 border-t">{error}</p>

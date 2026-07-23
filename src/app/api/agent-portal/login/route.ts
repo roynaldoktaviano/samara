@@ -1,23 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { SignJWT } from 'jose'
+import bcrypt from 'bcryptjs'
+import { db as defaultDb } from '@/lib/db'
+import { centralDb } from '@/lib/central-db'
+import { getTenantDb } from '@/lib/tenant-db'
+import { AGENT_PORTAL_COOKIE, getAgentPortalSecret } from '@/lib/agent-portal-access'
+import type { PrismaClient } from '@prisma/client'
 
-// Server-side check for the Agent Portal preview's shared password — previously compared
-// client-side against a constant shipped in the JS bundle. This page is currently a
-// preview with no real API calls or tenant data behind it, but the credential itself
-// should never live in client-visible code.
+/** Scans every active tenant for an Agent matching this email — mirrors findAgentTenant()
+ *  in src/app/api/public/verify-calendar/route.ts, swapping the lookup key from
+ *  calendarToken to email since agent-portal login has no per-tenant slug to go on. */
+async function findAgentByEmail(email: string) {
+  const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { id: true, databaseUrl: true } })
+  const defaultUrl = process.env.DATABASE_URL
+  const candidates = [{ id: null as string | null, url: defaultUrl }, ...tenants.map(t => ({ id: t.id, url: t.databaseUrl }))]
+  const seen = new Set<string>()
+  for (const c of candidates) {
+    if (!c.url || seen.has(c.url)) continue
+    seen.add(c.url)
+    const client: PrismaClient = c.url === defaultUrl ? defaultDb : getTenantDb(c.url)
+    const agent = await client.agent.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { id: true, name: true, portalPasswordHash: true, portalActive: true },
+    }).catch(() => null)
+    if (agent) return { db: client, tenantId: c.id, agent }
+  }
+  return null
+}
+
 export async function POST(request: NextRequest) {
-  const { password } = await request.json().catch(() => ({ password: '' }))
-  const expected = process.env.AGENT_PORTAL_PASSWORD
-  if (!expected || typeof password !== 'string' || password !== expected) {
-    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 })
+  const { email, password } = await request.json().catch(() => ({ email: '', password: '' }))
+  if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
+    return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 })
   }
 
-  const res = NextResponse.json({ ok: true })
-  res.cookies.set('agent-portal-access', crypto.randomUUID(), {
+  const found = await findAgentByEmail(email.trim())
+  const portalPasswordHash = found?.agent.portalPasswordHash
+  if (!found || !portalPasswordHash) {
+    return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
+  }
+  const { tenantId, agent } = found
+  if (!agent.portalActive) {
+    return NextResponse.json({ error: 'Akses portal untuk akun ini sedang dinonaktifkan' }, { status: 403 })
+  }
+
+  const valid = await bcrypt.compare(password, portalPasswordHash)
+  if (!valid) {
+    return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
+  }
+
+  const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name, tenantId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('30d')
+    .sign(getAgentPortalSecret())
+
+  const res = NextResponse.json({ ok: true, agentName: agent.name })
+  res.cookies.set(AGENT_PORTAL_COOKIE, jwt, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    path: '/agent-portal',
+    // Must be '/', not '/agent-portal' — every consumer of this cookie is under
+    // /api/agent-portal/*, which doesn't path-match a '/agent-portal' cookie scope.
+    path: '/',
     maxAge: 60 * 60 * 24 * 30, // 30 days
   })
   return res

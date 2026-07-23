@@ -1,221 +1,92 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import HTMLFlipBook from 'react-pageflip'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Lock, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, MapPin, FileStack,
-  CalendarDays, LogOut, CheckCircle2, FileSpreadsheet, Newspaper, Quote, Check, X,
-  FolderOpen, Video, Clapperboard, Play, BookOpen, Sparkles,
+  CalendarDays, LogOut, FileSpreadsheet, Newspaper, Quote, X, FolderOpen,
+  Video, Clapperboard, Play, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getEffectiveBookingStatus } from '@/lib/booking-status'
 
 const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
 const SAMARA_LOGO = '/agent-portal/logoo.png'
 
-const DUMMY_PHOTO_A = '/agent-portal/samara1.webp'
-const DUMMY_PHOTO_B = '/agent-portal/lounge-otium.webp'
-const MISCHIEF_PHOTO = '/agent-portal/mischief-yacht-komodo.jpg'
-const SAMARA_2_PHOTO = '/agent-portal/samara-II.webp'
+// Shown when a yacht has no `image` set in the ERP yet — decorative background only.
+const FALLBACK_PHOTO_A = '/agent-portal/samara1.webp'
+const FALLBACK_PHOTO_B = '/agent-portal/lounge-otium.webp'
 
 type Step = 'login' | 'yacht' | 'media' | 'calendar'
 
 interface YachtOption {
   id: string
   name: string
-  tagline: string
-  type: string
-  cabins: number
-  maxGuests: number
-  length: number
-  description: string
-  image: string
+  tagline: string | null
+  type: string | null
+  capacity: number
+  cabinCount: number
+  length: number | null
+  description: string | null
+  image: string | null
 }
 
-const YACHTS: YachtOption[] = [
-  {
-    id: 'samara-1', name: 'Samara I', tagline: 'Komodo · Raja Ampat', type: 'Phinisi', cabins: 10, maxGuests: 20, length: 30,
-    description: 'Traditional luxury Phinisi built for immersive, intimate liveaboard voyages through Komodo and Raja Ampat.',
-    image: DUMMY_PHOTO_A,
-  },
-  {
-    id: 'samara-2', name: 'Samara II', tagline: 'Komodo · Banda Sea', type: 'Phinisi', cabins: 8, maxGuests: 16, length: 26,
-    description: 'Boutique Phinisi tailored for unforgettable diving expeditions and relaxed island-hopping.',
-    image: SAMARA_2_PHOTO,
-  },
-  {
-    id: 'mischief', name: 'Mischief', tagline: 'Komodo', type: 'Phinisi', cabins: 6, maxGuests: 12, length: 30,
-    description: 'Eco-conscious luxury yacht blending traditional Phinisi lines with striking contemporary design.',
-    image: MISCHIEF_PHOTO,
-  },
-  {
-    id: 'otium', name: 'Otium', tagline: 'Komodo · Raja Ampat', type: 'Schooner', cabins: 7, maxGuests: 14, length: 35,
-    description: 'Premium modern schooner offering refined comfort for the ultimate Komodo & Raja Ampat getaway.',
-    image: DUMMY_PHOTO_B,
-  },
-]
+type MediaCategory = 'brochure' | 'itinerary' | 'deck_plan' | 'rates_terms' | 'press_kit' | 'testimonial' | 'photo' | 'video' | 'reel'
+type MediaFileType = 'image' | 'document' | 'video'
 
 interface MediaFile {
   id: string
+  yachtId: string | null
+  category: MediaCategory
+  type: MediaFileType
   name: string
-  meta: string
-  image: string
-  pages?: number
-  file?: string
+  url: string
+  sizeBytes: number | null
+  mimeType: string | null
+  folder: string | null
 }
 
-interface MediaCategory {
-  id: string
-  label: string
-  icon: React.ElementType
-  files: MediaFile[]
-}
-
-const MEDIA_CATEGORIES: MediaCategory[] = [
-  {
-    id: 'brochure', label: 'Brochures', icon: FileText,
-    files: [
-      { id: 'brochure-full', name: 'Full Fleet Brochure.pdf', meta: 'PDF · 8.2 MB', image: DUMMY_PHOTO_A, pages: 12, file: '/media-kit/brochure-full.pdf' },
-      { id: 'brochure-onepager', name: 'One-Pager (EN).pdf', meta: 'PDF · 1.1 MB', image: DUMMY_PHOTO_B, pages: 1, file: '/media-kit/brochure-onepager.pdf' },
-    ],
-  },
-  {
-    id: 'itineraries', label: 'Itineraries', icon: MapPin,
-    files: [
-      { id: 'itin-komodo', name: 'Komodo & Whalesharks 4D3N.pdf', meta: 'PDF · 2.4 MB', image: DUMMY_PHOTO_A, pages: 6, file: '/media-kit/itin-komodo.pdf' },
-      { id: 'itin-raja', name: 'Raja Ampat 7D6N.pdf', meta: 'PDF · 3.6 MB', image: DUMMY_PHOTO_B, pages: 8, file: '/media-kit/itin-raja.pdf' },
-      { id: 'itin-banda', name: 'Banda Sea 10D9N.pdf', meta: 'PDF · 4.0 MB', image: DUMMY_PHOTO_A, pages: 9, file: '/media-kit/itin-banda.pdf' },
-      { id: 'itin-spice', name: 'Spice Islands 8D7N.pdf', meta: 'PDF · 3.1 MB', image: DUMMY_PHOTO_B, pages: 7, file: '/media-kit/itin-spice.pdf' },
-    ],
-  },
-  {
-    id: 'deck-plans', label: 'Deck Plans', icon: FileStack,
-    files: [
-      { id: 'deck-plan', name: 'Deck Plan.pdf', meta: 'PDF · 850 KB', image: DUMMY_PHOTO_A, pages: 2, file: '/media-kit/deck-plan.pdf' },
-    ],
-  },
-  {
-    id: 'content', label: 'Content', icon: FolderOpen,
-    files: [],
-  },
-  {
-    id: 'rates', label: 'Rates & T&Cs', icon: FileSpreadsheet,
-    files: [
-      { id: 'rates-sheet', name: '2026 Rate Sheet.pdf', meta: 'PDF · 620 KB', image: DUMMY_PHOTO_A, pages: 3, file: '/media-kit/rates-sheet.pdf' },
-      { id: 'rates-terms', name: 'Terms & Conditions.pdf', meta: 'PDF · 410 KB', image: DUMMY_PHOTO_B, pages: 5, file: '/media-kit/rates-terms.pdf' },
-    ],
-  },
-  {
-    id: 'press', label: 'Press Kit', icon: Newspaper,
-    files: [
-      { id: 'press-release', name: 'Press Release.pdf', meta: 'PDF · 1.8 MB', image: DUMMY_PHOTO_A, pages: 2, file: '/media-kit/press-release.pdf' },
-      { id: 'press-coverage', name: 'Media Coverage Highlights.pdf', meta: 'PDF · 2.2 MB', image: DUMMY_PHOTO_B, pages: 4, file: '/media-kit/press-coverage.pdf' },
-    ],
-  },
-  {
-    id: 'testimonials', label: 'Testimonials', icon: Quote,
-    files: [
-      { id: 'testimonials-guest', name: 'Guest Testimonials.pdf', meta: 'PDF · 900 KB', image: DUMMY_PHOTO_A, pages: 3, file: '/media-kit/testimonials-guest.pdf' },
-    ],
-  },
+const MEDIA_CATEGORY_META: { id: MediaCategory; label: string; icon: React.ElementType }[] = [
+  { id: 'brochure',    label: 'Brochures',    icon: FileText },
+  { id: 'itinerary',   label: 'Itineraries',  icon: MapPin },
+  { id: 'deck_plan',   label: 'Deck Plans',   icon: FileStack },
+  { id: 'rates_terms', label: 'Rates & T&Cs', icon: FileSpreadsheet },
+  { id: 'press_kit',   label: 'Press Kit',    icon: Newspaper },
+  { id: 'testimonial', label: 'Testimonials', icon: Quote },
+  { id: 'photo',       label: 'Photos',       icon: ImageIcon },
+  { id: 'video',       label: 'Videos',       icon: Video },
+  { id: 'reel',        label: 'Reels',        icon: Clapperboard },
 ]
 
-interface ContentFolder {
-  id: string
-  label: string
-  cover: string
-  files: MediaFile[]
+function formatSize(bytes: number | null) {
+  if (bytes == null) return null
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-interface ContentSection {
-  id: string
-  label: string
-  icon: React.ElementType
-  cover: string
-  folders: ContentFolder[]
+// Converts a YouTube/Vimeo watch link to its embeddable form; falls back to the raw URL.
+function toEmbedUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('youtube.com')) {
+      const id = u.searchParams.get('v')
+      if (id) return `https://www.youtube.com/embed/${id}`
+      if (u.pathname.startsWith('/embed/')) return url
+    }
+    if (u.hostname === 'youtu.be') {
+      const id = u.pathname.slice(1)
+      if (id) return `https://www.youtube.com/embed/${id}`
+    }
+    if (u.hostname.includes('vimeo.com')) {
+      const id = u.pathname.split('/').filter(Boolean).pop()
+      if (id) return `https://player.vimeo.com/video/${id}`
+    }
+  } catch { /* not a parseable URL, fall through */ }
+  return url
 }
 
-const CONTENT_SECTIONS: ContentSection[] = [
-  {
-    id: 'pictures', label: 'Pictures', icon: ImageIcon, cover: DUMMY_PHOTO_A,
-    folders: [
-      {
-        id: 'exterior', label: 'Exterior', cover: DUMMY_PHOTO_A,
-        files: [
-          { id: 'ext-1', name: 'Exterior 01.jpg', meta: 'JPG · 4.2 MB', image: DUMMY_PHOTO_A },
-          { id: 'ext-2', name: 'Exterior 02.jpg', meta: 'JPG · 3.8 MB', image: DUMMY_PHOTO_B },
-          { id: 'ext-3', name: 'Exterior 03.jpg', meta: 'JPG · 4.5 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-      {
-        id: 'main-deck', label: 'Main Deck', cover: DUMMY_PHOTO_B,
-        files: [
-          { id: 'deck-1', name: 'Main Deck 01.jpg', meta: 'JPG · 3.6 MB', image: DUMMY_PHOTO_B },
-          { id: 'deck-2', name: 'Main Deck 02.jpg', meta: 'JPG · 4.0 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-      {
-        id: 'cabins', label: 'Cabins & Interior', cover: DUMMY_PHOTO_A,
-        files: [
-          { id: 'cabin-1', name: 'Master Cabin 01.jpg', meta: 'JPG · 3.9 MB', image: DUMMY_PHOTO_A },
-          { id: 'cabin-2', name: 'Guest Cabin 01.jpg', meta: 'JPG · 3.5 MB', image: DUMMY_PHOTO_B },
-          { id: 'cabin-3', name: 'Saloon 01.jpg', meta: 'JPG · 4.1 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-      {
-        id: 'sunset', label: 'Sunset & Lifestyle', cover: DUMMY_PHOTO_B,
-        files: [
-          { id: 'sunset-1', name: 'Sunset 01.jpg', meta: 'JPG · 4.4 MB', image: DUMMY_PHOTO_B },
-          { id: 'sunset-2', name: 'Lifestyle 01.jpg', meta: 'JPG · 3.7 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'videos', label: 'Videos', icon: Video, cover: DUMMY_PHOTO_B,
-    folders: [
-      {
-        id: 'walkthrough', label: 'Yacht Walkthrough', cover: DUMMY_PHOTO_A,
-        files: [
-          { id: 'walk-1', name: 'Full Walkthrough.mp4', meta: 'MP4 · 210 MB', image: DUMMY_PHOTO_A },
-          { id: 'walk-2', name: 'Cabins Walkthrough.mp4', meta: 'MP4 · 96 MB', image: DUMMY_PHOTO_B },
-        ],
-      },
-      {
-        id: 'drone', label: 'Drone Footage', cover: DUMMY_PHOTO_B,
-        files: [
-          { id: 'drone-1', name: 'Aerial Sunset.mp4', meta: 'MP4 · 145 MB', image: DUMMY_PHOTO_B },
-          { id: 'drone-2', name: 'Aerial Anchorage.mp4', meta: 'MP4 · 132 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'reels', label: 'Reels', icon: Clapperboard, cover: DUMMY_PHOTO_A,
-    folders: [
-      {
-        id: 'instagram', label: 'Instagram Reels', cover: DUMMY_PHOTO_B,
-        files: [
-          { id: 'reel-1', name: 'Komodo Highlights.mp4', meta: 'MP4 · 38 MB', image: DUMMY_PHOTO_B },
-          { id: 'reel-2', name: 'Sunset Sail.mp4', meta: 'MP4 · 29 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-      {
-        id: 'highlights', label: 'Trip Highlights', cover: DUMMY_PHOTO_A,
-        files: [
-          { id: 'reel-3', name: 'Guest Trip Recap.mp4', meta: 'MP4 · 44 MB', image: DUMMY_PHOTO_A },
-        ],
-      },
-    ],
-  },
-]
-
-const CALENDAR_YEAR = 2026
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
+const MONTH_NAMES_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 function daysInMonth(year: number, monthIndex: number) {
   return new Date(year, monthIndex + 1, 0).getDate()
@@ -225,31 +96,23 @@ function firstWeekday(year: number, monthIndex: number) {
   return new Date(year, monthIndex, 1).getDay()
 }
 
+// 12-month rolling window starting this month, since real bookings aren't confined to a
+// single calendar year the way the old preview's fixed CALENDAR_YEAR grid assumed.
+function monthsAhead(count: number) {
+  const now = new Date()
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+    return { year: d.getFullYear(), monthIndex: d.getMonth(), label: d.toLocaleString('en-US', { month: 'long', year: 'numeric' }) }
+  })
+}
+
+function formatDateRange(start: string, end: string) {
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+  const s = new Date(start), e = new Date(end)
+  return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+}
+
 type DayStatus = 'available' | 'onhold' | 'pending' | 'booked'
-interface TripBlock { start: number; end: number; status: DayStatus }
-
-// Preview-only deterministic mock trips — stands in for real multi-day booking data.
-function monthTripBlocks(yachtId: string, monthIndex: number, totalDays: number): TripBlock[] {
-  const seed = yachtId.charCodeAt(0) + yachtId.length * 13 + monthIndex * 29
-  const statuses: DayStatus[] = ['booked', 'onhold', 'pending', 'booked']
-  const blocks: TripBlock[] = []
-  let day = 1 + (seed % 3)
-  let i = 0
-  while (day <= totalDays) {
-    const length = 3 + ((seed + i * 7) % 5) // 3–7 day trips
-    const end = Math.min(day + length - 1, totalDays)
-    blocks.push({ start: day, end, status: statuses[(seed + i) % statuses.length] })
-    i++
-    const gap = 2 + ((seed + i * 5) % 4) // 2–5 day gap between trips
-    day = end + 1 + gap
-  }
-  return blocks
-}
-
-function statusForDay(blocks: TripBlock[], day: number): DayStatus {
-  const block = blocks.find(b => day >= b.start && day <= b.end)
-  return block ? block.status : 'available'
-}
 
 const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   available: 'bg-white border border-neutral-200 text-neutral-500',
@@ -258,36 +121,80 @@ const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   booked: 'bg-red-500 text-white',
 }
 
-interface SharedTripCabin { name: string; status: 'available' | 'booked' }
-interface SharedTrip { id: string; name: string; destination: string; dateRange: string; cabins: SharedTripCabin[] }
-
-function cabinList(bookedNumbers: number[]): SharedTripCabin[] {
-  return Array.from({ length: 10 }, (_, i) => {
-    const n = i + 1
-    return { name: n === 1 ? 'Master Cabin' : `Cabin ${n}`, status: bookedNumbers.includes(n) ? 'booked' : 'available' }
-  })
+interface CalendarBooking { id: string; startDate: string; endDate: string; status: string; tripType: string }
+interface OpenTripCabinStatus { id: string; name: string; bookingStatus: string | null }
+interface CalendarOpenTrip {
+  id: string; title: string; destination: string; startDate: string; endDate: string
+  status: string; spotsAvailable: number; maxCapacity: number; cabinStatuses: OpenTripCabinStatus[]
 }
 
-// Preview-only — Samara I is the only vessel currently sold as shared/open-trip departures.
-const SAMARA_1_SHARED_TRIPS: SharedTrip[] = [
-  { id: 'st-1', name: 'Komodo & Whalesharks 4D3N', destination: 'Labuan Bajo · Komodo National Park', dateRange: 'Aug 12–15, 2026', cabins: cabinList([1, 2, 3, 7]) },
-  { id: 'st-2', name: 'Komodo National Park 4D3N', destination: 'Labuan Bajo · Komodo', dateRange: 'Sep 2–5, 2026', cabins: cabinList([4, 5, 6]) },
-  { id: 'st-3', name: 'Raja Ampat 7D6N', destination: 'Sorong · Raja Ampat', dateRange: 'Oct 10–16, 2026', cabins: cabinList([1, 2, 3, 4, 5, 6, 8, 9]) },
-  { id: 'st-4', name: 'Banda Sea 10D9N', destination: 'Ambon · Banda Islands', dateRange: 'Nov 5–14, 2026', cabins: cabinList([2, 9]) },
-]
+function dayStatusFromBookingStatus(status: string): DayStatus {
+  if (status === 'on_hold') return 'onhold'
+  if (status === 'pending') return 'pending'
+  return 'booked' // confirmed, partially_paid, fully_paid, completed, on_trip, pending_refund
+}
+
+function statusForDate(bookings: CalendarBooking[], date: Date): DayStatus {
+  for (const b of bookings) {
+    const start = new Date(b.startDate.split('T')[0] + 'T00:00:00')
+    const end = new Date(b.endDate.split('T')[0] + 'T00:00:00')
+    if (date >= start && date < end) {
+      return dayStatusFromBookingStatus(getEffectiveBookingStatus(b.status, b.startDate, b.endDate))
+    }
+  }
+  return 'available'
+}
+
+function FullScreenLoader() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-white">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
 
 export default function AgentPortalPage() {
   const [step, setStep] = useState<Step>('login')
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
   const [yachtId, setYachtId] = useState<string | null>(null)
+  const [yachts, setYachts] = useState<YachtOption[]>([])
+  const [yachtsLoading, setYachtsLoading] = useState(false)
 
-  const selectedYacht = useMemo(() => YACHTS.find(y => y.id === yachtId) ?? null, [yachtId])
+  const selectedYacht = useMemo(() => yachts.find(y => y.id === yachtId) ?? null, [yachts, yachtId])
+
+  const loadYachts = useCallback(async () => {
+    setYachtsLoading(true)
+    try {
+      const res = await fetch('/api/agent-portal/yachts')
+      if (res.ok) setYachts(await res.json())
+    } catch (e) { console.error(e) }
+    finally { setYachtsLoading(false) }
+  }, [])
+
+  // Session bootstrap: if a valid cookie already exists (page refresh), skip straight to
+  // the yacht screen instead of forcing a re-login.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/agent-portal/session')
+        const data = await res.json().catch(() => ({ valid: false }))
+        if (data.valid) {
+          await loadYachts()
+          setStep('yacht')
+        }
+      } finally {
+        setCheckingSession(false)
+      }
+    })()
+  }, [loadYachts])
 
   async function handleLogin() {
-    if (!password.trim()) {
-      setLoginError('Enter the password provided to you')
+    if (!email.trim() || !password.trim()) {
+      setLoginError('Enter your email and the password provided to you')
       return
     }
     setLoggingIn(true)
@@ -296,12 +203,15 @@ export default function AgentPortalPage() {
       const res = await fetch('/api/agent-portal/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       })
       if (!res.ok) {
-        setLoginError('Incorrect password')
+        const data = await res.json().catch(() => ({}))
+        setLoginError(data.error ?? 'Incorrect email or password')
         return
       }
+      setPassword('')
+      await loadYachts()
       setStep('yacht')
     } finally {
       setLoggingIn(false)
@@ -309,18 +219,36 @@ export default function AgentPortalPage() {
   }
 
   function logout() {
+    fetch('/api/agent-portal/logout', { method: 'POST' }).catch(() => {})
+    setEmail('')
     setPassword('')
     setLoginError('')
     setYachtId(null)
+    setYachts([])
     setStep('login')
   }
 
+  if (checkingSession) return <FullScreenLoader />
+
   if (step === 'login') {
-    return <LoginScreen password={password} setPassword={setPassword} error={loginError} onSubmit={handleLogin} />
+    return (
+      <LoginScreen
+        email={email} setEmail={setEmail}
+        password={password} setPassword={setPassword}
+        error={loginError} onSubmit={handleLogin}
+      />
+    )
   }
 
   if (step === 'yacht') {
-    return <YachtScreen onSelect={(id, target) => { setYachtId(id); setStep(target) }} onLogout={logout} />
+    return (
+      <YachtScreen
+        yachts={yachts}
+        loading={yachtsLoading}
+        onSelect={(id, target) => { setYachtId(id); setStep(target) }}
+        onLogout={logout}
+      />
+    )
   }
 
   return (
@@ -375,12 +303,13 @@ export default function AgentPortalPage() {
   )
 }
 
-function LoginScreen({ password, setPassword, error, onSubmit }: {
+function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }: {
+  email: string; setEmail: (v: string) => void
   password: string; setPassword: (v: string) => void; error: string; onSubmit: () => void
 }) {
   return (
     <div className="fixed inset-0 flex items-center justify-center">
-      <img src={DUMMY_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover" />
+      <img src={FALLBACK_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/65" />
 
       <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl p-8">
@@ -390,20 +319,33 @@ function LoginScreen({ password, setPassword, error, onSubmit }: {
           <Lock className="h-5 w-5" style={{ color: GOLD_DARK }} />
         </div>
         <h1 className="text-xl font-bold mt-4 text-center">Agent Access</h1>
-        <p className="text-muted-foreground text-sm mt-1.5 text-center">Enter the password shared with your agency to continue.</p>
+        <p className="text-muted-foreground text-sm mt-1.5 text-center">Log in with the email and password provided to you.</p>
 
-        <div className="mt-8 space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Password</label>
-          <input
-            type="password"
-            autoFocus
-            className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#bdac7e]/40 focus:border-[#bdac7e] transition-shadow"
-            placeholder="••••••••"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && onSubmit()}
-          />
-          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        <div className="mt-8 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
+            <input
+              type="email"
+              autoFocus
+              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#bdac7e]/40 focus:border-[#bdac7e] transition-shadow"
+              placeholder="you@agency.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && onSubmit()}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Password</label>
+            <input
+              type="password"
+              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#bdac7e]/40 focus:border-[#bdac7e] transition-shadow"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && onSubmit()}
+            />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
 
         <button
@@ -415,26 +357,46 @@ function LoginScreen({ password, setPassword, error, onSubmit }: {
         >
           Continue
         </button>
-
-        <p className="text-[11px] text-muted-foreground text-center mt-6">Preview only — shared password, not yet per-agent accounts</p>
       </div>
     </div>
   )
 }
 
-function YachtScreen({ onSelect, onLogout }: { onSelect: (id: string, target: 'media' | 'calendar') => void; onLogout: () => void }) {
-  const [activeId, setActiveId] = useState(YACHTS[0].id)
-  const active = YACHTS.find(y => y.id === activeId)!
-  const activeIndex = YACHTS.findIndex(y => y.id === activeId)
+function YachtScreen({ yachts, loading, onSelect, onLogout }: {
+  yachts: YachtOption[]; loading: boolean
+  onSelect: (id: string, target: 'media' | 'calendar') => void; onLogout: () => void
+}) {
+  const [activeId, setActiveId] = useState<string | null>(null)
 
-  function prevYacht() { setActiveId(YACHTS[(activeIndex - 1 + YACHTS.length) % YACHTS.length].id) }
-  function nextYacht() { setActiveId(YACHTS[(activeIndex + 1) % YACHTS.length].id) }
+  useEffect(() => {
+    if (!activeId && yachts.length) setActiveId(yachts[0].id)
+  }, [yachts, activeId])
+
+  const active = yachts.find(y => y.id === activeId) ?? null
+  const activeIndex = active ? yachts.findIndex(y => y.id === active.id) : -1
+
+  function prevYacht() { if (active) setActiveId(yachts[(activeIndex - 1 + yachts.length) % yachts.length].id) }
+  function nextYacht() { if (active) setActiveId(yachts[(activeIndex + 1) % yachts.length].id) }
+
+  if (loading) return <FullScreenLoader />
+
+  if (!active) {
+    return (
+      <div className="fixed inset-0 bg-neutral-950 flex flex-col items-center justify-center text-center px-6">
+        <img src={SAMARA_LOGO} alt="Samara" className="h-6 w-auto object-contain brightness-0 invert mb-6" />
+        <p className="text-white/70 text-sm">No yachts are available yet. Please check back later.</p>
+        <button onClick={onLogout} className="mt-6 text-white/50 hover:text-white text-xs transition-colors">Log out</button>
+      </div>
+    )
+  }
+
+  const fallbackImage = activeIndex % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
 
-      <img key={active.id} src={active.image} alt={active.name} className="absolute inset-0 w-full h-full object-cover animate-in fade-in duration-700" />
+      <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="absolute inset-0 w-full h-full object-cover animate-in fade-in duration-700" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-black/10" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
 
@@ -462,14 +424,17 @@ function YachtScreen({ onSelect, onLogout }: { onSelect: (id: string, target: 'm
           {active.name}
         </h1>
         <p className="text-white/80 text-sm sm:text-base mt-5 max-w-sm">
-          {active.type} · {active.cabins} Cabins · {active.maxGuests} Guests · {active.length}m
+          {[active.type, active.cabinCount ? `${active.cabinCount} Cabins` : null, active.capacity ? `${active.capacity} Guests` : null, active.length ? `${active.length}m` : null]
+            .filter(Boolean).join(' · ')}
         </p>
-        <p className="text-white/70 text-sm mt-3 max-w-sm leading-relaxed">
-          {active.description}
-        </p>
-        <p className="flex items-center gap-1.5 text-[#d9cda3] text-xs sm:text-sm mt-4">
-          <MapPin className="h-3.5 w-3.5 shrink-0" /> {active.tagline}
-        </p>
+        {active.description && (
+          <p className="text-white/70 text-sm mt-3 max-w-sm leading-relaxed">{active.description}</p>
+        )}
+        {active.tagline && (
+          <p className="flex items-center gap-1.5 text-[#d9cda3] text-xs sm:text-sm mt-4">
+            <MapPin className="h-3.5 w-3.5 shrink-0" /> {active.tagline}
+          </p>
+        )}
         <div className="flex items-center flex-wrap gap-3 mt-8">
           <button
             onClick={() => onSelect(active.id, 'media')}
@@ -488,240 +453,108 @@ function YachtScreen({ onSelect, onLogout }: { onSelect: (id: string, target: 'm
       </div>
 
       {/* Floating card row — lower right, peeking off the bottom, hugs the right edge */}
-      <div className="hidden sm:flex absolute bottom-8 sm:bottom-10 right-6 sm:right-10 flex-col items-end gap-3 z-10">
-        <div className="flex items-end gap-3 sm:gap-4">
-          <button
-            onClick={prevYacht}
-            aria-label="Previous yacht"
-            className="self-center shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/40 hover:bg-white/10 flex items-center justify-center text-white transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-
-          {YACHTS.map(y => (
+      {yachts.length > 1 && (
+        <div className="hidden sm:flex absolute bottom-8 sm:bottom-10 right-6 sm:right-10 flex-col items-end gap-3 z-10">
+          <div className="flex items-end gap-3 sm:gap-4">
             <button
-              key={y.id}
-              onClick={() => setActiveId(y.id)}
-              className={cn(
-                'group relative shrink-0 w-28 h-40 sm:w-36 sm:h-56 rounded-xl overflow-hidden border transition-all duration-300',
-                y.id === activeId ? 'border-white/70 shadow-2xl -translate-y-2' : 'border-white/10 opacity-70 hover:opacity-100 hover:-translate-y-1'
-              )}
+              onClick={prevYacht}
+              aria-label="Previous yacht"
+              className="self-center shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/40 hover:bg-white/10 flex items-center justify-center text-white transition-colors"
             >
-              <img src={y.image} alt={y.name} className="absolute inset-0 w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
-              <div className="absolute bottom-2.5 left-2.5 right-2.5">
-                <p className="text-white/70 text-[9px] sm:text-[10px] font-medium truncate">{y.tagline}</p>
-                <p className="text-white font-bold text-xs sm:text-sm leading-tight uppercase tracking-tight mt-0.5">{y.name}</p>
-              </div>
+              <ChevronLeft className="h-4 w-4" />
             </button>
-          ))}
 
-          <button
-            onClick={nextYacht}
-            aria-label="Next yacht"
-            className="self-center shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/40 hover:bg-white/10 flex items-center justify-center text-white transition-colors"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="w-full h-px bg-white/20">
-          <div
-            className="h-px bg-white transition-all duration-300"
-            style={{ width: `${((activeIndex + 1) / YACHTS.length) * 100}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-// ── Flipbook demo — proof of concept for a page-turning brochure viewer (à la fliphtml5) ──
-function FlipbookDemo({ onClose }: { onClose: () => void }) {
-  type FlipPage = { kind: 'cover' } | { kind: 'yacht'; yacht: YachtOption } | { kind: 'back' }
-  const pages: FlipPage[] = [
-    { kind: 'cover' },
-    ...YACHTS.map(y => ({ kind: 'yacht' as const, yacht: y })),
-    { kind: 'back' },
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-neutral-950/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
-
-      <button onClick={onClose} aria-label="Close" className="absolute top-5 right-5 text-white/70 hover:text-white transition-colors">
-        <X className="h-6 w-6" />
-      </button>
-      <p className="text-white/50 text-xs mb-4 uppercase tracking-widest flex items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5" /> Flipbook Preview — Demo
-      </p>
-
-      <HTMLFlipBook
-        width={340}
-        height={480}
-        minWidth={280}
-        maxWidth={500}
-        minHeight={400}
-        maxHeight={700}
-        size="stretch"
-        startPage={0}
-        drawShadow
-        flippingTime={600}
-        usePortrait
-        startZIndex={0}
-        autoSize
-        maxShadowOpacity={0.5}
-        showCover
-        mobileScrollSupport={false}
-        clickEventForward
-        useMouseEvents
-        swipeDistance={30}
-        showPageCorners
-        disableFlipByClick={false}
-        className="shadow-2xl"
-        style={{}}
-      >
-        {pages.map((p, i) => (
-          <div key={i} className="w-full h-full bg-white overflow-hidden">
-            {p.kind === 'cover' && (
-              <div className="relative w-full h-full">
-                <img src={DUMMY_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40" />
-                <div className="relative h-full flex flex-col items-center justify-center text-center px-6">
-                  <img src={SAMARA_LOGO} alt="Samara" className="h-8 w-auto object-contain brightness-0 invert mb-6" />
-                  <p className="text-[#d9cda3] text-[10px] font-semibold uppercase tracking-[0.3em] mb-3">Fleet Brochure</p>
-                  <h1 className="text-white font-black text-3xl leading-tight" style={{ fontFamily: "'Merriweather', serif" }}>
-                    Samara Liveaboard
-                  </h1>
+            {yachts.map((y, i) => (
+              <button
+                key={y.id}
+                onClick={() => setActiveId(y.id)}
+                className={cn(
+                  'group relative shrink-0 w-28 h-40 sm:w-36 sm:h-56 rounded-xl overflow-hidden border transition-all duration-300',
+                  y.id === activeId ? 'border-white/70 shadow-2xl -translate-y-2' : 'border-white/10 opacity-70 hover:opacity-100 hover:-translate-y-1'
+                )}
+              >
+                <img src={y.image ?? (i % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B)} alt={y.name} className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+                <div className="absolute bottom-2.5 left-2.5 right-2.5">
+                  {y.tagline && <p className="text-white/70 text-[9px] sm:text-[10px] font-medium truncate">{y.tagline}</p>}
+                  <p className="text-white font-bold text-xs sm:text-sm leading-tight uppercase tracking-tight mt-0.5">{y.name}</p>
                 </div>
-              </div>
-            )}
-            {p.kind === 'yacht' && (
-              <div className="relative w-full h-full">
-                <img src={p.yacht.image} alt={p.yacht.name} className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
-                <div className="relative h-full flex flex-col justify-end p-6">
-                  <p className="text-[#d9cda3] text-[10px] font-semibold uppercase tracking-widest mb-1.5">{p.yacht.tagline}</p>
-                  <h2 className="text-white font-black text-2xl" style={{ fontFamily: "'Merriweather', serif" }}>{p.yacht.name}</h2>
-                  <p className="text-white/70 text-xs mt-2">{p.yacht.type} · {p.yacht.cabins} Cabins · {p.yacht.maxGuests} Guests · {p.yacht.length}m</p>
-                  <p className="text-white/60 text-[11px] mt-3 leading-relaxed">{p.yacht.description}</p>
-                </div>
-              </div>
-            )}
-            {p.kind === 'back' && (
-              <div className="w-full h-full bg-neutral-900 flex flex-col items-center justify-center text-center px-6">
-                <img src={SAMARA_LOGO} alt="Samara" className="h-7 w-auto object-contain brightness-0 invert mb-5" />
-                <p className="text-white/70 text-sm">Thank you for sailing with us</p>
-                <p className="text-white/40 text-xs mt-2">samaraliveaboard.com</p>
-              </div>
-            )}
+              </button>
+            ))}
+
+            <button
+              onClick={nextYacht}
+              aria-label="Next yacht"
+              className="self-center shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/40 hover:bg-white/10 flex items-center justify-center text-white transition-colors"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        ))}
-      </HTMLFlipBook>
 
-      <p className="text-white/40 text-[11px] mt-4">Drag a corner or click the edges to turn pages</p>
+          <div className="w-full h-px bg-white/20">
+            <div
+              className="h-px bg-white transition-all duration-300"
+              style={{ width: `${((activeIndex + 1) / yachts.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
-type PreviewKind = 'document' | 'image' | 'video'
-interface PreviewState { file: MediaFile; kind: PreviewKind }
 
 function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
-  const [activeCat, setActiveCat] = useState(MEDIA_CATEGORIES[0].id)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [preview, setPreview] = useState<PreviewState | null>(null)
-  const [contentSectionId, setContentSectionId] = useState<string | null>(null)
-  const [contentFolderId, setContentFolderId] = useState<string | null>(null)
-  const [showFlipbookDemo, setShowFlipbookDemo] = useState(false)
+  const [activeCat, setActiveCat] = useState<MediaCategory>('brochure')
+  const [files, setFiles] = useState<MediaFile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+  const [preview, setPreview] = useState<MediaFile | null>(null)
 
-  const category = MEDIA_CATEGORIES.find(c => c.id === activeCat)!
-  const activeSection = contentSectionId ? CONTENT_SECTIONS.find(s => s.id === contentSectionId) ?? null : null
-  const activeFolder = activeSection && contentFolderId ? activeSection.folders.find(f => f.id === contentFolderId) ?? null : null
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/agent-portal/media?yachtId=${yacht.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setFiles)
+      .catch(() => setFiles([]))
+      .finally(() => setLoading(false))
+  }, [yacht.id])
 
-  function selectCategory(id: string) {
+  useEffect(() => { setActiveFolder(null) }, [activeCat])
+
+  function selectCategory(id: MediaCategory) {
     setActiveCat(id)
-    setContentSectionId(null)
-    setContentFolderId(null)
   }
 
-  function toggle(id: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
+  const categoryFiles = files.filter(f => f.category === activeCat)
+  const folders = Array.from(new Set(categoryFiles.filter(f => f.folder).map(f => f.folder as string)))
+  const hasFolders = folders.length > 0
+  const currentFiles = hasFolders ? (activeFolder ? categoryFiles.filter(f => f.folder === activeFolder) : []) : categoryFiles
 
-  const currentFiles: MediaFile[] = activeCat === 'content' ? (activeFolder ? activeFolder.files : []) : category.files
-
-  function toggleAll() {
-    const allSelected = currentFiles.length > 0 && currentFiles.every(f => selected.has(f.id))
-    setSelected(prev => {
-      const next = new Set(prev)
-      currentFiles.forEach(f => allSelected ? next.delete(f.id) : next.add(f.id))
-      return next
-    })
-  }
-
-  const allInCatSelected = currentFiles.length > 0 && currentFiles.every(f => selected.has(f.id))
-
-  const selectionToolbar = currentFiles.length > 0 && (
-    <div className="flex items-center justify-between mb-5 text-[11px] text-muted-foreground/70">
-      <span>{selected.size > 0 ? `${selected.size} selected` : `${currentFiles.length} item${currentFiles.length === 1 ? '' : 's'}`}</span>
-      <div className="flex items-center gap-2.5">
-        <button onClick={toggleAll} className="hover:text-foreground transition-colors">
-          {allInCatSelected ? 'Deselect all' : 'Select all'}
-        </button>
-        <span className="text-muted-foreground/30">·</span>
-        <button
-          disabled={selected.size === 0}
-          title="Preview only — download not yet wired up"
-          className={cn('transition-colors', selected.size === 0 ? 'text-muted-foreground/30 cursor-not-allowed' : 'hover:text-foreground')}
-        >
-          Download{selected.size > 0 && ` (${selected.size})`}
-        </button>
-      </div>
-    </div>
-  )
-
-  function fileCard(f: MediaFile, kind: PreviewKind) {
-    const isSelected = selected.has(f.id)
+  function fileCard(f: MediaFile) {
     return (
-      <div key={f.id} className="group">
-        <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden">
-          <button onClick={() => setPreview({ file: f, kind })} className="absolute inset-0 w-full h-full">
-            <img src={f.image} alt={f.name} className="w-full h-full object-cover transition-opacity group-hover:opacity-90" />
-            {kind === 'video' && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-11 h-11 rounded-full border border-white/80 flex items-center justify-center">
-                  <Play className="h-4 w-4 text-white ml-0.5" fill="white" />
-                </div>
-              </div>
-            )}
-          </button>
-          <button
-            onClick={() => toggle(f.id)}
-            aria-label={isSelected ? 'Deselect' : 'Select'}
-            className={cn(
-              'absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-full border flex items-center justify-center transition-colors',
-              isSelected ? 'bg-neutral-900 border-neutral-900' : 'border-white/90 bg-black/20 backdrop-blur-sm hover:border-white'
-            )}
-          >
-            {isSelected && <Check className="h-3 w-3 text-white" />}
-          </button>
+      <button key={f.id} onClick={() => setPreview(f)} className="group text-left">
+        <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden flex items-center justify-center">
+          {f.type === 'image' ? (
+            <img src={f.url} alt={f.name} className="w-full h-full object-cover transition-opacity group-hover:opacity-90" />
+          ) : f.type === 'video' ? (
+            <div className="w-11 h-11 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-400 group-hover:text-neutral-600 transition-colors">
+              <Play className="h-4 w-4 ml-0.5" />
+            </div>
+          ) : (
+            <FileText className="h-8 w-8 text-neutral-300" />
+          )}
         </div>
         <p className="text-sm mt-3 truncate">{f.name}</p>
-        <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">{f.meta}</p>
-      </div>
+        <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">
+          {f.type === 'document' ? 'PDF' : f.type === 'video' ? 'Video' : 'Image'}
+          {formatSize(f.sizeBytes) ? ` · ${formatSize(f.sizeBytes)}` : ''}
+        </p>
+      </button>
     )
   }
 
   return (
     <div>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
-
       <div className="text-center mb-10">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/60">What's Included</p>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2" style={{ fontFamily: "'Merriweather', serif" }}>
@@ -730,19 +563,10 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
         <p className="text-muted-foreground text-sm mt-3 max-w-md mx-auto">
           Everything you need to present and sell {yacht.name} to your clients
         </p>
-        <button
-          onClick={() => setShowFlipbookDemo(true)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold mt-4 px-4 py-2 rounded-full border transition-colors hover:bg-neutral-50"
-          style={{ color: GOLD_DARK, borderColor: `${GOLD}55` }}
-        >
-          <BookOpen className="h-3.5 w-3.5" /> Try Flipbook Preview (Demo)
-        </button>
       </div>
 
-      {showFlipbookDemo && <FlipbookDemo onClose={() => setShowFlipbookDemo(false)} />}
-
       <div className="flex justify-between gap-x-6 gap-y-2 flex-wrap border-b mb-8 max-w-3xl mx-auto">
-        {MEDIA_CATEGORIES.map(c => (
+        {MEDIA_CATEGORY_META.map(c => (
           <button
             key={c.id}
             onClick={() => selectCategory(c.id)}
@@ -757,94 +581,66 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
         ))}
       </div>
 
-      {activeCat === 'content' ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground text-center py-10">Loading…</p>
+      ) : hasFolders ? (
         <div>
           <div className="flex items-center gap-2 text-xs mb-6">
             <button
-              onClick={() => { setContentSectionId(null); setContentFolderId(null) }}
-              className={cn('transition-colors', !activeSection ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
+              onClick={() => setActiveFolder(null)}
+              className={cn('flex items-center gap-1.5 transition-colors', !activeFolder ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
             >
-              Content
+              <FolderOpen className="h-3.5 w-3.5" /> {MEDIA_CATEGORY_META.find(c => c.id === activeCat)?.label}
             </button>
-            {activeSection && (
-              <>
-                <span className="text-muted-foreground/30">/</span>
-                <button
-                  onClick={() => setContentFolderId(null)}
-                  className={cn('transition-colors', !activeFolder ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
-                >
-                  {activeSection.label}
-                </button>
-              </>
-            )}
             {activeFolder && (
               <>
                 <span className="text-muted-foreground/30">/</span>
-                <span className="text-foreground font-medium">{activeFolder.label}</span>
+                <span className="text-foreground font-medium">{activeFolder}</span>
               </>
             )}
           </div>
 
-          {!activeSection && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-              {CONTENT_SECTIONS.map(s => (
-                <button key={s.id} onClick={() => setContentSectionId(s.id)} className="group text-left">
-                  <div className="aspect-[4/3] bg-neutral-100 overflow-hidden">
-                    <img src={s.cover} alt={s.label} className="w-full h-full object-cover transition-opacity group-hover:opacity-90" />
-                  </div>
-                  <p className="text-sm mt-3">{s.label}</p>
-                  <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">{s.folders.length} folders</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {activeSection && !activeFolder && (
+          {!activeFolder ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-              {activeSection.folders.map(f => (
-                <button key={f.id} onClick={() => setContentFolderId(f.id)} className="group text-left">
-                  <div className="aspect-square bg-neutral-100 overflow-hidden">
-                    <img src={f.cover} alt={f.label} className="w-full h-full object-cover transition-opacity group-hover:opacity-90" />
+              {folders.map(folder => (
+                <button key={folder} onClick={() => setActiveFolder(folder)} className="group text-left">
+                  <div className="aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300 group-hover:text-neutral-400 transition-colors">
+                    <FolderOpen className="h-8 w-8" />
                   </div>
-                  <p className="text-sm mt-3 leading-tight">{f.label}</p>
-                  <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">{f.files.length} files</p>
+                  <p className="text-sm mt-3 leading-tight">{folder}</p>
+                  <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">
+                    {categoryFiles.filter(f => f.folder === folder).length} files
+                  </p>
                 </button>
               ))}
             </div>
-          )}
-
-          {activeFolder && (
-            <>
-              {selectionToolbar}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
-                {activeFolder.files.map(f => fileCard(f, activeSection!.id === 'pictures' ? 'image' : 'video'))}
-              </div>
-            </>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
+              {currentFiles.map(fileCard)}
+            </div>
           )}
         </div>
+      ) : currentFiles.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-10">Nothing here yet.</p>
       ) : (
-        <>
-          {selectionToolbar}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
-            {category.files.map(f => fileCard(f, 'document'))}
-          </div>
-        </>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
+          {currentFiles.map(fileCard)}
+        </div>
       )}
 
       <div className="mt-16 -mb-10 relative left-1/2 -translate-x-1/2 w-screen bg-neutral-900 py-12">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 grid grid-cols-1 sm:grid-cols-2 gap-8 items-center">
           <div className="aspect-[4/3] bg-neutral-800 overflow-hidden order-2 sm:order-1">
-            <img src={yacht.image} alt={yacht.name} className="w-full h-full object-cover" />
+            <img src={yacht.image ?? FALLBACK_PHOTO_A} alt={yacht.name} className="w-full h-full object-cover" />
           </div>
           <div className="order-1 sm:order-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-white/50">About this yacht</p>
             <h3 className="text-xl font-bold mt-2 text-white" style={{ fontFamily: "'Merriweather', serif" }}>{yacht.name}</h3>
             <p className="text-sm text-white/70 mt-3 leading-relaxed">
-              {yacht.name} is a {yacht.cabins}-cabin {yacht.type.toLowerCase()} sailing {yacht.tagline}. Thoughtfully
-              designed for both comfort and adventure, she pairs spacious social areas with intimate cabins — equally
-              suited to family charters, dive expeditions, and press familiarization trips. This media kit gives your
-              clients everything they need to picture their journey aboard her, from detailed deck plans to real
-              onboard photography.
+              {yacht.name} is a {yacht.cabinCount ? `${yacht.cabinCount}-cabin ` : ''}{(yacht.type ?? 'yacht').toLowerCase()}
+              {yacht.tagline ? ` sailing ${yacht.tagline}` : ''}. Thoughtfully designed for both comfort and adventure, she pairs
+              spacious social areas with intimate cabins — equally suited to family charters, dive expeditions, and press
+              familiarization trips. This media kit gives your clients everything they need to picture their journey aboard her.
             </p>
           </div>
         </div>
@@ -855,35 +651,29 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
           className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setPreview(null)}
         >
-          {preview.kind === 'document' && (
+          {preview.type === 'document' && (
             <div className="bg-white w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0">
-                <p className="text-sm font-medium truncate">{preview.file.name}</p>
+                <p className="text-sm font-medium truncate">{preview.name}</p>
                 <div className="flex items-center gap-4 shrink-0">
-                  {preview.file.file && (
-                    <a
-                      href={preview.file.file}
-                      download={preview.file.name}
-                      className="text-xs font-semibold hover:underline underline-offset-2"
-                      style={{ color: GOLD_DARK }}
-                    >
-                      Download
-                    </a>
-                  )}
+                  <a
+                    href={preview.url}
+                    download={preview.name}
+                    className="text-xs font-semibold hover:underline underline-offset-2"
+                    style={{ color: GOLD_DARK }}
+                  >
+                    Download
+                  </a>
                   <button onClick={() => setPreview(null)} aria-label="Close preview" className="text-muted-foreground/70 hover:text-foreground transition-colors">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
               </div>
-              {preview.file.file ? (
-                <iframe src={preview.file.file} title={preview.file.name} className="flex-1 w-full bg-neutral-100" />
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No file attached yet</div>
-              )}
+              <iframe src={preview.url} title={preview.name} className="flex-1 w-full bg-neutral-100" />
             </div>
           )}
 
-          {preview.kind === 'image' && (
+          {preview.type === 'image' && (
             <div className="max-w-lg w-full" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-end pb-3">
                 <button onClick={() => setPreview(null)} aria-label="Close preview" className="text-white/70 hover:text-white transition-colors">
@@ -891,43 +681,27 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
                 </button>
               </div>
               <div className="aspect-[4/3] bg-neutral-100">
-                <img src={preview.file.image} alt={preview.file.name} className="w-full h-full object-cover" />
+                <img src={preview.url} alt={preview.name} className="w-full h-full object-cover" />
               </div>
               <div className="flex items-center justify-between pt-3">
-                <div>
-                  <p className="text-sm text-white">{preview.file.name}</p>
-                  <p className="text-[11px] text-white/60 uppercase tracking-wide mt-0.5">{preview.file.meta}</p>
-                </div>
-                <button disabled title="Preview only — download not yet wired up" className="text-xs text-white/40 cursor-not-allowed">
+                <p className="text-sm text-white">{preview.name}</p>
+                <a href={preview.url} download={preview.name} className="text-xs font-semibold text-white/80 hover:text-white transition-colors">
                   Download
-                </button>
+                </a>
               </div>
             </div>
           )}
 
-          {preview.kind === 'video' && (
-            <div className="max-w-lg w-full" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-end pb-3">
-                <button onClick={() => setPreview(null)} aria-label="Close preview" className="text-white/70 hover:text-white transition-colors">
+          {preview.type === 'video' && (
+            <div className="max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between pb-3">
+                <p className="text-sm text-white truncate">{preview.name}</p>
+                <button onClick={() => setPreview(null)} aria-label="Close preview" className="text-white/70 hover:text-white transition-colors shrink-0">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="relative aspect-video bg-neutral-900">
-                <img src={preview.file.image} alt={preview.file.name} className="w-full h-full object-cover opacity-60" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full border border-white/80 flex items-center justify-center">
-                    <Play className="h-5 w-5 text-white ml-0.5" fill="white" />
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-3">
-                <div>
-                  <p className="text-sm text-white">{preview.file.name}</p>
-                  <p className="text-[11px] text-white/60 uppercase tracking-wide mt-0.5">{preview.file.meta}</p>
-                </div>
-                <button disabled title="Preview only — download not yet wired up" className="text-xs text-white/40 cursor-not-allowed">
-                  Download
-                </button>
+              <div className="aspect-video bg-black">
+                <iframe src={toEmbedUrl(preview.url)} title={preview.name} className="w-full h-full" allow="autoplay; fullscreen" allowFullScreen />
               </div>
             </div>
           )}
@@ -938,14 +712,28 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
 }
 
 function CalendarScreen({ yacht }: { yacht: YachtOption }) {
-  const hasSharedTrip = yacht.id === 'samara-1'
   const [view, setView] = useState<'calendar' | 'shared'>('calendar')
+  const [loading, setLoading] = useState(true)
+  const [bookings, setBookings] = useState<CalendarBooking[]>([])
+  const [openTrips, setOpenTrips] = useState<CalendarOpenTrip[]>([])
+  const months = useMemo(() => monthsAhead(12), [])
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/agent-portal/calendar?yachtId=${yacht.id}`)
+      .then(r => r.ok ? r.json() : { bookings: [], openTrips: [] })
+      .then(data => { setBookings(data.bookings ?? []); setOpenTrips(data.openTrips ?? []) })
+      .catch(() => { setBookings([]); setOpenTrips([]) })
+      .finally(() => setLoading(false))
+  }, [yacht.id])
+
+  const hasSharedTrip = openTrips.length > 0
 
   return (
     <div>
       <h2 className="text-xl font-bold tracking-tight">Availability — {yacht.name}</h2>
       <p className="text-muted-foreground text-sm mt-1 mb-5">
-        {view === 'calendar' ? `Booked vs. available dates for ${CALENDAR_YEAR} — no guest details are shown` : 'Cabin-by-cabin availability for upcoming shared/open-trip departures'}
+        {view === 'calendar' ? 'Booked vs. available dates for the next 12 months' : 'Cabin-by-cabin availability for upcoming shared/open-trip departures'}
       </p>
 
       {hasSharedTrip && (
@@ -967,7 +755,9 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
         </div>
       )}
 
-      {view === 'calendar' ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground text-center py-10">Loading…</p>
+      ) : view === 'calendar' ? (
         <>
           <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground mb-6">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-white border border-neutral-300" /> Available</span>
@@ -977,24 +767,23 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
-            {MONTH_NAMES.map((name, monthIndex) => {
-              const totalDays = daysInMonth(CALENDAR_YEAR, monthIndex)
-              const startWeekday = firstWeekday(CALENDAR_YEAR, monthIndex)
+            {months.map(({ year, monthIndex, label }) => {
+              const totalDays = daysInMonth(year, monthIndex)
+              const startWeekday = firstWeekday(year, monthIndex)
               const cells: (number | null)[] = [...Array(startWeekday).fill(null), ...Array.from({ length: totalDays }, (_, i) => i + 1)]
-              const blocks = monthTripBlocks(yacht.id, monthIndex, totalDays)
 
               return (
-                <div key={name} className="bg-white border rounded-xl p-4">
-                  <p className="text-sm font-semibold mb-3">{name}</p>
+                <div key={label} className="bg-white border rounded-xl p-4">
+                  <p className="text-sm font-semibold mb-3">{label}</p>
 
                   <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-muted-foreground mb-1.5">
-                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i}>{d}</div>)}
+                    {MONTH_NAMES_SHORT.map((d, i) => <div key={i}>{d}</div>)}
                   </div>
 
                   <div className="grid grid-cols-7 gap-1">
                     {cells.map((day, i) => {
                       if (day === null) return <div key={i} />
-                      const status = statusForDay(blocks, day)
+                      const status = statusForDate(bookings, new Date(year, monthIndex, day))
                       return (
                         <div
                           key={i}
@@ -1012,27 +801,27 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
         </>
       ) : (
         <div className="space-y-5">
-          {SAMARA_1_SHARED_TRIPS.map(trip => (
+          {openTrips.map(trip => (
             <div key={trip.id} className="bg-white border rounded-xl p-5">
               <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
                 <div>
-                  <p className="font-semibold text-sm">{trip.name}</p>
+                  <p className="font-semibold text-sm">{trip.title}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
                 </div>
-                <span className="text-xs text-muted-foreground">{trip.dateRange}</span>
+                <span className="text-xs text-muted-foreground">{formatDateRange(trip.startDate, trip.endDate)}</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {trip.cabins.map(cabin => (
+                {trip.cabinStatuses.map(cabin => (
                   <div
-                    key={cabin.name}
+                    key={cabin.id}
                     className={cn(
                       'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
-                      cabin.status === 'available' ? 'bg-white border border-neutral-200 text-neutral-600' : 'bg-red-500 text-white'
+                      cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
                     )}
                   >
                     <span className="truncate">{cabin.name}</span>
                     <span className="text-[9px] uppercase tracking-wide opacity-80 shrink-0">
-                      {cabin.status === 'available' ? 'Available' : 'Booked'}
+                      {cabin.bookingStatus ? 'Booked' : 'Available'}
                     </span>
                   </div>
                 ))}
@@ -1041,11 +830,6 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
           ))}
         </div>
       )}
-
-      <div className="flex items-center gap-2 mt-6 text-xs text-muted-foreground">
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-        Sample data for preview — will be wired to live booking data
-      </div>
     </div>
   )
 }

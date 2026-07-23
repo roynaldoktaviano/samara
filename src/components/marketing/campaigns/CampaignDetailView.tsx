@@ -14,7 +14,6 @@ import { UNSUBSCRIBE_URL_MARKER } from '@/lib/campaign-recipients'
 
 const GREEN = '#16a34a'
 const BLUE = '#2563eb'
-const AMBER = '#eda100'
 const RED = '#dc2626'
 const TZ = 'Asia/Jakarta'
 const PREVIEW_SCALE = 0.72
@@ -615,9 +614,9 @@ export default function CampaignDetailView({ campaignId, onBack }: {
 
         <div className="space-y-4">
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Sent, opened & clicked over time</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Opened & clicked over time</CardTitle></CardHeader>
             <CardContent>
-              {trendData.every(d => d.sent === 0 && d.opened === 0 && d.clicked === 0) ? (
+              {trendData.every(d => d.opened === 0 && d.clicked === 0) ? (
                 <p className="text-sm text-muted-foreground text-center py-10">No activity in the last {TREND_WINDOW_DAYS} days</p>
               ) : (
                 <ResponsiveContainer width="100%" height={240}>
@@ -627,7 +626,6 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                     <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
                     <Tooltip />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="sent" name="Sent" stroke={AMBER} strokeWidth={2} strokeDasharray="5 3" dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="opened" name="Opened" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="clicked" name="Clicked" stroke={BLUE} strokeWidth={2} dot={{ r: 3 }} />
                   </LineChart>

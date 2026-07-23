@@ -119,6 +119,7 @@ model User {
   deliveryFeeReimbursementsMade  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
   deliveryFeeReimbursementsPaid  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
   agentLeadsPromoted             AgentLead[]                 @relation("AgentLeadPromotedBy")
+  mediaFilesUploaded             MediaFile[]
 }
 
 model Customer {
@@ -255,6 +256,10 @@ model Agent {
   contractFileName         String?
   calendarToken            String?             @unique
   calendarActive           Boolean             @default(false)
+  portalPasswordHash       String?
+  portalPasswordSetAt      DateTime?
+  portalPasswordSetById    String?
+  portalActive             Boolean             @default(false)
   salespersonId            String?
   salesperson              User?               @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
   bookings                 Booking[]
@@ -359,6 +364,8 @@ model Yacht {
   canSurfing        Boolean                 @default(false)
   status            YachtStatus             @default(available)
   image             String?
+  tagline           String?
+  type              String?
   deletedAt         DateTime?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
@@ -373,6 +380,46 @@ model Yacht {
   crewRequests      CrewRequest[]
   cashierSales      CashierSale[]
   destinationPrices YachtDestinationPrice[]
+  mediaFiles        MediaFile[]
+}
+
+enum MediaFileType {
+  image
+  document
+  video
+}
+
+enum MediaCategory {
+  brochure
+  itinerary
+  deck_plan
+  rates_terms
+  press_kit
+  testimonial
+  photo
+  video
+  reel
+}
+
+model MediaFile {
+  id           String        @id @default(cuid())
+  yachtId      String?
+  yacht        Yacht?        @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  category     MediaCategory
+  type         MediaFileType
+  name         String
+  url          String
+  sizeBytes    Int?
+  mimeType     String?
+  folder       String?
+  sortOrder    Int           @default(0)
+  uploadedById String
+  uploadedBy   User          @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([yachtId])
+  @@index([category])
 }
 
 model Destination {

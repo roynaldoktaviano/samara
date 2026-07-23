@@ -68,6 +68,19 @@ export async function resolveTenantBySlug(slug: string | null | undefined): Prom
 }
 
 /**
+ * Resolves a tenant's PrismaClient from a central-registry tenant id (or null for the
+ * default tenant) — the shape already embedded in JWT payloads issued by cal-access and
+ * agent-portal-access. Used by every route that re-derives its tenant DB from a cookie
+ * on each request, instead of re-scanning all tenants.
+ */
+export async function resolveTenantById(tenantId: string | null): Promise<PrismaClient | null> {
+  if (!tenantId) return db
+  const tenant = await centralDb.tenant.findUnique({ where: { id: tenantId }, select: { databaseUrl: true } })
+  if (!tenant) return null
+  return tenant.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(tenant.databaseUrl)
+}
+
+/**
  * For the public Request Order page: tenant is identified by an unguessable
  * per-tenant token (Tenant.requestOrderToken) rather than a plain, guessable
  * slug. Central-DB lookup is O(1) since Tenant rows live there directly —

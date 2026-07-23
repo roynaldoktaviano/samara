@@ -19,13 +19,16 @@ export async function GET(request: NextRequest) {
         id: true, name: true, commission: true, commissionOpenTrip: true, commissionPrivateCharter: true, isActive: true, createdAt: true,
         country: true, address: true, email: true, whatsapp: true, note: true, website: true, instagram: true, source: true, currentCondition: true, contract: true, contractFileName: true,
         calendarToken: true, calendarActive: true,
+        portalPasswordHash: true, portalActive: true,
         salespersonId: true,
         salesperson: { select: { id: true, name: true } },
         _count: { select: { bookings: true } },
       },
       orderBy: { name: 'asc' },
     })
-    return NextResponse.json(agents)
+    // Never expose the password hash — reduce it to a boolean.
+    const result = agents.map(({ portalPasswordHash, ...a }) => ({ ...a, hasPortalPassword: !!portalPasswordHash }))
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error fetching agents:', error)
     return NextResponse.json({ error: 'Failed to fetch agents' }, { status: 500 })

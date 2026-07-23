@@ -58,6 +58,7 @@ import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
 import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
 import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
+import MediaKit from '@/components/marketing/MediaKit'
 
 const FINANCE_TABS = [
   { key: 'summary',           label: 'Revenue Summary'   },
@@ -143,7 +144,7 @@ const navigationItems: NavItem[] = [
   { id: 'marketing-templates',      label: 'Email Templates',  icon: LayoutTemplate,  roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
   { id: 'marketing-publishing',     label: 'Publishing Center', icon: Send,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
   { id: 'marketing-landing-pages',  label: 'Landing Pages',    icon: Globe,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
-  { id: 'marketing-assets',         label: 'Asset Library',    icon: Image,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
+  { id: 'marketing-assets',         label: 'Media Kit',        icon: Image,           roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'create-publish' },
   { id: 'marketing-performance',    label: 'Performance',      icon: LineChart,       roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'measure' },
   { id: 'marketing-reports',        label: 'Reports',          icon: Layers,          roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing', subGroup: 'measure' },
   { id: 'marketing-settings',       label: 'Settings',         icon: Settings,        roles: ['ADMIN', 'MARKETING'],    group: 'marketing', feature: 'marketing' },
@@ -609,7 +610,7 @@ export default function Home() {
       case 'marketing-templates': return <TemplatesPage />
       case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
       case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
-      case 'marketing-assets': return <MarketingComingSoon title="Asset Library" desc="One searchable source for approved photos, videos, logos, and campaign files." icon={Image} />
+      case 'marketing-assets': return <MediaKit />
       case 'marketing-performance': return <MarketingComingSoon title="Performance" desc="A cross-campaign, cross-channel rollup — revenue, ROAS, and channel comparison." icon={LineChart} />
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
       case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />

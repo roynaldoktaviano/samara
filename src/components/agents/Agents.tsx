@@ -14,12 +14,13 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import {
   Briefcase, Plus, Search, Pencil, UserX, UserCheck,
   Loader2, Mail, Building2, Percent, RotateCw,
   Users, Trash2, Check, X, MessageCircle, ChevronDown, ChevronRight, ChevronLeft,
   Link2, Copy, ShieldOff, ShieldCheck, BarChart2, AlertTriangle,
-  Download, Upload, FileDown,
+  Download, Upload, FileDown, KeyRound,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -90,6 +91,8 @@ interface AgentRecord {
   contractFileName: string | null
   calendarToken: string | null
   calendarActive: boolean
+  hasPortalPassword: boolean
+  portalActive: boolean
   salespersonId: string | null
   salesperson: { id: string; name: string | null } | null
   createdAt: string
@@ -133,6 +136,7 @@ export default function Agents() {
   const isSales     = userRole === 'SALES'
   const canManage   = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
   const canCalendar = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+  const canPortal   = canCalendar
   const canGenerateContract = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.agentContract
 
   const canActOnAgent = (a: AgentRecord) => isAdmin || a.salespersonId === userId
@@ -204,6 +208,15 @@ export default function Agents() {
   const [statsData,         setStatsData]         = useState<any>(null)
   const [statsLoading,      setStatsLoading]      = useState(false)
   const [copiedId,          setCopiedId]          = useState<string | null>(null)
+
+  // agent portal password management (assigned salesperson or admin)
+  const [portalDialogAgent,        setPortalDialogAgent]        = useState<AgentRecord | null>(null)
+  const [portalPasswordValue,      setPortalPasswordValue]      = useState('')
+  const [portalPasswordConfirm,    setPortalPasswordConfirm]    = useState('')
+  const [portalPasswordError,      setPortalPasswordError]      = useState('')
+  const [portalSaving,             setPortalSaving]             = useState(false)
+  const [portalConfirm,            setPortalConfirm]            = useState<{ agent: AgentRecord; action: 'deactivate' | 'activate' } | null>(null)
+  const [portalActing,             setPortalActing]             = useState(false)
 
   const fetchAgents = useCallback(async () => {
     setLoading(true)
@@ -288,6 +301,44 @@ export default function Agents() {
     navigator.clipboard.writeText(link)
     setCopiedId(agentId)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const openPortalDialog = (agent: AgentRecord) => {
+    setPortalDialogAgent(agent)
+    setPortalPasswordValue('')
+    setPortalPasswordConfirm('')
+    setPortalPasswordError('')
+  }
+
+  const handleSetPortalPassword = async () => {
+    if (!portalDialogAgent) return
+    if (portalPasswordValue.length < 8) { setPortalPasswordError('Password minimal 8 karakter'); return }
+    if (portalPasswordValue !== portalPasswordConfirm) { setPortalPasswordError('Konfirmasi password tidak sama'); return }
+    setPortalSaving(true)
+    setPortalPasswordError('')
+    try {
+      const res = await fetch(`/api/agents/${portalDialogAgent.id}/portal-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: portalPasswordValue }),
+      })
+      if (res.ok) { await fetchAgents(); setPortalDialogAgent(null) }
+      else { const data = await res.json().catch(() => ({})); setPortalPasswordError(data.error || 'Gagal menyimpan password') }
+    } catch (e) { console.error(e); setPortalPasswordError('Gagal menyimpan password') }
+    finally { setPortalSaving(false) }
+  }
+
+  const handlePortalAction = async () => {
+    if (!portalConfirm) return
+    const { agent, action } = portalConfirm
+    setPortalActing(true)
+    try {
+      const res = await fetch(`/api/agents/${agent.id}/portal-password`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: action === 'activate' }),
+      })
+      if (res.ok) { await fetchAgents(); setPortalConfirm(null) }
+    } catch (e) { console.error(e) }
+    finally { setPortalActing(false) }
   }
 
   const openStats = async (agent: AgentRecord) => {
@@ -784,6 +835,7 @@ export default function Agents() {
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden lg:table-cell">Country</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Contract</th>
                     {canCalendar && <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Calendar</th>}
+                    {canPortal && <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs">Portal</th>}
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden md:table-cell">Salesperson</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center">Commission</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center hidden md:table-cell">Bookings</th>
@@ -904,6 +956,46 @@ export default function Agents() {
                         </td>
                       )}
 
+                      {/* Agent portal password */}
+                      {canPortal && (
+                        <td className="py-2.5 pr-3" onClick={e => e.stopPropagation()}>
+                          {!canActOnAgent(a) ? (
+                            <span className="text-muted-foreground/40 text-xs">—</span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              {!a.hasPortalPassword ? (
+                                <button
+                                  onClick={() => openPortalDialog(a)}
+                                  className="flex items-center gap-1 text-[11px] text-[#bdac7e] hover:underline font-medium"
+                                >
+                                  <KeyRound className="h-3 w-3" /> Set
+                                </button>
+                              ) : (
+                                <>
+                                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${a.portalActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {a.portalActive ? 'On' : 'Off'}
+                                  </span>
+                                  <button
+                                    onClick={() => openPortalDialog(a)}
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    title="Reset portal password"
+                                  >
+                                    <RotateCw className="h-3 w-3 text-amber-500" />
+                                  </button>
+                                  <button
+                                    onClick={() => setPortalConfirm({ agent: a, action: a.portalActive ? 'deactivate' : 'activate' })}
+                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    title={a.portalActive ? 'Deactivate portal access' : 'Activate portal access'}
+                                  >
+                                    {a.portalActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      )}
+
                       {/* Salesperson — hidden on small screens */}
                       <td className="py-2.5 pr-3 hidden md:table-cell">
                         {a.salesperson
@@ -1009,7 +1101,7 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7} className="py-3 pr-4">
+                        <td colSpan={(isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7) + (canPortal ? 1 : 0)} className="py-3 pr-4">
                           <div className="pl-12 pr-2">
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1865,6 +1957,82 @@ export default function Agents() {
               {calendarConfirm?.action === 'deactivate' && 'Yes, Deactivate'}
               {calendarConfirm?.action === 'activate' && 'Yes, Activate'}
               {calendarConfirm?.action === 'revoke' && 'Yes, Revoke'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Agent Portal Password Dialog ── */}
+      <Dialog open={!!portalDialogAgent} onOpenChange={v => !v && setPortalDialogAgent(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-[#bdac7e]" />
+              {portalDialogAgent?.hasPortalPassword ? 'Reset Portal Password' : 'Set Portal Password'}
+            </DialogTitle>
+            <DialogDescription>
+              {portalDialogAgent?.hasPortalPassword
+                ? `Set a new agent portal password for ${portalDialogAgent?.name}. The old password will stop working immediately.`
+                : `Set an agent portal password for ${portalDialogAgent?.name}. They will log in to the portal with their email and this password.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="portal-password">New password</Label>
+              <Input
+                id="portal-password"
+                type="password"
+                autoFocus
+                value={portalPasswordValue}
+                onChange={e => setPortalPasswordValue(e.target.value)}
+                placeholder="Minimal 8 karakter"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="portal-password-confirm">Confirm password</Label>
+              <Input
+                id="portal-password-confirm"
+                type="password"
+                value={portalPasswordConfirm}
+                onChange={e => setPortalPasswordConfirm(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSetPortalPassword()}
+              />
+            </div>
+            {portalPasswordError && <p className="text-xs text-red-600">{portalPasswordError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPortalDialogAgent(null)}>Cancel</Button>
+            <Button disabled={portalSaving} onClick={handleSetPortalPassword} style={{ backgroundColor: ACCENT }} className="text-white">
+              {portalSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {portalDialogAgent?.hasPortalPassword ? 'Reset Password' : 'Set Password'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Agent Portal Access Confirmation ── */}
+      <AlertDialog open={!!portalConfirm} onOpenChange={v => !v && setPortalConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {portalConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-red-500" /> Deactivate Portal Access</>}
+              {portalConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-emerald-600" /> Activate Portal Access</>}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {portalConfirm?.action === 'deactivate' && `Deactivate agent portal access for ${portalConfirm?.agent.name}. They will not be able to log in until reactivated. Their password is preserved.`}
+              {portalConfirm?.action === 'activate' && `Reactivate agent portal access for ${portalConfirm?.agent.name}. Their existing password will work again.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={portalActing}
+              onClick={handlePortalAction}
+              className={portalConfirm?.action === 'deactivate' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
+            >
+              {portalActing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {portalConfirm?.action === 'deactivate' && 'Yes, Deactivate'}
+              {portalConfirm?.action === 'activate' && 'Yes, Activate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
