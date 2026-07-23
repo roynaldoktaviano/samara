@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { roleMatches } from '@/lib/role-utils'
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim())
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb()
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(role)) {
+  if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN', 'SALES'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
 
   // Load all sales users for name matching
   const salesUsers = await db.user.findMany({
-    where: { role: { in: ['SALES', 'ADMIN', 'SUPER_ADMIN'] } },
+    where: { role: { in: ['SALES', 'SALES_MARKETING', 'ADMIN', 'SUPER_ADMIN'] } },
     select: { id: true, name: true, email: true },
   })
 

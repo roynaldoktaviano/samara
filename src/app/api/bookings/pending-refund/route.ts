@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET(request: NextRequest) {
   const db = await getDb()
@@ -12,8 +13,8 @@ export async function GET(request: NextRequest) {
     const role = (session.user as { role?: string })?.role ?? ''
     const view = new URL(request.url).searchParams.get('view') // 'finance' | 'sales'
 
-    const isFinance = ['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(role)
-    const isSales   = ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(role)
+    const isFinance = roleMatches(role, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'])
+    const isSales   = roleMatches(role, ['SALES', 'ADMIN', 'SUPER_ADMIN'])
 
     // Explicit view param overrides role-based default
     const wantSalesView   = view === 'sales'  || (!view && isSales && !isFinance)

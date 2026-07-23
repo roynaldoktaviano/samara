@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { roleMatches } from '@/lib/role-utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
@@ -197,7 +198,7 @@ function FilterDropdown({ value, onValueChange, placeholder, active, activeClass
 export default function Bookings() {
   const { data: session } = useSession()
   const userRole          = (session?.user as { role?: string })?.role ?? ''
-  const canManageBookings = userRole === 'ADMIN' || userRole === 'SALES'
+  const canManageBookings = roleMatches(userRole, ['ADMIN', 'SALES'])
 
   /* booking state */
   const [bookings,     setBookings]    = useState<BookingRecord[]>([])

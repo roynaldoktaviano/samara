@@ -5,12 +5,14 @@ import { getDb } from '@/lib/get-db'
 import { renderBlocksToHtml, normalizeDesign } from '@/lib/email-builder'
 import { logActivity } from '@/lib/activity'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const campaigns = await db.emailCampaign.findMany({
@@ -33,7 +35,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const { name, subject, previewText, fromEmail, fromName, templateId, blocksJson, audienceSources } = await request.json()

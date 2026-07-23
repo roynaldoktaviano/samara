@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
         orderBy: { confirmedAt: 'asc' },
       }),
       db.user.findMany({
-        where:  { role: 'SALES' },
+        where:  { role: { in: ['SALES', 'SALES_MARKETING'] } },
         select: { id: true, name: true },
       }),
     ]))

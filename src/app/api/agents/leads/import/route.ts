@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES']
 const DEFAULT_VIEW_ID = '113000008394' // "Agents" view in Freshsales
 
@@ -22,7 +24,7 @@ interface FreshsalesContact {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const tenantId = (session.user as { tenantId?: string }).tenantId ?? ''

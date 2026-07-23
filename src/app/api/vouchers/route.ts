@@ -3,11 +3,12 @@ import { getDb } from '@/lib/get-db'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { logActivity } from '@/lib/activity'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = session?.user?.role ?? ''
-  if (!session || !['ADMIN', 'FINANCE', 'SALES'].includes(role)) {
+  if (!session || !roleMatches(role, ['ADMIN', 'FINANCE', 'SALES'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const db = await getDb(session)

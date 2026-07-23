@@ -5,8 +5,10 @@ import { db as defaultDb } from '@/lib/db'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 import { AGENT_PORTAL_COOKIE, getAgentPortalSecret } from '@/lib/agent-portal-access'
-import { isRateLimited, recordFailedAttempt, clearAttempts } from '@/lib/rate-limit'
+import { isRateLimited, recordFailedAttempt, clearAttempts, getFailedAttemptCount } from '@/lib/rate-limit'
 import type { PrismaClient } from '@prisma/client'
+
+const SUSPICIOUS_BOTS = /bot|crawler|spider|scrape|python|curl|wget|axios|fetch|java|ruby|go-http/i
 
 /** Scans every active tenant for an Agent matching this email — mirrors findAgentTenant()
  *  in src/app/api/public/verify-calendar/route.ts, swapping the lookup key from
@@ -63,7 +65,16 @@ export async function POST(request: NextRequest) {
     recordFailedAttempt(rateLimitKey)
     return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
   }
+
+  // Flag as suspicious before clearing the attempt counter: a bot-like user agent, or
+  // several wrong passwords right before this successful one, are both worth a staff
+  // member noticing even though the login itself succeeded.
+  const userAgent = request.headers.get('user-agent') ?? ''
+  const ip = getIp(request)
+  const isSuspicious = SUSPICIOUS_BOTS.test(userAgent) || getFailedAttemptCount(rateLimitKey) >= 3
   clearAttempts(rateLimitKey)
+
+  found.db.portalAccessLog.create({ data: { agentId: agent.id, ip, userAgent, isSuspicious } }).catch(() => {})
 
   const pwv = agent.portalPasswordSetAt ? agent.portalPasswordSetAt.getTime() : 0
   const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name, tenantId, pwv })

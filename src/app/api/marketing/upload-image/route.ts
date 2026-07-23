@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { put } from '@vercel/blob'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
 /**
@@ -13,7 +15,7 @@ const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return NextResponse.json({ error: 'Image hosting is not configured (BLOB_READ_WRITE_TOKEN missing)' }, { status: 500 })

@@ -465,6 +465,7 @@ export default function SuperAdminPage() {
                                 u.role === 'FINANCE' ? 'bg-emerald-100 text-emerald-700' :
                                 u.role === 'SALES' ? 'bg-blue-100 text-blue-700' :
                                 u.role === 'MARKETING' ? 'bg-orange-100 text-orange-700' :
+                                u.role === 'SALES_MARKETING' ? 'bg-indigo-100 text-indigo-700' :
                                 'bg-gray-100 text-gray-600'
                               }`}>{u.role}</span>
                             )}

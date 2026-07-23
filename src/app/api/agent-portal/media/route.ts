@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         id: true, yachtId: true, categoryId: true, type: true, name: true, url: true,
-        sizeBytes: true, mimeType: true, folder: true,
+        sizeBytes: true, mimeType: true, folderId: true,
       },
       orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
     })

@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     // Return salespeople list only for admins (for the filter dropdown)
     const salespeople = isAdmin
       ? await db.user.findMany({
-          where:   { role: 'SALES' },
+          where:   { role: { in: ['SALES', 'SALES_MARKETING'] } },
           select:  { id: true, name: true },
           orderBy: { name: 'asc' },
         })

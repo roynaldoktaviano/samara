@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { roleMatches } from '@/lib/role-utils'
 
 async function requireManage() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(role)) return null
+  if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN', 'SALES'])) return null
   return session
 }
 

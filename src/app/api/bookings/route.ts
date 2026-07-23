@@ -6,6 +6,7 @@ import { logActivity } from '@/lib/activity'
 import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { roleMatches } from '@/lib/role-utils'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
     // SALES: kalender tampilkan semua booking tapi dengan flag isOwnBooking.
     // Untuk request lain (list, detail), tetap filter ke booking sendiri saja.
     const isCalendarView = view === 'calendar'
-    if (userRole === 'SALES' && userId && !isCalendarView) {
+    if (roleMatches(userRole, ['SALES']) && userId && !isCalendarView) {
       where.salespersonId = userId
     }
 
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     })
 
     // For calendar view, SALES can see all bookings but non-owned ones are masked
-    if (isCalendarView && userRole === 'SALES' && userId) {
+    if (isCalendarView && roleMatches(userRole, ['SALES']) && userId) {
       const masked = bookings.map(b => {
         const isOwn = b.salespersonId === userId
         if (isOwn) return { ...b, isOwnBooking: true }

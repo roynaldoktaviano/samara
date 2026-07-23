@@ -28,3 +28,12 @@ export function recordFailedAttempt(key: string): void {
 export function clearAttempts(key: string): void {
   buckets.delete(key)
 }
+
+/** Recent failed-attempt count for `key`, ignoring an expired window. Used to flag a
+ *  login as suspicious even when it ultimately succeeds (e.g. several wrong passwords
+ *  right before the right one). */
+export function getFailedAttemptCount(key: string): number {
+  const bucket = buckets.get(key)
+  if (!bucket || bucket.resetAt < Date.now()) return 0
+  return bucket.count
+}

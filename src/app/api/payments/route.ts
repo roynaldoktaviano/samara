@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET(_: NextRequest) {
   const session  = await getServerSession(authOptions)
@@ -14,7 +15,7 @@ export async function GET(_: NextRequest) {
   try {
 
     // SALES: only their own payments (matched via booking.salespersonId)
-    const where = userRole === 'SALES' && userId
+    const where = roleMatches(userRole, ['SALES']) && userId
       ? { booking: { salespersonId: userId } }
       : {}
 

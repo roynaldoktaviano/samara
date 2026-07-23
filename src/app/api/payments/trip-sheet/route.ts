@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { getTripSheetGroups } from '@/lib/trip-sheet'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     const groups = await getTripSheetGroups(db, {
       from, to,
-      salespersonId: userRole === 'SALES' && userId ? userId : null,
+      salespersonId: roleMatches(userRole, ['SALES']) && userId ? userId : null,
     })
     return NextResponse.json(groups)
   } catch (error) {

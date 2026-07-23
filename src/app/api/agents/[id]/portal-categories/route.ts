@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import type { PrismaClient } from '@prisma/client'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES']
 
 // Same ownership rule as agents/[id]/portal-password/route.ts — ADMIN/SUPER_ADMIN, or the
@@ -12,7 +14,7 @@ async function requireAgentAccess(id: string, db: PrismaClient) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
-  if (!session?.user?.id || !ALLOWED.includes(role)) return { ok: false as const, status: 403 }
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return { ok: false as const, status: 403 }
   if (isSuperAdmin || role === 'ADMIN') return { ok: true as const }
   const agent = await db.agent.findUnique({ where: { id }, select: { salespersonId: true } })
   if (!agent) return { ok: false as const, status: 404 }

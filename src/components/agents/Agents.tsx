@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
+import { roleMatches } from '@/lib/role-utils'
 
 function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -135,9 +136,9 @@ export default function Agents() {
   const userRole  = (session?.user as { role?: string })?.role ?? ''
   const userId    = session?.user?.id ?? ''
   const isAdmin     = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
-  const isSales     = userRole === 'SALES'
-  const canManage   = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
-  const canCalendar = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(userRole)
+  const isSales     = roleMatches(userRole, ['SALES'])
+  const canManage   = roleMatches(userRole, ['ADMIN', 'SUPER_ADMIN', 'SALES'])
+  const canCalendar = roleMatches(userRole, ['ADMIN', 'SUPER_ADMIN', 'SALES'])
   const canPortal   = canCalendar
   const canGenerateContract = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.agentContract
 
@@ -219,6 +220,9 @@ export default function Agents() {
   const [portalSaving,             setPortalSaving]             = useState(false)
   const [portalConfirm,            setPortalConfirm]            = useState<{ agent: AgentRecord; action: 'deactivate' | 'activate' } | null>(null)
   const [portalActing,             setPortalActing]             = useState(false)
+  const [portalStatsAgent,         setPortalStatsAgent]         = useState<AgentRecord | null>(null)
+  const [portalStatsData,          setPortalStatsData]          = useState<any>(null)
+  const [portalStatsLoading,       setPortalStatsLoading]       = useState(false)
 
   // agent portal media-kit category visibility (assigned salesperson or admin)
   const [categoryDialogAgent,      setCategoryDialogAgent]      = useState<AgentRecord | null>(null)
@@ -243,7 +247,7 @@ export default function Agents() {
     fetch('/api/users')
       .then(r => r.ok ? r.json() : [])
       .then((users: (SalesUser & { role: string })[]) =>
-        setSalesUsers(users.filter(u => u.role === 'SALES'))
+        setSalesUsers(users.filter(u => roleMatches(u.role, ['SALES'])))
       )
       .catch(() => {})
   }, [])
@@ -401,6 +405,15 @@ export default function Agents() {
     const res = await fetch(`/api/agents/${agent.id}/calendar-stats`)
     if (res.ok) setStatsData(await res.json())
     setStatsLoading(false)
+  }
+
+  const openPortalStats = async (agent: AgentRecord) => {
+    setPortalStatsAgent(agent)
+    setPortalStatsLoading(true)
+    setPortalStatsData(null)
+    const res = await fetch(`/api/agents/${agent.id}/portal-access-logs`)
+    if (res.ok) setPortalStatsData(await res.json())
+    setPortalStatsLoading(false)
   }
 
   const openCreate = () => {
@@ -1051,6 +1064,15 @@ export default function Agents() {
                               >
                                 <ListChecks className="h-3 w-3" />
                               </button>
+                              {a.hasPortalPassword && (
+                                <button
+                                  onClick={() => openPortalStats(a)}
+                                  className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                  title="Portal login history"
+                                >
+                                  <BarChart2 className="h-3 w-3" />
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -2198,6 +2220,57 @@ export default function Agents() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Agent Portal Login History ── */}
+      <AlertDialog open={!!portalStatsAgent} onOpenChange={v => !v && setPortalStatsAgent(null)}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <BarChart2 className="h-4 w-4" style={{ color: ACCENT }} />
+              Portal Access — {portalStatsAgent?.name}
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="space-y-4 py-2">
+            {portalStatsLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : portalStatsData ? (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Total Logins', value: portalStatsData.totalAccess, color: 'text-foreground' },
+                    { label: 'Last Login', value: portalStatsData.lastAccess ? new Date(portalStatsData.lastAccess).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—', color: 'text-foreground' },
+                    { label: 'Suspicious', value: portalStatsData.suspiciousCount, color: portalStatsData.suspiciousCount > 0 ? 'text-red-600' : 'text-muted-foreground' },
+                  ].map(s => (
+                    <div key={s.label} className="rounded-lg border p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+                      <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {portalStatsData.recentLogs?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Logins</p>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {portalStatsData.recentLogs.map((log: any) => (
+                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-red-50 text-red-700' : 'bg-muted/30'}`}>
+                          <span className="font-mono">{log.ip}</span>
+                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
+                          <span className="text-muted-foreground shrink-0">{new Date(log.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">No logins yet</p>
             )}
           </div>
           <AlertDialogFooter>

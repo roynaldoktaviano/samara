@@ -22,7 +22,7 @@ type MediaFileType = 'image' | 'document' | 'video'
 
 interface Yacht { id: string; name: string }
 interface MediaCategoryRecord { id: string; name: string; sortOrder: number }
-interface MediaFolderRecord { id: string; yachtId: string | null; categoryId: string; name: string }
+interface MediaFolderRecord { id: string; yachtId: string | null; categoryId: string; parentId: string | null; name: string }
 
 interface MediaFile {
   id: string
@@ -34,7 +34,7 @@ interface MediaFile {
   url: string
   sizeBytes: number | null
   mimeType: string | null
-  folder: string | null
+  folderId: string | null
   createdAt: string
   uploadedBy: { name: string | null; email: string | null }
 }
@@ -92,7 +92,8 @@ export default function MediaKit() {
 
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+  // null = top level of the active category. Folders can nest to unlimited depth.
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -156,24 +157,32 @@ export default function MediaKit() {
     [mediaFolders, selectedYachtId, activeCategoryId]
   )
 
-  useEffect(() => { setActiveFolder(null) }, [activeCategoryId, selectedYachtId])
+  useEffect(() => { setActiveFolderId(null) }, [activeCategoryId, selectedYachtId])
 
-  // Union of persisted (possibly-empty) folders and folder names that only exist because a
-  // file references them — covers data created before MediaFolder existed, or via the API directly.
-  const folders = useMemo(() => {
-    const names = new Set(scopedFolders.map(f => f.name))
-    scopedFiles.forEach(f => { if (f.folder) names.add(f.folder) })
-    return Array.from(names)
-  }, [scopedFolders, scopedFiles])
-  const looseFiles = useMemo(() => scopedFiles.filter(f => !f.folder), [scopedFiles])
-  const folderFiles = useMemo(
-    () => activeFolder ? scopedFiles.filter(f => f.folder === activeFolder) : [],
-    [scopedFiles, activeFolder]
+  // Everything visible at the currently open level — top level (null) or inside a folder.
+  const currentFiles = useMemo(
+    () => scopedFiles.filter(f => (f.folderId ?? null) === activeFolderId),
+    [scopedFiles, activeFolderId]
   )
-  const activeFolderRecord = useMemo(
-    () => activeFolder ? scopedFolders.find(f => f.name.toLowerCase() === activeFolder.toLowerCase()) ?? null : null,
-    [scopedFolders, activeFolder]
+  const currentFolders = useMemo(
+    () => scopedFolders.filter(f => (f.parentId ?? null) === activeFolderId),
+    [scopedFolders, activeFolderId]
   )
+  // Breadcrumb trail from category root down to the open folder.
+  const folderPath = useMemo(() => {
+    const path: MediaFolderRecord[] = []
+    let current = activeFolderId ? scopedFolders.find(f => f.id === activeFolderId) ?? null : null
+    while (current) {
+      path.unshift(current)
+      current = current.parentId ? scopedFolders.find(f => f.id === current!.parentId) ?? null : null
+    }
+    return path
+  }, [scopedFolders, activeFolderId])
+  const activeFolder = folderPath[folderPath.length - 1] ?? null
+
+  function folderFileCount(folderId: string) {
+    return scopedFiles.filter(f => f.folderId === folderId).length
+  }
 
   async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -199,7 +208,7 @@ export default function MediaKit() {
           url: uploadData.url,
           sizeBytes: uploadData.sizeBytes,
           mimeType: uploadData.mimeType,
-          folder: activeFolder,
+          folderId: activeFolderId,
         }),
       })
       if (!saveRes.ok) { const d = await saveRes.json().catch(() => ({})); toast.error(d.error ?? 'Failed to save file'); return }
@@ -227,7 +236,7 @@ export default function MediaKit() {
           type: 'video',
           name: linkName.trim(),
           url: linkUrl.trim(),
-          folder: activeFolder,
+          folderId: activeFolderId,
         }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to save link'); return }
@@ -246,30 +255,31 @@ export default function MediaKit() {
   async function handleCreateFolder() {
     const name = newFolderName.trim()
     if (!name || !activeCategoryId) { toast.error('Folder name is required'); return }
-    if (folders.some(f => f.toLowerCase() === name.toLowerCase())) { toast.error('A folder with that name already exists'); return }
+    if (currentFolders.some(f => f.name.toLowerCase() === name.toLowerCase())) { toast.error('A folder with that name already exists here'); return }
     setCreatingFolder(true)
     try {
       const res = await fetch('/api/marketing/folders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yachtId: selectedYachtId || null, categoryId: activeCategoryId, name }),
+        body: JSON.stringify({ yachtId: selectedYachtId || null, categoryId: activeCategoryId, parentId: activeFolderId, name }),
       })
-      if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to create folder'); return }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Failed to create folder'); return }
       await fetchFolders()
-      setActiveFolder(name)
+      setActiveFolderId(data.id)
       setNewFolderDialogOpen(false)
     } catch (e) { console.error(e); toast.error('Failed to create folder') }
     finally { setCreatingFolder(false) }
   }
 
   async function handleDeleteFolder() {
-    if (!activeFolderRecord) { setActiveFolder(null); return }
-    if (!confirm(`Delete folder "${activeFolderRecord.name}"? It must be empty.`)) return
+    if (!activeFolder) return
+    if (!confirm(`Delete folder "${activeFolder.name}"? It must be empty.`)) return
     setDeletingFolder(true)
     try {
-      const res = await fetch(`/api/marketing/folders/${activeFolderRecord.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/marketing/folders/${activeFolder.id}`, { method: 'DELETE' })
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to delete folder'); return }
       await fetchFolders()
-      setActiveFolder(null)
+      setActiveFolderId(activeFolder.parentId)
     } catch (e) { console.error(e); toast.error('Failed to delete folder') }
     finally { setDeletingFolder(false) }
   }
@@ -388,32 +398,38 @@ export default function MediaKit() {
       ) : (
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            {activeFolder ? (
-              <div className="flex items-center gap-3">
-                <button onClick={() => setActiveFolder(null)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <ChevronLeft className="h-3.5 w-3.5" /> {activeCategory.name} / <span className="text-foreground font-medium">{activeFolder}</span>
-                </button>
-                {folderFiles.length === 0 && activeFolderRecord && (
+            <div className="flex items-center gap-2 text-xs flex-wrap min-w-0">
+              <button
+                onClick={() => setActiveFolderId(null)}
+                className={cn('transition-colors', !activeFolderId ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
+              >
+                {activeCategory.name}
+              </button>
+              {folderPath.map(f => (
+                <span key={f.id} className="flex items-center gap-2">
+                  <span className="text-muted-foreground/30">/</span>
                   <button
-                    onClick={handleDeleteFolder}
-                    disabled={deletingFolder}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-600 transition-colors"
+                    onClick={() => setActiveFolderId(f.id)}
+                    className={cn('transition-colors', f.id === activeFolderId ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
                   >
-                    {deletingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />} Delete folder
+                    {f.name}
                   </button>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {scopedFiles.length} item{scopedFiles.length === 1 ? '' : 's'} — {selectedYachtId ? yachts.find(y => y.id === selectedYachtId)?.name : 'General'}
-              </p>
-            )}
-            <div className="flex items-center gap-2">
-              {!activeFolder && (
-                <Button size="sm" variant="outline" onClick={openNewFolderDialog}>
-                  <FolderPlus className="h-3.5 w-3.5 mr-1.5" /> New Folder
-                </Button>
+                </span>
+              ))}
+              {activeFolder && currentFiles.length === 0 && currentFolders.length === 0 && (
+                <button
+                  onClick={handleDeleteFolder}
+                  disabled={deletingFolder}
+                  className="flex items-center gap-1 text-muted-foreground hover:text-red-600 transition-colors ml-2"
+                >
+                  {deletingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />} Delete this folder
+                </button>
               )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="outline" onClick={openNewFolderDialog}>
+                <FolderPlus className="h-3.5 w-3.5 mr-1.5" /> New Folder
+              </Button>
               <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFilePicked} />
               <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
                 {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
@@ -427,32 +443,24 @@ export default function MediaKit() {
 
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : activeFolder ? (
-            folderFiles.length === 0 ? (
-              <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">No files in this folder yet.</CardContent></Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {folderFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
-              </div>
-            )
-          ) : scopedFiles.length === 0 && folders.length === 0 ? (
-            <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">No files yet in this category.</CardContent></Card>
+          ) : currentFiles.length === 0 && currentFolders.length === 0 ? (
+            <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nothing here yet.</CardContent></Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {folders.map(folder => (
-                <Card key={folder} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolder(folder)}>
+              {currentFolders.map(folder => (
+                <Card key={folder.id} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
                   <CardContent className="py-3 px-4 flex items-center gap-3">
                     <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{folder}</p>
+                      <p className="text-sm font-medium truncate">{folder.name}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {scopedFiles.filter(f => f.folder === folder).length} file{scopedFiles.filter(f => f.folder === folder).length === 1 ? '' : 's'}
+                        {folderFileCount(folder.id)} file{folderFileCount(folder.id) === 1 ? '' : 's'}
                       </p>
                     </div>
                   </CardContent>
                 </Card>
               ))}
-              {looseFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
+              {currentFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
             </div>
           )}
         </>
@@ -488,7 +496,9 @@ export default function MediaKit() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><FolderPlus className="h-4 w-4 text-[#bdac7e]" /> New Folder</DialogTitle>
-            <DialogDescription>Group files inside {activeCategory?.name} — this also shows as a folder in the Agent Portal.</DialogDescription>
+            <DialogDescription>
+              {activeFolder ? `Inside "${activeFolder.name}"` : `Inside ${activeCategory?.name}`} — this also shows as a folder in the Agent Portal.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">
             <Label htmlFor="new-folder-name">Folder name</Label>

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer } from 'lucide-react'
+import { roleMatches } from '@/lib/role-utils'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -632,7 +633,7 @@ export default function CalendarView() {
   const userRole = (session?.user as { role?: string })?.role ?? ''
   const userId   = (session?.user as { id?: string })?.id   ?? ''
   const isAdmin  = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
-  const canEdit = ['ADMIN', 'SALES'].includes(userRole)
+  const canEdit = roleMatches(userRole, ['ADMIN', 'SALES'])
 
   const [currentDate, setCurrentDate]   = useState(new Date())
   const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')

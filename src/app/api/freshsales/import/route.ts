@@ -9,6 +9,8 @@ import type { Prisma } from '@prisma/client'
 
 export const maxDuration = 60
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES', 'MARKETING']
 const PAGE_SIZE = 100
 // Each request only walks a bounded slice of pages so it stays well inside
@@ -249,7 +251,7 @@ function findPossibleMatches(candidates: Row[], existing: ExistingRecord[]): { m
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const tenantId = (session.user as { tenantId?: string }).tenantId ?? ''

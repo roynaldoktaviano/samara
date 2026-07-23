@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const userRole = (session?.user as { role?: string })?.role ?? ''
   const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean })?.isSuperAdmin === true
-  const isSales = userRole === 'SALES'
+  const isSales = roleMatches(userRole, ['SALES'])
   if (!isSuperAdmin && userRole !== 'ADMIN' && !isSales) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

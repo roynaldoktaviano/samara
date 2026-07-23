@@ -4,13 +4,15 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 const TYPES = ['image', 'document', 'video']
 
 async function requireAccess() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return null
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return null
   return session
 }
 
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json().catch(() => ({}))
-    const { yachtId, categoryId, type, name, url, folder, sizeBytes, mimeType } = body
+    const { yachtId, categoryId, type, name, url, folderId, sizeBytes, mimeType } = body
 
     if (!categoryId || typeof categoryId !== 'string') return NextResponse.json({ error: 'Category is required' }, { status: 400 })
     const category = await db.mediaCategory.findUnique({ where: { id: categoryId } })
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
       data: {
         yachtId: yachtId || null,
         categoryId, type, name, url,
-        folder: folder || null,
+        folderId: folderId || null,
         sizeBytes: typeof sizeBytes === 'number' ? sizeBytes : null,
         mimeType: mimeType || null,
         uploadedById: session.user.id,

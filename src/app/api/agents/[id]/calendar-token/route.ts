@@ -5,12 +5,14 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { randomBytes } from 'crypto'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES']
 
 async function requireAccess() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!ALLOWED.includes(role)) return null
+  if (!roleMatches(role, ALLOWED)) return null
   return session
 }
 

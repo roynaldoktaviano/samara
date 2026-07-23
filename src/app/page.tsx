@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
 import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers } from 'lucide-react'
+import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -559,7 +560,7 @@ export default function Home() {
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const tenantFeatures = (session.user as { tenantFeatures?: Record<string, boolean> }).tenantFeatures ?? {}
   const visibleNavItems = navigationItems.filter((item) =>
-    item.roles.includes(userRole) &&
+    roleMatches(userRole, item.roles) &&
     (!item.feature || tenantFeatures[item.feature] === true)
   )
 

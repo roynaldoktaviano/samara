@@ -34,6 +34,7 @@ interface YachtOption {
 type MediaFileType = 'image' | 'document' | 'video'
 
 interface MediaCategoryRecord { id: string; name: string }
+interface MediaFolderRecord { id: string; name: string; parentId: string | null; categoryId: string; yachtId: string | null }
 
 interface MediaFile {
   id: string
@@ -44,7 +45,7 @@ interface MediaFile {
   url: string
   sizeBytes: number | null
   mimeType: string | null
-  folder: string | null
+  folderId: string | null
 }
 
 function formatSize(bytes: number | null) {
@@ -220,20 +221,19 @@ export default function AgentPortalPage() {
     setStep('login')
   }
 
-  if (checkingSession) return <FullScreenLoader />
-
-  if (step === 'login') {
-    return (
+  let body: React.ReactNode
+  if (checkingSession) {
+    body = <FullScreenLoader />
+  } else if (step === 'login') {
+    body = (
       <LoginScreen
         email={email} setEmail={setEmail}
         password={password} setPassword={setPassword}
         error={loginError} onSubmit={handleLogin}
       />
     )
-  }
-
-  if (step === 'yacht') {
-    return (
+  } else if (step === 'yacht') {
+    body = (
       <YachtScreen
         yachts={yachts}
         loading={yachtsLoading}
@@ -242,8 +242,47 @@ export default function AgentPortalPage() {
         onLogout={logout}
       />
     )
+  } else {
+    body = <AgentPortalContentScreen step={step} setStep={setStep} logout={logout} agentName={agentName} selectedYacht={selectedYacht} />
   }
 
+  return <ContentProtection>{body}</ContentProtection>
+}
+
+// Deters casual copying — not real protection (nothing stops a phone camera or OS-level
+// screenshot tool), but blocks right-click/text-select and blurs the screen when the tab/
+// window loses focus (e.g. alt-tabbing to a screenshot tool) as a speed bump for the common case.
+function ContentProtection({ children }: { children: React.ReactNode }) {
+  const [obscured, setObscured] = useState(false)
+
+  useEffect(() => {
+    const obscure = () => setObscured(true)
+    const reveal = () => setObscured(false)
+    const onVisibilityChange = () => { if (document.hidden) obscure(); else reveal() }
+    window.addEventListener('blur', obscure)
+    window.addEventListener('focus', reveal)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('blur', obscure)
+      window.removeEventListener('focus', reveal)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
+
+  return (
+    <div
+      onContextMenu={e => e.preventDefault()}
+      className={cn('select-none transition-[filter] duration-150', obscured && 'blur-2xl')}
+      style={{ WebkitUserSelect: 'none' }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function AgentPortalContentScreen({ step, setStep, logout, agentName, selectedYacht }: {
+  step: Step; setStep: (s: Step) => void; logout: () => void; agentName: string; selectedYacht: YachtOption | null
+}) {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -307,7 +346,10 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
       <div className="absolute inset-0 bg-black/65" />
 
       <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl p-8">
-        <img src={SAMARA_LOGO} alt="Samara" className="h-8 w-auto object-contain mx-auto mb-8" />
+        {/* brightness-0 (no invert) — the source logo's wordmark is white, which
+            disappears against this white card; forcing it to a black silhouette
+            keeps it visible without needing a separate logo asset. */}
+        <img src={SAMARA_LOGO} alt="Samara" className="h-8 w-auto object-contain mx-auto mb-8 brightness-0" />
 
         <div className="mx-auto w-11 h-11 rounded-full flex items-center justify-center" style={{ background: `${GOLD}22` }}>
           <Lock className="h-5 w-5" style={{ color: GOLD_DARK }} />
@@ -508,8 +550,10 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
   const [categories, setCategories] = useState<MediaCategoryRecord[]>([])
   const [activeCatId, setActiveCatId] = useState<string>('')
   const [files, setFiles] = useState<MediaFile[]>([])
+  const [mediaFolders, setMediaFolders] = useState<MediaFolderRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+  // null = top level of the active category. Folders can nest to unlimited depth.
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [preview, setPreview] = useState<MediaFile | null>(null)
 
   useEffect(() => {
@@ -520,6 +564,10 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
         setActiveCatId(prev => prev || cats[0]?.id || '')
       })
       .catch(() => setCategories([]))
+    fetch('/api/agent-portal/folders')
+      .then(r => r.ok ? r.json() : [])
+      .then(setMediaFolders)
+      .catch(() => setMediaFolders([]))
   }, [])
 
   useEffect(() => {
@@ -531,7 +579,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       .finally(() => setLoading(false))
   }, [yacht.id])
 
-  useEffect(() => { setActiveFolder(null) }, [activeCatId])
+  useEffect(() => { setActiveFolderId(null) }, [activeCatId])
 
   function selectCategory(id: string) {
     setActiveCatId(id)
@@ -539,10 +587,23 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
 
   const activeCategory = categories.find(c => c.id === activeCatId) ?? null
   const categoryFiles = files.filter(f => f.categoryId === activeCatId)
-  const folders = Array.from(new Set(categoryFiles.filter(f => f.folder).map(f => f.folder as string)))
-  const hasFolders = folders.length > 0
-  const looseFiles = categoryFiles.filter(f => !f.folder)
-  const currentFiles = activeFolder ? categoryFiles.filter(f => f.folder === activeFolder) : looseFiles
+  const categoryFolders = mediaFolders.filter(f => f.categoryId === activeCatId && (f.yachtId === null || f.yachtId === yacht.id))
+  const currentFiles = categoryFiles.filter(f => (f.folderId ?? null) === activeFolderId)
+  const currentFolders = categoryFolders.filter(f => (f.parentId ?? null) === activeFolderId)
+  // Breadcrumb trail from category root down to the open folder.
+  const folderPath = useMemo(() => {
+    const path: MediaFolderRecord[] = []
+    let current = activeFolderId ? categoryFolders.find(f => f.id === activeFolderId) ?? null : null
+    while (current) {
+      path.unshift(current)
+      current = current.parentId ? categoryFolders.find(f => f.id === current!.parentId) ?? null : null
+    }
+    return path
+  }, [mediaFolders, activeCatId, activeFolderId])
+
+  function folderFileCount(folderId: string) {
+    return categoryFiles.filter(f => f.folderId === folderId).length
+  }
 
   function fileCard(f: MediaFile) {
     return (
@@ -599,49 +660,46 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
         <p className="text-sm text-muted-foreground text-center py-10">Nothing here yet.</p>
       ) : loading ? (
         <p className="text-sm text-muted-foreground text-center py-10">Loading…</p>
-      ) : hasFolders ? (
+      ) : (
         <div>
-          <div className="flex items-center gap-2 text-xs mb-6">
+          <div className="flex items-center gap-2 text-xs mb-6 flex-wrap">
             <button
-              onClick={() => setActiveFolder(null)}
-              className={cn('flex items-center gap-1.5 transition-colors', !activeFolder ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
+              onClick={() => setActiveFolderId(null)}
+              className={cn('flex items-center gap-1.5 transition-colors', !activeFolderId ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
             >
               <FolderOpen className="h-3.5 w-3.5" /> {activeCategory.name}
             </button>
-            {activeFolder && (
-              <>
+            {folderPath.map(f => (
+              <span key={f.id} className="flex items-center gap-2">
                 <span className="text-muted-foreground/30">/</span>
-                <span className="text-foreground font-medium">{activeFolder}</span>
-              </>
-            )}
+                <button
+                  onClick={() => setActiveFolderId(f.id)}
+                  className={cn('transition-colors', f.id === activeFolderId ? 'text-foreground font-medium' : 'text-muted-foreground/70 hover:text-foreground')}
+                >
+                  {f.name}
+                </button>
+              </span>
+            ))}
           </div>
 
-          {!activeFolder ? (
+          {currentFiles.length === 0 && currentFolders.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-10">Nothing here yet.</p>
+          ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
-              {folders.map(folder => (
-                <button key={folder} onClick={() => setActiveFolder(folder)} className="group text-left">
+              {currentFolders.map(folder => (
+                <button key={folder.id} onClick={() => setActiveFolderId(folder.id)} className="group text-left">
                   <div className="aspect-[4/3] bg-neutral-50 rounded-lg flex items-center justify-center">
                     <FolderOpen className="h-16 w-16 text-neutral-300 group-hover:text-neutral-400 transition-colors" />
                   </div>
-                  <p className="text-sm mt-3 leading-tight">{folder}</p>
+                  <p className="text-sm mt-3 leading-tight">{folder.name}</p>
                   <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">
-                    {categoryFiles.filter(f => f.folder === folder).length} files
+                    {folderFileCount(folder.id)} files
                   </p>
                 </button>
               ))}
-              {looseFiles.map(fileCard)}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
               {currentFiles.map(fileCard)}
             </div>
           )}
-        </div>
-      ) : currentFiles.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-10">Nothing here yet.</p>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
-          {currentFiles.map(fileCard)}
         </div>
       )}
 

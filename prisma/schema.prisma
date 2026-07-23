@@ -19,6 +19,7 @@ enum Role {
   PURCHASING
   WAREHOUSE
   HR
+  SALES_MARKETING // combined role — treated as SALES for sales-gated screens, MARKETING for marketing-gated ones
 }
 
 enum BookingSource {
@@ -265,6 +266,7 @@ model Agent {
   bookings                 Booking[]
   contacts                 AgentContact[]
   calendarAccessLogs       CalendarAccessLog[]
+  portalAccessLogs         PortalAccessLog[]
   leadsPromoted            AgentLead[]
   visibleCategories        AgentVisibleCategory[]
   createdAt                DateTime            @default(now())
@@ -275,6 +277,22 @@ model Agent {
 }
 
 model CalendarAccessLog {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  ip           String?
+  userAgent    String?
+  isSuspicious Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([agentId])
+  @@index([createdAt])
+}
+
+// One row per successful Agent Portal login (not per page view) — logged from
+// POST /api/agent-portal/login so staff can see when an agent last logged in, from
+// where, and flag anything that looks off.
+model PortalAccessLog {
   id           String   @id @default(cuid())
   agentId      String
   agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
@@ -415,7 +433,8 @@ model MediaFile {
   url          String
   sizeBytes    Int?
   mimeType     String?
-  folder       String?
+  folderId     String?
+  folder       MediaFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
   sortOrder    Int           @default(0)
   uploadedById String
   uploadedBy   User          @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
@@ -424,22 +443,29 @@ model MediaFile {
 
   @@index([yachtId])
   @@index([categoryId])
+  @@index([folderId])
 }
 
-// Tracked separately from MediaFile.folder (a plain string) so an empty folder — created
-// but not yet holding any file — still persists instead of only existing transiently in
-// the browser tab that created it.
+// A folder can nest inside another folder (parentId, self-relation) to unlimited depth —
+// null parentId means it sits at the top level of its category. Persisted independently of
+// MediaFile so an empty folder still shows up before anything is uploaded into it.
 model MediaFolder {
   id         String        @id @default(cuid())
   yachtId    String?
   yacht      Yacht?        @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   categoryId String
   category   MediaCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  parentId   String?
+  parent     MediaFolder?  @relation("MediaFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   MediaFolder[] @relation("MediaFolderTree")
   name       String
   createdAt  DateTime      @default(now())
 
+  files      MediaFile[]
+
   @@index([yachtId])
   @@index([categoryId])
+  @@index([parentId])
 }
 
 // Per-agent override of which Media Kit categories they see in the Agent Portal. An agent

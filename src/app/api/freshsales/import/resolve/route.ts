@@ -5,6 +5,8 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import type { Prisma } from '@prisma/client'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'SALES', 'MARKETING']
 
 interface InquiryPayload {
@@ -77,7 +79,7 @@ function toInquiryCreateData(inquiry: InquiryPayload) {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const body = await req.json().catch(() => ({}))

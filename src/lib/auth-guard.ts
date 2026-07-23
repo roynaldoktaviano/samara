@@ -1,9 +1,10 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { NextResponse } from 'next/server'
+import { roleMatches } from '@/lib/role-utils'
 import type { Session } from 'next-auth'
 
-export type AppRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR'
+export type AppRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING'
 
 type RoleCheckResult =
   | { ok: true; session: Session }
@@ -24,7 +25,7 @@ export async function requireRole(allowed: AppRole[]): Promise<RoleCheckResult> 
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
   const role = (session.user as { role?: string }).role ?? ''
-  if (!allowed.includes(role as AppRole)) {
+  if (!roleMatches(role, allowed)) {
     return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
   return { ok: true, session }

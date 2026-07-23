@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING'
 
 interface UserRecord {
   id: string
@@ -29,6 +29,13 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     desc: 'Manage bookings & guests',
     color: 'bg-blue-100 text-blue-700',
     modules: 'Dashboard, Bookings, Open Trips, Guests',
+  },
+  {
+    value: 'SALES_MARKETING',
+    label: 'Sales & Marketing',
+    desc: 'Combined role — full Sales + Marketing access',
+    color: 'bg-indigo-100 text-indigo-700',
+    modules: 'Everything Sales and Marketing can access',
   },
   {
     value: 'FINANCE',

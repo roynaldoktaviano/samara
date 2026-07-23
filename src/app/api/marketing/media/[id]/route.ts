@@ -5,12 +5,14 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { del } from '@vercel/blob'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
 async function requireAccess() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return null
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return null
   return session
 }
 
