@@ -49,8 +49,29 @@ const authMiddleware = withAuth({
   pages: { signIn: '/login' },
 })
 
+function isAgentPortalPath(pathname: string) {
+  return pathname === '/agent-portal' || pathname.startsWith('/agent-portal/')
+    || pathname === '/api/agent-portal' || pathname.startsWith('/api/agent-portal/')
+}
+
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+
+  // Agent Portal is split onto its own subdomain (AGENT_PORTAL_HOST, e.g. agent.samarayachting.com):
+  //  - On that host, ONLY agent-portal routes are servable — the root path is rewritten to
+  //    /agent-portal so agents get a clean URL, and everything else 404s (no ERP access here).
+  //  - On every other host (the main ERP domain), agent-portal routes are blocked outright —
+  //    agents must not be able to reach the portal via erp.samarayachting.com/agent-portal.
+  const hostname = req.headers.get('host')?.split(':')[0] ?? ''
+  const agentPortalHost = process.env.AGENT_PORTAL_HOST
+  if (agentPortalHost && hostname === agentPortalHost) {
+    if (pathname === '/') return NextResponse.rewrite(new URL('/agent-portal', req.url))
+    if (isAgentPortalPath(pathname)) return NextResponse.next()
+    return new NextResponse('Not found', { status: 404 })
+  }
+  if (agentPortalHost && isAgentPortalPath(pathname)) {
+    return new NextResponse('Not found', { status: 404 })
+  }
 
   const gated = FEATURE_GATED_API_PREFIXES.find(g => pathname === g.prefix || pathname.startsWith(g.prefix + '/'))
   if (gated) {
