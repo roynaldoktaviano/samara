@@ -16,6 +16,7 @@ import {
   ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 const ACCENT = '#bdac7e'
 
@@ -225,38 +226,45 @@ export default function MediaKit() {
     return scopedFiles.filter(f => f.folderId === folderId).length
   }
 
-  async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || !activeCategoryId) return
+  // Uploads every picked/dropped file independently (own Blob object + own MediaFile row) in
+  // parallel, then reports one summary toast rather than one per file.
+  async function handleFilesPicked(fileList: FileList) {
+    const files = Array.from(fileList)
+    if (!files.length || !activeCategoryId) return
     setUploading(true)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('yachtId', selectedYachtId)
-      form.append('categoryId', activeCategoryId)
-      const uploadRes = await fetch('/api/marketing/media/upload', { method: 'POST', body: form })
-      const uploadData = await uploadRes.json().catch(() => ({}))
-      if (!uploadRes.ok) { toast.error(uploadData.error ?? 'Upload failed'); return }
+      const results = await Promise.all(files.map(async file => {
+        try {
+          const form = new FormData()
+          form.append('file', file)
+          form.append('yachtId', selectedYachtId)
+          form.append('categoryId', activeCategoryId)
+          const uploadRes = await fetch('/api/marketing/media/upload', { method: 'POST', body: form })
+          const uploadData = await uploadRes.json().catch(() => ({}))
+          if (!uploadRes.ok) return false
 
-      const saveRes = await fetch('/api/marketing/media', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          yachtId: selectedYachtId || null,
-          categoryId: activeCategoryId,
-          type: file.type.startsWith('image/') ? 'image' : 'document',
-          name: file.name,
-          url: uploadData.url,
-          sizeBytes: uploadData.sizeBytes,
-          mimeType: uploadData.mimeType,
-          folderId: activeFolderId,
-        }),
-      })
-      if (!saveRes.ok) { const d = await saveRes.json().catch(() => ({})); toast.error(d.error ?? 'Failed to save file'); return }
-      toast.success(`${file.name} uploaded`)
-      await fetchFiles()
-    } catch (e) { console.error(e); toast.error('Upload failed') }
-    finally { setUploading(false) }
+          const saveRes = await fetch('/api/marketing/media', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              yachtId: selectedYachtId || null,
+              categoryId: activeCategoryId,
+              type: file.type.startsWith('image/') ? 'image' : 'document',
+              name: file.name,
+              url: uploadData.url,
+              sizeBytes: uploadData.sizeBytes,
+              mimeType: uploadData.mimeType,
+              folderId: activeFolderId,
+            }),
+          })
+          return saveRes.ok
+        } catch (e) { console.error(e); return false }
+      }))
+      const successCount = results.filter(Boolean).length
+      const failCount = results.length - successCount
+      if (successCount) toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded`)
+      if (failCount) toast.error(`${failCount} file${failCount > 1 ? 's' : ''} failed to upload`)
+      if (successCount) await fetchFiles()
+    } finally { setUploading(false) }
   }
 
   function openLinkDialog() {
@@ -459,6 +467,8 @@ export default function MediaKit() {
     finally { setDeletingPromoId(null) }
   }
 
+  const { isDragging, dropProps } = useFileDrop(handleFilesPicked, !activeCategoryId || uploading)
+
   return (
     <div className="space-y-5">
       <div>
@@ -616,7 +626,8 @@ export default function MediaKit() {
               <Button size="sm" variant="outline" onClick={openNewFolderDialog}>
                 <FolderPlus className="h-3.5 w-3.5 mr-1.5" /> New Folder
               </Button>
-              <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFilePicked} />
+              <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
+                onChange={e => { if (e.target.files?.length) handleFilesPicked(e.target.files); e.target.value = '' }} />
               <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
                 {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
                 Upload
@@ -627,28 +638,41 @@ export default function MediaKit() {
             </div>
           </div>
 
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : currentFiles.length === 0 && currentFolders.length === 0 ? (
-            <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nothing here yet.</CardContent></Card>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {currentFolders.map(folder => (
-                <Card key={folder.id} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
-                  <CardContent className="py-3 px-4 flex items-center gap-3">
-                    <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{folder.name}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {folderFileCount(folder.id)} file{folderFileCount(folder.id) === 1 ? '' : 's'}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {currentFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
-            </div>
-          )}
+          <div
+            {...dropProps}
+            className={cn(
+              'rounded-xl transition-colors',
+              isDragging && 'ring-2 ring-[#bdac7e] ring-offset-2 bg-[#bdac7e]/5'
+            )}
+          >
+            {isDragging && (
+              <div className="rounded-xl border-2 border-dashed border-[#bdac7e] py-10 text-center text-sm font-medium" style={{ color: ACCENT }}>
+                Drop files to upload
+              </div>
+            )}
+            {isDragging ? null : loading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : currentFiles.length === 0 && currentFolders.length === 0 ? (
+              <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nothing here yet — drag files here or click Upload.</CardContent></Card>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {currentFolders.map(folder => (
+                  <Card key={folder.id} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
+                    <CardContent className="py-3 px-4 flex items-center gap-3">
+                      <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{folder.name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {folderFileCount(folder.id)} file{folderFileCount(folder.id) === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {currentFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
+              </div>
+            )}
+          </div>
         </>
       )}
 
