@@ -130,14 +130,11 @@ export default function MediaKit() {
   const [promoTitle, setPromoTitle] = useState('')
   const [promoDescription, setPromoDescription] = useState('')
   const [promoImageUrl, setPromoImageUrl] = useState('')
-  const [promoImageMeta, setPromoImageMeta] = useState<{ sizeBytes: number; mimeType: string } | null>(null)
   const [promoCtaLabel, setPromoCtaLabel] = useState('')
   const [promoCtaUrl, setPromoCtaUrl] = useState('')
   const [promoSaving, setPromoSaving] = useState(false)
-  const [promoUploading, setPromoUploading] = useState(false)
   const [activatingPromoId, setActivatingPromoId] = useState<string | null>(null)
   const [deletingPromoId, setDeletingPromoId] = useState<string | null>(null)
-  const promoFileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchYachts = useCallback(async () => {
     try {
@@ -395,7 +392,6 @@ export default function MediaKit() {
     setPromoTitle('')
     setPromoDescription('')
     setPromoImageUrl('')
-    setPromoImageMeta(null)
     setPromoCtaLabel('')
     setPromoCtaUrl('')
     setPromoDialogOpen(true)
@@ -406,29 +402,9 @@ export default function MediaKit() {
     setPromoTitle(p.title)
     setPromoDescription(p.description ?? '')
     setPromoImageUrl(p.imageUrl ?? '')
-    setPromoImageMeta(null)
     setPromoCtaLabel(p.ctaLabel ?? '')
     setPromoCtaUrl(p.ctaUrl ?? '')
     setPromoDialogOpen(true)
-  }
-
-  async function handlePromoImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setPromoUploading(true)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('yachtId', selectedYachtId)
-      form.append('categoryId', 'promo')
-      const res = await fetch('/api/marketing/media/upload', { method: 'POST', body: form })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
-      setPromoImageUrl(data.url)
-      setPromoImageMeta({ sizeBytes: data.sizeBytes, mimeType: data.mimeType })
-    } catch (e) { console.error(e); toast.error('Upload failed') }
-    finally { setPromoUploading(false) }
   }
 
   async function handleSavePromo() {
@@ -438,9 +414,7 @@ export default function MediaKit() {
       const body = {
         title: promoTitle.trim(),
         description: promoDescription.trim() || null,
-        imageUrl: promoImageUrl || null,
-        imageSizeBytes: promoImageMeta?.sizeBytes ?? null,
-        imageMimeType: promoImageMeta?.mimeType ?? null,
+        imageUrl: promoImageUrl.trim() || null,
         ctaLabel: promoCtaLabel.trim() || null,
         ctaUrl: promoCtaUrl.trim() || null,
       }
@@ -724,21 +698,9 @@ export default function MediaKit() {
               <Textarea id="promo-description" value={promoDescription} onChange={e => setPromoDescription(e.target.value)} placeholder="Short promo copy shown under the title…" rows={3} />
             </div>
             <div className="space-y-1.5">
-              <Label>Image</Label>
-              {promoImageUrl ? (
-                <div className="flex items-center gap-3">
-                  <img src={promoImageUrl} alt="Promo" className="h-16 w-24 object-cover rounded border" />
-                  <Button size="sm" variant="outline" onClick={() => { setPromoImageUrl(''); setPromoImageMeta(null) }}>Remove</Button>
-                </div>
-              ) : (
-                <>
-                  <input ref={promoFileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePromoImagePicked} />
-                  <Button size="sm" variant="outline" disabled={promoUploading} onClick={() => promoFileInputRef.current?.click()}>
-                    {promoUploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                    Upload image
-                  </Button>
-                </>
-              )}
+              <Label htmlFor="promo-image-url">Image URL</Label>
+              <Input id="promo-image-url" value={promoImageUrl} onChange={e => setPromoImageUrl(e.target.value)} placeholder="https://…" />
+              {promoImageUrl && <img src={promoImageUrl} alt="Promo" className="h-16 w-24 object-cover rounded border mt-1.5" />}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

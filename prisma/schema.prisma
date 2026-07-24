@@ -482,8 +482,6 @@ model Promo {
   title          String
   description    String?
   imageUrl       String?
-  imageSizeBytes Int?
-  imageMimeType  String?
   ctaLabel       String?
   ctaUrl         String?
   isActive       Boolean  @default(false)
@@ -1544,6 +1542,7 @@ model POPaymentRequest {
   amount            Float
   notePhotoKeys     String[]               @default([])
   notes             String?
+  notaDate          DateTime?
   status            POPaymentRequestStatus @default(PENDING)
   paymentMethod     String                 @default("TRANSFER")
   paidAt            DateTime?
@@ -1573,6 +1572,7 @@ model POReimbursement {
   amount            Float
   notePhotoKeys     String[]              @default([])
   notes             String?
+  notaDate          DateTime?
   requesterName     String
   bankName          String
   accountNumber     String
@@ -1629,6 +1629,7 @@ model DeliveryFeePaymentRequest {
   amount            Float
   notePhotoKeys     String[]                        @default([])
   notes             String?
+  notaDate          DateTime?
   status            DeliveryFeePaymentRequestStatus @default(PENDING)
   paymentMethod     String                          @default("TRANSFER")
   paidAt            DateTime?
@@ -1658,6 +1659,7 @@ model DeliveryFeeReimbursement {
   amount            Float
   notePhotoKeys     String[]                       @default([])
   notes             String?
+  notaDate          DateTime?
   requesterName     String
   bankName          String
   accountNumber     String

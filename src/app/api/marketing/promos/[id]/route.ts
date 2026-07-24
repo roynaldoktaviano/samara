@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
-import { del } from '@vercel/blob'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -30,7 +29,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const body = await request.json().catch(() => ({}))
-    const { title, description, imageUrl, imageSizeBytes, imageMimeType, ctaLabel, ctaUrl, isActive } = body
+    const { title, description, imageUrl, ctaLabel, ctaUrl, isActive } = body
 
     if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -40,8 +39,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(title !== undefined ? { title: title.trim() } : {}),
       ...(description !== undefined ? { description: description || null } : {}),
       ...(imageUrl !== undefined ? { imageUrl: imageUrl || null } : {}),
-      ...(imageSizeBytes !== undefined ? { imageSizeBytes: typeof imageSizeBytes === 'number' ? imageSizeBytes : null } : {}),
-      ...(imageMimeType !== undefined ? { imageMimeType: imageMimeType || null } : {}),
       ...(ctaLabel !== undefined ? { ctaLabel: ctaLabel || null } : {}),
       ...(ctaUrl !== undefined ? { ctaUrl: ctaUrl || null } : {}),
     }
@@ -74,7 +71,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to update promo' }, { status: 500 }) }
 }
 
-// DELETE — remove a promo draft, and its Blob image if it has one.
+// DELETE — remove a promo draft. Its image is an external link (not our own upload), so
+// there's no Blob object to clean up.
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAccess()
   if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -83,10 +81,6 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params
     const promo = await db.promo.findUnique({ where: { id } })
     if (!promo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-    if (promo.imageUrl) {
-      await del(promo.imageUrl).catch(e => console.error('[marketing/promos] blob delete failed:', e))
-    }
 
     await db.promo.delete({ where: { id } })
     logActivity({

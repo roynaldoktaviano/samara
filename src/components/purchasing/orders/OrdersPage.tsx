@@ -9,12 +9,12 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 
 
 interface PaymentRequest {
-  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; status: string; paymentMethod: string
+  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
 interface Reimbursement {
-  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; status: string
+  id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string
   requesterName: string; bankName: string; accountNumber: string; accountHolderName: string
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
@@ -35,7 +35,7 @@ interface PurchaseOrder {
   deliveryLocationId: string | null; deliveryLocation: DeliveryLocation | null
   itemCount: number; totalOrdered: number; totalReceived: number; fullyReceivedCount: number
   items: OrderItem[]
-  notes: string | null; orderedAt: string; expectedAt: string | null
+  notes: string | null; orderedAt: string; expectedAt: string | null; dispatchedAt: string | null
   lastReceivedAt: string | null; lastReceivedBy: string | null
   createdByName: string | null
   requestedByEmployeeId: string | null
@@ -59,7 +59,6 @@ interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
-  dispatchedAt?: string | null
   dispatchedByName?: string | null
   confirmedByName?: string | null
   request?: { prNumber: string; createdAt: string } | null
@@ -282,6 +281,23 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
 const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
+// Where the goods physically are right now — distinct from the static final destination.
+// For routed POs mid-transit, reuses the server-computed currentLegLabel (which already
+// tracks the open transit leg); for a direct (no transit stops) PO, derives it from
+// status + dispatchedAt instead, since there's no per-leg data to draw from.
+function currentLocationLabel(o: PurchaseOrder): string {
+  if (o.status === 'CANCELLED') return '—'
+  if (o.currentLegLabel) return o.currentLegLabel.replace(/^On deliver to/, 'On the way to')
+  if (o.status === 'IN_TRANSIT' && o.dispatchedAt) {
+    return o.deliveryLocation ? `On the way to ${o.deliveryLocation.name}` : 'In transit'
+  }
+  if (o.status === 'PARTIALLY_RECEIVED' || o.status === 'RECEIVED') {
+    return o.deliveryLocation?.name ?? '—'
+  }
+  // DRAFT / ORDERED — ordered but not dispatched yet
+  return o.deliveryLocation ? `Not shipped yet (→ ${o.deliveryLocation.name})` : 'Not shipped yet'
+}
+
 const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid' }
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -720,6 +736,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentPhotos, setPaymentPhotos] = useState<string[]>([])
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentNotaDate, setPaymentNotaDate] = useState('')
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentError, setPaymentError] = useState('')
   const [paymentPhotoView, setPaymentPhotoView] = useState<string | null>(null)
@@ -730,6 +747,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [reimburseAmount, setReimburseAmount] = useState('')
   const [reimbursePhotos, setReimbursePhotos] = useState<string[]>([])
   const [reimburseNotes, setReimburseNotes] = useState('')
+  const [reimburseNotaDate, setReimburseNotaDate] = useState('')
   const [reimburseRequesterName, setReimburseRequesterName] = useState('')
   const [reimburseBankName, setReimburseBankName] = useState('')
   const [reimburseAccountNumber, setReimburseAccountNumber] = useState('')
@@ -987,9 +1005,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             <tr>
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
               <th className="text-left px-4 py-3 font-medium w-72">Items</th>
-              <th className="text-left px-4 py-3 font-medium">Received</th>
               <th className="text-left px-4 py-3 font-medium w-28">Supplier</th>
-              <th className="text-left px-4 py-3 font-medium">Destination</th>
+              <th className="text-left px-4 py-3 font-medium">Current Location</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Payment</th>
@@ -1006,7 +1023,6 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                   <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
@@ -1016,9 +1032,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </tr>
               ))}
             </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">{hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
+              : visibleOrders.length === 0 ? <tr><td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">{hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
               : pageOrders.map(o => {
-                const pct = o.totalOrdered > 0 ? Math.min(100, (o.totalReceived / o.totalOrdered) * 100) : 0
                 return (
                   <tr key={o.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(o)}>
                     <td className="px-4 py-3 font-mono text-xs font-medium">{o.poNumber}</td>
@@ -1036,28 +1051,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         </button>
                       )}
                     </td>
-                    <td className="px-4 py-3 min-w-30">
-                      {o.itemCount === 0 || o.status === 'DRAFT' ? (
-                        <span className="text-muted-foreground/40 text-xs">—</span>
-                      ) : (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">
-                            <span className={o.fullyReceivedCount > 0 ? 'font-semibold text-foreground' : ''}>{o.fullyReceivedCount}</span>/{o.itemCount} lines
-                          </p>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden w-24">
-                            <div
-                              className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-transparent'}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </td>
                     <td className="px-4 py-3 max-w-28 truncate text-xs" title={o.supplierName ?? undefined}>{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {o.deliveryLocation ? (
-                        <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{o.deliveryLocation.name}</span>
-                      ) : '—'}
+                      <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(o)}</span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.orderedAt)}</td>
                     <td className="px-4 py-3">
@@ -1610,12 +1606,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       : `/api/purchasing/orders/${detail.id}/payment-request`
     const res = await fetch(url, {
       method: paymentEditId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKeys: paymentPhotos, notes: paymentNotes || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
+      body: JSON.stringify({ amount: Number(paymentAmount), notePhotoKeys: paymentPhotos, notes: paymentNotes || undefined, notaDate: paymentNotaDate || undefined, paidByPurchasing: paymentMode === 'DIRECT' }),
     })
     const data = await res.json()
     if (!res.ok) { setPaymentError(data.error ?? 'Failed'); setPaymentSaving(false); return }
     setPaymentSaving(false); setPaymentModal(false)
-    setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentEditId(null)
+    setPaymentAmount(''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentNotaDate(''); setPaymentEditId(null)
     openDetail(detail); load()
   }
 
@@ -1634,7 +1630,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     const res = await fetch(url, {
       method: reimburseEditId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        amount: Number(reimburseAmount), notePhotoKeys: reimbursePhotos, notes: reimburseNotes || undefined,
+        amount: Number(reimburseAmount), notePhotoKeys: reimbursePhotos, notes: reimburseNotes || undefined, notaDate: reimburseNotaDate || undefined,
         requesterName: reimburseRequesterName, bankName: reimburseBankName,
         accountNumber: reimburseAccountNumber, accountHolderName: reimburseAccountHolderName,
       }),
@@ -1648,7 +1644,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       }).catch(() => {})
     }
     setReimburseSaving(false); setReimburseModal(false)
-    setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes('')
+    setReimburseAmount(''); setReimbursePhotos([]); setReimburseNotes(''); setReimburseNotaDate('')
     setReimburseRequesterName(''); setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName(''); setReimburseEditId(null)
     setReimburseSaveAccount(false)
     openDetail(detail); load()
@@ -1678,10 +1674,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       const p = latestRecord
       setPaymentMode(p.paymentMethod === 'CARD' ? 'DIRECT' : 'REQUEST')
       setPaymentAmount(String(p.amount)); setPaymentPhotos(p.notePhotoKeys); setPaymentNotes(p.notes ?? '')
+      setPaymentNotaDate(p.notaDate ? toDateInputValue(p.notaDate) : '')
       setPaymentError(''); setPaymentEditId(p.id); setPaymentModal(true)
     } else {
       const r = latestRecord
       setReimburseAmount(String(r.amount)); setReimbursePhotos(r.notePhotoKeys); setReimburseNotes(r.notes ?? '')
+      setReimburseNotaDate(r.notaDate ? toDateInputValue(r.notaDate) : '')
       setReimburseRequesterName(r.requesterName); setReimburseBankName(r.bankName)
       setReimburseAccountNumber(r.accountNumber); setReimburseAccountHolderName(r.accountHolderName)
       setReimburseError(''); setReimburseEditId(r.id); setReimburseSaveAccount(false); setReimburseModal(true)
@@ -1813,16 +1811,16 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             )}
             {canTransit && detail.status !== 'DRAFT' && canRequestMorePayment && (
               <>
-                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('REQUEST'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentNotaDate(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <Wallet className="h-3.5 w-3.5" /> {hasAnyPaymentRecord ? 'Request Payment (Balance)' : 'Request Payment'}
                 </button>
-                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
+                <button onClick={() => { setPaymentMode('DIRECT'); setPaymentAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setPaymentPhotos([]); setPaymentNotes(''); setPaymentNotaDate(''); setPaymentError(''); setPaymentEditId(null); setPaymentModal(true) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Debit Paid
                 </button>
                 <button onClick={() => {
-                  setReimburseAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setReimbursePhotos([]); setReimburseNotes('')
+                  setReimburseAmount(detail.remaining > 0 ? String(detail.remaining) : ''); setReimbursePhotos([]); setReimburseNotes(''); setReimburseNotaDate('')
                   setReimburseRequesterName((session?.user as { name?: string })?.name ?? '')
                   setReimburseBankName(''); setReimburseAccountNumber(''); setReimburseAccountHolderName('')
                   setReimburseError(''); setReimburseEditId(null); setReimburseSaveAccount(false); setReimburseModal(true)
@@ -2418,6 +2416,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </div>
 
                 <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Nota Date</label>
+                  <input type="date"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    value={paymentNotaDate} onChange={e => setPaymentNotaDate(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
                   <label className="text-sm font-medium">Notes</label>
                   <textarea rows={2}
                     className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -2527,6 +2532,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
                   <MultiFilePicker files={reimbursePhotos} onChange={setReimbursePhotos} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Nota Date</label>
+                  <input type="date"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    value={reimburseNotaDate} onChange={e => setReimburseNotaDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">

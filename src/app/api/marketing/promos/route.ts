@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json().catch(() => ({}))
-    const { yachtId, title, description, imageUrl, imageSizeBytes, imageMimeType, ctaLabel, ctaUrl } = body
+    const { yachtId, title, description, imageUrl, ctaLabel, ctaUrl } = body
 
     if (!title || typeof title !== 'string' || !title.trim()) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -50,8 +50,6 @@ export async function POST(request: NextRequest) {
         title: title.trim(),
         description: description || null,
         imageUrl: imageUrl || null,
-        imageSizeBytes: typeof imageSizeBytes === 'number' ? imageSizeBytes : null,
-        imageMimeType: imageMimeType || null,
         ctaLabel: ctaLabel || null,
         ctaUrl: ctaUrl || null,
         isActive: false,

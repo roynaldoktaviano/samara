@@ -35,7 +35,14 @@ export function summarizePOPayments(grandTotal: number, paymentRequests: POPayme
   const requestedTotal = all.reduce((s, p) => s + p.amount, 0)
   const paidTotal = all.filter(p => p.status === 'PAID').reduce((s, p) => s + p.amount, 0)
   const remaining = Math.max(0, grandTotal - requestedTotal)
-  const paymentStatus = paidTotal <= 0 ? 'UNPAID' : paidTotal >= grandTotal ? 'PAID' : 'PARTIALLY_PAID'
+  // A request/reimbursement can sit PENDING (submitted, awaiting Finance approval) before
+  // anything is actually PAID — that's distinct from UNPAID (nothing submitted at all yet).
+  const hasPendingRequest = all.some(p => p.status !== 'PAID')
+  const paymentStatus =
+    paidTotal > 0 && paidTotal >= grandTotal ? 'PAID' :
+    paidTotal > 0 ? 'PARTIALLY_PAID' :
+    hasPendingRequest ? 'PENDING' :
+    'UNPAID'
   return { requestedTotal, paidTotal, remaining, paymentStatus }
 }
 

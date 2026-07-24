@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!fee) return NextResponse.json({ error: 'Delivery fee not found' }, { status: 404 })
 
   const body = await req.json()
-  const { amount, notePhotoKeys, notes, requesterName, bankName, accountNumber, accountHolderName } = body
+  const { amount, notePhotoKeys, notes, notaDate, requesterName, bankName, accountNumber, accountHolderName } = body
   if (!amount || Number(amount) <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
   if (!Array.isArray(notePhotoKeys) || notePhotoKeys.length === 0) return NextResponse.json({ error: 'At least one receipt/nota photo is required' }, { status: 400 })
   if (!requesterName?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       amount: Number(amount),
       notePhotoKeys,
       notes: notes?.trim() || null,
+      notaDate: notaDate ? new Date(notaDate) : null,
       requesterName: requesterName.trim(),
       bankName: bankName.trim(),
       accountNumber: accountNumber.trim(),
