@@ -6,13 +6,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
 import {
   Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus,
-  ChevronLeft, Settings, Plus, Pencil, Check, X,
+  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -37,6 +38,19 @@ interface MediaFile {
   folderId: string | null
   createdAt: string
   uploadedBy: { name: string | null; email: string | null }
+}
+
+interface PromoRecord {
+  id: string
+  yachtId: string | null
+  yacht: { id: string; name: string } | null
+  title: string
+  description: string | null
+  imageUrl: string | null
+  ctaLabel: string | null
+  ctaUrl: string | null
+  isActive: boolean
+  createdAt: string
 }
 
 function formatSize(bytes: number | null) {
@@ -109,6 +123,22 @@ export default function MediaKit() {
   const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null)
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null)
 
+  // Agent Portal promo — shown as a popup on login (General) or on yacht pick (per-yacht)
+  const [promos, setPromos] = useState<PromoRecord[]>([])
+  const [promoDialogOpen, setPromoDialogOpen] = useState(false)
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null)
+  const [promoTitle, setPromoTitle] = useState('')
+  const [promoDescription, setPromoDescription] = useState('')
+  const [promoImageUrl, setPromoImageUrl] = useState('')
+  const [promoImageMeta, setPromoImageMeta] = useState<{ sizeBytes: number; mimeType: string } | null>(null)
+  const [promoCtaLabel, setPromoCtaLabel] = useState('')
+  const [promoCtaUrl, setPromoCtaUrl] = useState('')
+  const [promoSaving, setPromoSaving] = useState(false)
+  const [promoUploading, setPromoUploading] = useState(false)
+  const [activatingPromoId, setActivatingPromoId] = useState<string | null>(null)
+  const [deletingPromoId, setDeletingPromoId] = useState<string | null>(null)
+  const promoFileInputRef = useRef<HTMLInputElement>(null)
+
   const fetchYachts = useCallback(async () => {
     try {
       const res = await fetch('/api/yachts')
@@ -139,7 +169,14 @@ export default function MediaKit() {
     } catch (e) { console.error(e) }
   }, [])
 
-  useEffect(() => { fetchYachts(); fetchFiles(); fetchFolders(); fetchCategories() }, [fetchYachts, fetchFiles, fetchFolders, fetchCategories])
+  const fetchPromos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/marketing/promos')
+      if (res.ok) setPromos(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  useEffect(() => { fetchYachts(); fetchFiles(); fetchFolders(); fetchCategories(); fetchPromos() }, [fetchYachts, fetchFiles, fetchFolders, fetchCategories, fetchPromos])
 
   useEffect(() => {
     if (!activeCategoryId && categories.length) setActiveCategoryId(categories[0].id)
@@ -151,6 +188,13 @@ export default function MediaKit() {
     const scoped = selectedYachtId ? files.filter(f => f.yachtId === selectedYachtId) : files.filter(f => !f.yachtId)
     return scoped.filter(f => f.categoryId === activeCategoryId)
   }, [files, selectedYachtId, activeCategoryId])
+
+  const scopedPromos = useMemo(
+    () => promos
+      .filter(p => (p.yachtId ?? '') === selectedYachtId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [promos, selectedYachtId]
+  )
 
   const scopedFolders = useMemo(
     () => mediaFolders.filter(f => (f.yachtId ?? '') === selectedYachtId && f.categoryId === activeCategoryId),
@@ -346,6 +390,101 @@ export default function MediaKit() {
     finally { setDeletingCategoryId(null) }
   }
 
+  function openCreatePromoDialog() {
+    setEditingPromoId(null)
+    setPromoTitle('')
+    setPromoDescription('')
+    setPromoImageUrl('')
+    setPromoImageMeta(null)
+    setPromoCtaLabel('')
+    setPromoCtaUrl('')
+    setPromoDialogOpen(true)
+  }
+
+  function openEditPromoDialog(p: PromoRecord) {
+    setEditingPromoId(p.id)
+    setPromoTitle(p.title)
+    setPromoDescription(p.description ?? '')
+    setPromoImageUrl(p.imageUrl ?? '')
+    setPromoImageMeta(null)
+    setPromoCtaLabel(p.ctaLabel ?? '')
+    setPromoCtaUrl(p.ctaUrl ?? '')
+    setPromoDialogOpen(true)
+  }
+
+  async function handlePromoImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setPromoUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('yachtId', selectedYachtId)
+      form.append('categoryId', 'promo')
+      const res = await fetch('/api/marketing/media/upload', { method: 'POST', body: form })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
+      setPromoImageUrl(data.url)
+      setPromoImageMeta({ sizeBytes: data.sizeBytes, mimeType: data.mimeType })
+    } catch (e) { console.error(e); toast.error('Upload failed') }
+    finally { setPromoUploading(false) }
+  }
+
+  async function handleSavePromo() {
+    if (!promoTitle.trim()) { toast.error('Title is required'); return }
+    setPromoSaving(true)
+    try {
+      const body = {
+        title: promoTitle.trim(),
+        description: promoDescription.trim() || null,
+        imageUrl: promoImageUrl || null,
+        imageSizeBytes: promoImageMeta?.sizeBytes ?? null,
+        imageMimeType: promoImageMeta?.mimeType ?? null,
+        ctaLabel: promoCtaLabel.trim() || null,
+        ctaUrl: promoCtaUrl.trim() || null,
+      }
+      const res = editingPromoId
+        ? await fetch(`/api/marketing/promos/${editingPromoId}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          })
+        : await fetch('/api/marketing/promos', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...body, yachtId: selectedYachtId || null }),
+          })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Failed to save promo'); return }
+      toast.success(editingPromoId ? 'Promo updated' : 'Promo created')
+      setPromoDialogOpen(false)
+      await fetchPromos()
+    } catch (e) { console.error(e); toast.error('Failed to save promo') }
+    finally { setPromoSaving(false) }
+  }
+
+  async function handleActivatePromo(p: PromoRecord) {
+    setActivatingPromoId(p.id)
+    try {
+      const res = await fetch(`/api/marketing/promos/${p.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to activate promo'); return }
+      toast.success('Promo activated')
+      await fetchPromos()
+    } catch (e) { console.error(e); toast.error('Failed to activate promo') }
+    finally { setActivatingPromoId(null) }
+  }
+
+  async function handleDeletePromo(p: PromoRecord) {
+    if (!confirm(`Delete promo "${p.title}"?`)) return
+    setDeletingPromoId(p.id)
+    try {
+      const res = await fetch(`/api/marketing/promos/${p.id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to delete promo'); return }
+      await fetchPromos()
+    } catch (e) { console.error(e); toast.error('Failed to delete promo') }
+    finally { setDeletingPromoId(null) }
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -366,6 +505,79 @@ export default function MediaKit() {
           </Select>
         </div>
       </div>
+
+      <Card>
+        <CardContent className="py-4 px-5 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold flex items-center gap-1.5">
+                <Megaphone className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+                Agent Portal Promo — {selectedYachtId ? (yachts.find(y => y.id === selectedYachtId)?.name ?? '') : 'General'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {selectedYachtId
+                  ? 'Shown as a popup when an agent picks this yacht in the Agent Portal. Only one draft can be active at a time.'
+                  : 'Shown as a popup right after an agent logs into the Agent Portal. Only one draft can be active at a time.'}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={openCreatePromoDialog}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Promo
+            </Button>
+          </div>
+
+          {scopedPromos.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No promo drafts for this scope yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {scopedPromos.map(p => (
+                <div key={p.id} className="flex items-center gap-3 rounded-lg border px-3 py-2">
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt={p.title} className="h-10 w-14 object-cover rounded shrink-0" />
+                  ) : (
+                    <div className="h-10 w-14 rounded bg-muted flex items-center justify-center shrink-0">
+                      <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{p.title}</p>
+                    {p.isActive && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: ACCENT }}>
+                        <Star className="h-2.5 w-2.5 fill-current" /> Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {!p.isActive && (
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-xs px-2.5"
+                        disabled={activatingPromoId === p.id}
+                        onClick={() => handleActivatePromo(p)}
+                      >
+                        {activatingPromoId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Set Active'}
+                      </Button>
+                    )}
+                    <button
+                      onClick={() => openEditPromoDialog(p)}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      title="Edit"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePromo(p)}
+                      disabled={deletingPromoId === p.id}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-red-600 transition-colors"
+                      title="Delete"
+                    >
+                      {deletingPromoId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex items-center justify-between gap-3 border-b">
         <div className="flex gap-x-6 gap-y-2 flex-wrap">
@@ -487,6 +699,63 @@ export default function MediaKit() {
             <Button disabled={linkSaving} onClick={handleSaveLink} style={{ backgroundColor: ACCENT }} className="text-white">
               {linkSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Add Link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={promoDialogOpen} onOpenChange={setPromoDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Megaphone className="h-4 w-4 text-[#bdac7e]" /> {editingPromoId ? 'Edit Promo' : 'Add Promo'}</DialogTitle>
+            <DialogDescription>
+              {selectedYachtId
+                ? 'Shown as a popup in the Agent Portal when an agent picks this yacht.'
+                : 'Shown as a popup right after an agent logs into the Agent Portal.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="promo-title">Title</Label>
+              <Input id="promo-title" value={promoTitle} onChange={e => setPromoTitle(e.target.value)} placeholder="e.g. Low Season Special" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="promo-description">Description</Label>
+              <Textarea id="promo-description" value={promoDescription} onChange={e => setPromoDescription(e.target.value)} placeholder="Short promo copy shown under the title…" rows={3} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Image</Label>
+              {promoImageUrl ? (
+                <div className="flex items-center gap-3">
+                  <img src={promoImageUrl} alt="Promo" className="h-16 w-24 object-cover rounded border" />
+                  <Button size="sm" variant="outline" onClick={() => { setPromoImageUrl(''); setPromoImageMeta(null) }}>Remove</Button>
+                </div>
+              ) : (
+                <>
+                  <input ref={promoFileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePromoImagePicked} />
+                  <Button size="sm" variant="outline" disabled={promoUploading} onClick={() => promoFileInputRef.current?.click()}>
+                    {promoUploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                    Upload image
+                  </Button>
+                </>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="promo-cta-label">CTA button label</Label>
+                <Input id="promo-cta-label" value={promoCtaLabel} onChange={e => setPromoCtaLabel(e.target.value)} placeholder="e.g. Learn More" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="promo-cta-url">CTA URL</Label>
+                <Input id="promo-cta-url" value={promoCtaUrl} onChange={e => setPromoCtaUrl(e.target.value)} placeholder="https://…" />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoDialogOpen(false)}>Cancel</Button>
+            <Button disabled={promoSaving} onClick={handleSavePromo} style={{ backgroundColor: ACCENT }} className="text-white">
+              {promoSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {editingPromoId ? 'Save Changes' : 'Create Promo'}
             </Button>
           </DialogFooter>
         </DialogContent>

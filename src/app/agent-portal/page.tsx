@@ -48,6 +48,15 @@ interface MediaFile {
   folderId: string | null
 }
 
+interface PromoRecord {
+  id: string
+  title: string
+  description: string | null
+  imageUrl: string | null
+  ctaLabel: string | null
+  ctaUrl: string | null
+}
+
 function formatSize(bytes: number | null) {
   if (bytes == null) return null
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -142,6 +151,47 @@ function FullScreenLoader() {
   )
 }
 
+function PromoPopup({ promo, onClose }: { promo: PromoRecord; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+      onClick={onClose}
+    >
+      <div className="bg-white rounded-2xl overflow-hidden max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+        {promo.imageUrl && (
+          <div className="aspect-[16/9] bg-neutral-100">
+            <img src={promo.imageUrl} alt={promo.title} className="w-full h-full object-cover" />
+          </div>
+        )}
+        <div className="p-6">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-lg font-bold tracking-tight" style={{ fontFamily: "'Merriweather', serif" }}>{promo.title}</h3>
+            <button onClick={onClose} aria-label="Close" className="text-muted-foreground/70 hover:text-foreground transition-colors shrink-0">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {promo.description && <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{promo.description}</p>}
+          <div className="flex items-center gap-4 mt-5">
+            {promo.ctaLabel && promo.ctaUrl && (
+              <a
+                href={promo.ctaUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center justify-center text-sm font-semibold text-white px-5 py-2.5 rounded-full transition-colors"
+                style={{ background: GOLD }}
+                onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)}
+                onMouseLeave={e => (e.currentTarget.style.background = GOLD)}
+                onClick={onClose}
+              >
+                {promo.ctaLabel}
+              </a>
+            )}
+            <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">Dismiss</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentPortalPage() {
   const [step, setStep] = useState<Step>('login')
   const [checkingSession, setCheckingSession] = useState(true)
@@ -153,6 +203,8 @@ export default function AgentPortalPage() {
   const [yachts, setYachts] = useState<YachtOption[]>([])
   const [yachtsLoading, setYachtsLoading] = useState(false)
   const [agentName, setAgentName] = useState('')
+  const [generalPromo, setGeneralPromo] = useState<PromoRecord | null>(null)
+  const [yachtPromo, setYachtPromo] = useState<PromoRecord | null>(null)
 
   const selectedYacht = useMemo(() => yachts.find(y => y.id === yachtId) ?? null, [yachts, yachtId])
 
@@ -163,6 +215,15 @@ export default function AgentPortalPage() {
       if (res.ok) setYachts(await res.json())
     } catch (e) { console.error(e) }
     finally { setYachtsLoading(false) }
+  }, [])
+
+  // Fired right when an agent lands on the yacht screen (fresh login or session bootstrap
+  // on refresh) — shows the fleet-wide "General" promo popup, if one's currently active.
+  const loadGeneralPromo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent-portal/promos')
+      setGeneralPromo(res.ok ? await res.json() : null)
+    } catch (e) { console.error(e) }
   }, [])
 
   // Session bootstrap: if a valid cookie already exists (page refresh), skip straight to
@@ -176,12 +237,13 @@ export default function AgentPortalPage() {
           setAgentName(data.agentName ?? '')
           await loadYachts()
           setStep('yacht')
+          loadGeneralPromo()
         }
       } finally {
         setCheckingSession(false)
       }
     })()
-  }, [loadYachts])
+  }, [loadYachts, loadGeneralPromo])
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
@@ -205,6 +267,7 @@ export default function AgentPortalPage() {
       setPassword('')
       await loadYachts()
       setStep('yacht')
+      loadGeneralPromo()
     } finally {
       setLoggingIn(false)
     }
@@ -218,6 +281,8 @@ export default function AgentPortalPage() {
     setYachtId(null)
     setYachts([])
     setAgentName('')
+    setGeneralPromo(null)
+    setYachtPromo(null)
     setStep('login')
   }
 
@@ -238,7 +303,14 @@ export default function AgentPortalPage() {
         yachts={yachts}
         loading={yachtsLoading}
         agentName={agentName}
-        onSelect={(id, target) => { setYachtId(id); setStep(target) }}
+        onSelect={(id, target) => {
+          setYachtId(id)
+          setStep(target)
+          fetch(`/api/agent-portal/promos?yachtId=${id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(setYachtPromo)
+            .catch(() => {})
+        }}
         onLogout={logout}
       />
     )
@@ -246,7 +318,13 @@ export default function AgentPortalPage() {
     body = <AgentPortalContentScreen step={step} setStep={setStep} logout={logout} agentName={agentName} selectedYacht={selectedYacht} />
   }
 
-  return <ContentProtection>{body}</ContentProtection>
+  return (
+    <ContentProtection>
+      {body}
+      {generalPromo && <PromoPopup promo={generalPromo} onClose={() => setGeneralPromo(null)} />}
+      {yachtPromo && <PromoPopup promo={yachtPromo} onClose={() => setYachtPromo(null)} />}
+    </ContentProtection>
+  )
 }
 
 // Deters casual copying — not real protection (nothing stops a phone camera or OS-level

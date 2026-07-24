@@ -778,6 +778,71 @@ export default function Home() {
                 )
               })
 
+              // Shared collapsible-section chrome used by both the Admin (domain groups)
+              // and Sales & Marketing (division groups) sidebars below.
+              const renderExpandableSection = (key: string, label: string, SectionIcon: React.ElementType, sectionItems: NavItem[], isSectionActive: boolean) => {
+                const isExpanded = isSectionActive || expandedGroups.has(key)
+
+                return (
+                  <div key={key} className={`rounded-lg transition-colors ${isExpanded ? 'bg-gray-50 pb-2' : ''}`}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        onClick={() => setExpandedGroups(prev => {
+                          const next = new Set(prev)
+                          if (next.has(key)) next.delete(key)
+                          else next.add(key)
+                          return next
+                        })}
+                        className={`!py-3.5 !px-3 rounded-lg text-[14px] transition-colors ${
+                          isSectionActive
+                            ? 'text-[#7a6a3f] font-semibold hover:bg-gray-100'
+                            : 'text-gray-800 font-semibold hover:bg-gray-100'
+                        }`}
+                      >
+                        <SectionIcon className={`h-[17px] w-[17px] shrink-0 ${isSectionActive ? 'text-[#8a744a]' : 'text-gray-500'}`} />
+                        <span className="flex-1 truncate">{label}</span>
+                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <AnimatePresence initial={false}>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18, ease: 'easeInOut' }}
+                          className="overflow-hidden"
+                        >
+                          {key === 'marketing' ? (
+                            <>
+                              <SidebarMenu className="pt-4 px-1 gap-4">
+                                {renderItems(sectionItems.filter(i => !i.subGroup), true)}
+                              </SidebarMenu>
+                              {MARKETING_SUB_GROUPS.map(sub => (
+                                (() => {
+                                  const subItems = sectionItems.filter(i => i.subGroup === sub.key)
+                                  if (!subItems.length) return null
+                                  return (
+                                    <div key={sub.key} className="mt-4">
+                                      <div className="pl-3 pb-2 flex items-center text-[10px] font-semibold uppercase tracking-wider text-[#a8874f]">
+                                        {sub.label}
+                                      </div>
+                                      <SidebarMenu className="px-1 gap-4">{renderItems(subItems, true)}</SidebarMenu>
+                                    </div>
+                                  )
+                                })()
+                              ))}
+                            </>
+                          ) : (
+                            <SidebarMenu className="pt-4 px-1 gap-4">{renderItems(sectionItems, true)}</SidebarMenu>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )
+              }
+
               if (isAdmin) {
                 const activeGroupKey = navigationItems.find(i => i.id === activeView)?.group
 
@@ -797,66 +862,43 @@ export default function Home() {
 
                         const GroupIcon = group.icon ?? Boxes
                         const isGroupActive = group.key === activeGroupKey
-                        const isExpanded = isGroupActive || expandedGroups.has(group.key)
+                        return renderExpandableSection(group.key, group.label, GroupIcon, groupItems, isGroupActive)
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroup>
+                )
+              }
 
-                        return (
-                          <div key={group.key} className={`rounded-lg transition-colors ${isExpanded ? 'bg-gray-50 pb-2' : ''}`}>
-                            <SidebarMenuItem>
-                              <SidebarMenuButton
-                                onClick={() => setExpandedGroups(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(group.key)) next.delete(group.key)
-                                  else next.add(group.key)
-                                  return next
-                                })}
-                                className={`!py-3.5 !px-3 rounded-lg text-[14px] transition-colors ${
-                                  isGroupActive
-                                    ? 'text-[#7a6a3f] font-semibold hover:bg-gray-100'
-                                    : 'text-gray-800 font-semibold hover:bg-gray-100'
-                                }`}
-                              >
-                                <GroupIcon className={`h-[17px] w-[17px] shrink-0 ${isGroupActive ? 'text-[#8a744a]' : 'text-gray-500'}`} />
-                                <span className="flex-1 truncate">{group.label}</span>
-                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                              </SidebarMenuButton>
-                            </SidebarMenuItem>
-                            <AnimatePresence initial={false}>
-                              {isExpanded && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.18, ease: 'easeInOut' }}
-                                  className="overflow-hidden"
-                                >
-                                  {group.key === 'marketing' ? (
-                                    <>
-                                      <SidebarMenu className="pt-4 px-1 gap-4">
-                                        {renderItems(groupItems.filter(i => !i.subGroup), true)}
-                                      </SidebarMenu>
-                                      {MARKETING_SUB_GROUPS.map(sub => (
-                                        (() => {
-                                          const subItems = groupItems.filter(i => i.subGroup === sub.key)
-                                          if (!subItems.length) return null
-                                          return (
-                                            <div key={sub.key} className="mt-4">
-                                              <div className="pl-3 pb-2 flex items-center text-[10px] font-semibold uppercase tracking-wider text-[#a8874f]">
-                                                {sub.label}
-                                              </div>
-                                              <SidebarMenu className="px-1 gap-4">{renderItems(subItems, true)}</SidebarMenu>
-                                            </div>
-                                          )
-                                        })()
-                                      ))}
-                                    </>
-                                  ) : (
-                                    <SidebarMenu className="pt-4 px-1 gap-4">{renderItems(groupItems, true)}</SidebarMenu>
-                                  )}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        )
+              // Combined Sales & Marketing accounts see both divisions' items merged into
+              // one nav list (roleMatches expands SALES_MARKETING into SALES + MARKETING),
+              // so bucket them back into two labeled, collapsible sections — same chrome as
+              // Admin's domain groups — instead of one flat, unlabeled list.
+              if (userRole === 'SALES_MARKETING') {
+                const divisionOf = (item: NavItem): 'sales' | 'marketing' | null => {
+                  if (item.group === 'main') return null
+                  if (item.roles.includes('SALES')) return 'sales'
+                  if (item.roles.includes('MARKETING')) return 'marketing'
+                  return null
+                }
+                const DIVISIONS: { key: 'sales' | 'marketing'; label: string; icon: React.ElementType }[] = [
+                  { key: 'sales',     label: 'Sales',     icon: Briefcase },
+                  { key: 'marketing', label: 'Marketing', icon: Send },
+                ]
+                const mainItems = visibleNavItems.filter(i => i.group === 'main')
+                const activeNavItem = navigationItems.find(i => i.id === activeView)
+                const activeDivision = activeNavItem ? divisionOf(activeNavItem) : null
+
+                return (
+                  <SidebarGroup className="!p-3 pt-4">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                      Menu
+                    </SidebarGroupLabel>
+                    <SidebarMenu className="gap-5">
+                      {renderItems(mainItems)}
+                      {DIVISIONS.map(division => {
+                        const divisionItems = visibleNavItems.filter(i => divisionOf(i) === division.key)
+                        if (!divisionItems.length) return null
+                        return renderExpandableSection(division.key, division.label, division.icon, divisionItems, division.key === activeDivision)
                       })}
                     </SidebarMenu>
                   </SidebarGroup>

@@ -121,6 +121,7 @@ model User {
   deliveryFeeReimbursementsPaid  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
   agentLeadsPromoted             AgentLead[]                 @relation("AgentLeadPromotedBy")
   mediaFilesUploaded             MediaFile[]
+  promosCreated                  Promo[]
 }
 
 model Customer {
@@ -401,6 +402,7 @@ model Yacht {
   destinationPrices YachtDestinationPrice[]
   mediaFiles        MediaFile[]
   mediaFolders      MediaFolder[]
+  promos            Promo[]
 }
 
 enum MediaFileType {
@@ -466,6 +468,31 @@ model MediaFolder {
   @@index([yachtId])
   @@index([categoryId])
   @@index([parentId])
+}
+
+// Multiple promo drafts allowed per scope (yachtId = null is "General", shown on Agent Portal
+// login; yachtId = <id> is that yacht's, shown when an agent picks it) — but at most one row
+// per scope has isActive: true at a time. Activating one deactivates its siblings (enforced in
+// the PATCH route via a transaction, not a DB constraint, since "only one active" is a
+// cross-row invariant Postgres unique indexes can't express here).
+model Promo {
+  id             String   @id @default(cuid())
+  yachtId        String?
+  yacht          Yacht?   @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  imageUrl       String?
+  imageSizeBytes Int?
+  imageMimeType  String?
+  ctaLabel       String?
+  ctaUrl         String?
+  isActive       Boolean  @default(false)
+  createdById    String
+  createdBy      User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([yachtId])
 }
 
 // Per-agent override of which Media Kit categories they see in the Agent Portal. An agent
