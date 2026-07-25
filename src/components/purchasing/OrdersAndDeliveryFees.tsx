@@ -4,14 +4,12 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import dynamic from 'next/dynamic'
 
-const RequestsPage = dynamic(() => import('./requests/RequestsPage'), { loading: () => <p className="text-sm text-muted-foreground py-8">Memuat...</p> })
 const OrdersPage   = dynamic(() => import('./orders/OrdersPage'),   { loading: () => <p className="text-sm text-muted-foreground py-8">Memuat...</p> })
 const DeliveryFeesPage = dynamic(() => import('./delivery-fees/DeliveryFeesPage'), { loading: () => <p className="text-sm text-muted-foreground py-8">Memuat...</p> })
 
 const TABS = [
-  { key: 'requests',      label: 'Purchase Requests' },
-  { key: 'orders',        label: 'Purchase Orders'   },
-  { key: 'delivery-fees', label: 'Delivery Fees'     },
+  { key: 'orders',        label: 'Purchase Orders' },
+  { key: 'delivery-fees', label: 'Delivery Fees'   },
 ] as const
 
 type Tab = typeof TABS[number]['key']
@@ -21,12 +19,12 @@ type Tab = typeof TABS[number]['key']
 // anywhere in this app, so this is plain prop-drilling: page.tsx holds the
 // pending id, forces this tab to 'orders', and OrdersPage opens it and reports
 // back via onOpenPoHandled so the same id doesn't re-trigger on next render.
-export default function RequestsAndOrders({ openPoId, onOpenPoHandled }: { openPoId?: string | null; onOpenPoHandled?: () => void } = {}) {
+export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled }: { openPoId?: string | null; onOpenPoHandled?: () => void } = {}) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   const isWarehouse = role === 'WAREHOUSE'
 
-  const [tab, setTab] = useState<Tab>(isWarehouse ? 'orders' : 'requests')
+  const [tab, setTab] = useState<Tab>('orders')
 
   useEffect(() => { if (openPoId) setTab('orders') }, [openPoId])
 
@@ -35,9 +33,9 @@ export default function RequestsAndOrders({ openPoId, onOpenPoHandled }: { openP
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">{isWarehouse ? 'Purchase Orders' : 'Requests & POs'}</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Purchase Orders</h2>
         <p className="text-muted-foreground text-sm mt-1">
-          {isWarehouse ? 'Daftar PO yang perlu diterima' : 'Purchase request, purchase order, dan delivery fee ke supplier'}
+          {isWarehouse ? 'Daftar PO yang perlu diterima' : 'Purchase order dan delivery fee ke supplier'}
         </p>
       </div>
       {!isWarehouse && (
@@ -50,7 +48,7 @@ export default function RequestsAndOrders({ openPoId, onOpenPoHandled }: { openP
           ))}
         </div>
       )}
-      {tab === 'requests' ? <RequestsPage /> : tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} openPoId={openPoId} onOpenPoHandled={onOpenPoHandled} /> : <DeliveryFeesPage />}
+      {tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} openPoId={openPoId} onOpenPoHandled={onOpenPoHandled} /> : <DeliveryFeesPage />}
     </div>
   )
 }

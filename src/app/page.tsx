@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -41,7 +41,8 @@ import PurchasingOverview from '@/components/purchasing/PurchasingOverview'
 import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
 import PurchasingItemTypesPage from '@/components/purchasing/item-types/ItemTypesPage'
 import PurchasingLocationsPage from '@/components/purchasing/locations/LocationsPage'
-import PurchasingRequestsPage from '@/components/purchasing/RequestsAndOrders'
+import PurchasingRequestsPage from '@/components/purchasing/requests/RequestsPage'
+import PurchasingOrdersPage from '@/components/purchasing/OrdersAndDeliveryFees'
 import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
 import PurchasingTransfersPage from '@/components/purchasing/transfers/TransfersPage'
 import PurchasingExceptionsPage from '@/components/purchasing/exceptions/ExceptionsPage'
@@ -87,7 +88,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -153,7 +154,8 @@ const navigationItems: NavItem[] = [
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
   { id: 'purchasing-overview',   label: 'Dashboard',        icon: ShoppingCart,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-requests',  label: 'Requests & POs',    icon: ClipboardList,  roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-requests',  label: 'Purchase Requests', icon: ClipboardList,  roles: ['ADMIN', 'PURCHASING'],               group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-orders',    label: 'Purchase Orders',   icon: FileText,       roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-stock',     label: 'Item by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
@@ -317,7 +319,7 @@ export default function Home() {
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
   // Lets Item by Location's "click PO number" deep-link into a specific PO's
-  // detail view on the Requests & POs page — there's no URL routing between
+  // detail view on the Purchase Orders page — there's no URL routing between
   // top-level views in this app, so this is the plain state-lifting equivalent.
   const [pendingPoId, setPendingPoId] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -381,6 +383,10 @@ export default function Home() {
 
   const [pendingRefunds, setPendingRefunds] = useState(0)
   const [pendingRequestOrders, setPendingRequestOrders] = useState(0)
+  const [pendingPOPayments, setPendingPOPayments] = useState(0)
+  const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
+  const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
+  const [pendingDeliveryFeeReimbursements, setPendingDeliveryFeeReimbursements] = useState(0)
 
   const fetchPendingPayments = useCallback(async () => {
     try {
@@ -419,13 +425,31 @@ export default function Home() {
     } catch { /* silent */ }
   }, [session])
 
+  const fetchPendingPurchasingFinance = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      const countPending = (data: unknown) => Array.isArray(data) ? data.filter((r: { status: string }) => r.status === 'PENDING').length : 0
+      const [poPayRes, poReimbRes, dfPayRes, dfReimbRes] = await Promise.all([
+        fetch('/api/finance/purchase-order-payments'),
+        fetch('/api/finance/po-reimbursements'),
+        fetch('/api/finance/delivery-fee-payments'),
+        fetch('/api/finance/delivery-fee-reimbursements'),
+      ])
+      if (poPayRes.ok) setPendingPOPayments(countPending(await poPayRes.json()))
+      if (poReimbRes.ok) setPendingPOReimbursements(countPending(await poReimbRes.json()))
+      if (dfPayRes.ok) setPendingDeliveryFeePayments(countPending(await dfPayRes.json()))
+      if (dfReimbRes.ok) setPendingDeliveryFeeReimbursements(countPending(await dfReimbRes.json()))
+    } catch { /* silent */ }
+  }, [session])
+
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingPurchasingFinance() }
     const interval = setInterval(refresh, 30000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingPurchasingFinance])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -517,8 +541,10 @@ export default function Home() {
       setCurrentView('finance-delivery-fee-payments')
     } else if (n.type === 'DF_REIMBURSEMENT_REQUESTED' && isFinance) {
       setCurrentView('finance-delivery-fee-reimbursements')
-    } else if (n.orderId || n.requestId || n.type.startsWith('PO_') || n.type.startsWith('DF_') || n.type === 'REQUEST_ORDER_SUBMITTED') {
+    } else if (n.requestId || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
+    } else if (n.orderId || n.type.startsWith('PO_') || n.type.startsWith('DF_')) {
+      setCurrentView('purchasing-orders')
     } else if (n.paymentId && isFinance) {
       setCurrentView('payments')
     } else if (n.bookingId || n.paymentId || n.type.startsWith('DEPOSIT_DUE')) {
@@ -620,11 +646,12 @@ export default function Home() {
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
       case 'purchasing-overview':   return <PurchasingOverview />
-      case 'purchasing-requests':  return <PurchasingRequestsPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
+      case 'purchasing-requests':  return <PurchasingRequestsPage />
+      case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />
-      case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-requests') }} />
+      case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-transfers':    return <PurchasingTransfersPage />
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
@@ -731,11 +758,19 @@ export default function Home() {
                 const showDot =
                   (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
                   (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0) ||
-                  (item.id === 'purchasing-requests' && pendingRequestOrders > 0)
+                  (item.id === 'purchasing-requests' && pendingRequestOrders > 0) ||
+                  (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
+                  (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
+                  (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
+                  (item.id === 'finance-delivery-fee-reimbursements' && pendingDeliveryFeeReimbursements > 0)
                 const dotCount =
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
                   item.id === 'purchasing-requests' ? pendingRequestOrders :
+                  item.id === 'finance-po-payments' ? pendingPOPayments :
+                  item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
+                  item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :
+                  item.id === 'finance-delivery-fee-reimbursements' ? pendingDeliveryFeeReimbursements :
                   0
                 const isItemActive = activeView === item.id
                 return (
