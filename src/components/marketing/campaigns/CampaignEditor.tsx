@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical, Search, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
 import AudiencePicker from '@/components/marketing/campaigns/AudiencePicker'
@@ -18,6 +18,7 @@ const STEPS = ['Details', 'Design', 'Audience', 'Review'] as const
 
 interface TemplateSummary { id: string; name: string }
 interface YachtSummary { id: string; name: string }
+interface EmailSenderOption { id: string; fromEmail: string; fromName: string }
 
 interface AudienceSourceState { enabled: boolean; search: string; excludeIds: Set<string> }
 
@@ -72,6 +73,55 @@ function audienceStateFromSources(sources: any): AudienceState {
   }
 }
 
+// Same idea as the reimbursement "saved bank account" picker: pick a From
+// email/name pair you've used before instead of retyping it every campaign.
+function EmailSenderCombobox({ senders, onPick }: {
+  senders: EmailSenderOption[]; onPick: (s: EmailSenderOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q
+    ? senders.filter(s => s.fromName.toLowerCase().includes(q) || s.fromEmail.toLowerCase().includes(q))
+    : senders
+
+  if (senders.length === 0) return null
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e] transition-colors">
+        <span className="text-muted-foreground">Pick a saved sender...</span>
+        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                  placeholder="Search saved senders..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
+              {opts.map(s => (
+                <button key={s.id} type="button" onClick={() => { onPick(s); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#bdac7e]/10 transition-colors">
+                  <p className="font-medium">{s.fromName || s.fromEmail}</p>
+                  <p className="text-xs text-muted-foreground">{s.fromEmail}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function CampaignEditor({
   open, onOpenChange, campaignId, onSaved, onSent,
 }: {
@@ -94,6 +144,8 @@ export default function CampaignEditor({
   const [settings, setSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const [yachts, setYachts] = useState<YachtSummary[]>([])
+  const [emailSenders, setEmailSenders] = useState<EmailSenderOption[]>([])
+  const [saveSender, setSaveSender] = useState(false)
   const [audience, setAudience] = useState<AudienceState>(emptyAudience())
   const [audienceCount, setAudienceCount] = useState<number | null>(null)
   const [audienceLoading, setAudienceLoading] = useState(false)
@@ -105,7 +157,7 @@ export default function CampaignEditor({
 
   const reset = useCallback(() => {
     setStep(0); setId(campaignId)
-    setName(''); setSubject(''); setPreviewText(''); setFromEmail(''); setFromName('')
+    setName(''); setSubject(''); setPreviewText(''); setFromEmail(''); setFromName(''); setSaveSender(false)
     setBlocks([createBlock('text'), createBlock('footer')])
     setSettings(DEFAULT_EMAIL_SETTINGS)
     setAudience(emptyAudience()); setAudienceCount(null); setScheduledAt('')
@@ -116,6 +168,7 @@ export default function CampaignEditor({
     if (!open) return
     fetch('/api/marketing/templates').then(r => r.ok ? r.json() : []).then(setTemplates).catch(() => {})
     fetch('/api/yachts').then(r => r.ok ? r.json() : []).then(list => setYachts(list.map((y: YachtSummary) => ({ id: y.id, name: y.name })))).catch(() => {})
+    fetch('/api/marketing/email-senders').then(r => r.ok ? r.json() : []).then(setEmailSenders).catch(() => {})
 
     if (campaignId) {
       setLoading(true)
@@ -217,6 +270,14 @@ export default function CampaignEditor({
       const data = await res.json()
       if (!res.ok) { toast.error(data?.error ?? 'Failed to save campaign'); return null }
       setId(data.id)
+      if (saveSender) {
+        fetch('/api/marketing/email-senders', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromEmail, fromName }),
+        }).then(r => r.ok ? r.json() : null).then(s => {
+          if (s) { setEmailSenders(prev => prev.some(p => p.id === s.id) ? prev : [...prev, s]); setSaveSender(false) }
+        }).catch(() => {})
+      }
       return data.id as string
     } finally {
       setSaving(false)
@@ -321,6 +382,12 @@ export default function CampaignEditor({
                     {previewText.length} characters — write a full sentence, ideally 40–130 characters. Too short and some inboxes (e.g. Gmail Promotions tab) will ignore it and show a snippet pulled from the email body instead.
                   </p>
                 </div>
+                <div className="space-y-1.5">
+                  <EmailSenderCombobox
+                    senders={emailSenders}
+                    onPick={s => { setFromEmail(s.fromEmail); setFromName(s.fromName); setSaveSender(false) }}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>From email <span className="text-red-500">*</span></Label>
@@ -332,6 +399,10 @@ export default function CampaignEditor({
                     <Input value={fromName} onChange={e => setFromName(e.target.value)} placeholder="Samara Yachting" />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={saveSender} onChange={e => setSaveSender(e.target.checked)} />
+                  Save this as a sender I can pick again later
+                </label>
               </div>
             )}
 

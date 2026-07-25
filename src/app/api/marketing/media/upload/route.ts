@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { put } from '@vercel/blob'
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
 
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 const MAX_SIZE = 20 * 1024 * 1024 // 20MB — covers brochures/deck plans/high-res photos
 
-// Uploads the binary for an image or PDF media-kit file to Vercel Blob and returns its
-// public URL + metadata. The caller then POSTs to /api/marketing/media to persist the row.
-// Video/reel entries skip this route entirely — they're external embed links (§ plan).
+// Issues a client token so the browser can PUT the file straight to Vercel Blob,
+// bypassing this route (and its ~4.5MB serverless body-size limit) for the actual
+// bytes — a plain FormData POST here used to fail/hang on anything past a few MB
+// (e.g. a 12MB PDF). The caller still POSTs to /api/marketing/media afterwards to
+// persist the row, same as before.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -20,20 +22,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File hosting is not configured (BLOB_READ_WRITE_TOKEN missing)' }, { status: 500 })
   }
 
-  const form = await req.formData()
-  const file = form.get('file')
-  const yachtId = form.get('yachtId')
-  const categoryId = form.get('categoryId')
-  if (!(file instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+  const body = (await req.json()) as HandleUploadBody
 
-  const isImage = file.type.startsWith('image/')
-  const isPdf = file.type === 'application/pdf'
-  if (!isImage && !isPdf) return NextResponse.json({ error: 'File must be an image or a PDF' }, { status: 400 })
-  if (file.size > MAX_SIZE) return NextResponse.json({ error: 'File must be under 20MB' }, { status: 400 })
-
-  const folder = typeof yachtId === 'string' && yachtId ? yachtId : 'fleet'
-  const cat = typeof categoryId === 'string' && categoryId ? categoryId : 'misc'
-  const blob = await put(`media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file, { access: 'public' })
-
-  return NextResponse.json({ url: blob.url, sizeBytes: file.size, mimeType: file.type })
+  try {
+    const jsonResponse = await handleUpload({
+      body,
+      request: req,
+      onBeforeGenerateToken: async (pathname) => {
+        if (!pathname.startsWith('media-kit/')) throw new Error('Invalid path')
+        return {
+          allowedContentTypes: ['image/*', 'application/pdf'],
+          maximumSizeInBytes: MAX_SIZE,
+          addRandomSuffix: false,
+        }
+      },
+    })
+    return NextResponse.json(jsonResponse)
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Upload failed' }, { status: 400 })
+  }
 }

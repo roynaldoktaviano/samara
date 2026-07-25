@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { upload } from '@vercel/blob/client'
 
 const ACCENT = '#bdac7e'
 
@@ -233,15 +234,17 @@ export default function MediaKit() {
     if (!files.length || !activeCategoryId) return
     setUploading(true)
     try {
+      const folder = selectedYachtId || 'fleet'
+      const cat = activeCategoryId || 'misc'
       const results = await Promise.all(files.map(async file => {
         try {
-          const form = new FormData()
-          form.append('file', file)
-          form.append('yachtId', selectedYachtId)
-          form.append('categoryId', activeCategoryId)
-          const uploadRes = await fetch('/api/marketing/media/upload', { method: 'POST', body: form })
-          const uploadData = await uploadRes.json().catch(() => ({}))
-          if (!uploadRes.ok) return false
+          // Uploads straight to Vercel Blob from the browser (see /api/marketing/media/upload) —
+          // a plain server-route POST would buffer the whole file through our serverless function,
+          // which fails/hangs well before a 20MB PDF gets there.
+          const blob = await upload(`media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file, {
+            access: 'public',
+            handleUploadUrl: '/api/marketing/media/upload',
+          })
 
           const saveRes = await fetch('/api/marketing/media', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -250,9 +253,9 @@ export default function MediaKit() {
               categoryId: activeCategoryId,
               type: file.type.startsWith('image/') ? 'image' : 'document',
               name: file.name,
-              url: uploadData.url,
-              sizeBytes: uploadData.sizeBytes,
-              mimeType: uploadData.mimeType,
+              url: blob.url,
+              sizeBytes: file.size,
+              mimeType: file.type,
               folderId: activeFolderId,
             }),
           })

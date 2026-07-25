@@ -921,6 +921,18 @@ model EmailTemplate {
   @@index([createdAt])
 }
 
+// A short saved-picker list of "From email / From name" pairs a campaign can send
+// as — same idea as ReimburseAccount for bank accounts: pick one instead of retyping.
+model EmailSenderIdentity {
+  id        String   @id @default(cuid())
+  fromEmail String
+  fromName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromEmail])
+}
+
 model EmailCampaign {
   id              String              @id @default(cuid())
   name            String
