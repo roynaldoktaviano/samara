@@ -61,15 +61,20 @@ export async function PATCH(req: NextRequest) {
     ...(features !== undefined ? { features: parseTenantFeatures(features) } : {}),
     ...(regenerateRequestOrderToken ? { requestOrderToken: crypto.randomBytes(24).toString('hex') } : {}),
   }
-  if (secrets !== undefined) {
-    await setTenantSecrets(id, secrets)
+  try {
+    if (secrets !== undefined) {
+      await setTenantSecrets(id, secrets)
+    }
+    const tenant = Object.keys(data).length > 0
+      ? await centralDb.tenant.update({ where: { id }, data })
+      : await centralDb.tenant.findUnique({ where: { id } })
+    const actionLabel = regenerateRequestOrderToken ? 'REGENERATE_REQUEST_ORDER_TOKEN' : (secrets !== undefined ? 'UPDATE_SECRETS' : (features !== undefined ? 'TOGGLE_FEATURE' : 'UPDATE_TENANT'))
+    const detail = regenerateRequestOrderToken ? 'Regenerated request-order link token' : (secrets !== undefined ? `Updated secrets: ${Object.keys(secrets).join(', ')}` : JSON.stringify(features ?? rest))
+    logSuperAdmin({ adminEmail: session.user!.email!, action: actionLabel, targetType: 'tenant', targetId: id, detail })
+    const { secrets: _secrets, ...tenantSafe } = tenant ?? {}
+    return NextResponse.json(tenantSafe)
+  } catch (e) {
+    console.error('[super-admin/tenants PATCH]', e)
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to update tenant' }, { status: 500 })
   }
-  const tenant = Object.keys(data).length > 0
-    ? await centralDb.tenant.update({ where: { id }, data })
-    : await centralDb.tenant.findUnique({ where: { id } })
-  const actionLabel = regenerateRequestOrderToken ? 'REGENERATE_REQUEST_ORDER_TOKEN' : (secrets !== undefined ? 'UPDATE_SECRETS' : (features !== undefined ? 'TOGGLE_FEATURE' : 'UPDATE_TENANT'))
-  const detail = regenerateRequestOrderToken ? 'Regenerated request-order link token' : (secrets !== undefined ? `Updated secrets: ${Object.keys(secrets).join(', ')}` : JSON.stringify(features ?? rest))
-  logSuperAdmin({ adminEmail: session.user!.email!, action: actionLabel, targetType: 'tenant', targetId: id, detail })
-  const { secrets: _secrets, ...tenantSafe } = tenant ?? {}
-  return NextResponse.json(tenantSafe)
 }

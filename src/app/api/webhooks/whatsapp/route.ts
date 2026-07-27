@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { put } from '@vercel/blob'
+import { putToR2 } from '@/lib/r2'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 
@@ -83,11 +83,8 @@ async function fetchAndStoreMedia(mediaId: string, accessToken: string): Promise
     if (!fileRes.ok) return null
     const bytes = await fileRes.arrayBuffer()
     const ext = meta.mime_type?.split('/')[1]?.split(';')[0] ?? 'bin'
-    const blob = await put(`whatsapp-media/${mediaId}.${ext}`, Buffer.from(bytes), {
-      access: 'public',
-      contentType: meta.mime_type,
-    })
-    return { url: blob.url, mimeType: meta.mime_type ?? 'application/octet-stream' }
+    const url = await putToR2(`whatsapp-media/${mediaId}.${ext}`, Buffer.from(bytes), meta.mime_type)
+    return { url, mimeType: meta.mime_type ?? 'application/octet-stream' }
   } catch (e) {
     console.error('[whatsapp webhook] failed to fetch/store media', mediaId, e)
     return null

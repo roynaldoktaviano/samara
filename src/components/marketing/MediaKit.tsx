@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
-import { upload } from '@vercel/blob/client'
+import { uploadToR2 } from '@/lib/r2-client'
 
 const ACCENT = '#bdac7e'
 
@@ -296,13 +296,10 @@ export default function MediaKit() {
       const results = await Promise.all(files.map(async file => {
         try {
           const targetFolderId = file.webkitRelativePath ? folderIdByPath.get(file.webkitRelativePath) ?? activeFolderId : activeFolderId
-          // Uploads straight to Vercel Blob from the browser (see /api/marketing/media/upload) —
+          // Uploads straight to R2 from the browser (see /api/marketing/media/upload) —
           // a plain server-route POST would buffer the whole file through our serverless function,
           // which fails/hangs well before a large PDF gets there.
-          const blob = await upload(`media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file, {
-            access: 'public',
-            handleUploadUrl: '/api/marketing/media/upload',
-          })
+          const blob = await uploadToR2('/api/marketing/media/upload', `media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file)
 
           const saveRes = await fetch('/api/marketing/media', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },

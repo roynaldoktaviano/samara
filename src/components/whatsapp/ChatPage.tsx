@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { upload } from '@vercel/blob/client'
+import { uploadToR2 } from '@/lib/r2-client'
 import { Search, Send, Loader2, MessageCircle, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
@@ -147,10 +147,7 @@ export default function ChatPage() {
     if (!activeId) return
     setUploading(true)
     try {
-      const blob = await upload(`whatsapp/${activeId}/${Date.now()}-${file.name}`, file, {
-        access: 'public',
-        handleUploadUrl: '/api/whatsapp/upload',
-      })
+      const blob = await uploadToR2('/api/whatsapp/upload', `whatsapp/${activeId}/${Date.now()}-${file.name}`, file)
       const caption = draft.trim()
       setDraft('')
       await postMessage({ body: caption || undefined, mediaUrl: blob.url, mediaType: file.type })

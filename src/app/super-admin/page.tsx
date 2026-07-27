@@ -121,14 +121,24 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
     const value = drafts[key]?.trim()
     if (!value) return
     setSaving(key)
-    await fetch('/api/super-admin/tenants', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: tenant.id, secrets: { [key]: value } }),
-    })
-    setSaving(null)
-    setDrafts(d => ({ ...d, [key]: '' }))
-    onUpdate()
+    try {
+      const res = await fetch('/api/super-admin/tenants', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: tenant.id, secrets: { [key]: value } }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Failed to save (${res.status})`)
+        return
+      }
+      setDrafts(d => ({ ...d, [key]: '' }))
+      onUpdate()
+    } catch {
+      alert('Failed to save — network error')
+    } finally {
+      setSaving(null)
+    }
   }
 
   return (
