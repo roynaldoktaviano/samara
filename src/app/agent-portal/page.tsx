@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import {
   Lock, ChevronLeft, ChevronRight, FileText, MapPin, FileStack,
   CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
@@ -659,11 +660,25 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
 
   useEffect(() => { setActiveFolderId(null) }, [activeCatId])
 
+  // A category with nothing uploaded for this yacht is just dead-end clutter for an
+  // agent browsing — only offer the ones that actually have something to show.
+  const visibleCategories = useMemo(
+    () => categories.filter(c => files.some(f => f.categoryId === c.id)),
+    [categories, files]
+  )
+
+  // Files load after categories (separate effect, keyed on yacht.id) — once they land,
+  // make sure the active tab isn't one that turned out to be empty for this yacht.
+  useEffect(() => {
+    if (loading || visibleCategories.length === 0) return
+    if (!visibleCategories.some(c => c.id === activeCatId)) setActiveCatId(visibleCategories[0].id)
+  }, [loading, visibleCategories, activeCatId])
+
   function selectCategory(id: string) {
     setActiveCatId(id)
   }
 
-  const activeCategory = categories.find(c => c.id === activeCatId) ?? null
+  const activeCategory = visibleCategories.find(c => c.id === activeCatId) ?? null
   const categoryFiles = files.filter(f => f.categoryId === activeCatId)
   const categoryFolders = mediaFolders.filter(f => f.categoryId === activeCatId && (f.yachtId === null || f.yachtId === yacht.id))
   const currentFiles = categoryFiles.filter(f => (f.folderId ?? null) === activeFolderId)
@@ -688,7 +703,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       <button key={f.id} onClick={() => setPreview(f)} className="group text-left">
         <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden flex items-center justify-center">
           {f.type === 'image' ? (
-            <img src={f.url} alt={f.name} className="w-full h-full object-cover transition-opacity group-hover:opacity-90" />
+            <Image src={f.url} alt={f.name} fill sizes="(max-width: 640px) 50vw, 25vw" className="object-cover transition-opacity group-hover:opacity-90" />
           ) : f.type === 'video' ? (
             <div className="w-11 h-11 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-400 group-hover:text-neutral-600 transition-colors">
               <Play className="h-4 w-4 ml-0.5" />
@@ -719,7 +734,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       </div>
 
       <div className="flex justify-between gap-x-6 gap-y-2 flex-wrap border-b mb-8 max-w-3xl mx-auto">
-        {categories.map(c => (
+        {visibleCategories.map(c => (
           <button
             key={c.id}
             onClick={() => selectCategory(c.id)}

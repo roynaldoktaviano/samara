@@ -6,7 +6,7 @@ import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
-const MAX_SIZE = 20 * 1024 * 1024 // 20MB — covers brochures/deck plans/high-res photos
+const MAX_SIZE = 50 * 1024 * 1024 // 50MB — covers brochures/deck plans (image-heavy PDFs can get big) and high-res photos
 
 // Issues a client token so the browser can PUT the file straight to Vercel Blob,
 // bypassing this route (and its ~4.5MB serverless body-size limit) for the actual

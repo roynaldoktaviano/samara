@@ -12,6 +12,11 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
+  images: {
+    // Lets next/image resize/compress media-kit photos on the fly instead of shipping
+    // the original upload to every grid thumbnail — the stored Blob file is untouched.
+    remotePatterns: [{ protocol: 'https', hostname: '*.public.blob.vercel-storage.com' }],
+  },
   async headers() {
     return [
       {

@@ -298,7 +298,7 @@ export default function MediaKit() {
           const targetFolderId = file.webkitRelativePath ? folderIdByPath.get(file.webkitRelativePath) ?? activeFolderId : activeFolderId
           // Uploads straight to Vercel Blob from the browser (see /api/marketing/media/upload) —
           // a plain server-route POST would buffer the whole file through our serverless function,
-          // which fails/hangs well before a 20MB PDF gets there.
+          // which fails/hangs well before a large PDF gets there.
           const blob = await upload(`media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file, {
             access: 'public',
             handleUploadUrl: '/api/marketing/media/upload',
@@ -317,13 +317,24 @@ export default function MediaKit() {
               folderId: targetFolderId,
             }),
           })
-          return saveRes.ok
-        } catch (e) { console.error(e); return false }
+          if (!saveRes.ok) {
+            const d = await saveRes.json().catch(() => ({}))
+            return { ok: false as const, name: file.name, error: d.error ?? `Save failed (${saveRes.status})` }
+          }
+          return { ok: true as const }
+        } catch (e) {
+          console.error(e)
+          return { ok: false as const, name: file.name, error: e instanceof Error ? e.message : 'Upload failed' }
+        }
       }))
-      const successCount = results.filter(Boolean).length
-      const failCount = results.length - successCount
+      const successCount = results.filter(r => r.ok).length
+      const failures = results.filter((r): r is { ok: false; name: string; error: string } => !r.ok)
       if (successCount) toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded`)
-      if (failCount) toast.error(`${failCount} file${failCount > 1 ? 's' : ''} failed to upload`)
+      if (failures.length === 1) {
+        toast.error(`${failures[0].name} failed to upload`, { description: failures[0].error })
+      } else if (failures.length > 1) {
+        toast.error(`${failures.length} files failed to upload`, { description: failures.map(f => `${f.name}: ${f.error}`).join('\n') })
+      }
       if (successCount) await fetchFiles()
       if (folderIdByPath.size) await fetchFolders()
     } finally { setUploading(false) }
