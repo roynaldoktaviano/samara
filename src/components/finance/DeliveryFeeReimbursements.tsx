@@ -10,6 +10,7 @@ interface Reimbursement {
   amount: number
   notePhotoKeys: string[]
   notes: string | null
+  notaDate: string | null
   status: string
   requesterName: string
   bankName: string
@@ -23,7 +24,7 @@ interface Reimbursement {
   deliveryFee: {
     feeNumber: string
     notes: string | null
-    purchaseOrder: { poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null } | null
+    purchaseOrder: { poNumber: string; supplierName: string | null; createdAt: string; deliveryLocation: { name: string } | null } | null
   }
 }
 
@@ -126,7 +127,7 @@ export default function DeliveryFeeReimbursements() {
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium">Bank</th>
               <th className="text-right px-4 py-3 font-medium">Amount</th>
-              <th className="text-left px-4 py-3 font-medium">Date</th>
+              <th className="text-left px-4 py-3 font-medium">Nota Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -147,6 +148,7 @@ export default function DeliveryFeeReimbursements() {
                   {r.deliveryFee.purchaseOrder ? (
                     <>
                       {r.deliveryFee.purchaseOrder.poNumber}{r.deliveryFee.purchaseOrder.supplierName ? ` · ${r.deliveryFee.purchaseOrder.supplierName}` : ''}
+                      <span className="block text-[10px] text-muted-foreground mt-0.5">Created {fmtDate(r.deliveryFee.purchaseOrder.createdAt)}</span>
                       {r.deliveryFee.purchaseOrder.deliveryLocation && (
                         <span className="flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3 shrink-0" />{r.deliveryFee.purchaseOrder.deliveryLocation.name}</span>
                       )}
@@ -156,7 +158,7 @@ export default function DeliveryFeeReimbursements() {
                 <td className="px-4 py-3">{r.requesterName}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">{r.bankName} · {r.accountNumber}</td>
                 <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.createdAt)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{r.notaDate ? fmtDate(r.notaDate) : '—'}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                     {r.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}

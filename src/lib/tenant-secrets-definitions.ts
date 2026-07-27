@@ -9,6 +9,9 @@ export type TenantSecretKey =
   | 'resendWebhookSecret'
   | 'cf7WebhookSecret'
   | 'tripSheetGoogleSheetId'
+  | 'whatsappApiUrl'
+  | 'whatsappApiToken'
+  | 'whatsappWebhookSecret'
 
 export interface TenantSecrets {
   freshsalesApiKey?: string
@@ -17,6 +20,9 @@ export interface TenantSecrets {
   resendWebhookSecret?: string
   cf7WebhookSecret?: string
   tripSheetGoogleSheetId?: string
+  whatsappApiUrl?: string
+  whatsappApiToken?: string
+  whatsappWebhookSecret?: string
 }
 
 export const TENANT_SECRET_DEFINITIONS: {
@@ -31,6 +37,9 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'resendWebhookSecret', label: 'Resend Webhook Signing Secret', description: 'Verifies open/click/bounce events from Resend', envFallback: 'RESEND_WEBHOOK_SECRET' },
   { key: 'cf7WebhookSecret', label: 'Website Form Webhook Secret', description: 'Shared secret the WordPress contact form sends', envFallback: 'CF7_WEBHOOK_SECRET' },
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
+  { key: 'whatsappApiUrl', label: 'WhatsApp API URL', description: 'Send-message endpoint of the WhatsApp provider used for the Chat module', envFallback: 'WHATSAPP_API_URL' },
+  { key: 'whatsappApiToken', label: 'WhatsApp API Token', description: 'Auth token/API key for the WhatsApp provider', envFallback: 'WHATSAPP_API_TOKEN' },
+  { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Secret', description: 'Shared secret the provider sends when POSTing inbound messages', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
 ]
 
 export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITIONS.map(s => s.key))

@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -51,6 +51,7 @@ import PurchasingWithdrawalsPage from '@/components/purchasing/reports/Withdrawa
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
 import EmployeesPage from '@/components/hr/EmployeesPage'
+import ChatPage from '@/components/whatsapp/ChatPage'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
@@ -88,7 +89,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -118,6 +119,7 @@ const MARKETING_SUB_GROUPS = [
 
 const navigationItems: NavItem[] = [
   { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING'], group: 'main' },
+  { id: 'chat',          label: 'Chat',           icon: MessageCircle, roles: ['ADMIN'],                               group: 'main' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },
   { id: 'customers',     label: 'Guests',          icon: Users,      roles: ['ADMIN', 'SALES', 'MARKETING'],            group: 'operations' },
@@ -387,6 +389,7 @@ export default function Home() {
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
   const [pendingDeliveryFeeReimbursements, setPendingDeliveryFeeReimbursements] = useState(0)
+  const [unreadWhatsapp, setUnreadWhatsapp] = useState(0)
 
   const fetchPendingPayments = useCallback(async () => {
     try {
@@ -443,13 +446,25 @@ export default function Home() {
     } catch { /* silent */ }
   }, [session])
 
+  const fetchUnreadWhatsapp = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (role !== 'ADMIN') return
+      const res = await fetch('/api/whatsapp/conversations')
+      if (res.ok) {
+        const data = await res.json()
+        setUnreadWhatsapp(Array.isArray(data) ? data.reduce((s: number, c: { unreadCount: number }) => s + c.unreadCount, 0) : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingPurchasingFinance() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp() }
     const interval = setInterval(refresh, 30000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingPurchasingFinance])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingPurchasingFinance, fetchUnreadWhatsapp])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -614,6 +629,7 @@ export default function Home() {
       case 'customers':    return <Customers />
       case 'leads':        return <Leads />
       case 'calendar':     return <CalendarView />
+      case 'chat':         return <ChatPage />
       case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
@@ -762,7 +778,8 @@ export default function Home() {
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
-                  (item.id === 'finance-delivery-fee-reimbursements' && pendingDeliveryFeeReimbursements > 0)
+                  (item.id === 'finance-delivery-fee-reimbursements' && pendingDeliveryFeeReimbursements > 0) ||
+                  (item.id === 'chat' && unreadWhatsapp > 0)
                 const dotCount =
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
@@ -771,6 +788,7 @@ export default function Home() {
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :
                   item.id === 'finance-delivery-fee-reimbursements' ? pendingDeliveryFeeReimbursements :
+                  item.id === 'chat' ? unreadWhatsapp :
                   0
                 const isItemActive = activeView === item.id
                 return (

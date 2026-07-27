@@ -10,6 +10,7 @@ interface Reimbursement {
   amount: number
   notePhotoKeys: string[]
   notes: string | null
+  notaDate: string | null
   status: string
   poPaymentStatus: string // the PO's overall progress (UNPAID/PARTIALLY_PAID/PAID) — distinct from this reimbursement's own status, since a PO can be paid in installments
   requesterName: string
@@ -22,7 +23,7 @@ interface Reimbursement {
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
   order: {
-    poNumber: string; supplierName: string | null; deliveryLocation: { name: string } | null
+    poNumber: string; supplierName: string | null; createdAt: string; deliveryLocation: { name: string } | null
     requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
   }
 }
@@ -135,7 +136,7 @@ export default function POReimbursements() {
               <th className="text-left px-4 py-3 font-medium">Bank</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-right px-4 py-3 font-medium">Amount</th>
-              <th className="text-left px-4 py-3 font-medium">Date</th>
+              <th className="text-left px-4 py-3 font-medium">Nota Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -151,14 +152,17 @@ export default function POReimbursements() {
               </td></tr>
             ) : filtered.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(r)}>
-                <td className="px-4 py-3 font-mono text-sm font-medium">{r.order.poNumber}</td>
+                <td className="px-4 py-3 font-mono text-sm font-medium">
+                  {r.order.poNumber}
+                  <span className="block font-sans text-[10px] text-muted-foreground mt-0.5">Created {fmtDate(r.order.createdAt)}</span>
+                </td>
                 <td className="px-4 py-3">{r.requesterName}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">{r.bankName} · {r.accountNumber}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.order.deliveryLocation ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{r.order.deliveryLocation.name}</span> : '—'}
                 </td>
                 <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.createdAt)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{r.notaDate ? fmtDate(r.notaDate) : '—'}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(r.status, r.poPaymentStatus).className}`}>
                     {statusBadge(r.status, r.poPaymentStatus).label}

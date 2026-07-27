@@ -17,7 +17,7 @@ export async function GET() {
     include: {
       order: {
         select: {
-          poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } },
+          poNumber: true, supplierName: true, createdAt: true, deliveryLocation: { select: { name: true } },
           requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true,
           discountType: true, discountValue: true, extraCharges: true,
           items: { select: { orderedQty: true, unitCost: true } },

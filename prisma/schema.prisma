@@ -238,12 +238,12 @@ model Inquiry {
 }
 
 model Agent {
-  id                       String              @id @default(cuid())
+  id                       String                 @id @default(cuid())
   name                     String
-  commission               Float               @default(0)
-  commissionOpenTrip       Float               @default(0)
-  commissionPrivateCharter Float               @default(0)
-  isActive                 Boolean             @default(true)
+  commission               Float                  @default(0)
+  commissionOpenTrip       Float                  @default(0)
+  commissionPrivateCharter Float                  @default(0)
+  isActive                 Boolean                @default(true)
   country                  String?
   address                  String?
   email                    String?
@@ -256,22 +256,22 @@ model Agent {
   contract                 String?
   contractFile             String?
   contractFileName         String?
-  calendarToken            String?             @unique
-  calendarActive           Boolean             @default(false)
+  calendarToken            String?                @unique
+  calendarActive           Boolean                @default(false)
   portalPasswordHash       String?
   portalPasswordSetAt      DateTime?
   portalPasswordSetById    String?
-  portalActive             Boolean             @default(false)
+  portalActive             Boolean                @default(false)
   salespersonId            String?
-  salesperson              User?               @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+  salesperson              User?                  @relation("AgentSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
   bookings                 Booking[]
   contacts                 AgentContact[]
   calendarAccessLogs       CalendarAccessLog[]
   portalAccessLogs         PortalAccessLog[]
   leadsPromoted            AgentLead[]
   visibleCategories        AgentVisibleCategory[]
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
 
   @@index([salespersonId])
   @@index([name])
@@ -419,8 +419,8 @@ model MediaCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  mediaFiles     MediaFile[]
-  mediaFolders   MediaFolder[]
+  mediaFiles      MediaFile[]
+  mediaFolders    MediaFolder[]
   agentVisibility AgentVisibleCategory[]
 }
 
@@ -463,7 +463,7 @@ model MediaFolder {
   name       String
   createdAt  DateTime      @default(now())
 
-  files      MediaFile[]
+  files MediaFile[]
 
   @@index([yachtId])
   @@index([categoryId])
@@ -476,19 +476,19 @@ model MediaFolder {
 // the PATCH route via a transaction, not a DB constraint, since "only one active" is a
 // cross-row invariant Postgres unique indexes can't express here).
 model Promo {
-  id             String   @id @default(cuid())
-  yachtId        String?
-  yacht          Yacht?   @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  title          String
-  description    String?
-  imageUrl       String?
-  ctaLabel       String?
-  ctaUrl         String?
-  isActive       Boolean  @default(false)
-  createdById    String
-  createdBy      User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id          String   @id @default(cuid())
+  yachtId     String?
+  yacht       Yacht?   @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  imageUrl    String?
+  ctaLabel    String?
+  ctaUrl      String?
+  isActive    Boolean  @default(false)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([yachtId])
 }
@@ -1986,4 +1986,64 @@ model Employee {
   @@index([locationId])
   @@index([roleId])
   @@index([fullName])
+}
+
+// ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────
+// This app doesn't talk to any WhatsApp provider directly — inbound messages land
+// via POST /api/webhooks/whatsapp (whoever owns the WA API integration points its
+// webhook here) and outbound sends go through src/lib/whatsapp.ts, which is a stub
+// until that same integration is wired up on the sending side too.
+
+enum WhatsappDirection {
+  IN
+  OUT
+}
+
+enum WhatsappMessageStatus {
+  PENDING // queued locally, not yet handed to the WhatsApp API
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model WhatsappConversation {
+  id                 String   @id @default(cuid())
+  phone              String   @unique // whatever format the provider sends, kept as-is
+  contactName        String?
+  lastMessageAt      DateTime @default(now())
+  lastMessagePreview String?
+  unreadCount        Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  messages WhatsappMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model WhatsappMessage {
+  id                String                @id @default(cuid())
+  conversationId    String
+  conversation      WhatsappConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction         WhatsappDirection
+  body              String?
+  mediaUrl          String?
+  mediaType         String?
+  status            WhatsappMessageStatus @default(SENT)
+  // Provider's own message id — lets the inbound webhook dedupe on redelivery,
+  // and lets an outbound send record what it maps to once the provider replies.
+  providerMessageId String?               @unique
+  sentByUserId      String?
+  sentByName        String?
+  createdAt         DateTime              @default(now())
+
+  // WhatsApp-style "swipe to reply" quoting — points at another message in the
+  // same conversation, either direction. SetNull so deleting the quoted message
+  // (not currently exposed, but harmless if it ever is) doesn't cascade.
+  replyToId String?
+  replyTo   WhatsappMessage?  @relation("WhatsappMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   WhatsappMessage[] @relation("WhatsappMessageReplies")
+
+  @@index([conversationId, createdAt])
 }

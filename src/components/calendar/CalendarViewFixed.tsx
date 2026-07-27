@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer } from 'lucide-react'
+import { Calendar as CalendarIcon, List, CalendarRange, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -604,6 +604,145 @@ function MonthGrid({
   )
 }
 
+// ─── Full-year grid — 12 mini-months at once, same idea as the Agent Portal's
+// year overview: one color-coded dot per day (booking status / open-trip
+// availability), no event bars. Click a day to jump the main calendar there. ──
+// Same legend as the month grid's event bars (bookingBarColor, above) and the
+// Open Trip cabin dots: green = on hold, yellow = waiting for payment, red =
+// booked/paid, grey = trip already underway or finished.
+function bookingDayColor(status: string): string {
+  if (status === 'on_hold') return '#22c55e'
+  if (status === 'pending') return '#eab308'
+  if (status === 'on_trip' || status === 'completed') return '#94a3b8'
+  if (['confirmed', 'partially_paid', 'fully_paid'].includes(status)) return '#ef4444'
+  return '#94a3b8'
+}
+
+// Samara I is charter-only in practice, so its owners just want a plain
+// availability calendar — free/booked/past — rather than the hold/pending/paid
+// granularity that matters for the open-trip yachts.
+const SIMPLE_AVAILABILITY_YACHT = 'Samara I'
+
+function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: OpenTripEvent[], yachtFilter: string): string | null {
+  // "Past" always wins, but only for a day that actually had something scheduled on
+  // it — a blank day with nothing planned stays blank whether it's past or future,
+  // it doesn't get painted grey just for existing.
+  const isPast = dateStr < todayStr()
+
+  if (yachtFilter === SIMPLE_AVAILABILITY_YACHT) {
+    const bookingHit = bookings.find(b => b.status !== 'cancelled' && dateStr >= b.startDate && dateStr <= b.endDate)
+    const otHit = openTrips.find(t => {
+      const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
+      return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
+    })
+    if (!bookingHit && !otHit) return null
+    if (isPast) return '#94a3b8'
+    if (bookingHit) return '#ef4444' // booked
+    const isClosed = otHit!.status === 'closed'
+    const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
+    return isClosed || isFull ? '#ef4444' : '#22c55e'
+  }
+
+  const charterHit = bookings.find(b =>
+    b.tripType !== 'OPEN_TRIP' && b.status !== 'cancelled' && dateStr >= b.startDate && dateStr <= b.endDate
+  )
+  const otHit = openTrips.find(t => {
+    const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
+    return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
+  })
+  if (!charterHit && !otHit) return null
+  if (isPast) return '#94a3b8'
+  if (charterHit) {
+    const eff = getEffectiveBookingStatus(charterHit.status, charterHit.startDate, charterHit.endDate)
+    return bookingDayColor(eff)
+  }
+  const isClosed = otHit!.status === 'closed'
+  const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
+  return isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+}
+
+function YearMiniMonth({
+  year, month, bookings, openTrips, yachtFilter, onDayClick,
+}: {
+  year: number; month: number
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  yachtFilter: string
+  onDayClick: (year: number, month: number) => void
+}) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const firstDay = new Date(year, month, 1).getDay()
+  const totalDays = new Date(year, month + 1, 0).getDate()
+  const cells: number[] = [...Array(firstDay).fill(0), ...Array.from({ length: totalDays }, (_, i) => i + 1)]
+
+  return (
+    <button onClick={() => onDayClick(year, month)}
+      className="rounded-xl border p-3 text-left hover:border-[#bdac7e] hover:shadow-sm transition-all bg-white">
+      <p className="text-xs font-bold text-center mb-2">{MONTH_FULL[month]}</p>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {DAY_NAMES.map(d => (
+          <span key={d} className="text-center text-[8px] font-medium text-muted-foreground/60">{d[0]}</span>
+        ))}
+        {cells.map((day, i) => {
+          if (day === 0) return <span key={i} />
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const isToday = new Date(dateStr).getTime() === today.getTime()
+          const color = dayStatusColor(dateStr, bookings, openTrips, yachtFilter)
+          return (
+            <div key={i} className="flex items-center justify-center h-4">
+              <span
+                className={cn('flex items-center justify-center text-[9px] rounded-full h-4 w-4 leading-none', isToday && !color && 'ring-1 ring-[#bdac7e]')}
+                style={color ? { backgroundColor: color, color: 'white', fontWeight: 700 } : { color: 'var(--muted-foreground)' }}
+              >
+                {day}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </button>
+  )
+}
+
+function YearGrid({
+  year, bookings, openTrips, yachtFilter, onMonthClick,
+}: {
+  year: number
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  yachtFilter: string
+  onMonthClick: (year: number, month: number) => void
+}) {
+  return (
+    <div className="px-3 sm:px-5 py-4">
+      {yachtFilter && <p className="text-xs text-muted-foreground mb-3">Showing availability for <span className="font-semibold text-foreground">{yachtFilter}</span> across {year}</p>}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {MONTH_FULL.map((_, m) => (
+          <YearMiniMonth key={m} year={year} month={m} bookings={bookings} openTrips={openTrips} yachtFilter={yachtFilter} onDayClick={onMonthClick} />
+        ))}
+      </div>
+      <div className="flex items-center gap-4 mt-4 text-[11px] text-muted-foreground flex-wrap">
+        {(yachtFilter === SIMPLE_AVAILABILITY_YACHT
+          ? [
+              { label: 'Available', color: '#22c55e' },
+              { label: 'Booked',    color: '#ef4444' },
+              { label: 'Past',      color: '#94a3b8' },
+            ]
+          : [
+              { label: 'On Hold',             color: '#22c55e' },
+              { label: 'Waiting Payment',     color: '#eab308' },
+              { label: 'Booked',              color: '#ef4444' },
+              { label: 'On Trip / Completed', color: '#94a3b8' },
+            ]
+        ).map(l => (
+          <span key={l.label} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
+            {l.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── date filter helpers ── */
 const todayStr = () => new Date().toISOString().split('T')[0]
 
@@ -636,7 +775,7 @@ export default function CalendarView() {
   const canEdit = roleMatches(userRole, ['ADMIN', 'SALES'])
 
   const [currentDate, setCurrentDate]   = useState(new Date())
-  const [viewMode, setViewMode]         = useState<'calendar' | 'list'>('calendar')
+  const [viewMode, setViewMode]         = useState<'calendar' | 'list' | 'year'>('calendar')
   const [isFullscreen, setIsFullscreen] = useState(false)
   useEffect(() => {
     document.body.style.overflow = isFullscreen ? 'hidden' : ''
@@ -922,7 +1061,8 @@ export default function CalendarView() {
           setYachtFilter(prev => {
             const names = list.map(y => y.name)
             if (names.includes(prev)) return prev
-            return list[0]?.name ?? ''
+            // Default to Samara I when available, rather than whatever the API happens to return first.
+            return list.find(y => y.name === 'Samara I')?.name ?? list[0]?.name ?? ''
           })
         }),
       ])
@@ -1276,6 +1416,29 @@ export default function CalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookings, leftYear, leftMonth, tripFilter, yachtFilter, filterActive, filterFrom, filterTo, filterMode])
 
+  // Open Trip departures for the list view — same idea as the Agent Portal's
+  // "shared trip" list, so an open trip with no bookings yet still shows up here
+  // instead of only appearing as a bar on the calendar grid.
+  const upcomingOpenTrips = useMemo(() => {
+    if (tripFilter === 'PRIVATE_CHARTER') return []
+    const monthStart = new Date(leftYear, leftMonth, 1)
+    const monthEnd   = new Date(leftYear, leftMonth + 1, 0)
+    return [...openTrips]
+      .filter(t => {
+        if (t.status === 'closed' && t.closedReason?.includes('Private Charter')) return false
+        if (yachtFilter && t.yacht.name !== yachtFilter) return false
+        const s = t.startDate.split('T')[0]
+        const e = t.endDate.split('T')[0]
+        if (filterActive) {
+          const fTo = filterMode === 'single' ? filterFrom : filterTo
+          return s <= fTo && e >= filterFrom
+        }
+        return new Date(s) <= monthEnd && new Date(e) >= monthStart
+      })
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTrips, leftYear, leftMonth, tripFilter, yachtFilter, filterActive, filterFrom, filterTo, filterMode])
+
   if (loading) {
     return (
       <div className="space-y-5 w-full">
@@ -1518,23 +1681,26 @@ export default function CalendarView() {
             </button>
           </div>
 
-          {/* Month tabs — centered */}
-          <div className="flex flex-1 justify-center gap-0.5 overflow-x-auto min-w-0">
-            {MONTH_SHORT.map((m, i) => (
-              <button key={m} onClick={() => jumpToMonth(i)}
-                className={[
-                  'px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-                  leftMonth === i ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
-                ].join(' ')}>
-                {m}
-              </button>
-            ))}
-          </div>
+          {/* Month tabs — centered (not relevant once the whole year is on screen) */}
+          {viewMode !== 'year' && (
+            <div className="flex flex-1 justify-center gap-0.5 overflow-x-auto min-w-0">
+              {MONTH_SHORT.map((m, i) => (
+                <button key={m} onClick={() => jumpToMonth(i)}
+                  className={[
+                    'px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
+                    leftMonth === i ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
+                  ].join(' ')}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
+          {viewMode === 'year' && <div className="flex-1" />}
 
           {/* View toggle + fullscreen */}
           <div className="flex items-center gap-1 shrink-0">
-            {([['calendar', CalendarIcon], ['list', List]] as const).map(([mode, Icon]) => (
-              <button key={mode} onClick={() => setViewMode(mode)}
+            {([['calendar', CalendarIcon], ['list', List], ['year', CalendarRange]] as const).map(([mode, Icon]) => (
+              <button key={mode} onClick={() => setViewMode(mode)} title={mode === 'year' ? 'Full year view' : undefined}
                 className={[
                   'p-1.5 rounded-full border transition-colors',
                   viewMode === mode
@@ -1789,13 +1955,29 @@ export default function CalendarView() {
                 onNext={() => navigate('next')}
               />
             </div>
+          ) : viewMode === 'year' ? (
+            <YearGrid
+              year={leftYear}
+              bookings={
+                (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
+                  ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
+                  : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
+                ).filter(b => !yachtFilter || b.yachtName === yachtFilter)
+              }
+              openTrips={
+                (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
+                  .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
+              }
+              yachtFilter={yachtFilter}
+              onMonthClick={(y, m) => { setCurrentDate(new Date(y, m, 1)); setViewMode('calendar') }}
+            />
           ) : (
             /* List view */
             <div className="px-3 sm:px-5 py-4 space-y-2">
               {filterActive && (
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">{upcomingBookings.length} trip{upcomingBookings.length !== 1 ? 's' : ''}</span> found
+                    <span className="font-semibold text-foreground">{upcomingBookings.length + upcomingOpenTrips.length} trip{upcomingBookings.length + upcomingOpenTrips.length !== 1 ? 's' : ''}</span> found
                     {' · '}
                     <span style={{ color: '#bdac7e' }} className="font-semibold">
                       {filterFrom === filterTo
@@ -1807,7 +1989,11 @@ export default function CalendarView() {
                 </div>
               )}
               {(() => {
-                const listItems = upcomingBookings
+                type ListItem = { kind: 'booking'; data: BookingEvent } | { kind: 'open_trip'; data: OpenTripEvent }
+                const listItems: ListItem[] = [
+                  ...upcomingBookings.map(b => ({ kind: 'booking' as const, data: b })),
+                  ...upcomingOpenTrips.map(t => ({ kind: 'open_trip' as const, data: t })),
+                ].sort((a, b) => new Date(a.data.startDate).getTime() - new Date(b.data.startDate).getTime())
                 return listItems.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">
                   {filterActive
@@ -1815,7 +2001,66 @@ export default function CalendarView() {
                     : `No bookings in ${MONTH_FULL[leftMonth]} ${leftYear}.`}
                 </div>
               ) : (
-                listItems.map(b => {
+                listItems.map(item => {
+                  if (item.kind === 'open_trip') {
+                    const t = item.data
+                    const isClosed = t.status === 'closed'
+                    const isFull   = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
+                    const otColor  = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+                    const otLabel  = isClosed ? 'Closed' : isFull ? 'Sold Out' : `${t.spotsAvailable}/${t.maxCapacity} spots`
+                    return (
+                      <div key={`ot-${t.id}`}
+                        className="w-full rounded-lg border border-dashed px-3 sm:px-4 py-3 space-y-2.5"
+                        style={{ borderColor: otColor + '55' }}
+                      >
+                        <button onClick={() => handleOpenTripClick(t)} className="w-full flex items-center gap-3 text-left">
+                          <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: otColor, boxShadow: `0 0 0 3px ${otColor}33` }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">Open Trip</span>
+                              <span className="text-sm font-semibold truncate">{t.title}</span>
+                              <span className="text-xs text-muted-foreground truncate">{t.yacht.name}{t.destination ? ` · ${t.destination}` : ''}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(t.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                              {' – '}
+                              {new Date(t.endDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                              {' · '}{getDays(t.startDate, t.endDate)} days
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span
+                              className="text-[10px] font-semibold rounded-full px-2 py-0.5 inline-block"
+                              style={{ backgroundColor: otColor + '22', color: otColor }}
+                            >
+                              {otLabel}
+                            </span>
+                          </div>
+                        </button>
+                        {/* Cabin-by-cabin status — same legend as the calendar bar/detail dialog */}
+                        {t.cabinStatuses.length > 0 && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-1.5 pl-6">
+                            {t.cabinStatuses.map(c => {
+                              const bs = c.bookingStatus
+                              const dotColor = bs === null
+                                ? (isClosed ? '#94a3b8' : '#ffffff')
+                                : bs === 'on_hold' ? '#22c55e'
+                                : bs === 'pending' ? '#eab308'
+                                : '#ef4444'
+                              const dotBorder = dotColor === '#ffffff' ? '1.5px solid #94a3b8' : 'none'
+                              return (
+                                <span key={c.id} className="flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dotColor, border: dotBorder }} />
+                                  <span className="text-[11px] text-muted-foreground font-medium">{c.name}</span>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+                  const b = item.data
                   const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
                   return (
                   <button
