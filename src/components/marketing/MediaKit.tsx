@@ -228,17 +228,74 @@ export default function MediaKit() {
     return scopedFiles.filter(f => f.folderId === folderId).length
   }
 
+  // A file dropped/picked as part of a folder carries its folder path in
+  // webkitRelativePath (e.g. "TripPhotos/Bali/img1.jpg" — set natively by
+  // <input webkitdirectory>, and by useFileDrop for a dragged-in folder).
+  // Mirrors that same path as real MediaFolder rows (creating any that don't
+  // exist yet) so the folder shows up in the app instead of dumping every
+  // file flat into whatever folder happened to be open.
+  async function resolveFolderPathIds(files: File[]): Promise<Map<string, string | null>> {
+    const paths = [...new Set(files.map(f => f.webkitRelativePath).filter(Boolean))]
+    const resolved = new Map<string, string | null>()
+    if (paths.length === 0) return resolved
+
+    const known = [...mediaFolders]
+    const idByPrefix = new Map<string, string | null>([['', activeFolderId]])
+
+    const findOrCreate = async (name: string, parentId: string | null): Promise<string> => {
+      const existing = known.find(f =>
+        (f.yachtId ?? '') === selectedYachtId && f.categoryId === activeCategoryId &&
+        (f.parentId ?? null) === parentId && f.name.toLowerCase() === name.toLowerCase()
+      )
+      if (existing) return existing.id
+
+      const res = await fetch('/api/marketing/folders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yachtId: selectedYachtId || null, categoryId: activeCategoryId, parentId, name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.id) { known.push(data); return data.id }
+      if (res.status === 409) {
+        // Created by something else between our check and this request (e.g. another
+        // subfolder of this same batch resolving concurrently) — just look it up again.
+        const fresh: MediaFolderRecord[] = await fetch('/api/marketing/folders').then(r => r.ok ? r.json() : [])
+        const match = fresh.find(f =>
+          (f.yachtId ?? '') === selectedYachtId && f.categoryId === activeCategoryId &&
+          (f.parentId ?? null) === parentId && f.name.toLowerCase() === name.toLowerCase()
+        )
+        if (match) { known.push(match); return match.id }
+      }
+      throw new Error(data.error ?? 'Failed to create folder')
+    }
+
+    for (const path of paths) {
+      const segments = path.split('/').slice(0, -1) // drop the filename itself
+      let prefix = ''
+      let parentId = activeFolderId
+      for (const segment of segments) {
+        prefix = prefix ? `${prefix}/${segment}` : segment
+        if (idByPrefix.has(prefix)) { parentId = idByPrefix.get(prefix)!; continue }
+        parentId = await findOrCreate(segment, parentId)
+        idByPrefix.set(prefix, parentId)
+      }
+      resolved.set(path, parentId)
+    }
+    return resolved
+  }
+
   // Uploads every picked/dropped file independently (own Blob object + own MediaFile row) in
   // parallel, then reports one summary toast rather than one per file.
-  async function handleFilesPicked(fileList: FileList) {
+  async function handleFilesPicked(fileList: FileList | File[]) {
     const files = Array.from(fileList)
     if (!files.length || !activeCategoryId) return
     setUploading(true)
     try {
+      const folderIdByPath = await resolveFolderPathIds(files)
       const folder = selectedYachtId || 'fleet'
       const cat = activeCategoryId || 'misc'
       const results = await Promise.all(files.map(async file => {
         try {
+          const targetFolderId = file.webkitRelativePath ? folderIdByPath.get(file.webkitRelativePath) ?? activeFolderId : activeFolderId
           // Uploads straight to Vercel Blob from the browser (see /api/marketing/media/upload) —
           // a plain server-route POST would buffer the whole file through our serverless function,
           // which fails/hangs well before a 20MB PDF gets there.
@@ -257,7 +314,7 @@ export default function MediaKit() {
               url: blob.url,
               sizeBytes: file.size,
               mimeType: file.type,
-              folderId: activeFolderId,
+              folderId: targetFolderId,
             }),
           })
           return saveRes.ok
@@ -268,6 +325,7 @@ export default function MediaKit() {
       if (successCount) toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded`)
       if (failCount) toast.error(`${failCount} file${failCount > 1 ? 's' : ''} failed to upload`)
       if (successCount) await fetchFiles()
+      if (folderIdByPath.size) await fetchFolders()
     } finally { setUploading(false) }
   }
 

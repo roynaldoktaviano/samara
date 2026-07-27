@@ -24,7 +24,7 @@ export function FilePreview({ src, alt, className, onClick }: { src: string; alt
 /** Multi-file picker (images + PDF) — used wherever a nota/receipt/transfer-proof can have more than one file. */
 export function MultiFilePicker({ files, onChange }: { files: string[]; onChange: (files: string[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  function handleFiles(list: FileList) {
+  function handleFiles(list: FileList | File[]) {
     Promise.all(Array.from(list).map(f => readUploadFile(f))).then(newOnes => onChange([...files, ...newOnes]))
   }
   function removeAt(i: number) { onChange(files.filter((_, idx) => idx !== i)) }

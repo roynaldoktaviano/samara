@@ -127,7 +127,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 function FileUpload({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (files: string[]) => void }) {
   const list = values ?? []
-  function handleFiles(fileList: FileList) {
+  function handleFiles(fileList: FileList | File[]) {
     Promise.all(Array.from(fileList).map(readFileAsDataUrl)).then(newOnes => onChange([...list, ...newOnes]))
   }
   function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
