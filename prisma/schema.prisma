@@ -1080,6 +1080,12 @@ model Notification {
   purchaseOrder   PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
   purchaseRequest PurchaseRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
 
+  // Lets the deposit-reminder generator (src/app/api/notifications/reminders/route.ts)
+  // safely re-run every few minutes without re-creating the same reminder — its
+  // createMany({ skipDuplicates: true }) only has something to skip against because
+  // of this constraint. Postgres treats each NULL bookingId as distinct, so this
+  // doesn't affect non-booking notifications (payment/PO/request-order).
+  @@unique([userId, type, bookingId])
   @@index([userId, isRead])
   @@index([paymentId])
   @@index([bookingId])
