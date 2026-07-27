@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
-    ? await sendWhatsappMessage(tenantId, conversation.phone, text ?? '', mediaUrl || undefined)
+    ? await sendWhatsappMessage(tenantId, conversation.phone, text ?? '', mediaUrl || undefined, mediaType || undefined)
     : { ok: false, error: 'No tenant on session' }
 
   const updated = await db.whatsappMessage.update({

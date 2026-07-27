@@ -1,17 +1,25 @@
 import { getTenantSecret } from '@/lib/tenant-secrets'
 
-// Adapter point for whichever WhatsApp API provider gets wired up (Cloud API,
-// Twilio, Fonnte, Wablas, Qontak, ...). The Chat module works end-to-end without
-// this configured — replies still save to WhatsappMessage — they just stay in
-// PENDING/FAILED until a provider is set for this tenant (see Super Admin →
-// tenant secrets: WhatsApp API URL / WhatsApp API Token).
+// Sends via WhatsApp Cloud API (Meta). `whatsappApiUrl` (Super Admin → tenant
+// secrets) must be the full Graph API messages endpoint for this tenant's phone
+// number, e.g. https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages —
+// `whatsappApiToken` is the System User / access token, sent as a Bearer token.
 export interface SendWhatsappResult {
   ok: boolean
   providerMessageId?: string
   error?: string
 }
 
-export async function sendWhatsappMessage(tenantId: string, to: string, body: string, mediaUrl?: string): Promise<SendWhatsappResult> {
+function cloudApiMediaType(mimeType?: string): 'image' | 'video' | 'audio' | 'document' {
+  if (mimeType?.startsWith('image/')) return 'image'
+  if (mimeType?.startsWith('video/')) return 'video'
+  if (mimeType?.startsWith('audio/')) return 'audio'
+  return 'document'
+}
+
+export async function sendWhatsappMessage(
+  tenantId: string, to: string, body: string, mediaUrl?: string, mediaType?: string,
+): Promise<SendWhatsappResult> {
   const [apiUrl, apiToken] = await Promise.all([
     getTenantSecret(tenantId, 'whatsappApiUrl'),
     getTenantSecret(tenantId, 'whatsappApiToken'),
@@ -20,20 +28,36 @@ export async function sendWhatsappMessage(tenantId: string, to: string, body: st
     return { ok: false, error: 'WhatsApp API is not configured for this tenant yet' }
   }
 
+  // Cloud API accepts an external https:// link directly for media (no need to
+  // upload to Meta first) — our mediaUrl is already a public Vercel Blob URL.
+  const payload = mediaUrl
+    ? {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: cloudApiMediaType(mediaType),
+        [cloudApiMediaType(mediaType)]: { link: mediaUrl, ...(body && { caption: body }) },
+      }
+    : {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'text',
+        text: { body },
+      }
+
   try {
-    // Example shape — adjust the request/response mapping (including how media
-    // is passed) to match the provider actually wired up here.
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiToken}`,
       },
-      body: JSON.stringify({ to, message: body, ...(mediaUrl && { mediaUrl }) }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) return { ok: false, error: data?.error ?? `Provider returned ${res.status}` }
-    return { ok: true, providerMessageId: data?.id ?? data?.messageId }
+    if (!res.ok) return { ok: false, error: data?.error?.message ?? `Provider returned ${res.status}` }
+    return { ok: true, providerMessageId: data?.messages?.[0]?.id }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to reach WhatsApp API' }
   }

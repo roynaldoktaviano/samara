@@ -12,6 +12,7 @@ export type TenantSecretKey =
   | 'whatsappApiUrl'
   | 'whatsappApiToken'
   | 'whatsappWebhookSecret'
+  | 'whatsappAppSecret'
 
 export interface TenantSecrets {
   freshsalesApiKey?: string
@@ -23,6 +24,7 @@ export interface TenantSecrets {
   whatsappApiUrl?: string
   whatsappApiToken?: string
   whatsappWebhookSecret?: string
+  whatsappAppSecret?: string
 }
 
 export const TENANT_SECRET_DEFINITIONS: {
@@ -37,9 +39,10 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'resendWebhookSecret', label: 'Resend Webhook Signing Secret', description: 'Verifies open/click/bounce events from Resend', envFallback: 'RESEND_WEBHOOK_SECRET' },
   { key: 'cf7WebhookSecret', label: 'Website Form Webhook Secret', description: 'Shared secret the WordPress contact form sends', envFallback: 'CF7_WEBHOOK_SECRET' },
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
-  { key: 'whatsappApiUrl', label: 'WhatsApp API URL', description: 'Send-message endpoint of the WhatsApp provider used for the Chat module', envFallback: 'WHATSAPP_API_URL' },
-  { key: 'whatsappApiToken', label: 'WhatsApp API Token', description: 'Auth token/API key for the WhatsApp provider', envFallback: 'WHATSAPP_API_TOKEN' },
-  { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Secret', description: 'Shared secret the provider sends when POSTing inbound messages', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
+  { key: 'whatsappApiUrl', label: 'WhatsApp Cloud API Send URL', description: 'Full Graph API messages endpoint, e.g. https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages', envFallback: 'WHATSAPP_API_URL' },
+  { key: 'whatsappApiToken', label: 'WhatsApp Cloud API Access Token', description: 'System User (permanent) or temporary access token from Meta', envFallback: 'WHATSAPP_API_TOKEN' },
+  { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
+  { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256)', envFallback: 'WHATSAPP_APP_SECRET' },
 ]
 
 export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITIONS.map(s => s.key))
