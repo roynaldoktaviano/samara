@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
 import {
-  Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus,
+  Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus, FolderUp,
   ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -100,6 +100,7 @@ export default function MediaKit() {
 
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linkName, setLinkName] = useState('')
@@ -635,6 +636,16 @@ export default function MediaKit() {
                 {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
                 Upload
               </Button>
+              {/* webkitdirectory/directory aren't in React's input typings — cast lets the browser's
+                  native folder picker through; every file inside (recursively) lands in one FileList,
+                  which handleFilesPicked already uploads independently one by one. */}
+              <input ref={folderInputRef} type="file" multiple className="hidden"
+                {...{ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
+                onChange={e => { if (e.target.files?.length) handleFilesPicked(e.target.files); e.target.value = '' }} />
+              <Button size="sm" variant="outline" disabled={uploading} onClick={() => folderInputRef.current?.click()}>
+                {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FolderUp className="h-3.5 w-3.5 mr-1.5" />}
+                Upload Folder
+              </Button>
               <Button size="sm" style={{ backgroundColor: ACCENT }} className="text-white" onClick={openLinkDialog}>
                 <Link2 className="h-3.5 w-3.5 mr-1.5" /> Add video link
               </Button>
@@ -650,7 +661,7 @@ export default function MediaKit() {
           >
             {isDragging && (
               <div className="rounded-xl border-2 border-dashed border-[#bdac7e] py-10 text-center text-sm font-medium" style={{ color: ACCENT }}>
-                Drop files to upload
+                Drop files or folders to upload
               </div>
             )}
             {isDragging ? null : loading ? (
