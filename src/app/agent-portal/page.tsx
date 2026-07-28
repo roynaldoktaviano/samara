@@ -625,9 +625,22 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
   )
 }
 
+// Colored file-type tile — shown when there's no real thumbnail to prioritize
+// (PDF render failed, or a type without any thumbnail treatment at all), so a
+// card still reads as "this is a PDF" instead of a generic blank icon.
+function FileTypeBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <div className="h-12 w-12 rounded-lg flex flex-col items-center justify-center text-white shrink-0" style={{ backgroundColor: color }}>
+      <FileText className="h-4 w-4 mb-0.5" />
+      <span className="text-[8px] font-bold tracking-wide">{label}</span>
+    </div>
+  )
+}
+
 // First-page-of-the-PDF thumbnail for the media grid. Loaded dynamically (pdfjs-dist
 // is sizeable) and rendered off a CDN-hosted worker matching the installed version —
-// avoids wiring pdf.worker.js through the bundler just for a thumbnail.
+// avoids wiring pdf.worker.js through the bundler just for a thumbnail. Real preview
+// always wins when it renders; the colored PDF tile is only a fallback for when it fails.
 function PdfThumbnail({ url }: { url: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -660,11 +673,11 @@ function PdfThumbnail({ url }: { url: string }) {
     return () => { cancelled = true }
   }, [url])
 
-  if (status === 'error') return <FileText className="h-8 w-8 text-neutral-300" />
+  if (status === 'error') return <FileTypeBadge label="PDF" color="#DC2626" />
   return (
     <>
       <canvas ref={canvasRef} className={cn('w-full h-full object-cover object-top', status !== 'ready' && 'hidden')} />
-      {status === 'loading' && <FileText className="h-8 w-8 text-neutral-300 animate-pulse" />}
+      {status === 'loading' && <div className="h-12 w-12 rounded-lg bg-neutral-200 animate-pulse" />}
     </>
   )
 }
@@ -827,8 +840,8 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
               {currentFolders.map(folder => (
                 <button key={folder.id} onClick={() => setActiveFolderId(folder.id)} className="group text-left">
-                  <div className="aspect-[4/3] bg-neutral-50 rounded-lg flex items-center justify-center">
-                    <FolderOpen className="h-16 w-16 text-neutral-300 group-hover:text-neutral-400 transition-colors" />
+                  <div className="aspect-[4/3] rounded-lg flex items-center justify-center transition-colors" style={{ backgroundColor: `${GOLD}14` }}>
+                    <FolderOpen className="h-16 w-16 transition-colors" style={{ color: GOLD_DARK }} />
                   </div>
                   <p className="text-sm mt-3 leading-tight">{folder.name}</p>
                   <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wide mt-0.5">

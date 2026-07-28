@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
-import { uploadToR2 } from '@/lib/r2-client'
+import { uploadToR2WithProgress } from '@/lib/r2-client'
 
 const ACCENT = '#bdac7e'
 
@@ -61,6 +61,24 @@ function formatSize(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+interface UploadQueueItem {
+  id: string; name: string; size: number; mime: string
+  progress: number; status: 'uploading' | 'done' | 'error'; error?: string
+}
+
+// Colored file-type tile for the upload queue — image vs PDF are the only two
+// types this uploader accepts, so just those two are worth telling apart at a glance.
+function QueueFileIcon({ mime }: { mime: string }) {
+  const isPdf = mime === 'application/pdf'
+  return (
+    <div className="h-10 w-10 rounded-lg flex flex-col items-center justify-center text-white shrink-0"
+      style={{ backgroundColor: isPdf ? '#DC2626' : '#2563EB' }}>
+      {isPdf ? <FileText className="h-3.5 w-3.5 mb-0.5" /> : <ImageIcon className="h-3.5 w-3.5 mb-0.5" />}
+      <span className="text-[7px] font-bold tracking-wide">{isPdf ? 'PDF' : 'IMG'}</span>
+    </div>
+  )
+}
+
 function FileCard({ file, onDelete, deleting }: { file: MediaFile; onDelete: (f: MediaFile) => void; deleting: boolean }) {
   return (
     <Card>
@@ -99,6 +117,8 @@ export default function MediaKit() {
   const [activeCategoryId, setActiveCategoryId] = useState<string>('')
 
   const [uploading, setUploading] = useState(false)
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
@@ -136,6 +156,8 @@ export default function MediaKit() {
   const [promoCtaLabel, setPromoCtaLabel] = useState('')
   const [promoCtaUrl, setPromoCtaUrl] = useState('')
   const [promoSaving, setPromoSaving] = useState(false)
+  const [promoImageUploading, setPromoImageUploading] = useState(false)
+  const promoImageInputRef = useRef<HTMLInputElement>(null)
   const [activatingPromoId, setActivatingPromoId] = useState<string | null>(null)
   const [deletingPromoId, setDeletingPromoId] = useState<string | null>(null)
 
@@ -284,22 +306,35 @@ export default function MediaKit() {
   }
 
   // Uploads every picked/dropped file independently (own Blob object + own MediaFile row) in
-  // parallel, then reports one summary toast rather than one per file.
+  // parallel. Each gets its own row in the upload queue modal (name + live progress %),
+  // plus one summary toast at the end rather than one per file.
   async function handleFilesPicked(fileList: FileList | File[]) {
     const files = Array.from(fileList)
     if (!files.length || !activeCategoryId) return
     setUploading(true)
+
+    const queueIds = files.map(() => Math.random().toString(36).slice(2))
+    setUploadQueue(prev => [
+      ...prev,
+      ...files.map((f, i): UploadQueueItem => ({ id: queueIds[i], name: f.name, size: f.size, mime: f.type, progress: 0, status: 'uploading' })),
+    ])
+    setUploadModalOpen(true)
+
     try {
       const folderIdByPath = await resolveFolderPathIds(files)
       const folder = selectedYachtId || 'fleet'
       const cat = activeCategoryId || 'misc'
-      const results = await Promise.all(files.map(async file => {
+      const results = await Promise.all(files.map(async (file, i) => {
+        const qid = queueIds[i]
         try {
           const targetFolderId = file.webkitRelativePath ? folderIdByPath.get(file.webkitRelativePath) ?? activeFolderId : activeFolderId
           // Uploads straight to R2 from the browser (see /api/marketing/media/upload) —
           // a plain server-route POST would buffer the whole file through our serverless function,
           // which fails/hangs well before a large PDF gets there.
-          const blob = await uploadToR2('/api/marketing/media/upload', `media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file)
+          const blob = await uploadToR2WithProgress(
+            '/api/marketing/media/upload', `media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file,
+            pct => setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, progress: pct } : q)),
+          )
 
           const saveRes = await fetch('/api/marketing/media', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -316,12 +351,17 @@ export default function MediaKit() {
           })
           if (!saveRes.ok) {
             const d = await saveRes.json().catch(() => ({}))
-            return { ok: false as const, name: file.name, error: d.error ?? `Save failed (${saveRes.status})` }
+            const msg = d.error ?? `Save failed (${saveRes.status})`
+            setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, status: 'error', error: msg } : q))
+            return { ok: false as const, name: file.name, error: msg }
           }
+          setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, status: 'done', progress: 100 } : q))
           return { ok: true as const }
         } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Upload failed'
           console.error(e)
-          return { ok: false as const, name: file.name, error: e instanceof Error ? e.message : 'Upload failed' }
+          setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, status: 'error', error: msg } : q))
+          return { ok: false as const, name: file.name, error: msg }
         }
       }))
       const successCount = results.filter(r => r.ok).length
@@ -473,6 +513,21 @@ export default function MediaKit() {
     setPromoCtaLabel('')
     setPromoCtaUrl('')
     setPromoDialogOpen(true)
+  }
+
+  async function handlePromoImagePicked(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('File must be an image'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5MB'); return }
+    setPromoImageUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/marketing/upload-image', { method: 'POST', body: form })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
+      setPromoImageUrl(data.url)
+    } catch (e) { console.error(e); toast.error('Upload failed') }
+    finally { setPromoImageUploading(false) }
   }
 
   function openEditPromoDialog(p: PromoRecord) {
@@ -802,8 +857,15 @@ export default function MediaKit() {
               <Textarea id="promo-description" value={promoDescription} onChange={e => setPromoDescription(e.target.value)} placeholder="Short promo copy shown under the title…" rows={3} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="promo-image-url">Image URL</Label>
-              <Input id="promo-image-url" value={promoImageUrl} onChange={e => setPromoImageUrl(e.target.value)} placeholder="https://…" />
+              <Label htmlFor="promo-image-url">Image</Label>
+              <div className="flex items-center gap-2">
+                <Input id="promo-image-url" value={promoImageUrl} onChange={e => setPromoImageUrl(e.target.value)} placeholder="https://… or upload a file" className="flex-1" />
+                <input ref={promoImageInputRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handlePromoImagePicked(f); e.target.value = '' }} />
+                <Button type="button" size="sm" variant="outline" disabled={promoImageUploading} onClick={() => promoImageInputRef.current?.click()}>
+                  {promoImageUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
               {promoImageUrl && <img src={promoImageUrl} alt="Promo" className="h-16 w-24 object-cover rounded border mt-1.5" />}
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -923,6 +985,55 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManageCategoriesOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload File{uploadQueue.length > 1 ? 's' : ''}</DialogTitle>
+            <DialogDescription>
+              {uploadQueue.filter(q => q.status === 'uploading').length > 0
+                ? `Uploading ${uploadQueue.filter(q => q.status === 'uploading').length} of ${uploadQueue.length}…`
+                : `${uploadQueue.filter(q => q.status === 'done').length} of ${uploadQueue.length} uploaded`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1 max-h-80 overflow-y-auto">
+            {uploadQueue.map(q => (
+              <div key={q.id} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
+                <QueueFileIcon mime={q.mime} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium truncate">{q.name}</p>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{formatSize(q.size)}</span>
+                  </div>
+                  {q.status === 'uploading' && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${q.progress}%`, backgroundColor: ACCENT }} />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground w-8 text-right shrink-0">{q.progress}%</span>
+                    </div>
+                  )}
+                  {q.status === 'error' && <p className="text-[11px] text-red-600 mt-0.5 truncate">{q.error ?? 'Failed to upload'}</p>}
+                </div>
+                <div className="shrink-0">
+                  {q.status === 'uploading' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  {q.status === 'done' && <Check className="h-4 w-4 text-green-600" />}
+                  {q.status === 'error' && (
+                    <button onClick={() => setUploadQueue(prev => prev.filter(x => x.id !== q.id))} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setUploadModalOpen(false); setUploadQueue([]) }}>
+              {uploadQueue.some(q => q.status === 'uploading') ? 'Hide' : 'Close'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

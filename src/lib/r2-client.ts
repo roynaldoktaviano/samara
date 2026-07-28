@@ -22,3 +22,35 @@ export async function uploadToR2(handleUploadUrl: string, pathname: string, file
 
   return { url: data.publicUrl }
 }
+
+/**
+ * Same as uploadToR2, but reports real upload progress — needs XMLHttpRequest
+ * (fetch has no upload-progress event) for the PUT step specifically.
+ */
+export function uploadToR2WithProgress(
+  handleUploadUrl: string, pathname: string, file: File, onProgress: (percent: number) => void,
+): Promise<{ url: string }> {
+  return new Promise((resolve, reject) => {
+    fetch(handleUploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pathname, contentType: file.type, size: file.size }),
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) { reject(new Error(data.error ?? 'Failed to get upload URL')); return }
+
+        const xhr = new XMLHttpRequest()
+        xhr.open('PUT', data.url)
+        xhr.setRequestHeader('Content-Type', file.type)
+        xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)) }
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve({ url: data.publicUrl })
+          else reject(new Error('Upload to storage failed'))
+        }
+        xhr.onerror = () => reject(new Error('Upload to storage failed'))
+        xhr.send(file)
+      })
+      .catch(e => reject(e instanceof Error ? e : new Error('Failed to get upload URL')))
+  })
+}
