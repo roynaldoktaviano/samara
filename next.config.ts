@@ -14,8 +14,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   images: {
     // Lets next/image resize/compress media-kit photos on the fly instead of shipping
-    // the original upload to every grid thumbnail — the stored Blob file is untouched.
-    remotePatterns: [{ protocol: 'https', hostname: '*.public.blob.vercel-storage.com' }],
+    // the original upload to every grid thumbnail — the stored file itself is untouched.
+    // *.r2.dev covers Cloudflare R2 (current storage); the vercel-storage.com pattern is
+    // kept for any file a tenant hasn't been migrated off Vercel Blob yet.
+    remotePatterns: [
+      { protocol: 'https', hostname: '*.r2.dev' },
+      { protocol: 'https', hostname: '*.public.blob.vercel-storage.com' },
+    ],
   },
   async headers() {
     return [

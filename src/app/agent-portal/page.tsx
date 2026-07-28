@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import {
   Lock, ChevronLeft, ChevronRight, FileText, MapPin, FileStack,
@@ -625,6 +625,50 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
   )
 }
 
+// First-page-of-the-PDF thumbnail for the media grid. Loaded dynamically (pdfjs-dist
+// is sizeable) and rendered off a CDN-hosted worker matching the installed version —
+// avoids wiring pdf.worker.js through the bundler just for a thumbnail.
+function PdfThumbnail({ url }: { url: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+
+  useEffect(() => {
+    let cancelled = false
+    setStatus('loading')
+    ;(async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist')
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        }
+        const pdf = await pdfjsLib.getDocument(url).promise
+        const page = await pdf.getPage(1)
+        const unscaled = page.getViewport({ scale: 1 })
+        const viewport = page.getViewport({ scale: 500 / unscaled.width })
+        const canvas = canvasRef.current
+        if (!canvas || cancelled) return
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('no 2d context')
+        await page.render({ canvasContext: ctx, viewport }).promise
+        if (!cancelled) setStatus('ready')
+      } catch {
+        if (!cancelled) setStatus('error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [url])
+
+  if (status === 'error') return <FileText className="h-8 w-8 text-neutral-300" />
+  return (
+    <>
+      <canvas ref={canvasRef} className={cn('w-full h-full object-cover object-top', status !== 'ready' && 'hidden')} />
+      {status === 'loading' && <FileText className="h-8 w-8 text-neutral-300 animate-pulse" />}
+    </>
+  )
+}
+
 function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
   const [categories, setCategories] = useState<MediaCategoryRecord[]>([])
   const [activeCatId, setActiveCatId] = useState<string>('')
@@ -708,6 +752,8 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
             <div className="w-11 h-11 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-400 group-hover:text-neutral-600 transition-colors">
               <Play className="h-4 w-4 ml-0.5" />
             </div>
+          ) : f.type === 'document' ? (
+            <PdfThumbnail url={f.url} />
           ) : (
             <FileText className="h-8 w-8 text-neutral-300" />
           )}

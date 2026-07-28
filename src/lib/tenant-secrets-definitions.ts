@@ -13,6 +13,11 @@ export type TenantSecretKey =
   | 'whatsappApiToken'
   | 'whatsappWebhookSecret'
   | 'whatsappAppSecret'
+  | 'instagramApiUrl'
+  | 'instagramApiToken'
+  | 'instagramWebhookSecret'
+  | 'emailInboxWebhookSecret'
+  | 'emailInboxFromAddress'
 
 export interface TenantSecrets {
   freshsalesApiKey?: string
@@ -25,6 +30,11 @@ export interface TenantSecrets {
   whatsappApiToken?: string
   whatsappWebhookSecret?: string
   whatsappAppSecret?: string
+  instagramApiUrl?: string
+  instagramApiToken?: string
+  instagramWebhookSecret?: string
+  emailInboxWebhookSecret?: string
+  emailInboxFromAddress?: string
 }
 
 export const TENANT_SECRET_DEFINITIONS: {
@@ -43,6 +53,11 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'whatsappApiToken', label: 'WhatsApp Cloud API Access Token', description: 'System User (permanent) or temporary access token from Meta', envFallback: 'WHATSAPP_API_TOKEN' },
   { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
   { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256)', envFallback: 'WHATSAPP_APP_SECRET' },
+  { key: 'instagramApiUrl', label: 'Instagram Send API URL', description: 'Graph API endpoint for sending Instagram DMs once connected', envFallback: 'INSTAGRAM_API_URL' },
+  { key: 'instagramApiToken', label: 'Instagram Access Token', description: 'Access token for the connected Instagram/Facebook Page', envFallback: 'INSTAGRAM_API_TOKEN' },
+  { key: 'instagramWebhookSecret', label: 'Instagram Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'INSTAGRAM_WEBHOOK_SECRET' },
+  { key: 'emailInboxWebhookSecret', label: 'Email Inbox Webhook Secret', description: 'Shared secret your inbound-email provider sends when POSTing new emails', envFallback: 'EMAIL_INBOX_WEBHOOK_SECRET' },
+  { key: 'emailInboxFromAddress', label: 'Email Inbox From Address', description: 'Sender address for replies (uses the existing Resend API Key to send)', envFallback: 'EMAIL_INBOX_FROM_ADDRESS' },
 ]
 
 export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITIONS.map(s => s.key))

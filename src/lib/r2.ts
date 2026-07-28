@@ -48,6 +48,11 @@ export function keyFromR2Url(url: string): string | null {
  * Blob's client-token flow: this bypasses the server entirely for the actual bytes,
  * so a large file never has to pass through (and get capped by) our own serverless
  * function's body-size limit.
+ *
+ * Requires CORS to be configured on the R2 bucket (PutBucketCors, allowing PUT from
+ * this app's origin) — without it every one of these uploads fails client-side with
+ * a generic "Load failed"/network error, since the browser blocks the cross-origin
+ * PUT before it ever reaches R2.
  */
 export async function presignUpload(key: string, contentType: string, expiresInSeconds = 300): Promise<string> {
   const command = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType })

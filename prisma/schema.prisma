@@ -1,5 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers whatever machine runs `prisma generate` locally (e.g. your Mac);
+  // the other two cover most Ubuntu/Debian VPS's (Cloudways included) so a client
+  // generated locally still runs once deployed there. Run `cat /etc/os-release` and
+  // `openssl version` on the server if unsure which OpenSSL target it actually needs.
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -2050,6 +2055,112 @@ model WhatsappMessage {
   replyToId String?
   replyTo   WhatsappMessage?  @relation("WhatsappMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   WhatsappMessage[] @relation("WhatsappMessageReplies")
+
+  @@index([conversationId, createdAt])
+}
+
+// ─── Instagram DM (admin-only inbox) ───────────────────────────────────────────
+// Same shape/reasoning as the WhatsApp chat above — this app doesn't talk to
+// Instagram's API directly yet; inbound messages land via POST
+// /api/webhooks/instagram once that integration is wired up.
+
+enum InstagramDirection {
+  IN
+  OUT
+}
+
+enum InstagramMessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model InstagramConversation {
+  id                 String   @id @default(cuid())
+  igUsername         String   @unique
+  displayName        String?
+  profilePicUrl      String?
+  lastMessageAt      DateTime @default(now())
+  lastMessagePreview String?
+  unreadCount        Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  messages InstagramMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model InstagramMessage {
+  id                String                 @id @default(cuid())
+  conversationId    String
+  conversation      InstagramConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction         InstagramDirection
+  body              String?
+  mediaUrl          String?
+  mediaType         String?
+  status            InstagramMessageStatus @default(SENT)
+  providerMessageId String?                @unique
+  sentByUserId      String?
+  sentByName        String?
+  createdAt         DateTime               @default(now())
+
+  // "Swipe to reply" quoting, same as WhatsApp's — points at another message in
+  // the same conversation, either direction.
+  replyToId String?
+  replyTo   InstagramMessage?  @relation("InstagramMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   InstagramMessage[] @relation("InstagramMessageReplies")
+
+  @@index([conversationId, createdAt])
+}
+
+// ─── Email inbox (admin-only, chat-shaped) ─────────────────────────────────────
+// Same idea again — a normalized local inbox that any inbound-email provider
+// (Postmark/SendGrid inbound parse, Resend, etc.) can be pointed at later via
+// POST /api/webhooks/email-inbox.
+
+enum EmailInboxDirection {
+  IN
+  OUT
+}
+
+enum EmailInboxMessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model EmailInboxConversation {
+  id                 String   @id @default(cuid())
+  fromEmail          String   @unique
+  fromName           String?
+  subject            String
+  lastMessageAt      DateTime @default(now())
+  lastMessagePreview String?
+  unreadCount        Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  messages EmailInboxMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model EmailInboxMessage {
+  id                String                  @id @default(cuid())
+  conversationId    String
+  conversation      EmailInboxConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction         EmailInboxDirection
+  body              String?
+  attachmentUrls    String[]                @default([])
+  status            EmailInboxMessageStatus @default(SENT)
+  providerMessageId String?                 @unique
+  sentByUserId      String?
+  sentByName        String?
+  createdAt         DateTime                @default(now())
 
   @@index([conversationId, createdAt])
 }
