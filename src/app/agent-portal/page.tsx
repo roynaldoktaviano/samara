@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import {
-  Lock, ChevronLeft, ChevronRight, FileText, MapPin, FileStack,
+  Lock, ChevronLeft, ChevronRight, ChevronDown, FileText, MapPin, FileStack,
   CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -316,7 +316,19 @@ export default function AgentPortalPage() {
       />
     )
   } else {
-    body = <AgentPortalContentScreen step={step} setStep={setStep} logout={logout} agentName={agentName} selectedYacht={selectedYacht} />
+    body = (
+      <AgentPortalContentScreen
+        step={step} setStep={setStep} logout={logout} agentName={agentName}
+        yachts={yachts} selectedYacht={selectedYacht}
+        onSelectYacht={id => {
+          setYachtId(id)
+          fetch(`/api/agent-portal/promos?yachtId=${id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(setYachtPromo)
+            .catch(() => {})
+        }}
+      />
+    )
   }
 
   return (
@@ -359,8 +371,9 @@ function ContentProtection({ children }: { children: React.ReactNode }) {
   )
 }
 
-function AgentPortalContentScreen({ step, setStep, logout, agentName, selectedYacht }: {
-  step: Step; setStep: (s: Step) => void; logout: () => void; agentName: string; selectedYacht: YachtOption | null
+function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, selectedYacht, onSelectYacht }: {
+  step: Step; setStep: (s: Step) => void; logout: () => void; agentName: string
+  yachts: YachtOption[]; selectedYacht: YachtOption | null; onSelectYacht: (id: string) => void
 }) {
   return (
     <div className="min-h-screen bg-white">
@@ -402,6 +415,14 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, selectedYa
         </div>
       </div>
 
+      {yachts.length > 1 && (
+        <div className="bg-white border-b sticky top-16 z-20">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 h-12 flex items-center">
+            <YachtSwitcher yachts={yachts} selectedYacht={selectedYacht} onSelect={onSelectYacht} />
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
         {step === 'media' && selectedYacht && (
           <MediaKitScreen yacht={selectedYacht} />
@@ -411,6 +432,54 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, selectedYa
           <CalendarScreen yacht={selectedYacht} />
         )}
       </div>
+    </div>
+  )
+}
+
+// Lets an agent switch yachts from inside Media Kit/Calendar without going all the way
+// back to the full-screen YachtScreen picker — just a small dropdown under the nav bar.
+function YachtSwitcher({ yachts, selectedYacht, onSelect }: {
+  yachts: YachtOption[]; selectedYacht: YachtOption | null; onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-xs font-medium text-neutral-700 hover:text-black transition-colors py-1"
+      >
+        <span className="text-neutral-400 font-normal">Yacht:</span>
+        {selectedYacht?.name ?? 'Select a yacht'}
+        <ChevronDown className={cn('h-3.5 w-3.5 text-neutral-400 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1.5 w-56 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-lg z-30 py-1">
+          {yachts.map(y => (
+            <button
+              key={y.id}
+              onClick={() => { onSelect(y.id); setOpen(false) }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-xs transition-colors',
+                y.id === selectedYacht?.id ? 'font-medium text-black bg-neutral-50' : 'text-neutral-600 hover:bg-neutral-50'
+              )}
+              style={y.id === selectedYacht?.id ? { color: GOLD_DARK } : undefined}
+            >
+              {y.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
