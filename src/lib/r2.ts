@@ -22,9 +22,17 @@ export function isR2Configured(): boolean {
   return !!(process.env.R2_S3_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && BUCKET && PUBLIC_URL)
 }
 
-/** Public, directly-viewable URL for an object key — bucket must have Public Access enabled. */
+/**
+ * Public, directly-viewable URL for an object key — bucket must have Public Access enabled.
+ * Keys are built from raw filenames (spaces, &, #, %, non-ASCII, etc. all pass through
+ * unchanged into the S3 key, which S3 itself tolerates fine) so each path segment must be
+ * percent-encoded here or the resulting URL is malformed — browsers then fail to load it
+ * (this was the cause of some, but not all, media-kit photos showing a broken-image icon:
+ * only filenames with spaces/special characters were affected).
+ */
 export function r2PublicUrl(key: string): string {
-  return `${PUBLIC_URL}/${key}`
+  const encoded = key.split('/').map(encodeURIComponent).join('/')
+  return `${PUBLIC_URL}/${encoded}`
 }
 
 /** Server-side upload — for files the server itself fetches/generates (e.g. re-hosting WhatsApp media). */
@@ -40,7 +48,8 @@ export async function deleteFromR2(key: string): Promise<void> {
 /** Reverses r2PublicUrl — needed to delete an object given only the URL stored in the DB. */
 export function keyFromR2Url(url: string): string | null {
   if (!PUBLIC_URL || !url.startsWith(`${PUBLIC_URL}/`)) return null
-  return url.slice(PUBLIC_URL.length + 1)
+  const encoded = url.slice(PUBLIC_URL.length + 1)
+  return encoded.split('/').map(decodeURIComponent).join('/')
 }
 
 /**
