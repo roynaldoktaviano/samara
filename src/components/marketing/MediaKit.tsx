@@ -406,6 +406,44 @@ export default function MediaKit() {
     return resolved
   }
 
+  // Downscales an image before it ever leaves the browser. Full-res camera photos (7-10MB,
+  // 4000px+ on the long edge) were making next/image's on-demand sharp() resize choke on the
+  // shared server (it's already memory-constrained — see the build-OOM issue) and return 503,
+  // which is why some Agent Portal thumbnails showed a broken-image icon while smaller ones
+  // loaded fine. Capping the long edge here removes the problem at the source. GIFs are left
+  // alone (animation would be lost through a canvas round-trip); anything that fails to decode
+  // (e.g. a format the browser can't read) just falls back to uploading the original untouched.
+  const MAX_IMAGE_DIMENSION = 2400
+  async function compressImageFile(file: File): Promise<File> {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif') return file
+    try {
+      const bitmap = await createImageBitmap(file)
+      if (bitmap.width <= MAX_IMAGE_DIMENSION && bitmap.height <= MAX_IMAGE_DIMENSION) {
+        bitmap.close()
+        return file
+      }
+      const scale = MAX_IMAGE_DIMENSION / Math.max(bitmap.width, bitmap.height)
+      const width = Math.round(bitmap.width * scale)
+      const height = Math.round(bitmap.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { bitmap.close(); return file }
+      ctx.drawImage(bitmap, 0, 0, width, height)
+      bitmap.close()
+      const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, outputType, 0.85))
+      if (!blob || blob.size >= file.size) return file
+      const compressed = new File([blob], file.name, { type: outputType })
+      if (file.webkitRelativePath) Object.defineProperty(compressed, 'webkitRelativePath', { value: file.webkitRelativePath })
+      return compressed
+    } catch (e) {
+      console.error('Image compression failed, uploading original:', e)
+      return file
+    }
+  }
+
   // Uploads every picked/dropped file independently (own Blob object + own MediaFile row) in
   // parallel. Each gets its own row in the upload queue modal (name + live progress %),
   // plus one summary toast at the end rather than one per file.
@@ -429,11 +467,13 @@ export default function MediaKit() {
         const qid = queueIds[i]
         try {
           const targetFolderId = file.webkitRelativePath ? folderIdByPath.get(file.webkitRelativePath) ?? activeFolderId : activeFolderId
+          const uploadFile = await compressImageFile(file)
+          if (uploadFile !== file) setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, size: uploadFile.size } : q))
           // Uploads straight to R2 from the browser (see /api/marketing/media/upload) —
           // a plain server-route POST would buffer the whole file through our serverless function,
           // which fails/hangs well before a large PDF gets there.
           const blob = await uploadToR2WithProgress(
-            '/api/marketing/media/upload', `media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, file,
+            '/api/marketing/media/upload', `media-kit/${folder}/${cat}/${Date.now()}-${file.name}`, uploadFile,
             pct => setUploadQueue(prev => prev.map(q => q.id === qid ? { ...q, progress: pct } : q)),
           )
 
@@ -445,8 +485,8 @@ export default function MediaKit() {
               type: file.type.startsWith('image/') ? 'image' : 'document',
               name: file.name,
               url: blob.url,
-              sizeBytes: file.size,
-              mimeType: file.type,
+              sizeBytes: uploadFile.size,
+              mimeType: uploadFile.type,
               folderId: targetFolderId,
             }),
           })
