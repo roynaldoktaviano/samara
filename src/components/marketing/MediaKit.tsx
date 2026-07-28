@@ -13,11 +13,12 @@ import {
 } from '@/components/ui/dialog'
 import {
   Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus, FolderUp,
-  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star,
+  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star, LayoutGrid, List, FolderInput,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const ACCENT = '#bdac7e'
 
@@ -79,10 +80,22 @@ function QueueFileIcon({ mime }: { mime: string }) {
   )
 }
 
-function FileCard({ file, onDelete, deleting }: { file: MediaFile; onDelete: (f: MediaFile) => void; deleting: boolean }) {
+function FileCard({
+  file, onDelete, deleting, selectMode, selected, onToggleSelect,
+}: {
+  file: MediaFile; onDelete: (f: MediaFile) => void; deleting: boolean
+  selectMode: boolean; selected: boolean; onToggleSelect: (id: string) => void
+}) {
   return (
-    <Card>
+    <Card className={cn(selected && 'border-[#bdac7e] ring-1 ring-[#bdac7e]/40')}>
       <CardContent className="py-3 px-4 flex items-start gap-3">
+        {selectMode && (
+          <Checkbox
+            className="mt-0.5 shrink-0"
+            checked={selected}
+            onCheckedChange={() => onToggleSelect(file.id)}
+          />
+        )}
         <div className="mt-0.5 shrink-0 text-muted-foreground">
           {file.type === 'image' && <ImageIcon className="h-4 w-4" />}
           {file.type === 'document' && <FileText className="h-4 w-4" />}
@@ -128,6 +141,14 @@ export default function MediaKit() {
   const [linkSaving, setLinkSaving] = useState(false)
 
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string>('__root__')
+  const [moving, setMoving] = useState(false)
 
   // null = top level of the active category. Folders can nest to unlimited depth.
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
@@ -224,6 +245,7 @@ export default function MediaKit() {
   )
 
   useEffect(() => { setActiveFolderId(null) }, [activeCategoryId, selectedYachtId])
+  useEffect(() => { setSelectMode(false); setSelectedIds(new Set()) }, [activeFolderId])
 
   // Everything visible at the currently open level — top level (null) or inside a folder.
   const currentFiles = useMemo(
@@ -248,6 +270,85 @@ export default function MediaKit() {
 
   function folderFileCount(folderId: string) {
     return scopedFiles.filter(f => f.folderId === folderId).length
+  }
+
+  // Full breadcrumb path for a folder, e.g. "Exterior / Deck" — used to label
+  // move-destination options so folders of the same name in different places aren't ambiguous.
+  function fullFolderPath(folderId: string): string {
+    const path: string[] = []
+    let current = scopedFolders.find(f => f.id === folderId)
+    while (current) {
+      path.unshift(current.name)
+      current = current.parentId ? scopedFolders.find(f => f.id === current!.parentId) : undefined
+    }
+    return path.join(' / ')
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => prev.size === currentFiles.length ? new Set() : new Set(currentFiles.map(f => f.id)))
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  async function handleBulkDelete() {
+    const count = selectedIds.size
+    if (!count) return
+    if (!confirm(`Delete ${count} selected file${count > 1 ? 's' : ''}?`)) return
+    setBulkDeleting(true)
+    try {
+      const ids = [...selectedIds]
+      const results = await Promise.all(ids.map(async id => {
+        const res = await fetch(`/api/marketing/media/${id}`, { method: 'DELETE' })
+        return { id, ok: res.ok }
+      }))
+      const okIds = new Set(results.filter(r => r.ok).map(r => r.id))
+      const failed = results.filter(r => !r.ok).length
+      if (okIds.size) setFiles(prev => prev.filter(f => !okIds.has(f.id)))
+      if (failed) toast.error(`${failed} file${failed > 1 ? 's' : ''} failed to delete`)
+      if (okIds.size) toast.success(`${okIds.size} file${okIds.size > 1 ? 's' : ''} deleted`)
+      exitSelectMode()
+    } catch (e) { console.error(e); toast.error('Failed to delete selected files') }
+    finally { setBulkDeleting(false) }
+  }
+
+  function openMoveDialog() {
+    setMoveTargetFolderId(activeFolderId ?? '__root__')
+    setMoveDialogOpen(true)
+  }
+
+  async function handleBulkMove() {
+    const count = selectedIds.size
+    if (!count) return
+    const targetFolderId = moveTargetFolderId === '__root__' ? null : moveTargetFolderId
+    setMoving(true)
+    try {
+      const ids = [...selectedIds]
+      const results = await Promise.all(ids.map(async id => {
+        const res = await fetch(`/api/marketing/media/${id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderId: targetFolderId }),
+        })
+        return { id, ok: res.ok }
+      }))
+      const failed = results.filter(r => !r.ok).length
+      const okCount = results.length - failed
+      if (okCount) toast.success(`${okCount} file${okCount > 1 ? 's' : ''} moved`)
+      if (failed) toast.error(`${failed} file${failed > 1 ? 's' : ''} failed to move`)
+      setMoveDialogOpen(false)
+      exitSelectMode()
+      await fetchFiles()
+    } catch (e) { console.error(e); toast.error('Failed to move selected files') }
+    finally { setMoving(false) }
   }
 
   // A file dropped/picked as part of a folder carries its folder path in
@@ -748,6 +849,25 @@ export default function MediaKit() {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center rounded-md border p-0.5">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={cn('p-1.5 rounded transition-colors', viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn('p-1.5 rounded transition-colors', viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                  title="List view"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
+                {selectMode ? 'Cancel' : 'Select'}
+              </Button>
               <Button size="sm" variant="outline" onClick={openNewFolderDialog}>
                 <FolderPlus className="h-3.5 w-3.5 mr-1.5" /> New Folder
               </Button>
@@ -773,6 +893,29 @@ export default function MediaKit() {
             </div>
           </div>
 
+          {selectMode && currentFiles.length > 0 && (
+            <div className="flex items-center gap-3 rounded-lg border px-3 py-2 flex-wrap" style={{ backgroundColor: `${ACCENT}0d` }}>
+              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                <Checkbox
+                  checked={selectedIds.size > 0 && selectedIds.size === currentFiles.length}
+                  onCheckedChange={toggleSelectAll}
+                />
+                {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
+              </label>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5" onClick={openMoveDialog}>
+                    <FolderInput className="h-3.5 w-3.5 mr-1.5" /> Move
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 text-red-600 hover:text-red-600" disabled={bulkDeleting} onClick={handleBulkDelete}>
+                    {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1.5" />}
+                    Delete
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div
             {...dropProps}
             className={cn(
@@ -790,7 +933,7 @@ export default function MediaKit() {
             ) : currentFiles.length === 0 && currentFolders.length === 0 ? (
               <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nothing here yet — drag files here or click Upload.</CardContent></Card>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className={cn('grid gap-3', viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1')}>
                 {currentFolders.map(folder => (
                   <Card key={folder.id} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
                     <CardContent className="py-3 px-4 flex items-center gap-3">
@@ -804,7 +947,12 @@ export default function MediaKit() {
                     </CardContent>
                   </Card>
                 ))}
-                {currentFiles.map(f => <FileCard key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id} />)}
+                {currentFiles.map(f => (
+                  <FileCard
+                    key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id}
+                    selectMode={selectMode} selected={selectedIds.has(f.id)} onToggleSelect={toggleSelect}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -1033,6 +1181,33 @@ export default function MediaKit() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setUploadModalOpen(false); setUploadQueue([]) }}>
               {uploadQueue.some(q => q.status === 'uploading') ? 'Hide' : 'Close'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FolderInput className="h-4 w-4 text-[#bdac7e]" /> Move {selectedIds.size} file{selectedIds.size > 1 ? 's' : ''}</DialogTitle>
+            <DialogDescription>Pick a destination folder within {activeCategory?.name}.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Select value={moveTargetFolderId} onValueChange={setMoveTargetFolderId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__root__">{activeCategory?.name} (root)</SelectItem>
+                {scopedFolders.map(f => (
+                  <SelectItem key={f.id} value={f.id}>{fullFolderPath(f.id)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>Cancel</Button>
+            <Button disabled={moving} onClick={handleBulkMove} style={{ backgroundColor: ACCENT }} className="text-white">
+              {moving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Move
             </Button>
           </DialogFooter>
         </DialogContent>
