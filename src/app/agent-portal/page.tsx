@@ -829,7 +829,11 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
       <button key={f.id} onClick={() => setPreview(f)} className="group text-left">
         <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden flex items-center justify-center">
           {f.type === 'image' ? (
-            <Image src={f.url} alt={f.name} fill sizes="(max-width: 640px) 50vw, 25vw" className="object-cover transition-opacity group-hover:opacity-90" />
+            // unoptimized: skips the server-side sharp() resize pass entirely — that pass was
+            // failing (503) on this box's limited RAM for large photos. Uploads are already
+            // downscaled client-side before they reach R2, so this trades a slightly bigger
+            // transfer for not depending on the server's memory headroom at request time.
+            <Image src={f.url} alt={f.name} fill unoptimized sizes="(max-width: 640px) 50vw, 25vw" className="object-cover transition-opacity group-hover:opacity-90" />
           ) : f.type === 'video' ? (
             <div className="w-11 h-11 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-400 group-hover:text-neutral-600 transition-colors">
               <Play className="h-4 w-4 ml-0.5" />
