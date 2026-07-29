@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus, FolderUp,
-  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star, LayoutGrid, List, FolderInput,
+  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star, LayoutGrid, List, FolderInput, MapPin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -181,6 +181,20 @@ export default function MediaKit() {
   const promoImageInputRef = useRef<HTMLInputElement>(null)
   const [activatingPromoId, setActivatingPromoId] = useState<string | null>(null)
   const [deletingPromoId, setDeletingPromoId] = useState<string | null>(null)
+
+  // Agent Portal display — image/description/destination/order shown on the yacht picker
+  // and yacht hero in the Agent Portal. Editable here (not Fleet settings) since this is
+  // presentation content, not operational data — the yacht's name itself still comes from
+  // (and can only be renamed via) the Yacht record, deliberately not editable from here.
+  const [yachtSettingsDialogOpen, setYachtSettingsDialogOpen] = useState(false)
+  const [yachtSettingsLoading, setYachtSettingsLoading] = useState(false)
+  const [yachtSettingsSaving, setYachtSettingsSaving] = useState(false)
+  const [yachtImageUrl, setYachtImageUrl] = useState('')
+  const [yachtImageUploading, setYachtImageUploading] = useState(false)
+  const yachtImageInputRef = useRef<HTMLInputElement>(null)
+  const [yachtDescription, setYachtDescription] = useState('')
+  const [yachtTagline, setYachtTagline] = useState('')
+  const [yachtSortOrder, setYachtSortOrder] = useState('0')
 
   const fetchYachts = useCallback(async () => {
     try {
@@ -733,6 +747,58 @@ export default function MediaKit() {
     finally { setDeletingPromoId(null) }
   }
 
+  async function openYachtSettingsDialog() {
+    if (!selectedYachtId) return
+    setYachtSettingsDialogOpen(true)
+    setYachtSettingsLoading(true)
+    try {
+      const res = await fetch(`/api/yachts/${selectedYachtId}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Failed to load yacht info'); return }
+      setYachtImageUrl(data.image ?? '')
+      setYachtDescription(data.description ?? '')
+      setYachtTagline(data.tagline ?? '')
+      setYachtSortOrder(String(data.sortOrder ?? 0))
+    } catch (e) { console.error(e); toast.error('Failed to load yacht info') }
+    finally { setYachtSettingsLoading(false) }
+  }
+
+  async function handleYachtImagePicked(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('File must be an image'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5MB'); return }
+    setYachtImageUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/marketing/upload-image', { method: 'POST', body: form })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
+      setYachtImageUrl(data.url)
+    } catch (e) { console.error(e); toast.error('Upload failed') }
+    finally { setYachtImageUploading(false) }
+  }
+
+  async function handleSaveYachtSettings() {
+    if (!selectedYachtId) return
+    setYachtSettingsSaving(true)
+    try {
+      const res = await fetch(`/api/yachts/${selectedYachtId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: yachtImageUrl.trim() || null,
+          description: yachtDescription.trim() || null,
+          tagline: yachtTagline.trim() || null,
+          sortOrder: Number(yachtSortOrder) || 0,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Failed to save'); return }
+      toast.success('Agent Portal display updated')
+      setYachtSettingsDialogOpen(false)
+    } catch (e) { console.error(e); toast.error('Failed to save') }
+    finally { setYachtSettingsSaving(false) }
+  }
+
   const { isDragging, dropProps } = useFileDrop(handleFilesPicked, !activeCategoryId || uploading)
 
   return (
@@ -828,6 +894,27 @@ export default function MediaKit() {
           )}
         </CardContent>
       </Card>
+
+      {selectedYachtId && (
+        <Card>
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+                  Agent Portal Display — {yachts.find(y => y.id === selectedYachtId)?.name ?? ''}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Image, description, destination and picker order shown for this yacht in the Agent Portal. The yacht's name can only be changed in Fleet settings.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={openYachtSettingsDialog}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center justify-between gap-3 border-b">
         <div className="flex gap-x-6 gap-y-2 flex-wrap">
@@ -1072,6 +1159,57 @@ export default function MediaKit() {
             <Button disabled={promoSaving} onClick={handleSavePromo} style={{ backgroundColor: ACCENT }} className="text-white">
               {promoSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {editingPromoId ? 'Save Changes' : 'Create Promo'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={yachtSettingsDialogOpen} onOpenChange={setYachtSettingsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><MapPin className="h-4 w-4 text-[#bdac7e]" /> Agent Portal Display</DialogTitle>
+            <DialogDescription>
+              {yachts.find(y => y.id === selectedYachtId)?.name ?? ''} — shown on the yacht picker and hero in the Agent Portal.
+            </DialogDescription>
+          </DialogHeader>
+          {yachtSettingsLoading ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
+          ) : (
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="yacht-image">Image</Label>
+                <div className="flex items-center gap-2">
+                  <Input id="yacht-image" value={yachtImageUrl} onChange={e => setYachtImageUrl(e.target.value)} placeholder="https://… or upload a file" className="flex-1" />
+                  <input ref={yachtImageInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleYachtImagePicked(f); e.target.value = '' }} />
+                  <Button type="button" size="sm" variant="outline" disabled={yachtImageUploading} onClick={() => yachtImageInputRef.current?.click()}>
+                    {yachtImageUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+                {yachtImageUrl && <img src={yachtImageUrl} alt="Yacht" className="h-20 w-32 object-cover rounded border mt-1.5" />}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="yacht-description">Description</Label>
+                <Textarea id="yacht-description" value={yachtDescription} onChange={e => setYachtDescription(e.target.value)} placeholder="Shown under the yacht name in the Agent Portal…" rows={3} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="yacht-tagline">Destination</Label>
+                  <Input id="yacht-tagline" value={yachtTagline} onChange={e => setYachtTagline(e.target.value)} placeholder="e.g. Komodo · Raja Ampat" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="yacht-sort-order">Picker order</Label>
+                  <Input id="yacht-sort-order" type="number" value={yachtSortOrder} onChange={e => setYachtSortOrder(e.target.value)} placeholder="0" />
+                  <p className="text-[11px] text-muted-foreground">Lower shows first.</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setYachtSettingsDialogOpen(false)}>Cancel</Button>
+            <Button disabled={yachtSettingsSaving || yachtSettingsLoading} onClick={handleSaveYachtSettings} style={{ backgroundColor: ACCENT }} className="text-white">
+              {yachtSettingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

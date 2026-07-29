@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { roleMatches } from '@/lib/role-utils'
+
+const MARKETING_ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -141,6 +144,41 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json(result)
   } catch (error) {
     console.error('Error updating yacht:', error)
+    return NextResponse.json({ error: 'Failed to update yacht' }, { status: 500 })
+  }
+}
+
+// PATCH — Agent Portal presentation fields only (image/description/destination/order),
+// edited from the Media Kit screen rather than Fleet settings since it's marketing content,
+// not operational data. Deliberately narrower than PUT: no name/capacity/pricing/cabins here.
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!session?.user?.id || !roleMatches(role, MARKETING_ALLOWED)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
+  try {
+    const { id } = await params
+    const body = await request.json().catch(() => ({}))
+    const existing = await db.yacht.findUnique({ where: { id }, select: { name: true } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const data: { image?: string | null; description?: string | null; tagline?: string | null; sortOrder?: number } = {}
+    if ('image' in body) data.image = body.image || null
+    if ('description' in body) data.description = body.description || null
+    if ('tagline' in body) data.tagline = body.tagline || null
+    if ('sortOrder' in body) data.sortOrder = Number.isFinite(Number(body.sortOrder)) ? Number(body.sortOrder) : 0
+
+    const updated = await db.yacht.update({ where: { id }, data })
+
+    logActivity({
+      userId: session.user.id, userName: session.user.name ?? session.user.email ?? 'Unknown',
+      userRole: role, action: 'UPDATE', entity: 'Yacht', entityId: id,
+      detail: `Update Agent Portal display for yacht: ${existing.name}`,
+    }, db).catch(() => {})
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error('Error updating yacht display settings:', error)
     return NextResponse.json({ error: 'Failed to update yacht' }, { status: 500 })
   }
 }

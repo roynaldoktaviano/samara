@@ -391,6 +391,9 @@ model Yacht {
   image             String?
   tagline           String?
   type              String?
+  // Manual display order for the Agent Portal yacht picker (and anywhere else the fleet is
+  // listed) — lower shows first. Defaults to 0 so existing/new yachts fall back to name-sort.
+  sortOrder         Int                     @default(0)
   deletedAt         DateTime?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt

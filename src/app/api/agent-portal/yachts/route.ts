@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
         id: true, name: true, tagline: true, type: true, image: true,
         description: true, capacity: true, cabinCount: true, length: true,
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
     return NextResponse.json(yachts)
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to fetch yachts' }, { status: 500 }) }
