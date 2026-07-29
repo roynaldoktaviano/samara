@@ -37,11 +37,15 @@ export function summarizePOPayments(grandTotal: number, paymentRequests: POPayme
   const remaining = Math.max(0, grandTotal - requestedTotal)
   // A request/reimbursement can sit PENDING (submitted, awaiting Finance approval) before
   // anything is actually PAID — that's distinct from UNPAID (nothing submitted at all yet).
+  // Checked FIRST, ahead of the PAID branch: a PO that was already fully paid off still needs
+  // to show as "Waiting for Payment" the moment a fresh request/reimbursement (e.g. a delivery
+  // fee top-up) comes in — otherwise a prior paidTotal >= grandTotal keeps it stuck on PAID
+  // forever and the new pending request never surfaces.
   const hasPendingRequest = all.some(p => p.status !== 'PAID')
   const paymentStatus =
+    hasPendingRequest ? 'PENDING' :
     paidTotal > 0 && paidTotal >= grandTotal ? 'PAID' :
     paidTotal > 0 ? 'PARTIALLY_PAID' :
-    hasPendingRequest ? 'PENDING' :
     'UNPAID'
   return { requestedTotal, paidTotal, remaining, paymentStatus }
 }

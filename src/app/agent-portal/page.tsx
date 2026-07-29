@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, forwardRef } from 'react'
 import Image from 'next/image'
-import HTMLFlipBook from 'react-pageflip'
+import dynamic from 'next/dynamic'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown, FileText, MapPin, FileStack,
   CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
@@ -14,6 +14,11 @@ const GOLD = '#bdac7e'
 const GOLD_DARK = '#a8956a'
 
 const SAMARA_LOGO = '/agent-portal/logoo.png'
+
+// react-pageflip touches browser globals (document/HTMLElement) at module-evaluation time,
+// which throws during Next.js's server-side render pass on a self-hosted (non-edge) Node
+// server — loaded client-only to avoid that.
+const HTMLFlipBook = dynamic(() => import('react-pageflip'), { ssr: false })
 
 // Shown when a yacht has no `image` set in the ERP yet — decorative background only.
 const FALLBACK_PHOTO_A = '/agent-portal/samara1.webp'
@@ -668,8 +673,7 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
                 <img src={y.image ?? (i % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B)} alt={y.name} className="absolute inset-0 w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
                 <div className="absolute bottom-2.5 left-2.5 right-2.5">
-                  {y.tagline && <p className="text-white/70 text-[9px] sm:text-[10px] font-medium truncate">{y.tagline}</p>}
-                  <p className="text-white font-bold text-xs sm:text-sm leading-tight uppercase tracking-tight mt-0.5">{y.name}</p>
+                  <p className="text-white font-bold text-xs sm:text-sm leading-tight uppercase tracking-tight">{y.name}</p>
                 </div>
               </button>
             ))}

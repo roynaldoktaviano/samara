@@ -47,7 +47,7 @@ export async function GET() {
       },
     },
   })
-  return NextResponse.json(orders.map(o => {
+  const results = orders.map(o => {
     const totalOrdered = o.items.reduce((s, i) => s + i.orderedQty, 0)
     const totalReceived = o.items.reduce((s, i) => s + i.receivedQty, 0)
     const fullyReceivedCount = o.items.filter(i => i.receivedQty >= i.orderedQty).length
@@ -94,7 +94,13 @@ export async function GET() {
       transitTransfers: undefined,
       currentLegLabel,
     }
-  }))
+  })
+  // A fresh payment request/reimbursement (e.g. a "pelunasan") should surface at the top
+  // regardless of the order's original createdAt — that's the actionable item Finance/
+  // Purchasing needs to see first. Stable sort keeps everything else in its existing
+  // createdAt-desc order within each of the two groups.
+  results.sort((a, b) => (a.paymentStatus === 'PENDING' ? 0 : 1) - (b.paymentStatus === 'PENDING' ? 0 : 1))
+  return NextResponse.json(results)
 }
 
 export async function POST(req: NextRequest) {
