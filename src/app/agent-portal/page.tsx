@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, forwardRef } from 'react'
 import Image from 'next/image'
+import HTMLFlipBook from 'react-pageflip'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown, FileText, MapPin, FileStack,
   CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
@@ -751,6 +752,131 @@ function PdfThumbnail({ url }: { url: string }) {
   )
 }
 
+// Fits a book-reader page size within the preview modal's available area (roughly
+// max-w-3xl minus padding, h-[85vh] minus the header/controls chrome) — landscape PDFs
+// get one full-width page at a time, portrait PDFs get a real open-book two-page spread
+// (react-pageflip's `usePortrait` then auto-collapses to one page on narrower viewports).
+function computeFlipbookDims(pageWidthPt: number, pageHeightPt: number) {
+  const maxContainerWidth = 680
+  const maxContainerHeight = 560
+  const ratio = pageHeightPt / pageWidthPt
+  const width = ratio <= 1
+    ? Math.min(maxContainerWidth, maxContainerHeight / ratio)
+    : Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
+  return { width: Math.round(width), height: Math.round(width * ratio) }
+}
+
+const FlipPage = forwardRef<HTMLDivElement, { src: string }>(function FlipPage({ src }, ref) {
+  return (
+    <div ref={ref} className="bg-white">
+      <img src={src} alt="" className="w-full h-full object-contain select-none pointer-events-none" draggable={false} />
+    </div>
+  )
+})
+
+// Real page-turn "flipbook" reader for a PDF — every page is rendered to an image up
+// front (pdfjs-dist, same worker setup as PdfThumbnail above), then handed to
+// react-pageflip for the actual flip animation/drag interaction. Falls back to a plain
+// iframe if rendering fails for any reason (e.g. a corrupt/unsupported PDF).
+function PdfFlipbook({ url }: { url: string }) {
+  const [pages, setPages] = useState<string[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [dims, setDims] = useState({ width: 400, height: 560 })
+  const [pageIndex, setPageIndex] = useState(0)
+  // react-pageflip doesn't ship a typed ref shape — `pageFlip()` returns the underlying
+  // PageFlip instance (flipNext/flipPrev/etc.), per the library's own documented usage.
+  const flipRef = useRef<{ pageFlip: () => { flipNext: () => void; flipPrev: () => void } } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setPages(null)
+    setFailed(false)
+    setPageIndex(0)
+    ;(async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist')
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        }
+        const pdf = await pdfjsLib.getDocument(url).promise
+        const images: string[] = []
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i)
+          const viewport = page.getViewport({ scale: 1.5 })
+          const canvas = document.createElement('canvas')
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('no 2d context')
+          await page.render({ canvasContext: ctx, viewport }).promise
+          images.push(canvas.toDataURL('image/jpeg', 0.85))
+          if (i === 1) {
+            const unscaled = page.getViewport({ scale: 1 })
+            if (!cancelled) setDims(computeFlipbookDims(unscaled.width, unscaled.height))
+          }
+        }
+        if (!cancelled) setPages(images)
+      } catch (e) {
+        console.error('[PdfFlipbook] failed to render', e)
+        if (!cancelled) setFailed(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [url])
+
+  if (failed) return <iframe src={url} title="PDF preview" className="flex-1 w-full bg-neutral-100" />
+
+  if (!pages) {
+    return (
+      <div className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Preparing pages…
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 overflow-hidden bg-neutral-100 py-4">
+      <HTMLFlipBook
+        ref={flipRef as any}
+        width={dims.width}
+        height={dims.height}
+        size="fixed"
+        minWidth={200} maxWidth={1000} minHeight={280} maxHeight={1400}
+        startPage={0}
+        drawShadow
+        flippingTime={500}
+        usePortrait
+        startZIndex={0}
+        autoSize
+        maxShadowOpacity={0.5}
+        showCover={false}
+        mobileScrollSupport
+        clickEventForward
+        useMouseEvents
+        swipeDistance={30}
+        showPageCorners
+        disableFlipByClick={false}
+        className=""
+        style={{}}
+        onFlip={(e: { data: number }) => setPageIndex(e.data)}
+      >
+        {pages.map((src, i) => <FlipPage key={i} src={src} />)}
+      </HTMLFlipBook>
+      {pages.length > 1 && (
+        <div className="flex items-center gap-4 shrink-0">
+          <button onClick={() => flipRef.current?.pageFlip().flipPrev()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-xs text-muted-foreground">{pageIndex + 1} / {pages.length}</span>
+          <button onClick={() => flipRef.current?.pageFlip().flipNext()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
   const [categories, setCategories] = useState<MediaCategoryRecord[]>([])
   const [activeCatId, setActiveCatId] = useState<string>('')
@@ -969,7 +1095,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
                   </button>
                 </div>
               </div>
-              <iframe src={preview.url} title={preview.name} className="flex-1 w-full bg-neutral-100" />
+              <PdfFlipbook url={preview.url} />
             </div>
           )}
 
