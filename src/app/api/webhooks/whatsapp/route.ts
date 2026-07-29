@@ -44,6 +44,9 @@ interface CloudApiMessage {
   audio?: CloudApiMediaRef
   document?: CloudApiMediaRef
   sticker?: CloudApiMediaRef
+  // Present when this message is a "swipe to reply" quote of an earlier message —
+  // `id` is the WAMID (providerMessageId) of the message being replied to.
+  context?: { id: string }
 }
 interface CloudApiStatus { id: string; status: string; timestamp: string; recipient_id: string }
 interface CloudApiValue {
@@ -153,8 +156,14 @@ export async function POST(request: NextRequest) {
           update: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
         })
 
+        // Resolve the quoted message (if this is a reply) — Meta only gives us its WAMID,
+        // so we look up which of our own rows that maps back to via providerMessageId.
+        const quoted = msg.context?.id
+          ? await db.whatsappMessage.findUnique({ where: { providerMessageId: msg.context.id }, select: { id: true } })
+          : null
+
         await db.whatsappMessage.create({
-          data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id },
+          data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
         })
       }
     }

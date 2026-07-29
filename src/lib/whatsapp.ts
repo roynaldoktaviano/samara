@@ -18,7 +18,7 @@ function cloudApiMediaType(mimeType?: string): 'image' | 'video' | 'audio' | 'do
 }
 
 export async function sendWhatsappMessage(
-  tenantId: string, to: string, body: string, mediaUrl?: string, mediaType?: string,
+  tenantId: string, to: string, body: string, mediaUrl?: string, mediaType?: string, contextMessageId?: string,
 ): Promise<SendWhatsappResult> {
   const [apiUrl, apiToken] = await Promise.all([
     getTenantSecret(tenantId, 'whatsappApiUrl'),
@@ -27,6 +27,11 @@ export async function sendWhatsappMessage(
   if (!apiUrl || !apiToken) {
     return { ok: false, error: 'WhatsApp API is not configured for this tenant yet' }
   }
+
+  // `context.message_id` (the WAMID being replied to) is what makes WhatsApp render this as
+  // a quoted "swipe to reply" on the recipient's phone — a sibling of `type`/`text`/etc.,
+  // not nested inside the type-specific object, so it's spread onto either payload shape.
+  const context = contextMessageId ? { context: { message_id: contextMessageId } } : {}
 
   // Cloud API accepts an external https:// link directly for media (no need to
   // upload to Meta first) — our mediaUrl is already a public Vercel Blob URL.
@@ -37,6 +42,7 @@ export async function sendWhatsappMessage(
         to,
         type: cloudApiMediaType(mediaType),
         [cloudApiMediaType(mediaType)]: { link: mediaUrl, ...(body && { caption: body }) },
+        ...context,
       }
     : {
         messaging_product: 'whatsapp',
@@ -44,6 +50,7 @@ export async function sendWhatsappMessage(
         to,
         type: 'text',
         text: { body },
+        ...context,
       }
 
   try {

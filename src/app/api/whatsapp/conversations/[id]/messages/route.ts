@@ -22,9 +22,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const conversation = await db.whatsappConversation.findUnique({ where: { id } })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  let quotedProviderMessageId: string | null = null
   if (replyToId) {
     const quoted = await db.whatsappMessage.findFirst({ where: { id: replyToId, conversationId: id } })
     if (!quoted) return NextResponse.json({ error: 'Message being replied to was not found' }, { status: 400 })
+    // Meta only understands its own WAMID — if the quoted message never got one (e.g. it's a
+    // send that itself failed), we still save the reply locally but can't quote it on WhatsApp.
+    quotedProviderMessageId = quoted.providerMessageId
   }
 
   const message = await db.whatsappMessage.create({
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
-    ? await sendWhatsappMessage(tenantId, conversation.phone, text ?? '', mediaUrl || undefined, mediaType || undefined)
+    ? await sendWhatsappMessage(tenantId, conversation.phone, text ?? '', mediaUrl || undefined, mediaType || undefined, quotedProviderMessageId || undefined)
     : { ok: false, error: 'No tenant on session' }
 
   const updated = await db.whatsappMessage.update({
