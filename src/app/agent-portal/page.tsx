@@ -853,7 +853,7 @@ function PdfFlipbook({ url }: { url: string }) {
         startZIndex={0}
         autoSize
         maxShadowOpacity={0.5}
-        showCover={false}
+        showCover
         mobileScrollSupport
         clickEventForward
         useMouseEvents
