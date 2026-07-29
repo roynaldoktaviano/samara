@@ -109,6 +109,10 @@ export async function POST(request: NextRequest) {
     const utmCampaign = pick(data, 'utm_campaign', 'utm-campaign')
     const utmTerm     = pick(data, 'utm_term',     'utm-term')
     const utmContent  = pick(data, 'utm_content',  'utm-content')
+    // Google Click ID — needed to later match a booking back to the Google Ads click that
+    // produced it (offline conversion import). Same "not sent yet, harmless to capture
+    // defensively" reasoning as the UTM fields above.
+    const gclid = pick(data, 'gclid')
     const url = pick(data, 'page-url', 'page_url', 'url', 'form-url')
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
 
@@ -195,6 +199,7 @@ export async function POST(request: NextRequest) {
         utmCampaign:  utmCampaign || null,
         utmTerm:      utmTerm     || null,
         utmContent:   utmContent  || null,
+        gclid:        gclid       || null,
         rawPayload:   toJsonSafe(data),
       },
     })

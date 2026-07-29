@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2 } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
@@ -48,6 +48,9 @@ interface Inquiry {
 export default function Leads() {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
+  const role = (session?.user as { role?: string })?.role ?? ''
+  const canExportGoogleAds = ['ADMIN', 'MARKETING', 'SUPER_ADMIN'].includes(role)
+  const [exportingGoogleAds, setExportingGoogleAds] = useState(false)
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [totalLeads, setTotalLeads] = useState(0)
@@ -148,6 +151,25 @@ export default function Leads() {
     }
   }
 
+  /* ── Google Ads offline conversion export ── */
+  // Bookings whose deposit was confirmed in the last 30 days, as a CSV ready for manual
+  // upload into Google Ads' Conversions > Uploads screen — see api/marketing/google-ads-conversions.
+  const handleExportGoogleAds = async () => {
+    setExportingGoogleAds(true)
+    try {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const res = await fetch(`/api/marketing/google-ads-conversions?since=${encodeURIComponent(since)}`)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `google-ads-conversions-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally { setExportingGoogleAds(false) }
+  }
+
   /* ── bulk delete ── */
   const confirmBulkDelete = async () => {
     setBulkDeleting(true)
@@ -186,6 +208,12 @@ export default function Leads() {
           <p className="text-muted-foreground">Manage lead profiles</p>
         </div>
         <div className="flex items-center gap-2">
+          {canExportGoogleAds && (
+            <Button variant="outline" disabled={exportingGoogleAds} onClick={handleExportGoogleAds} title="Bookings with a confirmed deposit in the last 30 days, as a CSV for Google Ads offline conversion upload">
+              {exportingGoogleAds ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Google Ads CSV
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Download className="mr-2 h-4 w-4" /> Import from Freshsales
           </Button>

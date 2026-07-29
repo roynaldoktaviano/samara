@@ -1,6 +1,7 @@
 import { sheets, auth, sheets_v4 } from '@googleapis/sheets'
 import type { PrismaClient } from '@prisma/client'
 import { getTripSheetGroups, type TripSheetGroup } from '@/lib/trip-sheet'
+import { getGoogleAdsConversions, toGoogleAdsTime, GOOGLE_ADS_CONVERSION_HEADER } from '@/lib/google-ads-conversions'
 
 const HEADER = [
   'Month', 'Trip Date', 'Trip', 'Type', 'Status',
@@ -194,4 +195,39 @@ export async function rebuildTripSheetGoogleSheet(db: PrismaClient, sheetId: str
 export function scheduleTripSheetSync(db: PrismaClient, sheetId: string | null) {
   if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !sheetId) return
   rebuildTripSheetGoogleSheet(db, sheetId).catch(err => console.error('[trip-sheet-sync] failed:', err))
+}
+
+const GOOGLE_ADS_LOOKBACK_DAYS = 90
+const GOOGLE_ADS_CONVERSION_NAME = 'Booking Deposit Confirmed'
+
+/**
+ * Full-refresh rebuild of the Google Ads offline-conversion sheet — configured in Google Ads
+ * as a "Google Sheets" conversion import source so it gets pulled in automatically on their
+ * own schedule, no Developer Token/API access needed on our side. Idempotent same as the trip
+ * sheet rebuild above: always clears and rewrites the whole tab rather than appending, and
+ * Google Ads itself dedupes rows by (Click ID + Conversion Name + Conversion Time) so the same
+ * booking appearing again in the rolling lookback window across runs is harmless.
+ */
+export async function rebuildGoogleAdsConversionsSheet(db: PrismaClient, sheetId: string | null) {
+  const sheetsClient = getSheetsClient()
+  if (!sheetId || !sheetsClient) return { ok: false as const, reason: 'not_configured' }
+
+  const since = new Date(Date.now() - GOOGLE_ADS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
+  const conversions = await getGoogleAdsConversions(db, since, GOOGLE_ADS_CONVERSION_NAME)
+
+  const rows: (string | number)[][] = [
+    GOOGLE_ADS_CONVERSION_HEADER,
+    ...conversions.map(c => [c.gclid, c.conversionName, toGoogleAdsTime(c.conversionTime), c.value, c.currency]),
+  ]
+
+  const lastCol = String.fromCharCode('A'.charCodeAt(0) + GOOGLE_ADS_CONVERSION_HEADER.length - 1)
+  await sheetsClient.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `A1:${lastCol}20000` })
+  await sheetsClient.spreadsheets.values.update({
+    spreadsheetId: sheetId,
+    range: 'A1',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rows },
+  })
+
+  return { ok: true as const, rows: conversions.length }
 }

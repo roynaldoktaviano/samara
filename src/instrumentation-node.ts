@@ -37,15 +37,27 @@ async function recoverInterruptedSends() {
 export async function startNodeInstrumentation() {
   await recoverInterruptedSends()
 
+  const port = process.env.PORT || 3000
+  const cronHeaders = { Authorization: `Bearer ${process.env.CRON_SECRET}` }
+
   const intervalMs = 10 * 60 * 1000
   setInterval(async () => {
     try {
-      const port = process.env.PORT || 3000
-      await fetch(`http://127.0.0.1:${port}/api/marketing/campaigns/dispatch`, {
-        headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
-      })
+      await fetch(`http://127.0.0.1:${port}/api/marketing/campaigns/dispatch`, { headers: cronHeaders })
     } catch (err) {
       console.error('[scheduler] dispatch tick failed:', err)
     }
   }, intervalMs)
+
+  // Rebuilds the Google Ads offline-conversion Google Sheet — full-refresh/idempotent (see
+  // rebuildGoogleAdsConversionsSheet), so running this more often than Google Ads actually
+  // reads the sheet is harmless. A few hours' cadence is enough for same-day attribution.
+  const googleAdsSyncIntervalMs = 3 * 60 * 60 * 1000
+  setInterval(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/marketing/google-ads-conversions/sync`, { headers: cronHeaders })
+    } catch (err) {
+      console.error('[scheduler] google-ads-conversions sync tick failed:', err)
+    }
+  }, googleAdsSyncIntervalMs)
 }

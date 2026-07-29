@@ -696,6 +696,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // src/lib/purchasing/transitChain.ts.
   const [transitStopIds, setTransitStopIds] = useState<string[]>([])
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+  // Lets Enter in Qty jump straight to Unit Price without reaching for the mouse/Tab.
+  const unitPriceRefs = useRef<(HTMLInputElement | null)[]>([])
+  const qtyRefs = useRef<(HTMLInputElement | null)[]>([])
   const [extraCharges, setExtraCharges] = useState<{ label: string; amount: number }[]>([])
   const [discountType, setDiscountType] = useState<'PERCENT' | 'FIXED'>('PERCENT')
   const [discountValue, setDiscountValue] = useState(0)
@@ -820,12 +823,20 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     setDetailLoading(false)
   }
 
-  function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }]) }
+  // open: true so the new row's item search box (which is `autoFocus`) grabs focus right
+  // away — lets you keep typing the next item without reaching for the mouse.
+  function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: true }]) }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)) }
   function addCharge() { setExtraCharges(c => [...c, { label: '', amount: 0 }]) }
   function removeCharge(i: number) { setExtraCharges(c => c.filter((_, idx) => idx !== i)) }
   function updateCharge(i: number, patch: Partial<{ label: string; amount: number }>) {
     setExtraCharges(c => c.map((charge, idx) => idx !== i ? charge : { ...charge, ...patch }))
+  }
+  // Item picked (click or Enter) → Qty is the natural next field, so jump focus there for
+  // uninterrupted keyboard entry. Deferred a tick since the Qty input for this row doesn't
+  // exist yet in the DOM until the setLines() above re-renders.
+  function focusQtyNextTick(idx: number) {
+    setTimeout(() => qtyRefs.current[idx]?.focus(), 0)
   }
   function pickItem(idx: number, item: PurchaseItem) {
     setLines(l => l.map((line, i) => i !== idx ? line : {
@@ -836,6 +847,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       unitCost: item.avgPrice > 0 ? item.avgPrice : line.unitCost,
       search: '', open: false,
     }))
+    focusQtyNextTick(idx)
   }
   function pickCustomItem(idx: number, name: string, unit = '') {
     setLines(l => l.map((line, i) => i !== idx ? line : {
@@ -844,6 +856,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       baseUnit: '', purchaseUnit: '', itemUnit: unit,
       search: '', open: false,
     }))
+    focusQtyNextTick(idx)
   }
 
   // Create and Edit share the same supplier/lines/extraCharges/etc state (see
@@ -1306,6 +1319,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                               <input autoFocus className={`${inp} pl-8`} placeholder="Search item..."
                                 value={line.search}
                                 onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, search: e.target.value }))}
+                                onKeyDown={e => {
+                                  if (e.key !== 'Enter') return
+                                  e.preventDefault()
+                                  // Picks the top match — catalog items first, then non-stock items
+                                  // previously used, then falls back to the typed text as a custom item.
+                                  if (sugg[0]) pickItem(idx, sugg[0])
+                                  else if (customSugg[0]) pickCustomItem(idx, customSugg[0].name, customSugg[0].unit)
+                                  else if (line.search.trim()) pickCustomItem(idx, line.search)
+                                }}
                               />
                             </div>
                             <div className="absolute left-0 right-0 top-full mt-0.5 bg-white border rounded-lg shadow-xl max-h-52 overflow-y-auto">
@@ -1359,8 +1381,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </td>
 
                     <td className="px-2 py-2.5">
-                      <input disabled={locked} type="number" min={0.01} step="any" className={numInp} value={line.orderedQty}
-                        onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, orderedQty: Number(e.target.value) }))} />
+                      <input disabled={locked} ref={el => { qtyRefs.current[idx] = el }} type="number" min={0.01} step="any" className={numInp} value={line.orderedQty}
+                        onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, orderedQty: Number(e.target.value) }))}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); unitPriceRefs.current[idx]?.focus() } }}
+                      />
                     </td>
                     <td className="px-2 py-2.5">
                       {line.baseUnit ? (
@@ -1384,8 +1408,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       )}
                     </td>
                     <td className="px-2 py-2.5">
-                      <input disabled={locked} type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0.00"
-                        onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
+                      <input disabled={locked} ref={el => { unitPriceRefs.current[idx] = el }} type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0.00"
+                        onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))}
+                        onKeyDown={e => {
+                          if (e.key !== 'Enter') return
+                          e.preventDefault()
+                          if (idx === lines.length - 1) addLine()
+                        }}
+                      />
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
                       {subtotal > 0 ? fmtMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}
