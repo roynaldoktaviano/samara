@@ -5,7 +5,7 @@ import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown, FileText, MapPin, FileStack,
-  CalendarDays, LogOut, X, FolderOpen, Play, Loader2,
+  CalendarDays, LogOut, X, FolderOpen, Play, Loader2, Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
@@ -383,21 +383,28 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, se
 }) {
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
+      {/* Header — stacks into two rows on mobile (nothing else fits three columns of text on a
+          narrow screen without wrapping/overlapping); collapses back into the original single-row
+          3-column layout from sm: up. */}
       <div className="bg-neutral-950 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 grid grid-cols-3 items-center">
-          <div className="flex items-center gap-4 min-w-0">
-            <button
-              onClick={() => setStep('yacht')}
-              aria-label="Back to yacht selection"
-              className="w-7 h-7 rounded-full bg-white flex items-center justify-center shrink-0 hover:bg-white/90 transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4 text-black" />
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:h-16 sm:grid sm:grid-cols-3 sm:items-center">
+          <div className="h-14 sm:h-auto flex items-center justify-between sm:justify-start gap-4 min-w-0">
+            <div className="flex items-center gap-4 min-w-0">
+              <button
+                onClick={() => setStep('yacht')}
+                aria-label="Back to yacht selection"
+                className="w-7 h-7 rounded-full bg-white flex items-center justify-center shrink-0 hover:bg-white/90 transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4 text-black" />
+              </button>
+              <img src={SAMARA_LOGO} alt="Samara" className="h-5 w-auto object-contain shrink-0 brightness-0 invert" />
+            </div>
+            <button onClick={logout} className="sm:hidden text-xs text-white/50 hover:text-white transition-colors shrink-0">
+              Log out
             </button>
-            <img src={SAMARA_LOGO} alt="Samara" className="h-5 w-auto object-contain shrink-0 brightness-0 invert" />
           </div>
 
-          <div className="flex items-center justify-center gap-6">
+          <div className="flex items-center justify-center gap-6 h-11 sm:h-auto border-t border-white/10 sm:border-0">
             <button
               onClick={() => setStep('media')}
               className={cn('text-xs transition-colors', step === 'media' ? 'text-white font-medium' : 'text-white/50 hover:text-white')}
@@ -412,7 +419,7 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, se
             </button>
           </div>
 
-          <div className="flex items-center justify-end gap-3">
+          <div className="hidden sm:flex items-center justify-end gap-3">
             {agentName && <span className="text-xs text-white/50 hidden sm:inline truncate max-w-[140px]">Hi, {agentName}</span>}
             <button onClick={logout} className="text-xs text-white/50 hover:text-white transition-colors shrink-0">
               Log out
@@ -422,7 +429,7 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, se
       </div>
 
       {yachts.length > 1 && (
-        <div className="bg-white border-b sticky top-16 z-20">
+        <div className="bg-white border-b sticky top-[100px] sm:top-16 z-20">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 h-12 flex items-center">
             <YachtSwitcher yachts={yachts} selectedYacht={selectedYacht} onSelect={onSelectYacht} />
           </div>
@@ -583,10 +590,76 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
   const fallbackImage = activeIndex % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black">
+    <>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
 
-      <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="absolute inset-0 w-full h-full object-cover animate-in fade-in duration-700" />
+      {/* Mobile: hero image up top + a scrollable panel with an accordion list of yachts below
+          it (tapping a name swaps the hero image/text) — the desktop cinematic layout below
+          doesn't translate to a narrow screen (its yacht switcher is a horizontal thumbnail
+          strip that has nowhere to go), so this is a fully separate mobile-only layout rather
+          than a responsive tweak of the same markup. */}
+      <div className="sm:hidden fixed inset-0 bg-neutral-950 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10">
+          <img src={SAMARA_LOGO} alt="Samara" className="h-4 w-auto object-contain" />
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs font-medium transition-colors">
+            <LogOut className="h-3.5 w-3.5" /> Log out
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="relative">
+            <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="w-full h-[42vh] object-cover animate-in fade-in duration-700" />
+            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/10 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
+              <h1 className="text-white font-black text-3xl leading-[0.95] tracking-tight" style={{ fontFamily: "'Merriweather', serif" }}>
+                {active.name}
+              </h1>
+              {active.description && (
+                <p className="text-white/75 text-xs mt-2.5 leading-relaxed line-clamp-3">{active.description}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 px-5 pt-5">
+            <button
+              onClick={() => onSelect(active.id, 'media')}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-white text-sm font-semibold px-4 py-3 rounded-full"
+              style={{ color: GOLD_DARK }}
+            >
+              <FileStack className="h-4 w-4" /> Resources
+            </button>
+            <button
+              onClick={() => onSelect(active.id, 'calendar')}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-white/10 border border-white/20 text-white text-sm font-semibold px-4 py-3 rounded-full"
+            >
+              <CalendarDays className="h-4 w-4" /> Calendar
+            </button>
+          </div>
+
+          {yachts.length > 1 && (
+            <div className="px-5 mt-7 pb-8">
+              {yachts.map(y => {
+                const isActive = y.id === activeId
+                return (
+                  <div key={y.id} className="border-b border-white/10">
+                    <button onClick={() => setActiveId(y.id)} className="w-full flex items-center justify-between py-4 text-left">
+                      <span className={cn('text-sm font-semibold uppercase tracking-widest transition-colors', isActive ? 'text-white' : 'text-white/45')}>
+                        {y.name}
+                      </span>
+                      {isActive ? <X className="h-3.5 w-3.5 text-[#d9cda3] shrink-0" /> : <Plus className="h-3.5 w-3.5 text-white/30 shrink-0" />}
+                    </button>
+                    {isActive && <div className="h-0.5 w-10 -mt-4 mb-4 rounded-full" style={{ backgroundColor: GOLD }} />}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Desktop/tablet: full-bleed cinematic hero + floating thumbnail-strip switcher */}
+      <div className="hidden sm:block fixed inset-0 overflow-hidden bg-black">
+        <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="absolute inset-0 w-full h-full object-cover animate-in fade-in duration-700" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-black/10" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
 
@@ -695,7 +768,8 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -757,16 +831,21 @@ function PdfThumbnail({ url }: { url: string }) {
 }
 
 // Fits a book-reader page size within the (now full-screen) preview modal's available
-// area — always sized for an open-book two-page spread regardless of the PDF's own page
-// orientation (portrait or landscape), matching the reference look; react-pageflip's
-// `usePortrait` still auto-collapses to a single page on narrower viewports on top of this.
+// area. Desktop/tablet gets a real open-book two-page spread regardless of the PDF's own
+// page orientation, matching the reference look. Mobile is explicitly forced to one page
+// at a time instead — a 2-up spread on a narrow phone screen would shrink each page to
+// near-unreadable, and react-pageflip's own responsive collapse isn't reliable enough to
+// depend on here since it's always being fed spread-sized dimensions.
 function computeFlipbookDims(pageWidthPt: number, pageHeightPt: number) {
   // ~56px header + ~76px page-indicator row + breathing room, taken off the actual viewport
   // rather than a fixed modal-box size now that the preview fills the whole screen.
-  const maxContainerWidth = Math.min(1400, window.innerWidth - 64)
+  const isMobile = window.innerWidth < 640
+  const maxContainerWidth = Math.min(1400, window.innerWidth - (isMobile ? 24 : 64))
   const maxContainerHeight = window.innerHeight - 56 - 76 - 32
   const ratio = pageHeightPt / pageWidthPt
-  const width = Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
+  const width = isMobile
+    ? Math.min(maxContainerWidth, maxContainerHeight / ratio)
+    : Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
   return { width: Math.round(width), height: Math.round(width * ratio) }
 }
 
