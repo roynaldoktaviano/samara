@@ -756,17 +756,17 @@ function PdfThumbnail({ url }: { url: string }) {
   )
 }
 
-// Fits a book-reader page size within the preview modal's available area (roughly
-// max-w-3xl minus padding, h-[85vh] minus the header/controls chrome) — landscape PDFs
-// get one full-width page at a time, portrait PDFs get a real open-book two-page spread
-// (react-pageflip's `usePortrait` then auto-collapses to one page on narrower viewports).
+// Fits a book-reader page size within the (now full-screen) preview modal's available
+// area — always sized for an open-book two-page spread regardless of the PDF's own page
+// orientation (portrait or landscape), matching the reference look; react-pageflip's
+// `usePortrait` still auto-collapses to a single page on narrower viewports on top of this.
 function computeFlipbookDims(pageWidthPt: number, pageHeightPt: number) {
-  const maxContainerWidth = 680
-  const maxContainerHeight = 560
+  // ~56px header + ~76px page-indicator row + breathing room, taken off the actual viewport
+  // rather than a fixed modal-box size now that the preview fills the whole screen.
+  const maxContainerWidth = Math.min(1400, window.innerWidth - 64)
+  const maxContainerHeight = window.innerHeight - 56 - 76 - 32
   const ratio = pageHeightPt / pageWidthPt
-  const width = ratio <= 1
-    ? Math.min(maxContainerWidth, maxContainerHeight / ratio)
-    : Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
+  const width = Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
   return { width: Math.round(width), height: Math.round(width * ratio) }
 }
 
@@ -1078,11 +1078,14 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
 
       {preview && (
         <div
-          className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className={cn(
+            'fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-50',
+            preview.type !== 'document' && 'p-4'
+          )}
           onClick={() => setPreview(null)}
         >
           {preview.type === 'document' && (
-            <div className="bg-white w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full h-full flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0">
                 <p className="text-sm font-medium truncate">{preview.name}</p>
                 <div className="flex items-center gap-4 shrink-0">
