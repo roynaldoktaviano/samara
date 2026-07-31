@@ -67,6 +67,10 @@ export async function GET(_: NextRequest) {
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
             agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+            // Only ever populated for the automatic per-booking deduction (see
+            // src/app/api/bookings/route.ts) — manual ledger adjustments have no bookingId,
+            // so this relation can't accidentally pull in unrelated entries.
+            clawbackEntries: { select: { amount: true } },
           },
         },
       },

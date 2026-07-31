@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Instagram, Mail } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,7 @@ import Payments from '@/components/payments/Payments'
 import TripSheet from '@/components/payments/TripSheet'
 import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
 import POReimbursements from '@/components/finance/POReimbursements'
+import AgentClawbacks from '@/components/finance/AgentClawbacks'
 import DeliveryFeePayments from '@/components/finance/DeliveryFeePayments'
 import DeliveryFeeReimbursements from '@/components/finance/DeliveryFeeReimbursements'
 import AgentLeadsPage from '@/components/agents/AgentLeadsPage'
@@ -51,9 +52,8 @@ import PurchasingWithdrawalsPage from '@/components/purchasing/reports/Withdrawa
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
 import EmployeesPage from '@/components/hr/EmployeesPage'
-import ChatPage from '@/components/whatsapp/ChatPage'
-import InstagramPage from '@/components/instagram/InstagramPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
+import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
@@ -91,7 +91,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat' | 'chat-instagram' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -122,8 +122,7 @@ const MARKETING_SUB_GROUPS = [
 
 const navigationItems: NavItem[] = [
   { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING'], group: 'main' },
-  { id: 'chat',          label: 'WhatsApp',       icon: MessageCircle, roles: ['ADMIN'],                               group: 'chat' },
-  { id: 'chat-instagram', label: 'Instagram',     icon: Instagram,     roles: ['ADMIN'],                               group: 'chat' },
+  { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN'],                               group: 'chat' },
   { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN'],                               group: 'chat' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },
@@ -138,6 +137,7 @@ const navigationItems: NavItem[] = [
   { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-payments', label: 'Delivery Fee Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],   group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-reimbursements', label: 'Delivery Fee Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance', feature: 'purchasing' },
+  { id: 'finance-agent-clawback', label: 'Agent Clawback', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
@@ -325,6 +325,10 @@ export default function Home() {
   const router = useRouter()
   const { trigger: triggerTransition } = usePageTransition()
   const [currentView, setCurrentView] = useState<View>('calendar')
+  // Set when an email row is clicked in the "All Chats" unified inbox — WhatsApp/Instagram
+  // open inline in that same screen, but Email is still its own separate page (deliberately
+  // not chat-bubble UI), so this tells it which conversation to auto-open once it mounts.
+  const [emailDeepLinkId, setEmailDeepLinkId] = useState<string | null>(null)
   // Lets Item by Location's "click PO number" deep-link into a specific PO's
   // detail view on the Purchase Orders page — there's no URL routing between
   // top-level views in this app, so this is the plain state-lifting equivalent.
@@ -660,9 +664,8 @@ export default function Home() {
       case 'customers':    return <Customers />
       case 'leads':        return <Leads />
       case 'calendar':     return <CalendarView />
-      case 'chat':         return <ChatPage />
-      case 'chat-instagram': return <InstagramPage />
-      case 'chat-email':   return <EmailInboxPage />
+      case 'chat-inbox':   return <UnifiedInbox onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
       case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
@@ -676,6 +679,7 @@ export default function Home() {
       case 'finance-po-reimbursements': return <POReimbursements />
       case 'finance-delivery-fee-payments': return <DeliveryFeePayments />
       case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements />
+      case 'finance-agent-clawback': return <AgentClawbacks />
       case 'vouchers':      return <Vouchers />
       case 'marketing-dashboard': return <MarketingComingSoon title="Command Center" desc="A rollup of every campaign's performance, spend, ROAS, and tasks that need attention." icon={LayoutDashboard} />
       case 'marketing-campaigns': return <CampaignsPage />
@@ -812,9 +816,8 @@ export default function Home() {
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
                   (item.id === 'finance-delivery-fee-reimbursements' && pendingDeliveryFeeReimbursements > 0) ||
-                  (item.id === 'chat' && unreadWhatsapp > 0) ||
-                  (item.id === 'chat-instagram' && unreadInstagram > 0) ||
-                  (item.id === 'chat-email' && unreadEmailInbox > 0)
+                  (item.id === 'chat-email' && unreadEmailInbox > 0) ||
+                  (item.id === 'chat-inbox' && (unreadWhatsapp + unreadInstagram) > 0)
                 const dotCount =
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
@@ -823,9 +826,8 @@ export default function Home() {
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :
                   item.id === 'finance-delivery-fee-reimbursements' ? pendingDeliveryFeeReimbursements :
-                  item.id === 'chat' ? unreadWhatsapp :
-                  item.id === 'chat-instagram' ? unreadInstagram :
                   item.id === 'chat-email' ? unreadEmailInbox :
+                  item.id === 'chat-inbox' ? unreadWhatsapp + unreadInstagram :
                   0
                 const isItemActive = activeView === item.id
                 return (

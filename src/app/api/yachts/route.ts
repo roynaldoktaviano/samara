@@ -19,7 +19,7 @@ export async function GET() {
         cabins: {
           select: {
             id: true, name: true, deck: true, bedType: true, capacity: true, price: true, extraBeds: true,
-            pricingTiers: { select: { nights: true, price: true }, orderBy: { nights: 'asc' } },
+            pricingTiers: { select: { nights: true, price: true, destinationId: true }, orderBy: { nights: 'asc' } },
           },
           orderBy: { name: 'asc' },
         },
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     type RoomPayload = {
       name: string; deck?: string; bedType?: string; capacity?: number; price?: number; extraBeds?: number
-      pricingTiers?: { nights: number; price: number }[]
+      pricingTiers?: { nights: number; price: number; destinationId?: string | null }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
 
@@ -87,10 +87,10 @@ export async function POST(request: NextRequest) {
     })
 
     // Step 2: create pricing tiers for each cabin
-    const tierInserts: { cabinId: string; nights: number; price: number }[] = []
+    const tierInserts: { cabinId: string; nights: number; price: number; destinationId: string | null }[] = []
     yacht.cabins.forEach((cabin, i) => {
       const tiers = (validRooms[i]?.pricingTiers ?? []).filter(t => t.price > 0)
-      tiers.forEach(t => tierInserts.push({ cabinId: cabin.id, nights: t.nights, price: t.price }))
+      tiers.forEach(t => tierInserts.push({ cabinId: cabin.id, nights: t.nights, price: t.price, destinationId: t.destinationId || null }))
     })
     if (tierInserts.length > 0) {
       await db.cabinPricingTier.createMany({ data: tierInserts })

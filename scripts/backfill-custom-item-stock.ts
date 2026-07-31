@@ -25,6 +25,7 @@ async function main() {
 
   for (const it of items) {
     const { receipt } = it
+    if (!receipt.receivedById) { skipped++; continue }
     const already = await db.stockMovement.findFirst({
       where: { referenceId: receipt.id, referenceType: 'GoodsReceipt', itemName: it.itemName, itemId: null },
       select: { id: true },

@@ -275,11 +275,62 @@ model Agent {
   portalAccessLogs         PortalAccessLog[]
   leadsPromoted            AgentLead[]
   visibleCategories        AgentVisibleCategory[]
+  // Clawback (hutang) — a running debt this agent owes back to us, e.g. from a prior
+  // over-payment. Set/managed by Finance (or Admin) only — see AgentClawbackEntry, whose
+  // signed `amount` sum IS the current balance (append-only ledger, same convention as
+  // POPaymentRequest/POReimbursement — no separate mutable balance field to drift out of sync).
+  // clawbackRatePerNight is the global fallback rate; AgentClawbackRate rows are more
+  // specific per-yacht/per-trip-type overrides (same "default + overrides" shape as the
+  // destination rate card on CabinPricingTier).
+  clawbackRatePerNight     Float                  @default(0)
+  clawbackEntries          AgentClawbackEntry[]
+  clawbackRates            AgentClawbackRate[]
   createdAt                DateTime               @default(now())
   updatedAt                DateTime               @updatedAt
 
   @@index([salespersonId])
   @@index([name])
+}
+
+model AgentClawbackEntry {
+  id      String @id @default(cuid())
+  agentId String
+  // Positive = debt added (agent now owes more — a manual Finance entry). Negative = a
+  // deduction that pays the debt down, either automatic (set at booking creation, from
+  // the applicable clawback rate × nights, capped at the outstanding balance) or a manual
+  // adjustment by Finance.
+  amount    Float
+  bookingId String? // set only for automatic per-booking deductions
+  note      String? // why this entry exists — required for manual entries
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+
+  agent   Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([agentId])
+  @@index([bookingId])
+}
+
+// A more specific clawback rate than Agent.clawbackRatePerNight — null yachtId/tripType
+// means "any yacht"/"any trip type" respectively, so a row can be as broad or narrow as
+// needed. At booking time the most specific matching row wins (yacht+tripType > yacht-only
+// > tripType-only), falling back to Agent.clawbackRatePerNight if nothing matches at all.
+model AgentClawbackRate {
+  id           String    @id @default(cuid())
+  agentId      String
+  yachtId      String?
+  tripType     TripType?
+  ratePerNight Float
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  agent Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  yacht Yacht? @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([yachtId])
 }
 
 model CalendarAccessLog {
@@ -411,6 +462,7 @@ model Yacht {
   mediaFiles        MediaFile[]
   mediaFolders      MediaFolder[]
   promos            Promo[]
+  agentClawbackRates AgentClawbackRate[]
 }
 
 enum MediaFileType {
@@ -524,9 +576,10 @@ model Destination {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  yachtPrices YachtDestinationPrice[]
-  openTrips   OpenTrip[]
-  bookings    Booking[]
+  yachtPrices       YachtDestinationPrice[]
+  openTrips         OpenTrip[]
+  bookings          Booking[]
+  cabinPricingTiers CabinPricingTier[]
 }
 
 model YachtDestinationPrice {
@@ -560,11 +613,17 @@ model Cabin {
 model CabinPricingTier {
   id      String @id @default(cuid())
   cabinId String
-  nights  Int
-  price   Float
-  cabin   Cabin  @relation(fields: [cabinId], references: [id], onDelete: Cascade)
+  // null = fallback rate that applies regardless of destination (the original behavior,
+  // before per-destination rate cards existed). A row with a destinationId set is a more
+  // specific override for that destination + nights combo; lookups should prefer a match
+  // with destinationId first and fall back to the null-destination row.
+  destinationId String?
+  nights        Int
+  price         Float
+  cabin         Cabin        @relation(fields: [cabinId], references: [id], onDelete: Cascade)
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: Cascade)
 
-  @@unique([cabinId, nights])
+  @@unique([cabinId, destinationId, nights])
   @@map("cabin_pricing_tiers")
 }
 
@@ -657,6 +716,7 @@ model Booking {
   expenses                      Expense[]
   notifications                 Notification[]
   waitingList                   WaitingList[]        @relation("BookingWaitingList")
+  clawbackEntries               AgentClawbackEntry[]
   slotHistory                   WaitingListHistory[] @relation("BookingSlotHistory")
   promotedWaitingLists          WaitingList[]        @relation("WaitingListPromotedBooking")
   cashierSales                  CashierSale[]
@@ -1513,6 +1573,12 @@ model PurchaseOrder {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
+  // No-login link crew on a yacht can open to confirm receiving this PO's goods, without
+  // needing an ERP account — see src/app/po-receive/[token]/page.tsx and
+  // src/app/api/po-receive/[token]/route.ts. Mirrors StockTransfer.receiveToken exactly.
+  receiveToken          String?   @unique
+  receiveTokenExpiresAt DateTime?
+
   // Additional pricing lines beyond item subtotal (tax/VAT, fees, etc.) — [{ label, amount }].
   // Set once at PO creation, shown above Order Total; not editable afterward, same as items.
   extraCharges Json?
@@ -1726,8 +1792,14 @@ model GoodsReceipt {
   id              String   @id @default(cuid())
   grNumber        String   @unique
   orderId         String
-  receivedById    String
-  receiverName    String?
+  // Exactly one of receivedById/receivedByEmployeeId is set in practice: the internal,
+  // logged-in staff flow sets receivedById; the no-login PO-receive link (crew on a yacht,
+  // see src/app/po-receive/[token]) sets receivedByEmployeeId instead, since there's no
+  // User session to attribute it to. Both nullable/SetNull, same pattern as
+  // StockTransfer.receivedById.
+  receivedById         String?
+  receivedByEmployeeId String?
+  receiverName         String?
   locationId      String
   receivePhotoKey String?
   notes           String?
@@ -1735,7 +1807,8 @@ model GoodsReceipt {
   createdAt       DateTime @default(now())
 
   order            PurchaseOrder      @relation(fields: [orderId], references: [id])
-  receivedBy       User               @relation(fields: [receivedById], references: [id])
+  receivedBy       User?              @relation(fields: [receivedById], references: [id], onDelete: SetNull)
+  receivedByEmployee Employee?        @relation(fields: [receivedByEmployeeId], references: [id], onDelete: SetNull)
   location         StockLocation      @relation(fields: [locationId], references: [id])
   items            GoodsReceiptItem[]
   transitTransfers StockTransfer[]
@@ -1995,6 +2068,7 @@ model Employee {
 
   purchaseRequests        PurchaseRequest[]
   purchaseOrdersRequested PurchaseOrder[]
+  goodsReceipts           GoodsReceipt[]
 
   @@index([legalEntityId])
   @@index([locationId])
@@ -2085,6 +2159,11 @@ model InstagramConversation {
   igUsername         String   @unique
   displayName        String?
   profilePicUrl      String?
+  // Which of OUR connected IG Business accounts this conversation came in on (e.g.
+  // "samara.liveaboard", "mischief.voyage", "otium") — only meaningful once multiple
+  // accounts are actually connected; the inbound webhook should set this from the
+  // payload's entry[].id (mapped to that account's username) once that's wired up.
+  ourAccountUsername String?
   lastMessageAt      DateTime @default(now())
   lastMessagePreview String?
   unreadCount        Int      @default(0)

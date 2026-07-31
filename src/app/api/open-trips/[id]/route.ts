@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { roleMatches } from '@/lib/role-utils'
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
@@ -11,12 +12,16 @@ async function requireAdmin() {
   return session
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   try {
     const { id } = await params
+    const { searchParams } = new URL(req.url)
+    // Admin-only: let past-dated trips stay bookable (for backfilling historical bookings)
+    const role = (session.user as { role?: string }).role ?? ''
+    const includePast = searchParams.get('includePast') === '1' && roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])
 
     const trip = await db.openTrip.findUnique({
       where: { id },
@@ -106,7 +111,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         db.openTrip.update({ where: { id }, data: { status: 'closed' } }).catch(() => {})
       }
     } else if (trip.status !== 'cancelled' && trip.status !== 'closed') {
-      if (new Date() >= new Date(trip.startDate)) effectiveStatus = 'closed'
+      if (new Date() >= new Date(trip.startDate) && !includePast) effectiveStatus = 'closed'
       else if (spotsAvailable === 0)              effectiveStatus = 'full'
       else                                        effectiveStatus = 'open'
     }

@@ -5,7 +5,7 @@ import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import {
   Lock, ChevronLeft, ChevronRight, ChevronDown, FileText, MapPin, FileStack,
-  CalendarDays, LogOut, X, FolderOpen, Play, Loader2, Plus,
+  CalendarDays, LogOut, X, FolderOpen, Play, Loader2, Plus, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
@@ -861,20 +861,55 @@ const FlipPage = forwardRef<HTMLDivElement, { src: string }>(function FlipPage({
 // front (pdfjs-dist, same worker setup as PdfThumbnail above), then handed to
 // react-pageflip for the actual flip animation/drag interaction. Falls back to a plain
 // iframe if rendering fails for any reason (e.g. a corrupt/unsupported PDF).
+const MIN_ZOOM = 1
+const MAX_ZOOM = 2.5
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
+
+function pinchDistance(touches: React.TouchList): number {
+  const a = touches[0], b = touches[1]
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+}
+
 function PdfFlipbook({ url }: { url: string }) {
   const [pages, setPages] = useState<string[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [dims, setDims] = useState({ width: 400, height: 560 })
   const [pageIndex, setPageIndex] = useState(0)
+  const [zoom, setZoom] = useState(1)
   // react-pageflip doesn't ship a typed ref shape — `pageFlip()` returns the underlying
   // PageFlip instance (flipNext/flipPrev/etc.), per the library's own documented usage.
   const flipRef = useRef<{ pageFlip: () => { flipNext: () => void; flipPrev: () => void } } | null>(null)
+
+  // react-pageflip's own touch handling swallows single/double-finger gestures on the book
+  // itself, which blocks the browser's native pinch-to-zoom right where you'd want it most —
+  // so pinch is reimplemented by hand here. Capture phase + stopPropagation on a 2-finger
+  // touch keeps react-pageflip from also trying to interpret it as a page-flip drag.
+  const pinchStartDist = useRef<number | null>(null)
+  const pinchStartZoom = useRef(1)
+  function onTouchStartCapture(e: React.TouchEvent) {
+    if (e.touches.length === 2) {
+      e.stopPropagation()
+      pinchStartDist.current = pinchDistance(e.touches)
+      pinchStartZoom.current = zoom
+    }
+  }
+  function onTouchMoveCapture(e: React.TouchEvent) {
+    if (e.touches.length === 2 && pinchStartDist.current) {
+      e.stopPropagation()
+      e.preventDefault()
+      setZoom(clampZoom(pinchStartZoom.current * (pinchDistance(e.touches) / pinchStartDist.current)))
+    }
+  }
+  function onTouchEndCapture(e: React.TouchEvent) {
+    if (e.touches.length < 2) pinchStartDist.current = null
+  }
 
   useEffect(() => {
     let cancelled = false
     setPages(null)
     setFailed(false)
     setPageIndex(0)
+    setZoom(1)
     ;(async () => {
       try {
         const pdfjsLib = await import('pdfjs-dist')
@@ -918,44 +953,72 @@ function PdfFlipbook({ url }: { url: string }) {
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 overflow-hidden bg-neutral-100 py-4">
-      <HTMLFlipBook
-        ref={flipRef as any}
-        width={dims.width}
-        height={dims.height}
-        size="fixed"
-        minWidth={200} maxWidth={1000} minHeight={280} maxHeight={1400}
-        startPage={0}
-        drawShadow
-        flippingTime={500}
-        usePortrait
-        startZIndex={0}
-        autoSize
-        maxShadowOpacity={0.5}
-        showCover
-        mobileScrollSupport
-        clickEventForward
-        useMouseEvents
-        swipeDistance={30}
-        showPageCorners
-        disableFlipByClick={false}
-        className=""
-        style={{}}
-        onFlip={(e: { data: number }) => setPageIndex(e.data)}
+    <div className="flex-1 flex flex-col overflow-hidden bg-neutral-100">
+      <div
+        className="flex-1 overflow-auto flex items-center justify-center py-4"
+        onTouchStartCapture={onTouchStartCapture}
+        onTouchMoveCapture={onTouchMoveCapture}
+        onTouchEndCapture={onTouchEndCapture}
       >
-        {pages.map((src, i) => <FlipPage key={i} src={src} />)}
-      </HTMLFlipBook>
-      {pages.length > 1 && (
-        <div className="flex items-center gap-4 shrink-0">
-          <button onClick={() => flipRef.current?.pageFlip().flipPrev()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-xs text-muted-foreground">{pageIndex + 1} / {pages.length}</span>
-          <button onClick={() => flipRef.current?.pageFlip().flipNext()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
-            <ChevronRight className="h-4 w-4" />
-          </button>
+        <div className="shrink-0">
+          <HTMLFlipBook
+            ref={flipRef as any}
+            width={dims.width * zoom}
+            height={dims.height * zoom}
+            size="fixed"
+            minWidth={200} maxWidth={2500} minHeight={280} maxHeight={3500}
+            startPage={0}
+            drawShadow
+            flippingTime={500}
+            usePortrait
+            startZIndex={0}
+            autoSize
+            maxShadowOpacity={0.5}
+            showCover
+            mobileScrollSupport
+            clickEventForward
+            useMouseEvents={zoom === 1}
+            swipeDistance={30}
+            showPageCorners
+            disableFlipByClick={false}
+            className=""
+            style={{}}
+            onFlip={(e: { data: number }) => setPageIndex(e.data)}
+          >
+            {pages.map((src, i) => <FlipPage key={i} src={src} />)}
+          </HTMLFlipBook>
         </div>
-      )}
+      </div>
+
+      <div className="flex items-center justify-center gap-4 shrink-0 py-3 bg-neutral-100 border-t">
+        {pages.length > 1 && (
+          <>
+            <button onClick={() => flipRef.current?.pageFlip().flipPrev()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-xs text-muted-foreground w-12 text-center">{pageIndex + 1} / {pages.length}</span>
+            <button onClick={() => flipRef.current?.pageFlip().flipNext()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <span className="w-px h-4 bg-neutral-300 mx-1" />
+          </>
+        )}
+        <button
+          onClick={() => setZoom(z => clampZoom(z - 0.25))}
+          disabled={zoom <= MIN_ZOOM}
+          className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors disabled:opacity-40 disabled:hover:text-neutral-600"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </button>
+        <span className="text-xs text-muted-foreground w-10 text-center">{Math.round(zoom * 100)}%</span>
+        <button
+          onClick={() => setZoom(z => clampZoom(z + 0.25))}
+          disabled={zoom >= MAX_ZOOM}
+          className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors disabled:opacity-40 disabled:hover:text-neutral-600"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -1313,33 +1376,45 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
         </>
       ) : (
         <div className="space-y-5">
-          {openTrips.map(trip => (
-            <div key={trip.id} className="bg-white border rounded-xl p-5">
-              <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-                <div>
-                  <p className="font-semibold text-sm">{trip.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
-                </div>
-                <span className="text-xs text-muted-foreground">{formatDateRange(trip.startDate, trip.endDate)}</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {trip.cabinStatuses.map(cabin => (
-                  <div
-                    key={cabin.id}
-                    className={cn(
-                      'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
-                      cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
-                    )}
-                  >
-                    <span className="truncate">{cabin.name}</span>
-                    <span className="text-[9px] uppercase tracking-wide opacity-80 shrink-0">
-                      {cabin.bookingStatus ? 'Booked' : 'Available'}
-                    </span>
+          {[...openTrips]
+            .sort((a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0))
+            .map(trip => {
+              const isClosed = trip.status === 'closed'
+              return (
+                <div key={trip.id} className={cn('bg-white border rounded-xl p-5', isClosed && 'opacity-50')}>
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm">{trip.title}</p>
+                        {isClosed && (
+                          <span className="text-[9px] uppercase tracking-wide font-semibold bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-full">
+                            Closed
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{formatDateRange(trip.startDate, trip.endDate)}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {trip.cabinStatuses.map(cabin => (
+                      <div
+                        key={cabin.id}
+                        className={cn(
+                          'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
+                          cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
+                        )}
+                      >
+                        <span className="truncate">{cabin.name}</span>
+                        <span className="text-[9px] uppercase tracking-wide opacity-80 shrink-0">
+                          {cabin.bookingStatus ? 'Booked' : 'Available'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
         </div>
       )}
     </div>

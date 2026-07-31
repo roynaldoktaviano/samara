@@ -772,6 +772,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [receiveSaving, setReceiveSaving] = useState(false)
   const [receiveError, setReceiveError] = useState('')
 
+  // no-login crew "receive goods" link
+  const [receiveLinkModal, setReceiveLinkModal] = useState(false)
+  const [receiveLink, setReceiveLink] = useState('')
+  const [receiveLinkLoading, setReceiveLinkLoading] = useState(false)
+  const [receiveLinkError, setReceiveLinkError] = useState('')
+  const [receiveLinkCopied, setReceiveLinkCopied] = useState(false)
+
   // Transit leg dispatch/receive — acts on the auto-chained StockTransfer for the PO's
   // current route hop directly from this page (data still lives in StockTransfer, see
   // src/lib/purchasing/transitChain.ts), so the PO creator/receiver never has to leave
@@ -913,6 +920,16 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       const firstStopId = detail.transitStops?.[0]?.locationId
       setReceiveLocation(firstStopId ?? detail.deliveryLocationId ?? active[0]?.id ?? '')
     }
+  }
+
+  async function openReceiveLink() {
+    if (!detail) return
+    setReceiveLink(''); setReceiveLinkError(''); setReceiveLinkCopied(false); setReceiveLinkLoading(true); setReceiveLinkModal(true)
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/receive-link`, { method: 'POST' })
+    const data = await res.json()
+    setReceiveLinkLoading(false)
+    if (!res.ok) { setReceiveLinkError(data.error ?? 'Gagal membuat link'); return }
+    setReceiveLink(data.link)
   }
 
   async function handleReceivePhotoFile(file: File) {
@@ -1873,6 +1890,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             })() && (
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
+            {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty)
+              && ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE'].includes(role) && (
+              <button onClick={openReceiveLink} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">Get Receive Link</button>
+            )}
             {/* Continue the shipping route without leaving the PO — acts on the auto-chained
                 StockTransfer leg directly (see src/lib/purchasing/transitChain.ts). */}
             {(() => {
@@ -2746,6 +2767,47 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
                     : 'Confirm Receipt'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Get Receive Link Modal */}
+      {receiveLinkModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setReceiveLinkModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b">
+                <h3 className="font-bold text-lg">Crew Receive Link</h3>
+                <button onClick={() => setReceiveLinkModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Kirim link ini ke crew kapal (misal via WhatsApp) — mereka bisa konfirmasi penerimaan barang PO ini langsung tanpa login ke ERP. Berlaku 14 hari.
+                </p>
+                {receiveLinkError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{receiveLinkError}</div>}
+                {receiveLinkLoading ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">Membuat link...</div>
+                ) : receiveLink && (
+                  <>
+                    <div className="border rounded-md px-3 py-2.5 text-sm font-mono bg-muted/30 break-all">{receiveLink}</div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(receiveLink); setReceiveLinkCopied(true); setTimeout(() => setReceiveLinkCopied(false), 2000) }}
+                        className="flex-1 px-4 py-2 text-sm border rounded-md hover:bg-muted font-medium">
+                        {receiveLinkCopied ? 'Tersalin!' : 'Copy Link'}
+                      </button>
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Tolong konfirmasi penerimaan barang ${detail?.poNumber ?? ''} di sini: ${receiveLink}`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium text-center">
+                        Share via WhatsApp
+                      </a>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

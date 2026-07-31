@@ -26,6 +26,9 @@ import { Switch } from '@/components/ui/switch'
 import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw } from 'lucide-react'
 
 interface PricingTier { nights: number; price: number }
+// destinationId: null = fallback rate applying regardless of destination (the original
+// behavior); a real id is a rate-card override for that destination + nights combo.
+interface CabinPricingTierRecord extends PricingTier { destinationId: string | null }
 
 interface CabinRecord {
   id: string
@@ -35,7 +38,7 @@ interface CabinRecord {
   deck?: string
   bedType?: string
   extraBeds: number
-  pricingTiers: PricingTier[]
+  pricingTiers: CabinPricingTierRecord[]
 }
 
 interface YachtDestinationPrice { destinationId: string; price: number; relocationFee: number | null }
@@ -64,6 +67,11 @@ interface DestinationOpt { id: string; name: string; region: string | null; isAc
 
 interface TierInput { nights: number; price: string }
 
+// Rate-card view: '' (empty string) = the destination-less fallback rate, otherwise a
+// Destination.id — the same `nights` columns (formTiers) are shared across every
+// destination, only the price per cell differs.
+const DEFAULT_RATE_KEY = ''
+
 interface RoomInput {
   tempId: string
   id?: string
@@ -73,7 +81,7 @@ interface RoomInput {
   capacity: string
   price: string      // per-night fallback
   extraBeds: string
-  pricingTiers: TierInput[]
+  pricingTiersByDest: Record<string, TierInput[]>
 }
 
 const BED_TYPES = ['Single', 'Double', 'Twin', 'Queen', 'King', 'Bunk']
@@ -117,6 +125,10 @@ export default function Yachts() {
   const [newTierDays,    setNewTierDays]  = useState('')
   const [destinations,   setDestinations] = useState<DestinationOpt[]>([])
   const [destPriceByDest, setDestPriceByDest] = useState<Record<string, { price: string; relocationFee: string }>>({})
+  // Which destination's rate card is currently shown/edited in the Rooms & Cabins pricing
+  // grid — DEFAULT_RATE_KEY is the fallback rate that applies when no destination-specific
+  // override exists.
+  const [pricingDestView, setPricingDestView] = useState<string>(DEFAULT_RATE_KEY)
 
   const fetchYachts = useCallback(async () => {
     setLoading(true)
@@ -144,6 +156,21 @@ export default function Yachts() {
     setRooms([]); setFormStep(1); setEditTarget(null); setError('')
     setAddingTier(false); setNewTierDays('')
     setDestPriceByDest({})
+    setPricingDestView(DEFAULT_RATE_KEY)
+  }
+
+  // A room's tier array for whichever destination view is active — falls back to a blank
+  // set of the current formTiers if that destination hasn't been touched yet (nothing
+  // needs to be created in state until the admin actually types a price into it).
+  const tiersForView = (room: RoomInput, destKey: string): TierInput[] =>
+    room.pricingTiersByDest[destKey] ?? formTiers.map(n => ({ nights: n, price: '' }))
+
+  const updateRoomTierPrice = (tempId: string, destKey: string, nights: number, price: string) => {
+    setRooms(r => r.map(room => {
+      if (room.tempId !== tempId) return room
+      const current = tiersForView(room, destKey).map(t => t.nights === nights ? { ...t, price } : t)
+      return { ...room, pricingTiersByDest: { ...room.pricingTiersByDest, [destKey]: current } }
+    }))
   }
 
   const addTier = () => {
@@ -153,13 +180,15 @@ export default function Yachts() {
     if (formTiers.includes(nights)) { setAddingTier(false); setNewTierDays(''); return }
     const newTiers = [...formTiers, nights].sort((a, b) => a - b)
     setFormTiers(newTiers)
-    setRooms(r => r.map(room => ({
-      ...room,
-      pricingTiers: newTiers.map(n => ({
-        nights: n,
-        price: room.pricingTiers.find(t => t.nights === n)?.price ?? '',
-      })),
-    })))
+    setRooms(r => r.map(room => {
+      const destKeys = new Set([DEFAULT_RATE_KEY, ...Object.keys(room.pricingTiersByDest)])
+      const nextByDest: Record<string, TierInput[]> = {}
+      destKeys.forEach(destKey => {
+        const existing = room.pricingTiersByDest[destKey] ?? []
+        nextByDest[destKey] = newTiers.map(n => ({ nights: n, price: existing.find(t => t.nights === n)?.price ?? '' }))
+      })
+      return { ...room, pricingTiersByDest: nextByDest }
+    }))
     setExtraBedTiers(prev => {
       if (prev.find(t => t.nights === nights)) return prev
       return [...prev, { nights, price: '' }].sort((a, b) => a.nights - b.nights)
@@ -173,7 +202,9 @@ export default function Yachts() {
     setFormTiers(newTiers)
     setRooms(r => r.map(room => ({
       ...room,
-      pricingTiers: room.pricingTiers.filter(t => t.nights !== nights),
+      pricingTiersByDest: Object.fromEntries(
+        Object.entries(room.pricingTiersByDest).map(([destKey, tiers]) => [destKey, tiers.filter(t => t.nights !== nights)])
+      ),
     })))
     setExtraBedTiers(prev => prev.filter(t => t.nights !== nights))
   }
@@ -204,32 +235,40 @@ export default function Yachts() {
     setCanDiving(y.canDiving ?? false)
     setCanSurfing(y.canSurfing ?? false)
     setDesc(y.description ?? '')
-    setRooms(y.cabins.map(c => ({
-      tempId: c.id,
-      id: c.id,
-      name: c.name,
-      deck: c.deck ?? '',
-      bedType: c.bedType ?? '',
-      capacity: (c.capacity ?? 0).toString(),
-      price: (c.price ?? 0).toString(),
-      extraBeds: (c.extraBeds ?? 0).toString(),
-      pricingTiers: existingNights.map(n => ({
-        nights: n,
-        price: (c.pricingTiers?.find(t => t.nights === n)?.price ?? 0).toString(),
-      })),
-    })))
+    setRooms(y.cabins.map(c => {
+      const destKeys = new Set([DEFAULT_RATE_KEY, ...(c.pricingTiers ?? []).map(t => t.destinationId ?? DEFAULT_RATE_KEY)])
+      const pricingTiersByDest: Record<string, TierInput[]> = {}
+      destKeys.forEach(destKey => {
+        pricingTiersByDest[destKey] = existingNights.map(n => ({
+          nights: n,
+          price: (c.pricingTiers?.find(t => t.nights === n && (t.destinationId ?? DEFAULT_RATE_KEY) === destKey)?.price ?? 0).toString(),
+        }))
+      })
+      return {
+        tempId: c.id,
+        id: c.id,
+        name: c.name,
+        deck: c.deck ?? '',
+        bedType: c.bedType ?? '',
+        capacity: (c.capacity ?? 0).toString(),
+        price: (c.price ?? 0).toString(),
+        extraBeds: (c.extraBeds ?? 0).toString(),
+        pricingTiersByDest,
+      }
+    }))
     setDestPriceByDest(Object.fromEntries((y.destinationPrices ?? []).map(p => [
       p.destinationId,
       { price: p.price.toString(), relocationFee: p.relocationFee ? p.relocationFee.toString() : '' },
     ])))
     setFormStep(1)
     setError('')
+    setPricingDestView(DEFAULT_RATE_KEY)
     setDialogOpen(true)
   }
 
   const addRoom = () => setRooms(r => [...r, {
     tempId: Date.now().toString(), name: '', deck: '', bedType: '', capacity: '2', price: '0', extraBeds: '0',
-    pricingTiers: formTiers.map(n => ({ nights: n, price: '' })),
+    pricingTiersByDest: { [DEFAULT_RATE_KEY]: formTiers.map(n => ({ nights: n, price: '' })) },
   }])
 
   const removeRoom = (tempId: string) => setRooms(r => r.filter(x => x.tempId !== tempId))
@@ -257,9 +296,11 @@ export default function Yachts() {
           id: r.id,
           name: r.name, deck: r.deck, bedType: r.bedType,
           capacity: r.capacity, extraBeds: r.extraBeds,
-          pricingTiers: r.pricingTiers
-            .filter(t => t.price && parseFloat(t.price) > 0)
-            .map(t => ({ nights: t.nights, price: parseFloat(t.price) })),
+          pricingTiers: Object.entries(r.pricingTiersByDest).flatMap(([destKey, tiers]) =>
+            tiers
+              .filter(t => t.price && parseFloat(t.price) > 0)
+              .map(t => ({ nights: t.nights, price: parseFloat(t.price), destinationId: destKey || null }))
+          ),
         })),
         destinationPrices: Object.entries(destPriceByDest)
           .filter(([, v]) => v.price && parseFloat(v.price) > 0)
@@ -456,6 +497,25 @@ export default function Yachts() {
                     </div>
                   </div>
 
+                  {/* Rate card destination view — the grid below always edits whichever
+                      destination is picked here. "Default" is the fallback rate used when
+                      a destination has no override of its own. */}
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+                    <Label className="text-xs shrink-0">Rates for</Label>
+                    <Select value={pricingDestView} onValueChange={setPricingDestView}>
+                      <SelectTrigger className="h-8 text-xs w-56"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DEFAULT_RATE_KEY}>Default (all destinations)</SelectItem>
+                        {destinations.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      {pricingDestView === DEFAULT_RATE_KEY
+                        ? 'Applies to any destination without its own rate below.'
+                        : 'Overrides the default rate only for this destination.'}
+                    </p>
+                  </div>
+
                   {rooms.length === 0 ? (
                     <div className="border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 text-muted-foreground">
                       <BedDouble className="w-7 h-7 opacity-30" />
@@ -516,12 +576,12 @@ export default function Yachts() {
                                   updateRoom(r.tempId, { extraBeds: Math.min(maxExtra, Math.max(0, parseInt(e.target.value) || 0)).toString() })
                                 }} />
                             </div>
-                            {r.pricingTiers.map(t => (
+                            {tiersForView(r, pricingDestView).map(t => (
                               <div key={t.nights} className="px-1 py-1 border-l">
                                 <div className="flex items-center">
                                   <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
                                   <Input className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
-                                    onChange={e => updateRoom(r.tempId, { pricingTiers: r.pricingTiers.map(x => x.nights === t.nights ? { ...x, price: e.target.value } : x) })} />
+                                    onChange={e => updateRoomTierPrice(r.tempId, pricingDestView, t.nights, e.target.value)} />
                                 </div>
                               </div>
                             ))}
@@ -816,12 +876,17 @@ export default function Yachts() {
                                       </div>
                                       {c.pricingTiers?.length > 0 && (
                                         <div className="pt-1 space-y-0.5">
-                                          {c.pricingTiers.map(t => (
+                                          {/* Default (no-destination) rates only — this summary card has no room to also
+                                              show every destination's override; open Edit to see the full rate card. */}
+                                          {c.pricingTiers.filter(t => !t.destinationId).map(t => (
                                             <div key={t.nights} className="flex justify-between text-xs">
                                               <span className="text-muted-foreground">{t.nights + 1}D/{t.nights}N</span>
                                               <span className="font-semibold" style={{ color: ACCENT }}>${t.price.toLocaleString()}</span>
                                             </div>
                                           ))}
+                                          {c.pricingTiers.some(t => t.destinationId) && (
+                                            <p className="text-[10px] text-muted-foreground italic">+ destination-specific rates</p>
+                                          )}
                                           {(y.extraBedTiers ?? []).filter((t: PricingTier) => t.price > 0).length > 0 && (
                                             <div className="flex justify-between text-xs border-t pt-0.5 mt-0.5">
                                               <span className="text-muted-foreground">Extra Bed</span>

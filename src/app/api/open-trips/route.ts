@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { roleMatches } from '@/lib/role-utils'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -10,6 +11,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
+    // Admin-only: let past-dated trips stay bookable (for backfilling historical bookings)
+    const role = (session.user as { role?: string }).role ?? ''
+    const includePast = searchParams.get('includePast') === '1' && roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])
 
     const trips = await db.openTrip.findMany({
       include: {
@@ -92,7 +96,7 @@ export async function GET(request: NextRequest) {
           data:  { status: 'open', closedReason: null },
         }).catch(e => console.error('[open-trips] status sync failed:', e))
       } else if (t.status !== 'cancelled' && t.status !== 'closed') {
-        if (now >= new Date(t.startDate)) effectiveStatus = 'closed'
+        if (now >= new Date(t.startDate) && !includePast) effectiveStatus = 'closed'
         else if (spotsAvailable === 0)   effectiveStatus = 'full'
         else                             effectiveStatus = 'open'
       }

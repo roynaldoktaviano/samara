@@ -13,13 +13,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const booking = await db.booking.findUnique({ where: { id } })
   if (!booking) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const token    = crypto.randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+  // Reuse the existing link if it's still valid instead of always minting a new one — a
+  // fresh token here silently breaks any copy of the old link already sent to the guest,
+  // even though it still had weeks left before its real 30-day expiry. Only actually
+  // generate a new token when there isn't one yet, or the old one has expired.
+  const hasValidToken = booking.masterFormToken && booking.masterFormExpiresAt && booking.masterFormExpiresAt > new Date()
+  const token     = hasValidToken ? booking.masterFormToken! : crypto.randomBytes(32).toString('hex')
+  const expiresAt = hasValidToken ? booking.masterFormExpiresAt! : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
 
-  await db.booking.update({
-    where: { id },
-    data: { masterFormToken: token, masterFormExpiresAt: expiresAt },
-  })
+  if (!hasValidToken) {
+    await db.booking.update({
+      where: { id },
+      data: { masterFormToken: token, masterFormExpiresAt: expiresAt },
+    })
+  }
 
   const fwdProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
   const fwdHost  = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
@@ -28,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     : (process.env.NEXTAUTH_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`)
   const link = `${baseUrl}/guest-form/booking/${token}`
 
-  return NextResponse.json({ link, expiresAt })
+  return NextResponse.json({ link, expiresAt, reused: hasValidToken })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

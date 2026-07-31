@@ -17,7 +17,7 @@ async function recalcOpenTripPrice(db: Db, bookingId: string) {
     where: { id: bookingId },
     select: {
       tripType: true, status: true, depositPaid: true,
-      openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true } },
+      openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true, destinationId: true } },
       guests:   { select: { cabinId: true } },
     },
   })
@@ -34,10 +34,13 @@ async function recalcOpenTripPrice(db: Db, bookingId: string) {
   if (uniqueCabinIds.length > 0) {
     const cabins = await db.cabin.findMany({
       where: { id: { in: uniqueCabinIds } },
-      select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true } } },
+      select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true, destinationId: true } } },
     })
     const cabinTotal = cabins.reduce((sum, c) => {
-      const tier = c.pricingTiers.find(t => t.nights === nights)
+      // Destination-scoped rate card entry wins if this cabin has one for the trip's
+      // destination + this many nights, otherwise fall back to the plain tier.
+      const tier = c.pricingTiers.find(t => t.nights === nights && t.destinationId === booking.openTrip!.destinationId)
+        ?? c.pricingTiers.find(t => t.nights === nights && !t.destinationId)
       return sum + (tier ? tier.price : c.price * nights)
     }, 0)
     newTotal = cabinTotal > 0

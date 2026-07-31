@@ -7,6 +7,7 @@ import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
+import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -440,6 +441,30 @@ export async function POST(request: NextRequest) {
         WHERE code = ${code}
           AND ("maxUses" IS NULL OR "usedCount" < "maxUses")
       `.catch(e => console.error('voucher increment failed:', e))
+    }
+
+    // Auto-deduct the agent's clawback (debt) for this booking, capped at what's actually
+    // still owed — best-effort like the side effects above, so a failure here never fails
+    // the booking itself. See src/app/api/finance/agent-clawback/** for how Finance sets
+    // rates/reviews the ledger, and src/lib/agent-clawback.ts for how the applicable rate
+    // (possibly scoped to this yacht/trip type) is resolved.
+    if (!isOnHold && agentId) {
+      resolveClawbackRatePerNight(db, agentId, yachtId || null, tripType || 'PRIVATE_CHARTER')
+        .then(async ratePerNight => {
+          if (ratePerNight <= 0) return
+          const nights = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000))
+          const sum = await db.agentClawbackEntry.aggregate({ where: { agentId }, _sum: { amount: true } })
+          const outstanding = sum._sum.amount ?? 0
+          if (outstanding <= 0) return
+          const deduction = Math.min(outstanding, ratePerNight * nights)
+          if (deduction <= 0) return
+          await db.agentClawbackEntry.create({
+            data: {
+              agentId, bookingId: booking.id, amount: -deduction,
+              note: `Auto-deducted for booking ${booking.bookingCode} (${nights} night${nights > 1 ? 's' : ''})`,
+            },
+          })
+        }).catch(err => console.error('[bookings] Failed to auto-deduct agent clawback:', err))
     }
 
     const userId   = session?.user?.id   ?? ''

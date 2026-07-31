@@ -271,7 +271,11 @@ export default function ItemsPage() {
     const stockData = stockRes.ok ? await stockRes.json() : { locations: [] }
     const byItem = new Map<string, { locationName: string; qty: number }[]>()
     for (const loc of stockData.locations ?? []) {
+      // /api/purchasing/stock mixes catalog rows (kind: 'stock', has .item) with one-off
+      // non-catalog PO purchases (kind: 'non-stock', no .item at all) in the same array —
+      // this export is specifically the item CATALOG, so only the former apply here.
       for (const row of loc.rows ?? []) {
+        if (row.kind !== 'stock') continue
         const list = byItem.get(row.item.id) ?? []
         list.push({ locationName: loc.location.name, qty: row.qty })
         byItem.set(row.item.id, list)

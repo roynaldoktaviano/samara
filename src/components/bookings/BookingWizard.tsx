@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
+import { roleMatches } from '@/lib/role-utils'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -40,7 +41,7 @@ interface AgentOpt        { id: string; name: string; commissionOpenTrip: number
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
 interface LeadOpt { id: string; name: string; phone?: string; email?: string }
-interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number }[] }
+interface CabinOpt   { id: string; name: string; capacity: number; price: number; extraBeds: number; deck?: string; bedType?: string; pricingTiers?: { nights: number; price: number; destinationId?: string | null }[] }
 interface OpenTripOpt{
   id: string; title: string; description?: string
   yachtId: string; startDate: string; endDate: string
@@ -114,6 +115,7 @@ const TODAY = new Date().toISOString().split('T')[0]
 export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId }: Props) {
   const { data: session } = useSession()
   const sharingCabin = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.sharingCabin
+  const isAdmin = roleMatches((session?.user as { role?: string })?.role, ['ADMIN', 'SUPER_ADMIN'])
 
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
@@ -357,7 +359,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       fetch('/api/yachts').then(r => r.json()),
       fetch('/api/agents').then(r => r.json()),
       fetch('/api/customers').then(r => r.json()),
-      fetch('/api/open-trips').then(r => r.json()),
+      fetch(isAdmin ? '/api/open-trips?includePast=1' : '/api/open-trips').then(r => r.json()),
       fetch('/api/vouchers').then(r => r.json()),
       fetch('/api/destinations').then(r => r.json()),
       fetch('/api/leads').then(r => r.json()),
@@ -371,7 +373,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (l.status  === 'fulfilled') setLeads(Array.isArray(l.value)  ? l.value  : [])
       setOpenTripsLoading(false)
     })
-  }, [open])
+  }, [open, isAdmin])
 
   /* fetch agent contacts when agentId changes */
   useEffect(() => {
@@ -528,7 +530,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       const cabinTotal = assignedCabinIds.reduce((sum, id) => {
         const c = cabins.find(x => x.id === id)
         if (!c) return sum
-        const tier = c.pricingTiers?.find(t => t.nights === nights)
+        // Destination-specific rate card entry wins if this cabin has one for the open
+        // trip's destination + this many nights; otherwise fall back to the plain
+        // (no-destination) tier, then to a flat price × nights.
+        const tier = c.pricingTiers?.find(t => t.nights === nights && t.destinationId === ot.destinationId)
+          ?? c.pricingTiers?.find(t => t.nights === nights && !t.destinationId)
         return sum + (tier ? tier.price : c.price * nights)
       }, 0)
       usdPrice = cabinTotal > 0
@@ -1479,10 +1485,18 @@ notes:         resolvedNotes,
     const safePage   = Math.min(tripPage, totalPages)
     const paged      = result.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-    const statusBadge = (t: OpenTripOpt) =>
-      t.status === 'full'
-        ? <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
-        : <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>Open</Badge>
+    const isPastTrip = (t: OpenTripOpt) => t.startDate.slice(0, 10) < TODAY
+
+    const statusBadge = (t: OpenTripOpt) => (
+      <span className="inline-flex items-center gap-1">
+        {t.status === 'full'
+          ? <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
+          : <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>Open</Badge>}
+        {isAdmin && isPastTrip(t) && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700">Past</Badge>
+        )}
+      </span>
+    )
 
     const SORT_LABELS: Record<string, string> = {
       nearest: 'Nearest', furthest: 'Furthest', longest: 'Longest', shortest: 'Shortest',
@@ -2374,7 +2388,8 @@ notes:         resolvedNotes,
                       </div>
                       {(() => {
                         if (tripType === 'OPEN_TRIP' && tripNights > 0) {
-                          const tier = c.pricingTiers?.find(t => t.nights === tripNights)
+                          const tier = c.pricingTiers?.find(t => t.nights === tripNights && t.destinationId === selectedOT?.destinationId)
+                            ?? c.pricingTiers?.find(t => t.nights === tripNights && !t.destinationId)
                           const display = tier ? tier.price : (c.price > 0 ? c.price * tripNights : 0)
                           if (!display) return null
                           return (

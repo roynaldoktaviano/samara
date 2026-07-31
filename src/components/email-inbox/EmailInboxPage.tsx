@@ -43,7 +43,7 @@ function fmtListTime(iso: string) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
-export default function EmailInboxPage() {
+export default function EmailInboxPage({ initialConversationId }: { initialConversationId?: string } = {}) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -79,6 +79,14 @@ export default function EmailInboxPage() {
     return () => clearInterval(t)
   }, [activeId, loadDetail])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }) }, [detail?.messages.length])
+
+  // Deep-link from the unified inbox (src/components/chat/UnifiedInbox.tsx).
+  const deepLinkConsumed = useRef(false)
+  useEffect(() => {
+    if (!initialConversationId || deepLinkConsumed.current || conversations.length === 0) return
+    const target = conversations.find(c => c.id === initialConversationId)
+    if (target) { deepLinkConsumed.current = true; openConversation(target) }
+  }, [initialConversationId, conversations])
 
   async function openConversation(c: ConversationSummary) {
     setActiveId(c.id)

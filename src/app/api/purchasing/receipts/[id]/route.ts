@@ -13,10 +13,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
   const receipt = await db.goodsReceipt.findUnique({ where: { id }, include: { items: true } })
   if (!receipt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  const [receiver, location, order] = await Promise.all([
-    db.user.findUnique({ where: { id: receipt.receivedById }, select: { id: true, name: true } }),
+  const [receiver, receiverEmployee, location, order] = await Promise.all([
+    receipt.receivedById ? db.user.findUnique({ where: { id: receipt.receivedById }, select: { id: true, name: true } }) : null,
+    receipt.receivedByEmployeeId ? db.employee.findUnique({ where: { id: receipt.receivedByEmployeeId }, select: { id: true, fullName: true } }) : null,
     db.stockLocation.findUnique({ where: { id: receipt.locationId }, select: { id: true, name: true } }),
     db.purchaseOrder.findUnique({ where: { id: receipt.orderId }, select: { id: true, poNumber: true, supplierName: true } }),
   ])
-  return NextResponse.json({ ...receipt, receiver, location, order })
+  return NextResponse.json({ ...receipt, receiver, receiverEmployee, location, order })
 }

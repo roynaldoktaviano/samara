@@ -20,7 +20,7 @@ import {
   FileText, Search, X, Loader2, CheckCircle2, XCircle, Clock,
   TrendingUp, AlertCircle, Check, Ban,
   Receipt, Building2, User, Ship, Calendar, Download, UserCheck, RotateCw,
-  FilePlus, Eye, CreditCard, ArrowLeftRight,
+  FilePlus, Eye, CreditCard, ArrowLeftRight, Banknote,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
@@ -86,6 +86,7 @@ interface Payment {
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
     agent: { name: string; commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
+    clawbackEntries: { amount: number }[]
   }
 }
 
@@ -1132,6 +1133,19 @@ export default function Payments() {
                     <div>
                       <p className="text-xs text-muted-foreground">Agent</p>
                       <p className="font-medium">{selected.booking.agent.name}</p>
+                    </div>
+                  </div>
+                )}
+                {/* Internal-only (never shown on the invoice/nota) — how much of this agent's
+                    clawback debt got auto-deducted when this booking was created. */}
+                {selected.booking.agent && selected.booking.clawbackEntries.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <Banknote className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Clawback Deducted</p>
+                      <p className="font-medium text-red-600">
+                        -${fmt(Math.abs(selected.booking.clawbackEntries.reduce((s, e) => s + e.amount, 0)))}
+                      </p>
                     </div>
                   </div>
                 )}

@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         where: { id: guest.bookingId },
         select: {
           tripType: true, status: true, depositPaid: true,
-          openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true } },
+          openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true, destinationId: true } },
           guests:   { select: { cabinId: true } },
         },
       })
@@ -71,10 +71,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         if (uniqueCabinIds.length > 0) {
           const cabins = await db.cabin.findMany({
             where: { id: { in: uniqueCabinIds } },
-            select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true } } },
+            select: { id: true, price: true, pricingTiers: { select: { nights: true, price: true, destinationId: true } } },
           })
           const cabinTotal = cabins.reduce((sum, c) => {
-            const tier = c.pricingTiers.find(t => t.nights === nights)
+            const tier = c.pricingTiers.find(t => t.nights === nights && t.destinationId === booking.openTrip!.destinationId)
+              ?? c.pricingTiers.find(t => t.nights === nights && !t.destinationId)
             return sum + (tier ? tier.price : c.price * nights)
           }, 0)
           const newTotal = cabinTotal > 0 ? cabinTotal : uniqueCabinIds.length * (booking.openTrip.pricePerCabin ?? 0)

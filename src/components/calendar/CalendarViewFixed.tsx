@@ -673,6 +673,14 @@ function YearMiniMonth({
   const firstDay = new Date(year, month, 1).getDay()
   const totalDays = new Date(year, month + 1, 0).getDate()
   const cells: number[] = [...Array(firstDay).fill(0), ...Array.from({ length: totalDays }, (_, i) => i + 1)]
+  // Same-status runs are merged into one connected pill per week row (flat edge where they
+  // touch, rounded only at the start/end of a run) instead of separate dots, so a booking's
+  // date range reads at a glance instead of as disconnected days.
+  const colors = cells.map(day => {
+    if (day === 0) return null
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return dayStatusColor(dateStr, bookings, openTrips, yachtFilter)
+  })
 
   return (
     <button onClick={() => onDayClick(year, month)}
@@ -686,11 +694,20 @@ function YearMiniMonth({
           if (day === 0) return <span key={i} />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const isToday = new Date(dateStr).getTime() === today.getTime()
-          const color = dayStatusColor(dateStr, bookings, openTrips, yachtFilter)
+          const color = colors[i]
+          const col = i % 7
+          const leftConnected  = color !== null && col > 0 && colors[i - 1] === color
+          const rightConnected = color !== null && col < 6 && colors[i + 1] === color
           return (
-            <div key={i} className="flex items-center justify-center h-4">
+            <div key={i} className="flex items-center h-4">
               <span
-                className={cn('flex items-center justify-center text-[9px] rounded-full h-4 w-4 leading-none', isToday && !color && 'ring-1 ring-[#bdac7e]')}
+                className={cn(
+                  'flex items-center justify-center text-[9px] h-4 w-full leading-none',
+                  !leftConnected && !rightConnected && 'rounded-full',
+                  !leftConnected && rightConnected && 'rounded-l-full',
+                  leftConnected && !rightConnected && 'rounded-r-full',
+                  isToday && !color && 'ring-1 ring-[#bdac7e] rounded-full'
+                )}
                 style={color ? { backgroundColor: color, color: 'white', fontWeight: 700 } : { color: 'var(--muted-foreground)' }}
               >
                 {day}
@@ -782,7 +799,7 @@ export default function CalendarView() {
     return () => { document.body.style.overflow = '' }
   }, [isFullscreen])
   const [bookings, setBookings]         = useState<BookingEvent[]>([])
-  const [cancelledOtCabins, setCancelledOtCabins] = useState<{ yachtName: string; count: number }[]>([])
+  const [cancelledOtCabins, setCancelledOtCabins] = useState<{ yachtName: string; count: number; startDate: string; endDate: string }[]>([])
   const [yachts, setYachts]             = useState<DbYacht[]>([])
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
@@ -860,12 +877,12 @@ export default function CalendarView() {
     setOtDetailLoading(true)
     setIsOtEditing(false)
     try {
-      const data = await fetch(`/api/open-trips/${t.id}`).then(r => r.json())
+      const data = await fetch(`/api/open-trips/${t.id}${isAdmin ? '?includePast=1' : ''}`).then(r => r.json())
       setOtDetail(data)
     } finally {
       setOtDetailLoading(false)
     }
-  }, [])
+  }, [isAdmin])
 
   const handleCabinClick = useCallback(async (c: any) => {
     if (!c.bookingId) {
@@ -1015,7 +1032,10 @@ export default function CalendarView() {
       setCancelledOtCabins(
         rawData
           .filter((b: any) => b.status === 'cancelled' && b.tripType === 'OPEN_TRIP')
-          .map((b: any) => ({ yachtName: b.yacht?.name ?? '', count: b.guestCount ?? 1 }))
+          .map((b: any) => ({
+            yachtName: b.yacht?.name ?? '', count: b.guestCount ?? 1,
+            startDate: b.startDate.split('T')[0], endDate: b.endDate.split('T')[0],
+          }))
       )
       setBookings(
         rawData
@@ -1353,11 +1373,11 @@ export default function CalendarView() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bookingId: otAddBookingId, customerId, cabinId: otAddCabinId, isLead: false }),
       })
-      const updated = await fetch(`/api/open-trips/${otDetail.id}`).then(r => r.json())
+      const updated = await fetch(`/api/open-trips/${otDetail.id}${isAdmin ? '?includePast=1' : ''}`).then(r => r.json())
       setOtDetail(updated)
       setOtAddCabinId(null); setOtAddBookingId(null); setOtAddQ(''); setOtAddResults([])
     } finally { setOtAddSaving(false) }
-  }, [otAddBookingId, otAddCabinId, otDetail])
+  }, [otAddBookingId, otAddCabinId, otDetail, isAdmin])
 
   const handleDeleteGuest = useCallback(async (guestId: string, bookingId: string) => {
     setDeletingGuestId(guestId)
@@ -1496,20 +1516,26 @@ export default function CalendarView() {
       {/* Stats strip */}
       {(() => {
         const todayDate = new Date(); todayDate.setHours(0,0,0,0)
+        const viewYear  = currentDate.getFullYear()
+        const viewMonth = currentDate.getMonth()
+        const inViewYear = (startDate: string, endDate: string) => {
+          const s = new Date(startDate + 'T00:00:00')
+          const e = new Date(endDate   + 'T00:00:00')
+          return s.getFullYear() === viewYear || e.getFullYear() === viewYear
+        }
         const filterOtByYacht = (t: OpenTripEvent) => !yachtFilter || t.yacht?.name === yachtFilter
         const isNotPrivatePC = (t: OpenTripEvent) => !(t.status === 'closed' && t.closedReason?.toLowerCase().includes('private'))
-        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
-        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
-        const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t))
+        const filterOtByYear = (t: OpenTripEvent) => inViewYear(t.startDate, t.endDate)
+        const activeTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && filterOtByYear(t) && new Date(t.startDate) > todayDate && t.status !== 'closed')
+        const closedTrips  = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && filterOtByYear(t) && (new Date(t.startDate) <= todayDate || t.status === 'closed'))
+        const filteredOt   = openTrips.filter(t => filterOtByYacht(t) && isNotPrivatePC(t) && filterOtByYear(t))
         const activeCabins    = activeTrips.reduce((s, t) => s + t.spotsAvailable, 0)
         const cancelledCabins = cancelledOtCabins
-          .filter(b => !yachtFilter || b.yachtName === yachtFilter)
+          .filter(b => (!yachtFilter || b.yachtName === yachtFilter) && inViewYear(b.startDate, b.endDate))
           .reduce((s, b) => s + b.count, 0)
         const totalCabins     = filteredOt.reduce((s, t) => s + t.maxCapacity, 0)
         const bookedCabins    = filteredOt.reduce((s, t) => s + (t.maxCapacity - t.spotsAvailable), 0)
         const closedCabins    = Math.max(0, closedTrips.reduce((s, t) => s + t.spotsAvailable, 0) - cancelledCabins)
-        const viewYear  = currentDate.getFullYear()
-        const viewMonth = currentDate.getMonth()
         const yachtLabel = yachtFilter
         const yachtColor = yachtColorMap[yachtFilter] ?? '#64748b'
         const filterByYacht = (b: BookingEvent) => !yachtFilter || b.yachtName === yachtFilter
@@ -1610,7 +1636,7 @@ export default function CalendarView() {
                     <div>
                       <p className="text-[10px] text-slate-400 font-medium">Total Cabins</p>
                       <p className="text-xl font-bold text-slate-700 leading-none">{totalCabins}</p>
-                      <p className="text-[10px] text-slate-400">all open trips</p>
+                      <p className="text-[10px] text-slate-400">open trips in {viewYear}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 xl:border-x xl:border-slate-200 xl:px-4">
@@ -2675,10 +2701,15 @@ export default function CalendarView() {
                       {new Date(otDetail.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </DialogDescription>
                   </div>
-                  <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 shrink-0',
-                    otDetail.status === 'open' ? 'bg-green-100 text-green-700' :
-                    otDetail.status === 'full' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'
-                  )}>{otDetail.status?.toUpperCase()}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isAdmin && otDetail.startDate && new Date(otDetail.startDate) < new Date(new Date().toDateString()) && (
+                      <span className="text-[10px] font-semibold rounded-full px-2.5 py-1 bg-amber-100 text-amber-700">PAST</span>
+                    )}
+                    <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1',
+                      otDetail.status === 'open' ? 'bg-green-100 text-green-700' :
+                      otDetail.status === 'full' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'
+                    )}>{otDetail.status?.toUpperCase()}</span>
+                  </div>
                 </div>
               </DialogHeader>
 

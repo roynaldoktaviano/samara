@@ -34,6 +34,9 @@ const PUBLIC_PATHS = [
   // Crew-facing receive confirmation — access controlled by its own per-shipment token, not staff login
   '/crew-receive',
   '/api/crew-receive',
+  // Crew-facing PO goods-receipt confirmation — access controlled by its own per-PO token, not staff login
+  '/po-receive',
+  '/api/po-receive',
   // Email unsubscribe — reached from a link in a sent email, no staff login
   '/unsubscribe',
   '/api/marketing/unsubscribe',

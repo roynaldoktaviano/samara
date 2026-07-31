@@ -44,7 +44,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     type RoomPayload = {
       id?: string; name: string; deck?: string; bedType?: string
       capacity?: number; price?: number; extraBeds?: number
-      pricingTiers?: { nights: number; price: number }[]
+      pricingTiers?: { nights: number; price: number; destinationId?: string | null }[]
     }
     const validRooms: RoomPayload[] = (rooms ?? []).filter((r: { name?: string }) => r.name?.trim())
 
@@ -82,11 +82,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
               extraBeds: r.extraBeds ? parseInt(String(r.extraBeds)) : 0,
             },
           })
-          // replace all pricing tiers for this cabin
+          // replace all pricing tiers for this cabin (both the destination-less fallback
+          // rows and any destination-specific rate-card overrides — the incoming payload
+          // is expected to carry the full desired set, same as before this just also has
+          // a destinationId per row now)
           await tx.cabinPricingTier.deleteMany({ where: { cabinId: r.id } })
           if (tiers.length > 0) {
             await tx.cabinPricingTier.createMany({
-              data: tiers.map(t => ({ cabinId: r.id!, nights: t.nights, price: t.price })),
+              data: tiers.map(t => ({ cabinId: r.id!, nights: t.nights, price: t.price, destinationId: t.destinationId || null })),
             })
           }
         } else {
@@ -103,7 +106,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           })
           if (tiers.length > 0) {
             await tx.cabinPricingTier.createMany({
-              data: tiers.map(t => ({ cabinId: newCabin.id, nights: t.nights, price: t.price })),
+              data: tiers.map(t => ({ cabinId: newCabin.id, nights: t.nights, price: t.price, destinationId: t.destinationId || null })),
             })
           }
         }
