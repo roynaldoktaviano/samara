@@ -13,7 +13,7 @@ import { Loader2, User, Check, ChevronsUpDown, Search, Download } from 'lucide-r
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { compressImage } from '@/lib/compressImage'
-import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { downloadDataUrl, extFromDataUrl, isPdfDataUrl } from '@/lib/fileUpload'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
 /* ── Types ── */
@@ -162,16 +162,23 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    compressImage(file).then(onChange).catch(() => {})
+    readFileAsDataUrl(file).then(onChange).catch(() => {})
   }
-  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) compressImage(files[0]).then(onChange).catch(() => {}) })
+  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) readFileAsDataUrl(files[0]).then(onChange).catch(() => {}) })
   return (
     <div>
       <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="mt-1.5 space-y-2">
         {value ? (
           <div className="relative group w-full">
-            <img src={value} alt={label} className="w-full max-h-48 object-contain rounded-lg border bg-muted/20" />
+            {isPdfDataUrl(value) ? (
+              <div className="w-full h-24 flex flex-col items-center justify-center gap-1 rounded-lg border bg-muted/20 text-muted-foreground">
+                <span className="text-xl">📄</span>
+                <span className="text-[10px] font-medium">PDF</span>
+              </div>
+            ) : (
+              <img src={value} alt={label} className="w-full max-h-48 object-contain rounded-lg border bg-muted/20" />
+            )}
             <button
               type="button"
               onClick={() => downloadDataUrl(value, `${label.replace(/\s+/g, '-')}.${extFromDataUrl(value)}`)}

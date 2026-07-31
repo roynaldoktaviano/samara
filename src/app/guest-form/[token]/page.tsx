@@ -48,36 +48,28 @@ const selectCls = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm fo
 const textCls   = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white placeholder:text-gray-300 transition-all resize-none`
 
 /* ── Image upload ── */
-function compressImageFile(file: File, onChange: (b64: string) => void) {
-  const img = new window.Image()
-  const url = URL.createObjectURL(file)
-  img.onload = () => {
-    const MAX = 1200
-    const scale = Math.min(1, MAX / Math.max(img.width, img.height))
-    const canvas = document.createElement('canvas')
-    canvas.width  = img.width  * scale
-    canvas.height = img.height * scale
-    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-    onChange(canvas.toDataURL('image/jpeg', 0.82))
-    URL.revokeObjectURL(url)
-  }
-  img.src = url
-}
-
 function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (b64: string) => void }) {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    compressImageFile(file, onChange)
+    readFileAsDataUrl(file).then(onChange).catch(() => {})
   }
-  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) compressImageFile(files[0], onChange) })
+  const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) readFileAsDataUrl(files[0]).then(onChange).catch(() => {}) })
+  const isPdf = value.startsWith('data:application/pdf')
   return (
     <div className="space-y-2">
       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
       {value ? (
         <div className="relative group">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt={label} className="w-full max-h-52 object-contain rounded-xl border border-gray-200 bg-gray-50" />
+          {isPdf ? (
+            <div className="w-full h-28 flex flex-col items-center justify-center gap-1 rounded-xl border border-gray-200 bg-gray-50 text-gray-400">
+              <span className="text-2xl">📄</span>
+              <span className="text-xs font-medium">PDF</span>
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={value} alt={label} className="w-full max-h-52 object-contain rounded-xl border border-gray-200 bg-gray-50" />
+          )}
           <button type="button" onClick={() => onChange('')}
             className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
             ✕
@@ -89,8 +81,8 @@ function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: s
         }`}>
           <span className="text-2xl mb-1">📷</span>
           <span className="text-xs font-medium text-gray-500">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
-          <span className="text-[11px] text-gray-300 mt-0.5">JPG, PNG — max display 1200px</span>
-          <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFile} />
+          <span className="text-[11px] text-gray-300 mt-0.5">JPG, PNG, or PDF</span>
+          <input type="file" className="hidden" accept="image/*,application/pdf" capture="environment" onChange={handleFile} />
         </label>
       )}
       {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
@@ -456,10 +448,10 @@ function SurfingSection({ data, onChange }: { data: any; onChange: (k: string, v
 /* ── Step config ── */
 const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'profile', title: 'Personal Details',    subtitle: 'Your identity & contact info' },
+  { id: 'diving',  title: 'Diving Information',  subtitle: 'Certification & equipment sizing' },
   { id: 'medical', title: 'Medical & Health',    subtitle: 'Health info & emergency contact' },
   { id: 'food',    title: 'Food Preferences',    subtitle: 'Dietary needs & meal preferences' },
   { id: 'drinks',  title: 'Drink Preferences',   subtitle: 'Beverages you enjoy on board' },
-  { id: 'diving',  title: 'Diving Information',  subtitle: 'Certification & equipment sizing' },
   { id: 'surfing', title: 'Surfing Information', subtitle: 'Board details & skill level' },
 ]
 
