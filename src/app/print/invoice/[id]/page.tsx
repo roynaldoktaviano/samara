@@ -192,11 +192,6 @@ export default function InvoicePage() {
   const afterDiscount  = b.totalPrice - commissionAmt
   const displayBase    = baseAfterDisc - commissionAmt
 
-  // Itemized payment history — "Deposit Payment", "Second Payment", ... in chronological
-  // order, with the invoice being printed relabeled "Balance Payment" when it closes out
-  // the package total.
-  const ORDINALS = ['Deposit', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth']
-  const ordinalPayment = (n: number) => `${ORDINALS[n - 1] ?? `${n}th`} Payment`
   type HistoryEntry = NonNullable<PaymentDetail['history']>[number] & { ordinal: number; cumAfter: number }
   const historyRows = (payment.history ?? []).reduce<HistoryEntry[]>((acc, h, i) => {
     const cumAfter = (acc[i - 1]?.cumAfter ?? 0) + h.amount
@@ -499,15 +494,6 @@ export default function InvoicePage() {
               <span style={{ color: '#6b7280', fontSize: 10 }}>Package Total</span>
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
-
-            {historyRows.map(h => (
-              <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ color: h.id === payment.id ? ACCENT : '#6b7280', fontSize: 10, fontStyle: 'italic', fontWeight: h.id === payment.id ? 700 : 400 }}>
-                  {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}{h.id === payment.id ? ' (this invoice)' : ''}
-                </span>
-                <span style={{ color: h.id === payment.id ? ACCENT : '#059669', fontSize: 10, fontWeight: 600 }}>{fmtAmt(h.amount)}</span>
-              </div>
-            ))}
 
             {isClosingPayment && (
               <div style={{ marginBottom: 4 }}>
