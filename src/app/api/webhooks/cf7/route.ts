@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
+import { isHttpUrl } from '@/lib/url-safety'
 
 // This endpoint is meant to be called directly from the browser (client-side
 // JS on the WordPress site listening for the wpcf7mailsent event), not just
@@ -113,7 +114,8 @@ export async function POST(request: NextRequest) {
     // produced it (offline conversion import). Same "not sent yet, harmless to capture
     // defensively" reasoning as the UTM fields above.
     const gclid = pick(data, 'gclid')
-    const url = pick(data, 'page-url', 'page_url', 'url', 'form-url')
+    const rawUrl = pick(data, 'page-url', 'page_url', 'url', 'form-url')
+    const url = isHttpUrl(rawUrl) ? rawUrl : ''
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
 
     if (!firstName && !email && !phone) {

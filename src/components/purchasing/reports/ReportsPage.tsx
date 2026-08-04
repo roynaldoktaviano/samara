@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { TrendingUp, Package, ShoppingCart, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { TrendingUp, Package, ShoppingCart, RefreshCw, Clock, AlertTriangle, FileCheck, ShieldCheck } from 'lucide-react'
 
 interface Summary { thisMonthSpend: number; thisMonthPOCount: number; totalStockValue: number; totalStockLocations: number }
 interface MonthSpend { label: string; totalValue: number; poCount: number }
@@ -24,7 +24,7 @@ const TYPE_COLOR: Record<string, string> = {
   COUNT: 'bg-purple-50 text-purple-700',
 }
 
-const TABS = ['Stock Valuation', 'Expiry / Batch', 'Movement Ledger', 'Trip Reconciliation', 'Exceptions'] as const
+const TABS = ['Stock Valuation', 'Expiry / Batch', 'Movement Ledger', 'Trip Reconciliation', 'Exceptions', 'Purchasing KPIs'] as const
 type Tab = typeof TABS[number]
 
 export default function ReportsPage() {
@@ -370,6 +370,9 @@ export default function ReportsPage() {
                   </div>
                 )
               })()}
+
+              {/* Tab 6: Purchasing KPIs */}
+              {tab === 'Purchasing KPIs' && <PurchasingKpiTab />}
             </div>
           </div>
         </>
@@ -387,6 +390,161 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
       </div>
       <p className="font-bold text-2xl truncate">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  )
+}
+
+// ── Purchasing KPIs tab — 5 KPIs per the Samara Group Purchasing Report spec ──
+
+interface KpiData {
+  periodLabel: string
+  kpi1: { prSameDayPct: number; prSameDayCount: number; prVerifiedTotal: number; poSameDayPct: number; poSameDayCount: number; poDispatchedTotal: number }
+  kpi2: {
+    slaHours: number
+    draftToVerified: { withinSlaPct: number; withinSlaCount: number; total: number; avgHours: number; medianHours: number }
+    verifiedToConverted: { avgHours: number; medianHours: number; count: number }
+    poOrderedToDispatched: { avgHours: number; medianHours: number; count: number }
+  }
+  kpi3: { everOverdueTotal: number; escalatedBeforeDeadline: number; escalatedAfterDeadline: number; followedUpNotEscalated: number; neverFollowedUp: number; followUpRatePct: number }
+  kpi4: { receivedPoTotal: number; allFourCompleteCount: number; completenessPct: number; breakdown: { approvalPct: number; orderPct: number; invoicePct: number; receivingPct: number } }
+  kpi5: { eligibleItemTotal: number; compliantItemCount: number; compliancePct: number; byBand: Record<'B' | 'C' | 'D' | 'E', { total: number; compliant: number; pct: number }> }
+}
+
+function toISO(d: Date) { return d.toISOString().split('T')[0] }
+
+const KPI_PRESETS = [
+  { label: 'This Year', get: () => { const n = new Date(); return { from: toISO(new Date(n.getFullYear(), 0, 1)), to: toISO(new Date(n.getFullYear(), 11, 31)) } } },
+  { label: 'This Month', get: () => { const n = new Date(); return { from: toISO(new Date(n.getFullYear(), n.getMonth(), 1)), to: toISO(new Date(n.getFullYear(), n.getMonth() + 1, 0)) } } },
+  { label: 'Last 6 Mo', get: () => { const n = new Date(); return { from: toISO(new Date(n.getFullYear(), n.getMonth() - 5, 1)), to: toISO(new Date(n.getFullYear(), n.getMonth() + 1, 0)) } } },
+  { label: 'All time', get: () => ({ from: '', to: '' }) },
+]
+
+function KpiTile({ label, value, tone }: { label: string; value: string | number; tone?: 'red' | 'green' | 'amber' | 'muted' }) {
+  const color = tone === 'red' ? 'text-red-600' : tone === 'green' ? 'text-green-600' : tone === 'amber' ? 'text-amber-600' : 'text-foreground'
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+    </div>
+  )
+}
+
+function PurchasingKpiTab() {
+  const defaultRange = KPI_PRESETS[2].get()
+  const [from, setFrom] = useState(defaultRange.from)
+  const [to, setTo] = useState(defaultRange.to)
+  const [activePreset, setActivePreset] = useState('Last 6 Mo')
+  const [kpi, setKpi] = useState<KpiData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchKpi = useCallback(async () => {
+    setLoading(true)
+    const qs = new URLSearchParams({ ...(from && { from }), ...(to && { to }) })
+    const res = await fetch(`/api/purchasing/reports/kpi?${qs}`)
+    if (res.ok) setKpi(await res.json())
+    setLoading(false)
+  }, [from, to])
+
+  useEffect(() => { fetchKpi() }, [fetchKpi])
+
+  const applyPreset = (p: typeof KPI_PRESETS[0]) => { const r = p.get(); setFrom(r.from); setTo(r.to); setActivePreset(p.label) }
+
+  return (
+    <div className="p-5 space-y-6">
+      {/* Date range filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        {KPI_PRESETS.map(p => (
+          <button key={p.label} onClick={() => applyPreset(p)}
+            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${activePreset === p.label ? 'border-amber-500 bg-amber-500 text-white' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}>
+            {p.label}
+          </button>
+        ))}
+        <div className="w-px h-5 bg-border mx-1" />
+        <input type="date" value={from} onChange={e => { setFrom(e.target.value); setActivePreset('') }}
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+        <span className="text-xs text-muted-foreground">→</span>
+        <input type="date" value={to} onChange={e => { setTo(e.target.value); setActivePreset('') }}
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+        <span className="text-xs text-muted-foreground ml-2">{loading ? 'Loading…' : kpi?.periodLabel}</span>
+      </div>
+
+      {loading || !kpi ? (
+        <div className="h-64 rounded-xl border bg-muted/30 animate-pulse" />
+      ) : (
+        <>
+          {/* KPI 1 — ERP accuracy / same-day updates (proxy metric) */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">1. ERP Accuracy — Same-Day Updates</h3>
+            <p className="text-xs text-muted-foreground">Proxy metric — measures the gap between the system's own timestamps, not a separate real-world event date.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <KpiCard icon={<Clock className="h-5 w-5 text-blue-600" />} label="PR Verified Same Day"
+                value={`${kpi.kpi1.prSameDayPct}%`} sub={`${kpi.kpi1.prSameDayCount} of ${kpi.kpi1.prVerifiedTotal} PRs`} />
+              <KpiCard icon={<Clock className="h-5 w-5 text-blue-600" />} label="PO Dispatched Same Day"
+                value={`${kpi.kpi1.poSameDayPct}%`} sub={`${kpi.kpi1.poSameDayCount} of ${kpi.kpi1.poDispatchedTotal} POs`} />
+            </div>
+          </div>
+
+          {/* KPI 2 — Order processing timeliness */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">2. Order Processing Timeliness</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <KpiCard icon={<Clock className="h-5 w-5 text-amber-600" />} label={`Draft → Verified (${kpi.kpi2.slaHours}h SLA)`}
+                value={`${kpi.kpi2.draftToVerified.withinSlaPct}%`} sub={`${kpi.kpi2.draftToVerified.withinSlaCount} of ${kpi.kpi2.draftToVerified.total} within SLA · avg ${kpi.kpi2.draftToVerified.avgHours}h`} />
+              <KpiCard icon={<Clock className="h-5 w-5 text-muted-foreground" />} label="Verified → Converted (no SLA)"
+                value={`${kpi.kpi2.verifiedToConverted.avgHours}h avg`} sub={`median ${kpi.kpi2.verifiedToConverted.medianHours}h · ${kpi.kpi2.verifiedToConverted.count} PRs — descriptive only`} />
+              <KpiCard icon={<Clock className="h-5 w-5 text-muted-foreground" />} label="PO Ordered → Dispatched (no SLA)"
+                value={`${kpi.kpi2.poOrderedToDispatched.avgHours}h avg`} sub={`median ${kpi.kpi2.poOrderedToDispatched.medianHours}h · ${kpi.kpi2.poOrderedToDispatched.count} POs — descriptive only`} />
+            </div>
+          </div>
+
+          {/* KPI 3 — Follow-up & early escalation (PO overdue only) */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">3. Follow-up &amp; Early Escalation</h3>
+            <p className="text-xs text-muted-foreground">Scoped to POs that were ever overdue (past expected delivery). Cancelled POs excluded.</p>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <KpiTile label="Ever Overdue" value={kpi.kpi3.everOverdueTotal} />
+              <KpiTile label="Escalated (on time)" value={kpi.kpi3.escalatedBeforeDeadline} tone="green" />
+              <KpiTile label="Escalated (late)" value={kpi.kpi3.escalatedAfterDeadline} tone="amber" />
+              <KpiTile label="Followed up, not escalated" value={kpi.kpi3.followedUpNotEscalated} />
+              <KpiTile label="Never followed up" value={kpi.kpi3.neverFollowedUp} tone={kpi.kpi3.neverFollowedUp > 0 ? 'red' : 'green'} />
+            </div>
+            <div className="max-w-xs">
+              <KpiCard icon={<AlertTriangle className="h-5 w-5 text-red-600" />} label="Follow-up Rate" value={`${kpi.kpi3.followUpRatePct}%`} sub="of overdue POs got at least one follow-up" />
+            </div>
+          </div>
+
+          {/* KPI 4 — Documentation completeness */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">4. Documentation Completeness</h3>
+            <p className="text-xs text-muted-foreground">Received POs with approval, order, invoice and receiving evidence all on file.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <KpiCard icon={<FileCheck className="h-5 w-5 text-green-600" />} label="Fully Documented"
+                value={`${kpi.kpi4.completenessPct}%`} sub={`${kpi.kpi4.allFourCompleteCount} of ${kpi.kpi4.receivedPoTotal} received POs`} />
+              <div className="grid grid-cols-4 gap-2">
+                <KpiTile label="Approval" value={`${kpi.kpi4.breakdown.approvalPct}%`} />
+                <KpiTile label="Order" value={`${kpi.kpi4.breakdown.orderPct}%`} />
+                <KpiTile label="Invoice" value={`${kpi.kpi4.breakdown.invoicePct}%`} />
+                <KpiTile label="Receiving" value={`${kpi.kpi4.breakdown.receivingPct}%`} />
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 5 — Compliance & commercial discipline (quotation rules) */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">5. Compliance &amp; Commercial Discipline</h3>
+            <p className="text-xs text-muted-foreground">Converted PR items above Band A with enough quotations on file (or a valid exemption) and justification where the cheapest quote wasn't chosen.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <KpiCard icon={<ShieldCheck className="h-5 w-5 text-blue-600" />} label="Sourcing Compliance"
+                value={`${kpi.kpi5.compliancePct}%`} sub={`${kpi.kpi5.compliantItemCount} of ${kpi.kpi5.eligibleItemTotal} eligible items`} />
+              <div className="grid grid-cols-4 gap-2">
+                {(['B', 'C', 'D', 'E'] as const).map(b => (
+                  <KpiTile key={b} label={`Band ${b}`} value={`${kpi.kpi5.byBand[b]?.pct ?? 0}%`} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

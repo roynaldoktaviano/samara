@@ -14,10 +14,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const request = await db.purchaseRequest.findUnique({
     where: { id },
     include: {
-      items: true,
+      items: { include: { quotations: { orderBy: { price: 'asc' } } } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
-      approvedBy: { select: { id: true, name: true } },
+      verifiedBy: { select: { id: true, name: true } },
+      convertedBy: { select: { id: true, name: true } },
+      rejectedBy: { select: { id: true, name: true } },
+      cancelledBy: { select: { id: true, name: true } },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -93,26 +96,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
   const body = await req.json()
   const { status, transferFulfillments } = body as {
-    status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+    status: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
     transferFulfillments?: { requestItemId: string; fromLocationId: string }[]
   }
-  const valid = ['REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED']
+  const valid = ['DRAFT', 'ON_PROCESS', 'CONVERTED', 'REJECTED', 'CANCELLED']
   if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   const request = await db.purchaseRequest.update({
     where: { id },
     data: {
       status,
       updatedAt: new Date(),
-      ...(status === 'APPROVED' && { approvedById: session.user.id, approvedAt: new Date() }),
+      ...(status === 'ON_PROCESS' && { verifiedById: session.user.id, verifiedAt: new Date() }),
+      ...(status === 'CONVERTED' && { convertedById: session.user.id, convertedAt: new Date() }),
+      ...(status === 'REJECTED' && { rejectedById: session.user.id, rejectedAt: new Date() }),
+      ...(status === 'CANCELLED' && { cancelledById: session.user.id, cancelledAt: new Date() }),
     },
     include: { items: true },
   })
 
-  // For items the approver chose to fulfill from warehouse stock instead of buying,
+  // For items Purchasing chose to fulfill from warehouse stock instead of buying,
   // re-validate stock server-side (never trust client-sent numbers) and route those
   // items to a Transfer instead of a Purchase Order.
   const transferByRequestItemId = new Map<string, { fromLocationId: string; baseQty: number }>()
-  if (status === 'APPROVED' && transferFulfillments?.length) {
+  if (status === 'CONVERTED' && transferFulfillments?.length) {
     if (!request.deliveryLocationId) {
       return NextResponse.json({ error: 'PR tidak punya delivery location — tidak bisa fulfill via transfer' }, { status: 409 })
     }
@@ -148,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Auto-create draft POs (grouped by supplier) for items not fulfilled via transfer
   const poItems = request.items.filter(item => !transferByRequestItemId.has(item.id))
-  if (status === 'APPROVED') {
+  if (status === 'CONVERTED') {
     const existingDrafts = await db.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT' } })
     if (!existingDrafts) {
       const requester = request.requestedByEmployeeId
@@ -212,7 +218,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // location, one Transfer per warehouse, destined to the PR's delivery location.
   // Lands as PENDING: warehouse still has to dispatch (with photo) and the
   // destination still has to confirm receipt, same as a manually-created transfer.
-  if (status === 'APPROVED' && transferByRequestItemId.size > 0) {
+  if (status === 'CONVERTED' && transferByRequestItemId.size > 0) {
     const existingTransfers = await db.stockTransfer.findFirst({ where: { purchaseRequestId: id } })
     if (!existingTransfers) {
       const transferGroups = new Map<string, typeof request.items>()
@@ -265,7 +271,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb(session)
   const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (existing.status !== 'REQUESTED') return NextResponse.json({ error: 'Hanya PR yang belum diproses (Requested) yang bisa dihapus' }, { status: 409 })
+  if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR yang masih Draft yang bisa dihapus' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
   await db.purchaseRequest.delete({ where: { id } })
   return NextResponse.json({ ok: true })

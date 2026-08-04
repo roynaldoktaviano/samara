@@ -420,7 +420,7 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json()
         setPendingRequestOrders(Array.isArray(data)
-          ? data.filter((r: { status: string; requestedByEmployeeId: string | null }) => r.status === 'REQUESTED' && r.requestedByEmployeeId).length
+          ? data.filter((r: { status: string; requestedByEmployeeId: string | null }) => r.status === 'DRAFT' && r.requestedByEmployeeId).length
           : 0)
       }
     } catch { /* silent */ }

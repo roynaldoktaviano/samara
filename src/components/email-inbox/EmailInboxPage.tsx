@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
 import { Search, Send, Loader2, Mail, Paperclip, X } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { isHttpUrl } from '@/lib/url-safety'
 
 const ACCENT = '#1a73e8' // familiar "email" blue
 
@@ -226,7 +227,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                     {m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
                     {m.attachmentUrls.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {m.attachmentUrls.map((url, i) => (
+                        {m.attachmentUrls.filter(isHttpUrl).map((url, i) => (
                           <a key={i} href={url} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border bg-muted/40 hover:bg-muted transition-colors">
                             <Paperclip className="h-3 w-3" /> Attachment {i + 1}

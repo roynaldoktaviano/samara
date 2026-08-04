@@ -44,6 +44,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           paidBy: { select: { name: true } },
         },
       },
+      followUps: {
+        orderBy: { createdAt: 'desc' },
+        include: { createdBy: { select: { name: true } }, escalatedTo: { select: { name: true } } },
+      },
       transitStops: { orderBy: { sequence: 'asc' }, select: { locationId: true, sequence: true, location: { select: { id: true, name: true, type: true } } } },
       transitTransfers: {
         orderBy: { legSequence: 'asc' },

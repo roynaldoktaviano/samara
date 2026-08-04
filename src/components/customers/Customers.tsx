@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
+import { isHttpUrl } from '@/lib/url-safety'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Guest {
@@ -611,7 +612,7 @@ export default function Guests() {
                             {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
                             {inq.website && (
                               <p className="text-xs text-muted-foreground">
-                                {inq.url ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
+                                {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
                               </p>
                             )}
                             {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (

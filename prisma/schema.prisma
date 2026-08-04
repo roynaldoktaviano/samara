@@ -105,7 +105,10 @@ model User {
   waitingListItems               WaitingList[]
   stockMovements                 StockMovement[]
   purchaseRequests               PurchaseRequest[]           @relation("PRRequestedBy")
-  purchaseRequestsApproved       PurchaseRequest[]           @relation("PRApprovedBy")
+  purchaseRequestsVerified       PurchaseRequest[]           @relation("PRVerifiedBy")
+  purchaseRequestsConverted      PurchaseRequest[]           @relation("PRConvertedBy")
+  purchaseRequestsRejected       PurchaseRequest[]           @relation("PRRejectedBy")
+  purchaseRequestsCancelled      PurchaseRequest[]           @relation("PRCancelledBy")
   purchaseOrdersCreated          PurchaseOrder[]
   goodsReceipts                  GoodsReceipt[]
   transfersDispatched            StockTransfer[]             @relation("TransferDispatch")
@@ -119,6 +122,9 @@ model User {
   poPaymentRequestsPaid          POPaymentRequest[]          @relation("POPaymentPaidBy")
   poReimbursementsMade           POReimbursement[]           @relation("POReimbursementRequestedBy")
   poReimbursementsPaid           POReimbursement[]           @relation("POReimbursementPaidBy")
+  poFollowUpsCreated             PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
+  poFollowUpsEscalatedTo         PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
+  purchaseQuotationsCreated      PurchaseQuotation[]
   deliveryFeesCreated            DeliveryFee[]
   deliveryFeePaymentRequestsMade DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
   deliveryFeePaymentRequestsPaid DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
@@ -293,15 +299,15 @@ model Agent {
 }
 
 model AgentClawbackEntry {
-  id      String @id @default(cuid())
-  agentId String
+  id              String   @id @default(cuid())
+  agentId         String
   // Positive = debt added (agent now owes more — a manual Finance entry). Negative = a
   // deduction that pays the debt down, either automatic (set at booking creation, from
   // the applicable clawback rate × nights, capped at the outstanding balance) or a manual
   // adjustment by Finance.
-  amount    Float
-  bookingId String? // set only for automatic per-booking deductions
-  note      String? // why this entry exists — required for manual entries
+  amount          Float
+  bookingId       String? // set only for automatic per-booking deductions
+  note            String? // why this entry exists — required for manual entries
   createdByUserId String?
   createdByName   String?
   createdAt       DateTime @default(now())
@@ -425,43 +431,43 @@ model AgentLeadContact {
 }
 
 model Yacht {
-  id                String                  @id @default(cuid())
-  name              String
-  model             String?
-  year              Int?
-  capacity          Int
-  cabinCount        Int                     @default(0)
-  length            Float?
-  description       String?
-  hourlyRate        Float
-  dailyRate         Float
-  extraBedTiers     Json                    @default("[]")
-  canDiving         Boolean                 @default(false)
-  canSurfing        Boolean                 @default(false)
-  status            YachtStatus             @default(available)
-  image             String?
-  tagline           String?
-  type              String?
+  id                 String                  @id @default(cuid())
+  name               String
+  model              String?
+  year               Int?
+  capacity           Int
+  cabinCount         Int                     @default(0)
+  length             Float?
+  description        String?
+  hourlyRate         Float
+  dailyRate          Float
+  extraBedTiers      Json                    @default("[]")
+  canDiving          Boolean                 @default(false)
+  canSurfing         Boolean                 @default(false)
+  status             YachtStatus             @default(available)
+  image              String?
+  tagline            String?
+  type               String?
   // Manual display order for the Agent Portal yacht picker (and anywhere else the fleet is
   // listed) — lower shows first. Defaults to 0 so existing/new yachts fall back to name-sort.
-  sortOrder         Int                     @default(0)
-  deletedAt         DateTime?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  bookings          Booking[]
-  crew              Crew[]
-  cabins            Cabin[]
-  openTrips         OpenTrip[]
-  maintenances      Maintenance[]
-  expenses          Expense[]
-  waitingListItems  WaitingList[]
-  stockLocations    StockLocation[]
-  crewRequests      CrewRequest[]
-  cashierSales      CashierSale[]
-  destinationPrices YachtDestinationPrice[]
-  mediaFiles        MediaFile[]
-  mediaFolders      MediaFolder[]
-  promos            Promo[]
+  sortOrder          Int                     @default(0)
+  deletedAt          DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  bookings           Booking[]
+  crew               Crew[]
+  cabins             Cabin[]
+  openTrips          OpenTrip[]
+  maintenances       Maintenance[]
+  expenses           Expense[]
+  waitingListItems   WaitingList[]
+  stockLocations     StockLocation[]
+  crewRequests       CrewRequest[]
+  cashierSales       CashierSale[]
+  destinationPrices  YachtDestinationPrice[]
+  mediaFiles         MediaFile[]
+  mediaFolders       MediaFolder[]
+  promos             Promo[]
   agentClawbackRates AgentClawbackRate[]
 }
 
@@ -611,8 +617,8 @@ model Cabin {
 }
 
 model CabinPricingTier {
-  id      String @id @default(cuid())
-  cabinId String
+  id            String       @id @default(cuid())
+  cabinId       String
   // null = fallback rate that applies regardless of destination (the original behavior,
   // before per-destination rate cards existed). A row with a destinationId set is a more
   // specific override for that destination + nights combo; lookups should prefer a match
@@ -1261,12 +1267,14 @@ model PurchaseItemCategory {
   @@unique([typeCode, name])
 }
 
-// Simplified from an 8-value enum (DRAFT/SENT/ORDERED/PARTIALLY_RECEIVED/RECEIVED
-// were either dead states never set by any code path, or duplicated tracking that
-// already belongs to the linked PurchaseOrder — see PurchaseOrderStatus).
+// DRAFT: newly submitted, awaiting Purchasing review. ON_PROCESS: verified by
+// Purchasing and being worked (supplier/pricing/warehouse-fulfillment picks)
+// before conversion. CONVERTED: turned into one or more PurchaseOrders — see
+// PurchaseOrderStatus for what happens to the goods from there.
 enum PurchaseRequestStatus {
-  REQUESTED
-  APPROVED
+  DRAFT
+  ON_PROCESS
+  CONVERTED
   REJECTED
   CANCELLED
 }
@@ -1475,17 +1483,29 @@ model PurchaseRequest {
   requestedByEmployeeId String?
   deliveryLocationId    String?
   notes                 String?
-  status                PurchaseRequestStatus @default(REQUESTED)
+  status                PurchaseRequestStatus @default(DRAFT)
   pdfKey                String?
-  approvedById          String?
-  approvedAt            DateTime?
+  // One {action}At/{action}ById pair per status transition — lets KPI reporting
+  // compute response time between any two steps (e.g. same-day verification, or
+  // draft-to-PO turnaround) without re-deriving it from an activity log.
+  verifiedById          String?
+  verifiedAt            DateTime?
+  convertedById         String?
+  convertedAt           DateTime?
+  rejectedById          String?
+  rejectedAt            DateTime?
+  cancelledById         String?
+  cancelledAt           DateTime?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
   requestedBy         User                  @relation("PRRequestedBy", fields: [requestedById], references: [id])
   requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
   deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  verifiedBy          User?                 @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  convertedBy         User?                 @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
+  rejectedBy          User?                 @relation("PRRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  cancelledBy         User?                 @relation("PRCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
   items               PurchaseRequestItem[]
   orders              PurchaseOrder[]
   transfers           StockTransfer[]
@@ -1496,7 +1516,10 @@ model PurchaseRequest {
   @@index([requestedById])
   @@index([requestedByEmployeeId])
   @@index([deliveryLocationId])
-  @@index([approvedById])
+  @@index([convertedById])
+  @@index([rejectedById])
+  @@index([cancelledById])
+  @@index([verifiedById])
 }
 
 model Supplier {
@@ -1513,6 +1536,7 @@ model Supplier {
 
   orders       PurchaseOrder[]
   requestItems PurchaseRequestItem[]
+  quotations   PurchaseQuotation[]
 }
 
 // Saved bank accounts for PO reimbursements — lets Purchasing/Admin pick a
@@ -1529,23 +1553,51 @@ model ReimburseAccount {
 }
 
 model PurchaseRequestItem {
-  id            String  @id @default(cuid())
-  requestId     String
-  itemId        String?
-  itemName      String
-  quantity      Float
-  unit          String
-  estimatedCost Float   @default(0)
-  supplierId    String?
-  supplierName  String?
-  notes         String?
-  imageKeys     Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
+  id                     String  @id @default(cuid())
+  requestId              String
+  itemId                 String?
+  itemName               String
+  quantity               Float
+  unit                   String
+  estimatedCost          Float   @default(0)
+  supplierId             String?
+  supplierName           String?
+  notes                  String?
+  imageKeys              Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
+  // Sourcing-evidence tracking for KPI 5 (compliance/quotation rules) — soft/reporting-only,
+  // never blocks PR conversion. exemptionReason: catalogue-price/recurring-agreement exception
+  // per the Purchasing Approval Matrix footnote. selectionJustification: expected whenever the
+  // chosen supplier isn't the cheapest quotation on file — not server-enforced, just reported.
+  exemptionReason        String?
+  selectionJustification String?
 
-  request  PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  item     PurchaseItem?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  supplier Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  request    PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item       PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier   Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  quotations PurchaseQuotation[]
 
   @@index([requestId])
+}
+
+// Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the
+// final supplier is chosen. Attached to PurchaseRequestItem (not PurchaseOrderItem) since
+// supplier selection happens at the PR stage — a PO is already committed to one supplier.
+model PurchaseQuotation {
+  id            String   @id @default(cuid())
+  requestItemId String
+  supplierId    String?
+  supplierName  String
+  price         Float
+  fileKey       String?
+  submittedAt   DateTime @default(now())
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  requestItem PurchaseRequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  supplier    Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdBy   User                @relation(fields: [createdById], references: [id])
+
+  @@index([requestItemId])
 }
 
 model PurchaseOrder {
@@ -1612,6 +1664,7 @@ model PurchaseOrder {
   stockLots           StockLot[]
   transitStops        PurchaseOrderTransitStop[]
   transitTransfers    StockTransfer[]
+  followUps           PurchaseFollowUp[]
 
   @@index([createdById])
   @@index([status])
@@ -1620,6 +1673,26 @@ model PurchaseOrder {
   @@index([deliveryLocationId])
   @@index([requestedByEmployeeId])
   @@index([bookingId])
+}
+
+// KPI 3 (follow-up & early escalation) — append-only-in-spirit log of chasing/escalation
+// notes on a PO, primarily used once it's past its expectedAt. Deletable (not truly
+// immutable) to allow correcting a mis-logged entry, per explicit user decision.
+model PurchaseFollowUp {
+  id            String   @id @default(cuid())
+  orderId       String
+  note          String
+  isEscalation  Boolean  @default(false)
+  escalatedToId String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  escalatedTo User?         @relation("POFollowUpEscalatedTo", fields: [escalatedToId], references: [id], onDelete: SetNull)
+  createdBy   User          @relation("POFollowUpCreatedBy", fields: [createdById], references: [id])
+
+  @@index([orderId])
+  @@index([createdAt])
 }
 
 enum POPaymentRequestStatus {
@@ -1789,9 +1862,9 @@ model PurchaseOrderItem {
 }
 
 model GoodsReceipt {
-  id              String   @id @default(cuid())
-  grNumber        String   @unique
-  orderId         String
+  id                   String   @id @default(cuid())
+  grNumber             String   @unique
+  orderId              String
   // Exactly one of receivedById/receivedByEmployeeId is set in practice: the internal,
   // logged-in staff flow sets receivedById; the no-login PO-receive link (crew on a yacht,
   // see src/app/po-receive/[token]) sets receivedByEmployeeId instead, since there's no
@@ -1800,18 +1873,18 @@ model GoodsReceipt {
   receivedById         String?
   receivedByEmployeeId String?
   receiverName         String?
-  locationId      String
-  receivePhotoKey String?
-  notes           String?
-  receivedAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
+  locationId           String
+  receivePhotoKey      String?
+  notes                String?
+  receivedAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
 
-  order            PurchaseOrder      @relation(fields: [orderId], references: [id])
-  receivedBy       User?              @relation(fields: [receivedById], references: [id], onDelete: SetNull)
-  receivedByEmployee Employee?        @relation(fields: [receivedByEmployeeId], references: [id], onDelete: SetNull)
-  location         StockLocation      @relation(fields: [locationId], references: [id])
-  items            GoodsReceiptItem[]
-  transitTransfers StockTransfer[]
+  order              PurchaseOrder      @relation(fields: [orderId], references: [id])
+  receivedBy         User?              @relation(fields: [receivedById], references: [id], onDelete: SetNull)
+  receivedByEmployee Employee?          @relation(fields: [receivedByEmployeeId], references: [id], onDelete: SetNull)
+  location           StockLocation      @relation(fields: [locationId], references: [id])
+  items              GoodsReceiptItem[]
+  transitTransfers   StockTransfer[]
 
   @@index([orderId])
   @@index([receivedAt])

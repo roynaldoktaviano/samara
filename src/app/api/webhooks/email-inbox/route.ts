@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { isHttpUrl } from '@/lib/url-safety'
 
 // Inbound-email webhook placeholder — point whichever provider gets connected
 // (Postmark inbound webhook, SendGrid inbound parse, Resend inbound, etc.) at:
@@ -25,15 +26,14 @@ export async function POST(request: NextRequest) {
   const { db, tenant } = resolved
 
   const secret = await getTenantSecret(tenant.id, 'emailInboxWebhookSecret')
-  if (secret) {
-    const provided = request.headers.get('x-webhook-secret') ?? request.nextUrl.searchParams.get('secret')
-    if (provided !== secret) return NextResponse.json({ error: 'Invalid secret' }, { status: 401 })
-  }
+  if (!secret) return NextResponse.json({ error: 'emailInboxWebhookSecret not configured' }, { status: 500 })
+  const provided = request.headers.get('x-webhook-secret') ?? request.nextUrl.searchParams.get('secret')
+  if (provided !== secret) return NextResponse.json({ error: 'Invalid secret' }, { status: 401 })
 
   const raw = await request.json().catch(() => null) as InboundBody | null
   if (!raw?.fromEmail) return NextResponse.json({ error: 'Missing fromEmail' }, { status: 400 })
 
-  const attachments = Array.isArray(raw.attachmentUrls) ? raw.attachmentUrls : []
+  const attachments = Array.isArray(raw.attachmentUrls) ? raw.attachmentUrls.filter(isHttpUrl) : []
   const preview = raw.text ?? (attachments.length ? '📎 Attachment' : '')
 
   if (raw.messageId) {

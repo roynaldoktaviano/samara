@@ -1376,45 +1376,52 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
         </>
       ) : (
         <div className="space-y-5">
-          {[...openTrips]
-            .sort((a, b) => (a.status === 'closed' ? 1 : 0) - (b.status === 'closed' ? 1 : 0))
-            .map(trip => {
-              const isClosed = trip.status === 'closed'
-              return (
-                <div key={trip.id} className={cn('bg-white border rounded-xl p-5', isClosed && 'opacity-50')}>
-                  <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-sm">{trip.title}</p>
-                        {isClosed && (
-                          <span className="text-[9px] uppercase tracking-wide font-semibold bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-full">
-                            Closed
-                          </span>
-                        )}
+          {(() => {
+            const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0)
+            // The API reports OpenTrip.status as stored in the DB, which isn't auto-flipped to
+            // 'closed' once the trip's dates have passed — so "closed/complete" here also means
+            // any trip whose last day is already behind us, not just an explicit closed status.
+            const isTripClosed = (t: CalendarOpenTrip) => t.status === 'closed' || new Date(t.endDate) < todayMidnight
+            return [...openTrips]
+              .sort((a, b) => (isTripClosed(a) ? 1 : 0) - (isTripClosed(b) ? 1 : 0))
+              .map(trip => {
+                const isClosed = isTripClosed(trip)
+                return (
+                  <div key={trip.id} className={cn('bg-white border rounded-xl p-5', isClosed && 'opacity-50')}>
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm">{trip.title}</p>
+                          {isClosed && (
+                            <span className="text-[9px] uppercase tracking-wide font-semibold bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-full">
+                              Closed
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
+                      <span className="text-xs text-muted-foreground">{formatDateRange(trip.startDate, trip.endDate)}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{formatDateRange(trip.startDate, trip.endDate)}</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {trip.cabinStatuses.map(cabin => (
+                        <div
+                          key={cabin.id}
+                          className={cn(
+                            'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
+                            cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
+                          )}
+                        >
+                          <span className="truncate">{cabin.name}</span>
+                          <span className="text-[9px] uppercase tracking-wide opacity-80 shrink-0">
+                            {cabin.bookingStatus ? 'Booked' : 'Available'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {trip.cabinStatuses.map(cabin => (
-                      <div
-                        key={cabin.id}
-                        className={cn(
-                          'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
-                          cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
-                        )}
-                      >
-                        <span className="truncate">{cabin.name}</span>
-                        <span className="text-[9px] uppercase tracking-wide opacity-80 shrink-0">
-                          {cabin.bookingStatus ? 'Booked' : 'Available'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })
+          })()}
         </div>
       )}
     </div>

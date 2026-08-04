@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
   const db = await getDb(session)
   try {
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
+    const search  = searchParams.get('search')
+    const website = searchParams.get('website')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
@@ -22,6 +23,11 @@ export async function GET(request: NextRequest) {
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
       ]
+    }
+    // A lead can have inquiries from more than one site — match if any of them
+    // came from the selected website, rather than pinning to first/latest.
+    if (website) {
+      where.inquiries = { some: { website } }
     }
 
     const [leads, total] = await Promise.all([

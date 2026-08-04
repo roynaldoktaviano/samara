@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { getBand, requiredQuotationCount, BAND_LABEL } from '@/lib/purchasing/quotationBands'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -30,7 +31,8 @@ interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseIt
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean }
+interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -42,27 +44,38 @@ interface PurchaseRequest {
   notes: string | null
   createdAt: string
   requestedBy: { name: string } | null
-  approvedBy: { name: string } | null
-  approvedAt: string | null
+  verifiedBy: { name: string } | null
+  verifiedAt: string | null
+  convertedBy: { name: string } | null
+  convertedAt: string | null
+  rejectedBy: { name: string } | null
+  rejectedAt: string | null
+  cancelledBy: { name: string } | null
+  cancelledAt: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  REQUESTED: 'Requested', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+  DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
-  REQUESTED: 'bg-blue-100 text-blue-700', APPROVED: 'bg-green-100 text-green-700',
+  DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
   REJECTED: 'bg-red-100 text-red-700', CANCELLED: 'bg-muted text-muted-foreground',
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
-  { key: 'REQUESTED', label: 'Requested' },
-  { key: 'APPROVED', label: 'Approved' },
+  { key: 'DRAFT', label: 'Draft' },
+  { key: 'ON_PROCESS', label: 'On Process' },
+  { key: 'CONVERTED', label: 'Converted' },
   { key: 'REJECTED', label: 'Rejected' },
   { key: 'CANCELLED', label: 'Cancelled' },
 ]
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtDateTime(s: string) {
+  return new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export default function RequestsPage() {
@@ -89,7 +102,7 @@ export default function RequestsPage() {
   const [catalogCategory, setCatalogCategory] = useState('All')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [supplierModal, setSupplierModal] = useState<'editItem' | null>(null)
+  const [supplierModal, setSupplierModal] = useState<'editItem' | 'quotation' | null>(null)
   const [supplierModalSearch, setSupplierModalSearch] = useState('')
   const [supplierFilterCity, setSupplierFilterCity] = useState('All')
 
@@ -108,6 +121,14 @@ export default function RequestsPage() {
   const [editItemSupplierId, setEditItemSupplierId] = useState('')
   const [editItemSaving, setEditItemSaving] = useState(false)
   const [editItemError, setEditItemError] = useState('')
+
+  // Quotations / sourcing-compliance sub-section of the Edit Item modal (KPI 5)
+  const [quoteForm, setQuoteForm] = useState({ supplierId: '', supplierName: '', price: '' })
+  const [quoteSaving, setQuoteSaving] = useState(false)
+  const [quoteError, setQuoteError] = useState('')
+  const [exemptionChecked, setExemptionChecked] = useState(false)
+  const [exemptionReasonText, setExemptionReasonText] = useState('')
+  const [justificationText, setJustificationText] = useState('')
 
   // Reference photo lightbox
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; name: string } | null>(null)
@@ -174,7 +195,7 @@ export default function RequestsPage() {
     await fetchDetail(req.id)
   }
 
-  async function approve() {
+  async function convertToPO() {
     if (!selected || !detail) return
     const missingSupplier = detail.items.filter(item => !fulfillment[item.id!] && !item.supplierId)
     if (missingSupplier.length > 0) {
@@ -187,11 +208,11 @@ export default function RequestsPage() {
     const res = await fetch(`/api/purchasing/requests/${selected.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'APPROVED', transferFulfillments }),
+      body: JSON.stringify({ status: 'CONVERTED', transferFulfillments }),
     })
     const data = await res.json()
-    if (!res.ok) { alert(data.error ?? 'Failed to approve'); return }
-    setSelected(s => s ? { ...s, status: 'APPROVED' } : s)
+    if (!res.ok) { alert(data.error ?? 'Failed to convert to PO'); return }
+    setSelected(s => s ? { ...s, status: 'CONVERTED' } : s)
     await fetchDetail(selected.id)
     setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], transferNumbers: data.createdTransferNumbers ?? [] })
     load()
@@ -202,6 +223,11 @@ export default function RequestsPage() {
     setEditItemCost(String(item.estimatedCost ?? 0))
     setEditItemSupplierId(item.supplierId || '')
     setEditItemError('')
+    setExemptionChecked(!!item.exemptionReason)
+    setExemptionReasonText(item.exemptionReason ?? '')
+    setJustificationText(item.selectionJustification ?? '')
+    setQuoteForm({ supplierId: '', supplierName: '', price: '' })
+    setQuoteError('')
   }
 
   async function saveEditItem() {
@@ -214,6 +240,8 @@ export default function RequestsPage() {
         estimatedCost: parseFloat(editItemCost) || 0,
         supplierId: editItemSupplierId || null,
         supplierName: supplier?.name || null,
+        exemptionReason: exemptionChecked ? exemptionReasonText.trim() : '',
+        selectionJustification: justificationText.trim(),
       }),
     })
     const data = await res.json()
@@ -221,6 +249,44 @@ export default function RequestsPage() {
     if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return }
     setEditItemModal(null)
     await fetchDetail(detail.id)
+  }
+
+  // Re-pulls just this item's quotations (so the modal updates immediately) and
+  // refreshes the underlying PR detail in the background to keep the table in sync —
+  // fetchDetail alone can't update editItemModal since it's a separate state snapshot.
+  async function refreshQuotations() {
+    if (!editItemModal?.id || !detail) return
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations`)
+    if (res.ok) {
+      const data = await res.json()
+      setEditItemModal(m => m ? { ...m, quotations: data.quotations } : m)
+    }
+    fetchDetail(detail.id)
+  }
+
+  async function addQuotation() {
+    if (!editItemModal?.id || !detail) return
+    if (!quoteForm.supplierName.trim() || !quoteForm.price) { setQuoteError('Supplier and price are required'); return }
+    setQuoteSaving(true); setQuoteError('')
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        supplierId: quoteForm.supplierId || undefined,
+        supplierName: quoteForm.supplierName,
+        price: parseFloat(quoteForm.price) || 0,
+      }),
+    })
+    const data = await res.json()
+    setQuoteSaving(false)
+    if (!res.ok) { setQuoteError(data.error ?? 'Failed to add quotation'); return }
+    setQuoteForm({ supplierId: '', supplierName: '', price: '' })
+    await refreshQuotations()
+  }
+
+  async function deleteQuotation(quotationId: string) {
+    if (!editItemModal?.id || !detail) return
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations/${quotationId}`, { method: 'DELETE' })
+    if (res.ok) await refreshQuotations()
   }
 
   function addToCart(item: PurchaseItem, unit: string) {
@@ -280,7 +346,8 @@ export default function RequestsPage() {
   }
 
   function selectSupplierForTarget(s: Supplier) {
-    setEditItemSupplierId(s.id)
+    if (supplierModal === 'quotation') setQuoteForm(f => ({ ...f, supplierId: s.id, supplierName: s.name }))
+    else setEditItemSupplierId(s.id)
   }
 
   async function quickAddSupplier(name: string) {
@@ -291,7 +358,8 @@ export default function RequestsPage() {
     if (!res.ok) return
     const s: Supplier = await res.json()
     setSuppliers(prev => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)))
-    setEditItemSupplierId(s.id)
+    if (supplierModal === 'quotation') setQuoteForm(f => ({ ...f, supplierId: s.id, supplierName: s.name }))
+    else setEditItemSupplierId(s.id)
   }
 
   async function submit() {
@@ -428,11 +496,11 @@ export default function RequestsPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'REQUESTED' ? (
+                  {r.status === 'DRAFT' ? (
                     <button
-                      onClick={() => changeStatus(r.id, 'APPROVED')}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors whitespace-nowrap">
-                      <CheckCircle2 className="h-3 w-3" /> Approve
+                      onClick={() => changeStatus(r.id, 'ON_PROCESS')}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors whitespace-nowrap">
+                      <CheckCircle2 className="h-3 w-3" /> Verify
                     </button>
                   ) : (
                     <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />
@@ -485,7 +553,7 @@ export default function RequestsPage() {
             <h2 className="text-2xl font-bold tracking-tight">{selected.prNumber}</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               {fmtDate(selected.createdAt)} · requested by {selected.requestedBy?.name ?? '—'}
-              {selected.approvedBy && <> · approved by {selected.approvedBy.name}</>}
+              {selected.verifiedBy && <> · verified by {selected.verifiedBy.name}</>}
               {' · '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status] ?? ''}`}>
                 {STATUS_LABEL[selected.status] ?? selected.status}
@@ -493,11 +561,11 @@ export default function RequestsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            {selected.status === 'REQUESTED' && (
+            {selected.status === 'DRAFT' && (
               <>
-                <button onClick={approve}
-                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
-                  Approve
+                <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
+                  className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
+                  Verify
                 </button>
                 <button onClick={() => changeStatus(selected.id, 'REJECTED')}
                   className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
@@ -509,11 +577,23 @@ export default function RequestsPage() {
                 </button>
               </>
             )}
-            {selected.status === 'APPROVED' && (
-              <span className="text-sm text-muted-foreground italic">Ready to be ordered</span>
+            {selected.status === 'ON_PROCESS' && (
+              <>
+                <button onClick={convertToPO}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
+                  <ShoppingCart className="h-4 w-4" /> Convert to PO
+                </button>
+                <button onClick={() => changeStatus(selected.id, 'REJECTED')}
+                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                  Reject
+                </button>
+              </>
+            )}
+            {selected.status === 'CONVERTED' && (
+              <span className="text-sm text-muted-foreground italic">Converted to Purchase Order</span>
             )}
             {selected.status === 'REJECTED' && (
-              <button onClick={() => changeStatus(selected.id, 'REQUESTED')}
+              <button onClick={() => changeStatus(selected.id, 'DRAFT')}
                 className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-muted transition-colors">
                 Reopen
               </button>
@@ -524,7 +604,7 @@ export default function RequestsPage() {
 
       {approveSummary && (approveSummary.poNumbers.length > 0 || approveSummary.transferNumbers.length > 0) && (
         <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-1">
-          <p className="font-medium">Request approved.</p>
+          <p className="font-medium">Request converted to Purchase Order.</p>
           {approveSummary.poNumbers.length > 0 && <p>Purchase Order{approveSummary.poNumbers.length > 1 ? 's' : ''}: {approveSummary.poNumbers.join(', ')}</p>}
           {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
         </div>
@@ -553,6 +633,39 @@ export default function RequestsPage() {
               {detail.notes && <div><p className="text-xs text-muted-foreground">Notes</p><p>{detail.notes}</p></div>}
             </div>
           </div>
+          <div className="rounded-lg border p-5 space-y-2.5">
+            <h3 className="font-semibold text-sm">Timeline</h3>
+            <ol className="text-sm space-y-1.5">
+              <li className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Created (Draft)</span>
+                <span className="font-medium">{fmtDateTime(detail.createdAt)}</span>
+              </li>
+              {detail.verifiedAt && (
+                <li className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Verified (On Process){detail.verifiedBy && <> · {detail.verifiedBy.name}</>}</span>
+                  <span className="font-medium">{fmtDateTime(detail.verifiedAt)}</span>
+                </li>
+              )}
+              {detail.convertedAt && (
+                <li className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Converted to PO{detail.convertedBy && <> · {detail.convertedBy.name}</>}</span>
+                  <span className="font-medium">{fmtDateTime(detail.convertedAt)}</span>
+                </li>
+              )}
+              {detail.rejectedAt && (
+                <li className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Rejected{detail.rejectedBy && <> · {detail.rejectedBy.name}</>}</span>
+                  <span className="font-medium">{fmtDateTime(detail.rejectedAt)}</span>
+                </li>
+              )}
+              {detail.cancelledAt && (
+                <li className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Cancelled{detail.cancelledBy && <> · {detail.cancelledBy.name}</>}</span>
+                  <span className="font-medium">{fmtDateTime(detail.cancelledAt)}</span>
+                </li>
+              )}
+            </ol>
+          </div>
           <div className="rounded-lg border overflow-hidden">
             <div className="px-5 py-3 bg-muted/50 border-b">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
@@ -564,7 +677,7 @@ export default function RequestsPage() {
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
-                  {detail.status === 'REQUESTED' && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
+                  {detail.status === 'ON_PROCESS' && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   <th className="text-right px-5 py-2.5 font-medium">Est. Price</th>
                   <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
                   <th className="w-10" />
@@ -576,7 +689,7 @@ export default function RequestsPage() {
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
-                  const editable = detail.status === 'REQUESTED'
+                  const editable = detail.status === 'ON_PROCESS'
                   const isCustom = !item.itemId
                   const chosenFromLocationId = fulfillment[item.id!] ?? null
                   return (
@@ -611,8 +724,8 @@ export default function RequestsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'REQUESTED' && e.stopPropagation()}>
-                        {detail.status !== 'REQUESTED' ? (
+                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && e.stopPropagation()}>
+                        {detail.status !== 'ON_PROCESS' ? (
                           item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>
                         ) : chosenFromLocationId ? (
                           <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
@@ -641,7 +754,7 @@ export default function RequestsPage() {
                           : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
                         }
                       </td>
-                      {detail.status === 'REQUESTED' && (
+                      {detail.status === 'ON_PROCESS' && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
                           {!item.transferEligible || !item.warehouseStock?.length ? (
                             <span className="text-xs text-muted-foreground">Purchase Order</span>
@@ -679,7 +792,7 @@ export default function RequestsPage() {
               </tbody>
               <tfoot className="bg-muted/30 border-t">
                 <tr>
-                  <td colSpan={detail.status === 'REQUESTED' ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
+                  <td colSpan={detail.status === 'ON_PROCESS' ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
                   <td className="px-5 py-3 text-right font-bold" colSpan={2}>
                     Rp {new Intl.NumberFormat('id-ID').format(detail.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0))}
                   </td>
@@ -763,6 +876,108 @@ export default function RequestsPage() {
                   </button>
                 </div>
               </div>
+
+              {(() => {
+                const itemValue = (editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)
+                const band = getBand(itemValue)
+                if (band === 'A') return null
+                const quotations = editItemModal.quotations ?? []
+                const required = requiredQuotationCount(band)
+                const cheapest = quotations.length ? quotations.reduce((a, b) => (a.price < b.price ? a : b)) : null
+                const needsJustification = !!cheapest && cheapest.price < (parseFloat(editItemCost) || 0)
+                  && (cheapest.supplierId ?? null) !== (editItemSupplierId || null)
+                return (
+                  <div className="space-y-3 pt-3 border-t">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quotations</p>
+                      <span className="text-[11px] text-muted-foreground text-right">{BAND_LABEL[band]} — needs {required} quotation{required > 1 ? 's' : ''}</span>
+                    </div>
+
+                    {quoteError && (
+                      <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{quoteError}</div>
+                    )}
+
+                    {quotations.length === 0 ? (
+                      <p className="text-xs text-muted-foreground/60 italic">No quotations on file yet.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {quotations.map(q => (
+                          <div key={q.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{q.supplierName}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                              <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground">Supplier</label>
+                        <button
+                          type="button"
+                          onClick={() => { setSupplierModal('quotation'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                          className="w-full h-9 border rounded-md px-3 text-sm text-left bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <span className={`truncate block ${quoteForm.supplierName ? '' : 'text-muted-foreground'}`}>
+                            {quoteForm.supplierName || 'Select supplier...'}
+                          </span>
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-muted-foreground">Price</label>
+                        <input
+                          type="number" min={0}
+                          className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          value={quoteForm.price}
+                          onChange={e => setQuoteForm(f => ({ ...f, price: e.target.value }))}
+                        />
+                      </div>
+                      <button
+                        onClick={addQuotation}
+                        disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price}
+                        className="h-9 px-3 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {quoteSaving ? '...' : '+ Add'}
+                      </button>
+                    </div>
+
+                    <label className="flex items-start gap-2 text-xs">
+                      <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => setExemptionChecked(e.target.checked)} />
+                      <span>Exempt from quotation count (approved catalogue price / recurring supplier agreement)</span>
+                    </label>
+                    {exemptionChecked && (
+                      <textarea
+                        rows={2}
+                        placeholder="Exemption reason..."
+                        className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        value={exemptionReasonText}
+                        onChange={e => setExemptionReasonText(e.target.value)}
+                      />
+                    )}
+
+                    {needsJustification && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-amber-700">Selected supplier isn&apos;t the cheapest quote — justification required</label>
+                        <textarea
+                          rows={2}
+                          placeholder="e.g. better quality, faster delivery..."
+                          className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          value={justificationText}
+                          onChange={e => setJustificationText(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
               <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
@@ -775,7 +990,7 @@ export default function RequestsPage() {
       )}
 
       {/* ── Supplier picker modal (for Edit Item modal) ── */}
-      {supplierModal === 'editItem' && (() => {
+      {(supplierModal === 'editItem' || supplierModal === 'quotation') && (() => {
         const allCities = ['All', ...Array.from(new Set(suppliers.flatMap(s => (s.locations ?? []).map(l => l.city).filter(Boolean)))).sort()]
         const filtered = suppliers.filter(s => {
           const q = supplierModalSearch.toLowerCase()
@@ -810,10 +1025,12 @@ export default function RequestsPage() {
                   </div>
                 )}
                 <div className="overflow-y-auto flex-1">
-                  <button onClick={() => { setEditItemSupplierId(''); setSupplierModal(null) }}
-                    className="w-full text-left px-5 py-3 text-sm text-muted-foreground hover:bg-muted/40 border-b transition-colors">
-                    — None —
-                  </button>
+                  {supplierModal === 'editItem' && (
+                    <button onClick={() => { setEditItemSupplierId(''); setSupplierModal(null) }}
+                      className="w-full text-left px-5 py-3 text-sm text-muted-foreground hover:bg-muted/40 border-b transition-colors">
+                      — None —
+                    </button>
+                  )}
                   {filtered.map(s => (
                     <button key={s.id} onClick={() => { selectSupplierForTarget(s); setSupplierModal(null) }}
                       className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
@@ -829,7 +1046,7 @@ export default function RequestsPage() {
                           {s.contact && <span className="text-xs text-muted-foreground">{s.contact}</span>}
                         </div>
                       </div>
-                      {editItemSupplierId === s.id && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
+                      {(supplierModal === 'editItem' ? editItemSupplierId === s.id : quoteForm.supplierId === s.id) && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
                     </button>
                   ))}
                   {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (

@@ -29,7 +29,7 @@ export async function GET() {
       items: { select: { id: true, quantity: true, estimatedCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
-      approvedBy: { select: { id: true, name: true } },
+      verifiedBy: { select: { id: true, name: true } },
     },
   })
   const userIds = [...new Set(requests.map(r => r.requestedById))]
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       requestedById: session.user.id,
       deliveryLocationId: deliveryLocationId || null,
       notes: notes?.trim() || null,
-      status: 'REQUESTED',
+      status: 'DRAFT',
       updatedAt: new Date(),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[] }) => ({

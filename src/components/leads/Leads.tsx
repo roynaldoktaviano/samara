@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -12,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2 } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
+import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -57,6 +59,8 @@ export default function Leads() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [websiteFilter, setWebsiteFilter] = useState('all')
+  const [websites, setWebsites] = useState<string[]>([])
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -83,6 +87,7 @@ export default function Leads() {
     try {
       const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE), sort: sortDir })
       if (search) params.set('search', search)
+      if (websiteFilter !== 'all') params.set('website', websiteFilter)
       const res = await fetch(`/api/leads?${params}`)
       if (res.ok) {
         setLeads(await res.json())
@@ -91,9 +96,13 @@ export default function Leads() {
     } finally {
       setLoading(false)
     }
-  }, [search, sortDir])
+  }, [search, websiteFilter, sortDir])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
+
+  useEffect(() => {
+    fetch('/api/leads/websites').then(r => r.ok ? r.json() : []).then(setWebsites).catch(() => {})
+  }, [])
 
   const toggleSort = () => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
 
@@ -239,6 +248,17 @@ export default function Leads() {
               className="max-w-sm"
             />
             {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+
+            <Select value={websiteFilter} onValueChange={setWebsiteFilter}>
+              <SelectTrigger className={`w-[180px] ${websiteFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                <Globe className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                <SelectValue placeholder="Website" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Websites</SelectItem>
+                {websites.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
+              </SelectContent>
+            </Select>
 
             {/* Bulk action bar */}
             {isAdmin && selectedIds.size > 0 && (
@@ -493,7 +513,7 @@ export default function Leads() {
                           {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
                           {inq.website && (
                             <p className="text-xs text-muted-foreground">
-                              {inq.url ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
+                              {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
                             </p>
                           )}
                           {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (

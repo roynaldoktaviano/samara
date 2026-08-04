@@ -53,6 +53,11 @@ interface TripOption {
   yacht: { id: string; name: string } | null
   leadGuestName: string; guestNames: string[]
 }
+interface FollowUp {
+  id: string; note: string; isEscalation: boolean; escalatedToId: string | null
+  escalatedTo: { name: string | null } | null; createdBy: { name: string | null }; createdAt: string
+}
+interface EscalationTarget { id: string; name: string | null }
 interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
@@ -72,6 +77,7 @@ interface OrderDetail extends PurchaseOrder {
   receipts: { id: string; grNumber: string; receivedAt: string; receiverName?: string | null; receivePhotoKey?: string | null; items: { itemName: string; receivedQty: number; condition: string; outcome?: string; batch?: string | null }[] }[]
   paymentRequests: PaymentRequest[]
   reimbursements: Reimbursement[]
+  followUps: FollowUp[]
   grandTotal: number
   paidTotal: number
   requestedTotal: number
@@ -301,6 +307,7 @@ function currentLocationLabel(o: PurchaseOrder): string {
 const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid' }
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 const toDateInputValue = (s: string) => {
   const d = new Date(s)
@@ -726,6 +733,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [cancelReason, setCancelReason] = useState('')
   const [cancelSaving, setCancelSaving] = useState(false)
   const [cancelError, setCancelError] = useState('')
+
+  // follow-up / escalation log (KPI 3)
+  const [followUpModal, setFollowUpModal] = useState(false)
+  const [followUpNote, setFollowUpNote] = useState('')
+  const [followUpIsEscalation, setFollowUpIsEscalation] = useState(false)
+  const [followUpEscalatedToId, setFollowUpEscalatedToId] = useState('')
+  const [followUpSaving, setFollowUpSaving] = useState(false)
+  const [followUpError, setFollowUpError] = useState('')
+  const [escalationTargets, setEscalationTargets] = useState<EscalationTarget[]>([])
 
   // edit PO modal — reuses the create-form's supplier/lines/extraCharges/etc state (see renderOrderFormFields)
   const [editPOModal, setEditPOModal] = useState(false)
@@ -1643,6 +1659,34 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     openDetail(detail); load()
   }
 
+  async function openFollowUpModal() {
+    setFollowUpNote(''); setFollowUpIsEscalation(false); setFollowUpEscalatedToId(''); setFollowUpError(''); setFollowUpModal(true)
+    if (!detail) return
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/follow-ups`)
+    if (res.ok) { const d = await res.json(); setEscalationTargets(d.escalationTargets ?? []) }
+  }
+
+  async function saveFollowUp() {
+    if (!detail) return
+    if (!followUpNote.trim()) { setFollowUpError('Note is required'); return }
+    setFollowUpSaving(true); setFollowUpError('')
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/follow-ups`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: followUpNote, isEscalation: followUpIsEscalation, escalatedToId: followUpEscalatedToId || null }),
+    })
+    const data = await res.json()
+    setFollowUpSaving(false)
+    if (!res.ok) { setFollowUpError(data.error ?? 'Failed to save'); return }
+    setFollowUpModal(false)
+    openDetail(detail)
+  }
+
+  async function deleteFollowUp(followUpId: string) {
+    if (!detail || !confirm('Delete this follow-up entry?')) return
+    const res = await fetch(`/api/purchasing/orders/${detail.id}/follow-ups/${followUpId}`, { method: 'DELETE' })
+    if (res.ok) openDetail(detail)
+  }
+
   async function submitPaymentRequest() {
     if (!detail) return
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
@@ -2055,6 +2099,52 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </table>
           </div>
 
+          {(() => {
+            const isOverdue = !!detail.expectedAt && !['RECEIVED', 'CANCELLED'].includes(detail.status) && new Date(detail.expectedAt) < new Date()
+            return (
+              <div className="space-y-2">
+                {isOverdue && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    This PO is overdue — expected {fmtDate(detail.expectedAt!)}
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Follow-ups</h3>
+                  <button onClick={openFollowUpModal} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted transition-colors">
+                    <Plus className="h-3.5 w-3.5" /> Log Follow-up
+                  </button>
+                </div>
+                {detail.followUps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/60 italic">No follow-ups logged yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {detail.followUps.map(f => {
+                      const late = f.isEscalation && !!detail.expectedAt && new Date(f.createdAt) > new Date(detail.expectedAt)
+                      return (
+                        <div key={f.id} className="rounded-lg border p-3 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="flex-1">{f.note}</p>
+                            <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-red-600 transition-colors shrink-0" title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {f.isEscalation && (
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${late ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                Escalated {late ? '(late)' : '(on time)'}{f.escalatedTo?.name && ` → ${f.escalatedTo.name}`}
+                              </span>
+                            )}
+                            <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {fmtDateTime(f.createdAt)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {detail.receipts.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Receipt History</h3>
@@ -2349,6 +2439,62 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   {legSaving
                     ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
                     : (legActionModal.action === 'dispatch' ? 'Confirm Dispatch' : 'Confirm Arrival')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Follow-up Modal */}
+      {followUpModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setFollowUpModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">Log Follow-up</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber} · {detail.supplierName ?? 'No supplier'}</p>
+                </div>
+                <button onClick={() => setFollowUpModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {followUpError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{followUpError}</div>}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Note <span className="text-red-500">*</span></label>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="e.g. Called supplier, dispatch promised by Friday..."
+                    value={followUpNote}
+                    onChange={e => setFollowUpNote(e.target.value)}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={followUpIsEscalation} onChange={e => setFollowUpIsEscalation(e.target.checked)} />
+                  This is an escalation
+                </label>
+                {followUpIsEscalation && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Escalate to (optional)</label>
+                    <select
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      value={followUpEscalatedToId}
+                      onChange={e => setFollowUpEscalatedToId(e.target.value)}
+                    >
+                      <option value="">— None —</option>
+                      {escalationTargets.map(u => <option key={u.id} value={u.id}>{u.name ?? u.id}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setFollowUpModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={saveFollowUp} disabled={!followUpNote.trim() || followUpSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save'}
                 </button>
               </div>
             </div>

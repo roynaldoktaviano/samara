@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
 import { Loader2, Image as ImageIcon, Heart, Reply, X } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { isHttpUrl } from '@/lib/url-safety'
 
 const IG_BLUE = '#3897F0'
 
@@ -143,7 +144,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate }
                   <p className="truncate">{quoteSnippet(m.replyTo)}</p>
                 </div>
               )}
-              {m.mediaUrl && (
+              {isHttpUrl(m.mediaUrl) && (
                 m.mediaType?.startsWith('image/')
                   ? <img src={m.mediaUrl} alt="Attachment" className="rounded-2xl mb-1 max-h-60 object-cover" />
                   : <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline text-xs">Attachment</a>
