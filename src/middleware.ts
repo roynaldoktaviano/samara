@@ -42,6 +42,10 @@ const PUBLIC_PATHS = [
   '/api/marketing/unsubscribe',
   // Scheduled-campaign dispatcher — triggered by Vercel Cron, authenticates via its own bearer secret
   '/api/marketing/campaigns/dispatch',
+  // PWA manifest + service worker — must be fetchable pre-login (browsers request these
+  // to decide installability before the user necessarily has a session)
+  '/manifest.webmanifest',
+  '/sw.js',
 ]
 
 function isPublic(pathname: string) {

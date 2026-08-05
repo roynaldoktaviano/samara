@@ -6,6 +6,7 @@ import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { recalcOpenTripPrice } from '@/lib/booking-pricing'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -59,7 +60,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const existing = await db.booking.findUnique({
       where:  { id },
       select: {
-        totalPrice: true, depositPaid: true, status: true,
+        totalPrice: true, depositPaid: true, status: true, tripType: true,
         depositDueDate: true, finalDueDate: true,
         depositDueDateInvoiceOverride: true, finalDueDateInvoiceOverride: true,
       },
@@ -165,17 +166,29 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // Open Trip pricing is derived from cabins/services/discount, not whatever the client
+    // last had on screen — recompute it server-side so stale wizard state can't persist
+    // a wrong total (e.g. after a guest/cabin is removed mid-edit).
+    let finalBooking = booking
+    if (existing.tripType === 'OPEN_TRIP') {
+      await recalcOpenTripPrice(db, id)
+      finalBooking = await db.booking.findUniqueOrThrow({
+        where: { id },
+        select: { id: true, bookingCode: true, status: true },
+      })
+    }
+
     const userId   = session?.user?.id   ?? ''
     const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'
     const userRole = (session?.user as { role?: string })?.role ?? ''
     logActivity({
       userId, userName, userRole,
       action: 'UPDATE', entity: 'Booking', entityId: id,
-      detail: `Update booking ${booking.bookingCode} → status: ${booking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
+      detail: `Update booking ${finalBooking.bookingCode} → status: ${finalBooking.status}${rescheduleReason ? ` | Reschedule: ${rescheduleReason}` : ''}`,
     }, db).catch(() => {})
 
     scheduleTripSheetSync(db, tripSheetId)
-    return NextResponse.json(booking)
+    return NextResponse.json(finalBooking)
   } catch (error) {
     console.error('Error updating booking:', error)
     return NextResponse.json({ error: 'Failed to update booking' }, { status: 500 })

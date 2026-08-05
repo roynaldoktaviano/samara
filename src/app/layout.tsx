@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from 'sonner'
 import { Providers } from "@/components/providers";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,8 +20,10 @@ export const metadata: Metadata = {
   title: "Samara Liveaboard ERP",
   description: "Internal operations and fleet management system",
   authors: [{ name: "Samara Liveaboard" }],
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png",
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
   },
  openGraph: {
     title: "Samara Liveaboard ERP",
@@ -34,6 +37,10 @@ export const metadata: Metadata = {
     title: "Samara Liveaboard ERP",
     description: "Internal operations and fleet management system",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1a5f6e",
 };
 
 export default function RootLayout({
@@ -51,6 +58,7 @@ export default function RootLayout({
           <Toaster />
           <Sonner position="top-right" richColors expand closeButton duration={5000} />
         </Providers>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
