@@ -52,6 +52,9 @@ interface PurchaseRequest {
   rejectedAt: string | null
   cancelledBy: { name: string } | null
   cancelledAt: string | null
+  neededByDate: string | null
+  isUrgent: boolean
+  urgentReason: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -76,6 +79,14 @@ function fmtDate(s: string) {
 
 function fmtDateTime(s: string) {
   return new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function UrgentBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
+      <AlertTriangle className="h-3 w-3" /> URGENT
+    </span>
+  )
 }
 
 export default function RequestsPage() {
@@ -129,6 +140,9 @@ export default function RequestsPage() {
   const [exemptionChecked, setExemptionChecked] = useState(false)
   const [exemptionReasonText, setExemptionReasonText] = useState('')
   const [justificationText, setJustificationText] = useState('')
+
+  // Price/supplier history for the item being edited — lets Purchasing reuse a past purchase
+  const [priceHistory, setPriceHistory] = useState<{ supplierId: string | null; supplierName: string | null; price: number; poNumber: string; orderedAt: string }[]>([])
 
   // Reference photo lightbox
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; name: string } | null>(null)
@@ -228,6 +242,17 @@ export default function RequestsPage() {
     setJustificationText(item.selectionJustification ?? '')
     setQuoteForm({ supplierId: '', supplierName: '', price: '' })
     setQuoteError('')
+    setPriceHistory([])
+    const qs = item.itemId ? `itemId=${encodeURIComponent(item.itemId)}` : `itemName=${encodeURIComponent(item.itemName)}`
+    fetch(`/api/purchasing/items/price-history?${qs}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setPriceHistory(data.history ?? []) })
+      .catch(() => {})
+  }
+
+  function useHistoryEntry(h: { supplierId: string | null; supplierName: string | null; price: number }) {
+    setEditItemCost(String(h.price))
+    if (h.supplierId) setEditItemSupplierId(h.supplierId)
   }
 
   async function saveEditItem() {
@@ -476,7 +501,12 @@ export default function RequestsPage() {
               </td></tr>
             ) : filtered.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(r)}>
-                <td className="px-4 py-3 font-mono text-sm font-medium">{r.prNumber}</td>
+                <td className="px-4 py-3 font-mono text-sm font-medium">
+                  <span className="flex items-center gap-1.5">
+                    {r.prNumber}
+                    {r.isUrgent && <UrgentBadge />}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.deliveryLocation ? (
                     <span className="flex items-center gap-1">
@@ -550,7 +580,10 @@ export default function RequestsPage() {
       {selected && (
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">{selected.prNumber}</h2>
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              {selected.prNumber}
+              {selected.isUrgent && <UrgentBadge />}
+            </h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               {fmtDate(selected.createdAt)} · requested by {selected.requestedBy?.name ?? '—'}
               {selected.verifiedBy && <> · verified by {selected.verifiedBy.name}</>}
@@ -559,6 +592,11 @@ export default function RequestsPage() {
                 {STATUS_LABEL[selected.status] ?? selected.status}
               </span>
             </p>
+            {selected.isUrgent && selected.urgentReason && (
+              <p className="text-sm text-red-600 mt-1.5 bg-red-50 border border-red-200 rounded-md px-3 py-1.5 inline-block">
+                <span className="font-semibold">Urgent:</span> {selected.urgentReason}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {selected.status === 'DRAFT' && (
@@ -630,6 +668,12 @@ export default function RequestsPage() {
             <h3 className="font-semibold text-sm">Info</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><p className="text-xs text-muted-foreground">Delivery Location</p><p className="font-medium">{detail.deliveryLocation?.name ?? '—'}</p></div>
+              {detail.neededByDate && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Needed By</p>
+                  <p className="font-medium">{fmtDate(detail.neededByDate)}</p>
+                </div>
+              )}
               {detail.notes && <div><p className="text-xs text-muted-foreground">Notes</p><p>{detail.notes}</p></div>}
             </div>
           </div>
@@ -852,138 +896,170 @@ export default function RequestsPage() {
                 <p className="text-sm font-medium">{editItemModal.itemName}</p>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estimated Price</label>
-                  <input
-                    type="number" min={0}
-                    className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={editItemCost}
-                    onChange={e => setEditItemCost(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier</label>
-                  <button
-                    type="button"
-                    onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
-                    className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  >
-                    <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
-                      {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
-                    </span>
-                    <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  </button>
-                </div>
-              </div>
-
-              {(() => {
-                const itemValue = (editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)
-                const band = getBand(itemValue)
-                if (band === 'A') return null
-                const quotations = editItemModal.quotations ?? []
-                const required = requiredQuotationCount(band)
-                const cheapest = quotations.length ? quotations.reduce((a, b) => (a.price < b.price ? a : b)) : null
-                const needsJustification = !!cheapest && cheapest.price < (parseFloat(editItemCost) || 0)
-                  && (cheapest.supplierId ?? null) !== (editItemSupplierId || null)
-                return (
-                  <div className="space-y-3 pt-3 border-t">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quotations</p>
-                      <span className="text-[11px] text-muted-foreground text-right">{BAND_LABEL[band]} — needs {required} quotation{required > 1 ? 's' : ''}</span>
-                    </div>
-
-                    {quoteError && (
-                      <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{quoteError}</div>
-                    )}
-
-                    {quotations.length === 0 ? (
-                      <p className="text-xs text-muted-foreground/60 italic">No quotations on file yet.</p>
-                    ) : (
+              {detail?.status !== 'ON_PROCESS' ? (
+                <p className="text-xs text-muted-foreground italic bg-muted/40 rounded-md px-3 py-2.5">
+                  Price, supplier and quotations can only be set once this request has been verified (On Process).
+                </p>
+              ) : (
+                <>
+                  {priceHistory.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Previous Purchases</p>
                       <div className="space-y-1.5">
-                        {quotations.map(q => (
-                          <div key={q.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                        {priceHistory.map((h, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => useHistoryEntry(h)}
+                            className="w-full flex items-center justify-between gap-2 border rounded-md px-3 py-2 text-sm hover:bg-amber-50 hover:border-amber-300 transition-colors text-left"
+                          >
                             <div className="min-w-0">
-                              <p className="font-medium truncate">{q.supplierName}</p>
-                              <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                              <p className="font-medium truncate">{h.supplierName ?? 'Unknown supplier'}</p>
+                              <p className="text-xs text-muted-foreground">{h.poNumber} · {new Date(h.orderedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
-                              <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
+                            <span className="text-xs font-semibold text-amber-700 shrink-0">Rp {new Intl.NumberFormat('id-ID').format(h.price)} · Use</span>
+                          </button>
                         ))}
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-muted-foreground">Supplier</label>
-                        <button
-                          type="button"
-                          onClick={() => { setSupplierModal('quotation'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
-                          className="w-full h-9 border rounded-md px-3 text-sm text-left bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        >
-                          <span className={`truncate block ${quoteForm.supplierName ? '' : 'text-muted-foreground'}`}>
-                            {quoteForm.supplierName || 'Select supplier...'}
-                          </span>
-                        </button>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-muted-foreground">Price</label>
-                        <input
-                          type="number" min={0}
-                          className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                          value={quoteForm.price}
-                          onChange={e => setQuoteForm(f => ({ ...f, price: e.target.value }))}
-                        />
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estimated Price</label>
+                      <input
+                        type="number" min={0}
+                        className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        value={editItemCost}
+                        onChange={e => setEditItemCost(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier</label>
                       <button
-                        onClick={addQuotation}
-                        disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price}
-                        className="h-9 px-3 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                        type="button"
+                        onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
-                        {quoteSaving ? '...' : '+ Add'}
+                        <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
+                          {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
+                        </span>
+                        <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       </button>
                     </div>
-
-                    <label className="flex items-start gap-2 text-xs">
-                      <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => setExemptionChecked(e.target.checked)} />
-                      <span>Exempt from quotation count (approved catalogue price / recurring supplier agreement)</span>
-                    </label>
-                    {exemptionChecked && (
-                      <textarea
-                        rows={2}
-                        placeholder="Exemption reason..."
-                        className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        value={exemptionReasonText}
-                        onChange={e => setExemptionReasonText(e.target.value)}
-                      />
-                    )}
-
-                    {needsJustification && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-amber-700">Selected supplier isn&apos;t the cheapest quote — justification required</label>
-                        <textarea
-                          rows={2}
-                          placeholder="e.g. better quality, faster delivery..."
-                          className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                          value={justificationText}
-                          onChange={e => setJustificationText(e.target.value)}
-                        />
-                      </div>
-                    )}
                   </div>
-                )
-              })()}
+
+                  {(() => {
+                    const itemValue = (editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)
+                    const band = getBand(itemValue)
+                    if (band === 'A') return null
+                    const quotations = editItemModal.quotations ?? []
+                    const required = requiredQuotationCount(band)
+                    const cheapest = quotations.length ? quotations.reduce((a, b) => (a.price < b.price ? a : b)) : null
+                    const needsJustification = !!cheapest && cheapest.price < (parseFloat(editItemCost) || 0)
+                      && (cheapest.supplierId ?? null) !== (editItemSupplierId || null)
+                    return (
+                      <div className="space-y-3 pt-3 border-t">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quotations</p>
+                          <span className="text-[11px] text-muted-foreground text-right">{BAND_LABEL[band]} — needs {required} quotation{required > 1 ? 's' : ''}</span>
+                        </div>
+
+                        {quoteError && (
+                          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{quoteError}</div>
+                        )}
+
+                        {quotations.length === 0 ? (
+                          <p className="text-xs text-muted-foreground/60 italic">No quotations on file yet.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {quotations.map(q => (
+                              <div key={q.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{q.supplierName}</p>
+                                  <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                                  <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-muted-foreground">Supplier</label>
+                            <button
+                              type="button"
+                              onClick={() => { setSupplierModal('quotation'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                              className="w-full h-9 border rounded-md px-3 text-sm text-left bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            >
+                              <span className={`truncate block ${quoteForm.supplierName ? '' : 'text-muted-foreground'}`}>
+                                {quoteForm.supplierName || 'Select supplier...'}
+                              </span>
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-muted-foreground">Price</label>
+                            <input
+                              type="number" min={0}
+                              className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              value={quoteForm.price}
+                              onChange={e => setQuoteForm(f => ({ ...f, price: e.target.value }))}
+                            />
+                          </div>
+                          <button
+                            onClick={addQuotation}
+                            disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price}
+                            className="h-9 px-3 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {quoteSaving ? '...' : '+ Add'}
+                          </button>
+                        </div>
+
+                        <label className="flex items-start gap-2 text-xs">
+                          <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => setExemptionChecked(e.target.checked)} />
+                          <span>Exempt from quotation count (approved catalogue price / recurring supplier agreement)</span>
+                        </label>
+                        {exemptionChecked && (
+                          <textarea
+                            rows={2}
+                            placeholder="Exemption reason..."
+                            className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            value={exemptionReasonText}
+                            onChange={e => setExemptionReasonText(e.target.value)}
+                          />
+                        )}
+
+                        {needsJustification && (
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-amber-700">Selected supplier isn&apos;t the cheapest quote — justification required</label>
+                            <textarea
+                              rows={2}
+                              placeholder="e.g. better quality, faster delivery..."
+                              className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              value={justificationText}
+                              onChange={e => setJustificationText(e.target.value)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </>
+              )}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
-              <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
+              <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">{detail?.status === 'ON_PROCESS' ? 'Cancel' : 'Close'}</button>
+              {detail?.status === 'ON_PROCESS' && (
               <button onClick={saveEditItem} disabled={editItemSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
                 {editItemSaving ? 'Saving...' : 'Save'}
               </button>
+              )}
             </div>
           </div>
         </div>

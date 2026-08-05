@@ -1485,6 +1485,11 @@ model PurchaseRequest {
   notes                 String?
   status                PurchaseRequestStatus @default(DRAFT)
   pdfKey                String?
+  // Set by the requester on the public /request-order intake form — lets Purchasing
+  // triage at a glance instead of discovering urgency buried in free-text notes.
+  neededByDate          DateTime?
+  isUrgent              Boolean               @default(false)
+  urgentReason          String?
   // One {action}At/{action}ById pair per status transition — lets KPI reporting
   // compute response time between any two steps (e.g. same-day verification, or
   // draft-to-PO turnaround) without re-deriving it from an activity log.
@@ -2139,6 +2144,13 @@ model Employee {
   roleId String?
   role   EmployeeRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
+  // Company org chart / reporting line — who this employee reports to. Drives
+  // approval routing (Purchasing bands, and eventually HR leave/permit requests)
+  // without hardcoding a fixed approver: the system just walks this chain.
+  managerId     String?
+  manager       Employee?  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports Employee[] @relation("EmployeeManager")
+
   purchaseRequests        PurchaseRequest[]
   purchaseOrdersRequested PurchaseOrder[]
   goodsReceipts           GoodsReceipt[]
@@ -2147,6 +2159,7 @@ model Employee {
   @@index([locationId])
   @@index([roleId])
   @@index([fullName])
+  @@index([managerId])
 }
 
 // ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────

@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
   const { db } = resolved
 
   const body = await req.json()
-  const { employeeId, locationId, notes, items } = body as {
+  const { employeeId, locationId, notes, items, neededByDate, isUrgent, urgentReason } = body as {
     employeeId?: string; locationId?: string; notes?: string; items?: RequestItemInput[]
+    neededByDate?: string; isUrgent?: boolean; urgentReason?: string
   }
 
   if (!employeeId) return NextResponse.json({ error: 'Please select who is requesting' }, { status: 400 })
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest) {
   for (const it of items) {
     if (!it.itemName?.trim()) return NextResponse.json({ error: 'Every item needs a name or description' }, { status: 400 })
     if (!it.quantity || Number(it.quantity) <= 0) return NextResponse.json({ error: `Quantity for "${it.itemName}" must be greater than 0` }, { status: 400 })
+  }
+  if (isUrgent && !urgentReason?.trim()) {
+    return NextResponse.json({ error: 'Please explain why this request is urgent' }, { status: 400 })
   }
 
   const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, isActive: true, fullName: true } })
@@ -80,6 +84,9 @@ export async function POST(req: NextRequest) {
       requestedByEmployeeId: employeeId,
       deliveryLocationId: locationId || null,
       notes: notes?.trim() || null,
+      neededByDate: neededByDate ? new Date(neededByDate) : null,
+      isUrgent: !!isUrgent,
+      urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       status: 'DRAFT',
       updatedAt: new Date(),
       items: {
@@ -106,9 +113,9 @@ export async function POST(req: NextRequest) {
     await db.notification.createMany({
       data: purchasingUsers.map(u => ({
         userId: u.id,
-        type: 'REQUEST_ORDER_SUBMITTED',
-        title: 'New request order submitted',
-        body: `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.`,
+        type: isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
+        title: isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
+        body: `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
         requestId: request.id,
       })),
     }).catch(() => {})

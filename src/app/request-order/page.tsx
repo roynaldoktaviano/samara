@@ -82,6 +82,9 @@ function RequestOrderContent() {
   const [employeeOpen, setEmployeeOpen] = useState(false)
   const [locationId, setLocationId] = useState('')
   const [notes, setNotes] = useState('')
+  const [neededByDate, setNeededByDate] = useState('')
+  const [isUrgent, setIsUrgent] = useState(false)
+  const [urgentReason, setUrgentReason] = useState('')
 
   const [customModal, setCustomModal] = useState(false)
   const [customForm, setCustomForm] = useState({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] as string[] })
@@ -183,11 +186,13 @@ function RequestOrderContent() {
     setSubmitError('')
     if (!employeeId) { setSubmitError('Please select who is requesting'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
+    if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
     setSubmitting(true)
     const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
+        neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
         items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
       }),
     })
@@ -198,7 +203,9 @@ function RequestOrderContent() {
   }
 
   function resetForm() {
-    setCart([]); setEmployeeId(''); setLocationId(''); setNotes(''); setSuccess(null); setCartOpen(false)
+    setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
+    setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+    setSuccess(null); setCartOpen(false)
   }
 
   if (invalidLink) {
@@ -246,15 +253,22 @@ function RequestOrderContent() {
             <h1 className="text-xl font-bold tracking-tight">Request Order</h1>
             <p className="text-muted-foreground text-xs mt-0.5">Request items for your vessel — no ERP login required</p>
           </div>
-          <button
-            onClick={() => setCartOpen(true)}
-            className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
-          </button>
         </div>
       </div>
+
+      {/* ── Mobile floating cart button ── */}
+      <button
+        onClick={() => setCartOpen(true)}
+        className="lg:hidden fixed bottom-5 right-5 z-40 w-14 h-14 rounded-2xl shadow-lg flex items-center justify-center text-white transition-transform active:scale-95"
+        style={{ background: GOLD }}
+      >
+        <ShoppingCart className="h-6 w-6" />
+        {totalQty > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
+            {totalQty}
+          </span>
+        )}
+      </button>
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 p-4 sm:p-6">
         {/* ── Catalog ── */}
@@ -384,6 +398,9 @@ function RequestOrderContent() {
               employeeOpen={employeeOpen} setEmployeeOpen={setEmployeeOpen} selectedEmployee={selectedEmployee}
               locations={locations} locationId={locationId} setLocationId={setLocationId}
               notes={notes} setNotes={setNotes}
+              neededByDate={neededByDate} setNeededByDate={setNeededByDate}
+              isUrgent={isUrgent} setIsUrgent={setIsUrgent}
+              urgentReason={urgentReason} setUrgentReason={setUrgentReason}
               submit={submit} submitting={submitting} submitError={submitError}
             />
           </div>
@@ -406,6 +423,9 @@ function RequestOrderContent() {
                 employeeOpen={employeeOpen} setEmployeeOpen={setEmployeeOpen} selectedEmployee={selectedEmployee}
                 locations={locations} locationId={locationId} setLocationId={setLocationId}
                 notes={notes} setNotes={setNotes}
+                neededByDate={neededByDate} setNeededByDate={setNeededByDate}
+                isUrgent={isUrgent} setIsUrgent={setIsUrgent}
+                urgentReason={urgentReason} setUrgentReason={setUrgentReason}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
               />
@@ -495,6 +515,7 @@ function RequestSidebar({
   employees, employeeId, setEmployeeId, employeeOpen, setEmployeeOpen, selectedEmployee,
   locations, locationId, setLocationId,
   notes, setNotes,
+  neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
   submit, submitting, submitError,
   embedded = false,
 }: {
@@ -503,6 +524,9 @@ function RequestSidebar({
   employeeOpen: boolean; setEmployeeOpen: (v: boolean) => void; selectedEmployee: EmployeeLite | null
   locations: LocationLite[]; locationId: string; setLocationId: (id: string) => void
   notes: string; setNotes: (v: string) => void
+  neededByDate: string; setNeededByDate: (v: string) => void
+  isUrgent: boolean; setIsUrgent: (v: boolean) => void
+  urgentReason: string; setUrgentReason: (v: string) => void
   submit: () => void; submitting: boolean; submitError: string
   embedded?: boolean
 }) {
@@ -608,6 +632,31 @@ function RequestSidebar({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Needed by */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
+          <input
+            type="date"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+            value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
+          />
+        </div>
+
+        {/* Urgent */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4" />
+            <span className="text-red-600">This request is urgent</span>
+          </label>
+          {isUrgent && (
+            <textarea
+              className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-400"
+              rows={2} placeholder="Why is this urgent? (required)"
+              value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
+            />
           )}
         </div>
 
