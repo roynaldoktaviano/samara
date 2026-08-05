@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>) {
@@ -16,7 +18,7 @@ async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>) {
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const orders = await db.purchaseOrder.findMany({
     orderBy: { createdAt: 'desc' },
@@ -106,7 +108,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
   const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, transitStops } = body

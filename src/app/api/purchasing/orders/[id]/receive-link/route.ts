@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import crypto from 'crypto'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 // Generates (or reuses) a no-login link crew on a yacht can open to confirm receiving this
@@ -13,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const order = await db.purchaseOrder.findUnique({ where: { id }, select: { status: true, receiveToken: true, receiveTokenExpiresAt: true } })

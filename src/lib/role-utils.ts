@@ -3,6 +3,7 @@
 // Add new combos here rather than sprinkling role literals through every route/component.
 const ROLE_ALIASES: Record<string, string[]> = {
   SALES_MARKETING: ['SALES', 'MARKETING'],
+  FINANCE_DIRECTOR: ['PURCHASING', 'FINANCE', 'HR'],
 }
 
 /** True if `userRole` is directly in `allowed`, or is a combined role that includes one that is. */

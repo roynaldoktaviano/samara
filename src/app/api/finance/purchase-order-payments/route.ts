@@ -4,12 +4,14 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const requests = await db.pOPaymentRequest.findMany({

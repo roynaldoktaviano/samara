@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
 // GET — every active agent with their clawback rate and current balance. Balance is the
@@ -11,7 +13,7 @@ const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const [agents, sums] = await Promise.all([

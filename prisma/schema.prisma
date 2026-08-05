@@ -25,6 +25,7 @@ enum Role {
   WAREHOUSE
   HR
   SALES_MARKETING // combined role — treated as SALES for sales-gated screens, MARKETING for marketing-gated ones
+  FINANCE_DIRECTOR // combined role — treated as PURCHASING + FINANCE + HR (see src/lib/role-utils.ts)
 }
 
 enum BookingSource {

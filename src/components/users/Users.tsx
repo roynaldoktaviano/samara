@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR'
 
 interface UserRecord {
   id: string
@@ -71,6 +71,13 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     desc: 'People & employee records',
     color: 'bg-pink-100 text-pink-700',
     modules: 'Trip Sheet',
+  },
+  {
+    value: 'FINANCE_DIRECTOR',
+    label: 'Finance Director',
+    desc: 'Combined role — full Purchasing + Finance + HR access',
+    color: 'bg-cyan-100 text-cyan-700',
+    modules: 'Everything Purchasing, Finance, and HR can access',
   },
   {
     value: 'ADMIN',

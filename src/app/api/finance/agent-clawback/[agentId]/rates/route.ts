@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 const TRIP_TYPES = ['OPEN_TRIP', 'PRIVATE_CHARTER']
 
@@ -12,7 +14,7 @@ const TRIP_TYPES = ['OPEN_TRIP', 'PRIVATE_CHARTER']
 export async function POST(request: NextRequest, { params }: { params: Promise<{ agentId: string }> }) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const { agentId } = await params
 

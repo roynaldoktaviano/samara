@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
+import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const TRANSIT_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -12,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const order = await db.purchaseOrder.findUnique({
     where: { id },
@@ -117,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
   const {
@@ -206,14 +207,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (status === 'ORDERED' && !supplierName?.trim())
       return NextResponse.json({ error: 'Supplier name is required to confirm PO' }, { status: 400 })
 
-    if (status === 'IN_TRANSIT' && !TRANSIT_ALLOWED.includes(role))
+    if (status === 'IN_TRANSIT' && !roleMatches(role, TRANSIT_ALLOWED))
       return NextResponse.json({ error: 'Only purchasing team can mark as In Transit' }, { status: 403 })
 
     if (status === 'IN_TRANSIT' && !dispatchPhotoKey)
       return NextResponse.json({ error: 'Dispatch photo is required before marking In Transit' }, { status: 400 })
 
     if (status === 'CANCELLED') {
-      if (!TRANSIT_ALLOWED.includes(role))
+      if (!roleMatches(role, TRANSIT_ALLOWED))
         return NextResponse.json({ error: 'Only purchasing team can cancel a PO' }, { status: 403 })
       if (!cancellationReason?.trim())
         return NextResponse.json({ error: 'Cancellation reason is required' }, { status: 400 })
@@ -233,7 +234,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const receiveAllowed = managedBy === 'PURCHASING'
       ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
       : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-    if (!receiveAllowed.includes(role))
+    if (!roleMatches(role, receiveAllowed))
       return NextResponse.json({ error: `Only ${managedBy.toLowerCase()} team can receive items for this delivery location` }, { status: 403 })
   }
 

@@ -4,12 +4,14 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { receiveGoods } from '@/lib/purchasing/receiveGoods'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const receipts = await db.goodsReceipt.findMany({
     orderBy: { receivedAt: 'desc' },
@@ -31,7 +33,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
   const { orderId, locationId, notes, receivePhotoKey, receiverName, items } = body
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
   const receiveAllowed = receivingLocationManagedBy === 'PURCHASING'
     ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
     : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-  if (!receiveAllowed.includes(role))
+  if (!roleMatches(role, receiveAllowed))
     return NextResponse.json({ error: `Only ${receivingLocationManagedBy.toLowerCase()} team can receive items for this PO` }, { status: 403 })
 
   const result = await receiveGoods(db, {

@@ -1954,7 +1954,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             {detail.status === 'ORDERED' && canTransit && (detail.paymentRequests.some(p => p.status === 'PAID') || detail.reimbursements.some(r => r.status === 'PAID')) && (
               <button onClick={() => { setTransitPhoto(null); setTransitError(''); setTransitModal(true) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                <Camera className="h-3.5 w-3.5" /> Mark In Transit
+                <Camera className="h-3.5 w-3.5" /> Goods In Transit
               </button>
             )}
             {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !hasAnyPaymentRecord && (

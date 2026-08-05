@@ -997,6 +997,42 @@ export default function Home() {
                 )
               }
 
+              // Finance Director accounts see Purchasing + Finance + HR items merged into
+              // one nav list (roleMatches expands FINANCE_DIRECTOR into those three roles),
+              // so bucket them back into three labeled, collapsible sections — same treatment
+              // as Sales & Marketing above — instead of one flat, unlabeled list.
+              if (userRole === 'FINANCE_DIRECTOR') {
+                const divisionOf = (item: NavItem): 'purchasing' | 'finance' | 'hr' | null => {
+                  if (item.group === 'main') return null
+                  if (item.roles.includes('PURCHASING')) return 'purchasing'
+                  if (item.roles.includes('FINANCE')) return 'finance'
+                  if (item.roles.includes('HR')) return 'hr'
+                  return null
+                }
+                const DIVISIONS = NAV_GROUPS.filter((g): g is typeof g & { key: 'purchasing' | 'finance' | 'hr'; icon: React.ElementType } =>
+                  g.key === 'purchasing' || g.key === 'finance' || g.key === 'hr'
+                )
+                const mainItems = visibleNavItems.filter(i => i.group === 'main')
+                const activeNavItem = navigationItems.find(i => i.id === activeView)
+                const activeDivision = activeNavItem ? divisionOf(activeNavItem) : null
+
+                return (
+                  <SidebarGroup className="!p-3 pt-4">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                      Menu
+                    </SidebarGroupLabel>
+                    <SidebarMenu className="gap-5">
+                      {renderItems(mainItems)}
+                      {DIVISIONS.map(division => {
+                        const divisionItems = visibleNavItems.filter(i => divisionOf(i) === division.key)
+                        if (!divisionItems.length) return null
+                        return renderExpandableSection(division.key, division.label, division.icon, divisionItems, division.key === activeDivision)
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroup>
+                )
+              }
+
               return (
                 <SidebarGroup className="!p-3 pt-4">
                   <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">

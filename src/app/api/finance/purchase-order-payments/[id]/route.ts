@@ -4,13 +4,15 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 
+import { roleMatches } from '@/lib/role-utils'
+
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const request = await db.pOPaymentRequest.findUnique({
@@ -37,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !ALLOWED.includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const existing = await db.pOPaymentRequest.findUnique({ where: { id }, select: { status: true, orderId: true } })
