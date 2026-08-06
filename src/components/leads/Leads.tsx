@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2 } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2, Target } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
@@ -40,9 +41,26 @@ interface Inquiry {
   message?: string | null
   website?: string | null
   url?: string | null
+  // First touch — visitor's very first-ever session (Freshsales "Original" touch)
   utmSource?: string | null
   utmMedium?: string | null
   utmCampaign?: string | null
+  utmTerm?: string | null
+  utmContent?: string | null
+  gclid?: string | null
+  gbraid?: string | null
+  wbraid?: string | null
+  fbclid?: string | null
+  // Last touch — this specific inquiry's own traffic source (Freshsales "Created from" touch)
+  lastSource?: string | null
+  lastMedium?: string | null
+  lastCampaign?: string | null
+  lastTerm?: string | null
+  lastContent?: string | null
+  lastGclid?: string | null
+  lastGbraid?: string | null
+  lastWbraid?: string | null
+  lastFbclid?: string | null
   createdAt: string
 }
 
@@ -68,6 +86,7 @@ export default function Leads() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<Lead | null>(null)
   const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
+  const [attributionInquiry, setAttributionInquiry] = useState<Inquiry | null>(null)
 
   // single delete
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null)
@@ -516,12 +535,13 @@ export default function Leads() {
                               {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
                             </p>
                           )}
-                          {(inq.utmSource || inq.utmMedium || inq.utmCampaign) && (
-                            <div className="flex flex-wrap gap-1 pt-0.5">
-                              {inq.utmSource   && <Badge variant="outline" className="text-[10px] font-normal">src: {inq.utmSource}</Badge>}
-                              {inq.utmMedium   && <Badge variant="outline" className="text-[10px] font-normal">medium: {inq.utmMedium}</Badge>}
-                              {inq.utmCampaign && <Badge variant="outline" className="text-[10px] font-normal">campaign: {inq.utmCampaign}</Badge>}
-                            </div>
+                          {(inq.utmSource || inq.utmMedium || inq.utmCampaign || inq.lastSource || inq.gclid || inq.fbclid) && (
+                            <button
+                              onClick={() => setAttributionInquiry(inq)}
+                              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground pt-0.5 transition-colors"
+                            >
+                              <Target className="h-3 w-3" /> View attribution
+                            </button>
                           )}
                         </div>
                       ))}
@@ -533,6 +553,69 @@ export default function Leads() {
           )}
         </>
       )}
+
+      {/* ── Attribution detail modal ──────────────────────────────────────── */}
+      <Dialog open={!!attributionInquiry} onOpenChange={open => { if (!open) setAttributionInquiry(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Attribution</DialogTitle>
+            <DialogDescription>
+              {attributionInquiry && new Date(attributionInquiry.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </DialogDescription>
+          </DialogHeader>
+          {attributionInquiry && (() => {
+            const inq = attributionInquiry
+            const firstTouch = [
+              ['Source', inq.utmSource], ['Medium', inq.utmMedium], ['Campaign', inq.utmCampaign],
+              ['Term', inq.utmTerm], ['Content', inq.utmContent],
+              ['Google Click ID', inq.gclid], ['Google Braid (app)', inq.gbraid], ['Google Braid (web)', inq.wbraid],
+              ['Facebook Click ID', inq.fbclid],
+            ] as const
+            const lastTouch = [
+              ['Source', inq.lastSource], ['Medium', inq.lastMedium], ['Campaign', inq.lastCampaign],
+              ['Term', inq.lastTerm], ['Content', inq.lastContent],
+              ['Google Click ID', inq.lastGclid], ['Google Braid (app)', inq.lastGbraid], ['Google Braid (web)', inq.lastWbraid],
+              ['Facebook Click ID', inq.lastFbclid],
+            ] as const
+            const hasFirst = firstTouch.some(([, v]) => v)
+            const hasLast = lastTouch.some(([, v]) => v)
+            return (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">First Touch <span className="font-normal normal-case">— visitor&apos;s very first session</span></p>
+                  {!hasFirst ? (
+                    <p className="text-xs text-muted-foreground italic">No data</p>
+                  ) : (
+                    <div className="rounded-lg border divide-y">
+                      {firstTouch.filter(([, v]) => v).map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+                          <span className="text-xs font-mono text-right break-all">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Last Touch <span className="font-normal normal-case">— this inquiry&apos;s own source</span></p>
+                  {!hasLast ? (
+                    <p className="text-xs text-muted-foreground italic">No data</p>
+                  ) : (
+                    <div className="rounded-lg border divide-y">
+                      {lastTouch.filter(([, v]) => v).map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+                          <span className="text-xs font-mono text-right break-all">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Single Delete Confirmation ────────────────────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>

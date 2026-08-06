@@ -222,21 +222,34 @@ model Inquiry {
   message            String?
   website            String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
   url                String? // full URL of the page the form was submitted from
-  // "Original" touch — first_source/first_medium/first_campaign in Freshsales
+  // "Original" touch — first_source/first_medium/first_campaign in Freshsales.
+  // Filled from the form's ft_* fields (its own first-touch capture, persisted
+  // client-side e.g. via cookie across the visitor's first-ever session).
   utmSource          String?
   utmMedium          String?
   utmCampaign        String?
   utmTerm            String?
   utmContent         String?
   gclid              String?
+  gbraid             String? // Google Ads' iOS/App-attribution equivalent of gclid
+  wbraid             String? // Google Ads' web-conversion equivalent of gclid (privacy sandbox)
+  fbclid             String? // Meta/Facebook click ID
   leadSource         String? // Freshsales "Lead Source" (cf_lead_source)
   refererField       String? // Freshsales "Referer Field" (cf_referer_field)
   mobileNumberBackup String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
   reference          String? // Freshsales "Reference" (cf_reference)
-  // "Created from" touch — last_source/last_medium/last_campaign in Freshsales
+  // "Created from" touch — last_source/last_medium/last_campaign in Freshsales.
+  // Filled from the form's bare utm_*/gclid/etc fields — this submission's own
+  // traffic source, as opposed to the visitor's very first touch above.
   lastSource         String?
   lastMedium         String?
   lastCampaign       String?
+  lastTerm           String?
+  lastContent        String?
+  lastGclid          String?
+  lastGbraid         String?
+  lastWbraid         String?
+  lastFbclid         String?
   // "Most recent" touch — latest_source/latest_medium/latest_campaign in Freshsales
   latestSource       String?
   latestMedium       String?

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { Plus, X, ChevronRight, CheckCircle2, ClipboardList, AlertTriangle, Trash2, CheckCheck, Camera } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { PhotoSourceMenu } from '@/components/ui/file-preview'
 
 interface Location { id: string; name: string; type: string }
 interface CountItem {
@@ -49,13 +50,11 @@ function compressPhoto(file: File): Promise<string> {
 }
 
 function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLInputElement>(null)
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    onChange(await compressPhoto(file))
+  const [menuOpen, setMenuOpen] = useState(false)
+  async function handleFiles(files: File[]) {
+    if (files[0]) onChange(await compressPhoto(files[0]))
   }
-  const { isDragging, dropProps } = useFileDrop(async files => { if (files[0]) onChange(await compressPhoto(files[0])) })
+  const { isDragging, dropProps } = useFileDrop(handleFiles)
   return (
     <div className="space-y-2">
       {value ? (
@@ -66,14 +65,16 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
           </button>
         </div>
       ) : (
-        <button onClick={() => ref.current?.click()} {...dropProps} className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-5 px-8 transition-colors w-full ${
-          isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
-        }`}>
-          <Camera className="h-5 w-5" />
-          <span className="text-sm">{isDragging ? 'Drop to upload' : 'Upload or drag count photo'}</span>
-        </button>
+        <div className="relative">
+          <button onClick={() => setMenuOpen(o => !o)} {...dropProps} className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-5 px-8 transition-colors w-full ${
+            isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+          }`}>
+            <Camera className="h-5 w-5" />
+            <span className="text-sm">{isDragging ? 'Drop to upload' : 'Upload or drag count photo'}</span>
+          </button>
+          <PhotoSourceMenu open={menuOpen} onClose={() => setMenuOpen(false)} onFiles={handleFiles} />
+        </div>
       )}
-      <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
     </div>
   )
 }

@@ -45,6 +45,194 @@ const fmtExpiry = (s: string) => {
   return <span className="text-muted-foreground">{label}</span>
 }
 
+// 10-per-page tablet card view, own pagination per table instance (one per location
+// section) — table stays for desktop (lg+), where 8 columns actually fit.
+const ITEM_CARD_PAGE_SIZE = 10
+
+function StockTable({ rows, locationId, locationName, onOpenLots }: {
+  rows: StockRow[]; locationId: string; locationName: string
+  onOpenLots: (item: StockRow['item'], locationId: string, locationName: string) => void
+}) {
+  const [cardPage, setCardPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(rows.length / ITEM_CARD_PAGE_SIZE))
+  const currentPage = Math.min(cardPage, totalPages)
+  const pageRows = rows.slice((currentPage - 1) * ITEM_CARD_PAGE_SIZE, currentPage * ITEM_CARD_PAGE_SIZE)
+
+  return (
+    <>
+      <div className="hidden lg:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <tr>
+              <th className="text-left px-5 py-2.5 font-medium">SKU</th>
+              <th className="text-left px-5 py-2.5 font-medium">Name</th>
+              <th className="text-left px-5 py-2.5 font-medium">Method</th>
+              <th className="text-right px-5 py-2.5 font-medium">Lots</th>
+              <th className="text-right px-5 py-2.5 font-medium">Stock</th>
+              <th className="text-right px-5 py-2.5 font-medium">Min</th>
+              <th className="text-left px-5 py-2.5 font-medium">Nearest Expiry</th>
+              <th className="text-right px-5 py-2.5 font-medium">Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
+              const isLow = item.minStock > 0 && qty < item.minStock
+              const method = item.valuationMethod ?? 'FIFO'
+              return (
+                <tr key={item.id}
+                  className={`hover:bg-[#bdac7e]/5 cursor-pointer transition-colors ${isLow ? 'bg-red-50/40' : ''}`}
+                  onClick={() => onOpenLots(item, locationId, locationName)}>
+                  <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>
+                  <td className="px-5 py-3">
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">{item.category}</p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${METHOD_COLOR[method] ?? 'bg-muted text-muted-foreground'}`}>
+                      {METHOD_LABEL[method] ?? method}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">
+                    <span className="inline-flex items-center gap-1">
+                      {lotsCount}
+                      {lotsCount > 1 && <Layers className="h-3 w-3 text-muted-foreground/50" />}
+                    </span>
+                  </td>
+                  <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>
+                    {fmtNum(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
+                  </td>
+                  <td className="px-5 py-3 text-right text-muted-foreground text-xs tabular-nums">
+                    {item.minStock > 0 ? `${fmtNum(item.minStock)} ${item.baseUnit}` : '—'}
+                  </td>
+                  <td className="px-5 py-3 text-sm">
+                    {nearestExpiry ? fmtExpiry(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">Rp {fmtNum(qty * costPerUnit)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="lg:hidden divide-y">
+        {pageRows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
+          const isLow = item.minStock > 0 && qty < item.minStock
+          return (
+            <button key={item.id} onClick={() => onOpenLots(item, locationId, locationName)}
+              className={`w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors ${isLow ? 'bg-red-50/40' : ''}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate min-w-0">{item.name}</span>
+                <span className={`text-sm font-semibold tabular-nums shrink-0 ${isLow ? 'text-red-600' : ''}`}>
+                  {fmtNum(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
+                <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {fmtExpiry(nearestExpiry)}</>}</span>
+                <span className="tabular-nums shrink-0">Rp {fmtNum(qty * costPerUnit)}</span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {totalPages > 1 && (
+        <div className="lg:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
+          <span className="text-xs text-muted-foreground">{currentPage} / {totalPages}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setCardPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
+              className="h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+            <button onClick={() => setCardPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+              className="h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (poId: string) => void }) {
+  const [cardPage, setCardPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(rows.length / ITEM_CARD_PAGE_SIZE))
+  const currentPage = Math.min(cardPage, totalPages)
+  const pageRows = rows.slice((currentPage - 1) * ITEM_CARD_PAGE_SIZE, currentPage * ITEM_CARD_PAGE_SIZE)
+
+  return (
+    <>
+      <div className="hidden lg:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <tr>
+              <th className="text-left px-5 py-2.5 font-medium">Item</th>
+              <th className="text-right px-5 py-2.5 font-medium">Stock</th>
+              <th className="text-left px-5 py-2.5 font-medium">PO No.</th>
+              <th className="text-left px-5 py-2.5 font-medium">Arrived</th>
+              <th className="text-right px-5 py-2.5 font-medium">Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map(r => (
+              <tr key={r.id} className="hover:bg-muted/20 transition-colors">
+                <td className="px-5 py-3">
+                  <p className="font-medium">{r.itemName}</p>
+                  <p className="text-xs text-muted-foreground">Non-stock item</p>
+                </td>
+                <td className="px-5 py-3 text-right font-semibold tabular-nums">
+                  {fmtNum(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
+                </td>
+                <td className="px-5 py-3">
+                  {r.poNumber && r.sourcePoId ? (
+                    <button
+                      onClick={() => onOpenPo?.(r.sourcePoId!)}
+                      className="font-mono text-xs text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
+                    >
+                      {r.poNumber}
+                    </button>
+                  ) : <span className="text-muted-foreground/40 text-xs">—</span>}
+                </td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{fmtDate(r.receivedAt)}</td>
+                <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{fmtMoney(r.qty * r.costPerUnit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="lg:hidden divide-y">
+        {pageRows.map(r => (
+          <div key={r.id} className="px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-sm truncate min-w-0">{r.itemName}</span>
+              <span className="text-sm font-semibold tabular-nums shrink-0">
+                {fmtNum(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
+              <span className="truncate min-w-0">
+                {r.poNumber && r.sourcePoId ? (
+                  <button onClick={() => onOpenPo?.(r.sourcePoId!)} className="font-mono text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors">{r.poNumber}</button>
+                ) : '—'}
+                {' · '}{fmtDate(r.receivedAt)}
+              </span>
+              <span className="tabular-nums shrink-0">{fmtMoney(r.qty * r.costPerUnit)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <div className="lg:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
+          <span className="text-xs text-muted-foreground">{currentPage} / {totalPages}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setCardPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
+              className="h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+            <button onClick={() => setCardPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+              className="h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => void } = {}) {
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -89,104 +277,6 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
       : r.itemName.toLowerCase().includes(q) || (r.poNumber ?? '').toLowerCase().includes(q)
   }
   const filtered = (rows: Row[]) => rows.filter(r => matchesSearch(r) && (itemKind === 'all' || r.kind === itemKind))
-
-  const StockTable = ({ rows, locationId, locationName }: { rows: StockRow[]; locationId: string; locationName: string }) => (
-    <div className="overflow-x-auto">
-    <table className="w-full text-sm">
-      <thead className="bg-muted/50 text-xs text-muted-foreground">
-        <tr>
-          <th className="text-left px-5 py-2.5 font-medium">SKU</th>
-          <th className="text-left px-5 py-2.5 font-medium">Name</th>
-          <th className="text-left px-5 py-2.5 font-medium">Method</th>
-          <th className="text-right px-5 py-2.5 font-medium">Lots</th>
-          <th className="text-right px-5 py-2.5 font-medium">Stock</th>
-          <th className="text-right px-5 py-2.5 font-medium">Min</th>
-          <th className="text-left px-5 py-2.5 font-medium">Nearest Expiry</th>
-          <th className="text-right px-5 py-2.5 font-medium">Value</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y">
-        {rows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
-          const isLow = item.minStock > 0 && qty < item.minStock
-          const method = item.valuationMethod ?? 'FIFO'
-          return (
-            <tr key={item.id}
-              className={`hover:bg-[#bdac7e]/5 cursor-pointer transition-colors ${isLow ? 'bg-red-50/40' : ''}`}
-              onClick={() => openLots(item, locationId, locationName)}>
-              <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>
-              <td className="px-5 py-3">
-                <p className="font-medium">{item.name}</p>
-                <p className="text-xs text-muted-foreground">{item.category}</p>
-              </td>
-              <td className="px-5 py-3">
-                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${METHOD_COLOR[method] ?? 'bg-muted text-muted-foreground'}`}>
-                  {METHOD_LABEL[method] ?? method}
-                </span>
-              </td>
-              <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">
-                <span className="inline-flex items-center gap-1">
-                  {lotsCount}
-                  {lotsCount > 1 && <Layers className="h-3 w-3 text-muted-foreground/50" />}
-                </span>
-              </td>
-              <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>
-                {fmtNum(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
-              </td>
-              <td className="px-5 py-3 text-right text-muted-foreground text-xs tabular-nums">
-                {item.minStock > 0 ? `${fmtNum(item.minStock)} ${item.baseUnit}` : '—'}
-              </td>
-              <td className="px-5 py-3 text-sm">
-                {nearestExpiry ? fmtExpiry(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
-              </td>
-              <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">Rp {fmtNum(qty * costPerUnit)}</td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
-    </div>
-  )
-
-  const NonStockTable = ({ rows }: { rows: NonStockRow[] }) => (
-    <div className="overflow-x-auto">
-    <table className="w-full text-sm">
-      <thead className="bg-muted/50 text-xs text-muted-foreground">
-        <tr>
-          <th className="text-left px-5 py-2.5 font-medium">Item</th>
-          <th className="text-right px-5 py-2.5 font-medium">Stock</th>
-          <th className="text-left px-5 py-2.5 font-medium">PO No.</th>
-          <th className="text-left px-5 py-2.5 font-medium">Arrived</th>
-          <th className="text-right px-5 py-2.5 font-medium">Value</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y">
-        {rows.map(r => (
-          <tr key={r.id} className="hover:bg-muted/20 transition-colors">
-            <td className="px-5 py-3">
-              <p className="font-medium">{r.itemName}</p>
-              <p className="text-xs text-muted-foreground">Non-stock item</p>
-            </td>
-            <td className="px-5 py-3 text-right font-semibold tabular-nums">
-              {fmtNum(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
-            </td>
-            <td className="px-5 py-3">
-              {r.poNumber && r.sourcePoId ? (
-                <button
-                  onClick={() => onOpenPo?.(r.sourcePoId!)}
-                  className="font-mono text-xs text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
-                >
-                  {r.poNumber}
-                </button>
-              ) : <span className="text-muted-foreground/40 text-xs">—</span>}
-            </td>
-            <td className="px-5 py-3 text-muted-foreground text-xs">{fmtDate(r.receivedAt)}</td>
-            <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{fmtMoney(r.qty * r.costPerUnit)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-    </div>
-  )
 
   if (loading) return (
     <div className="space-y-5 animate-pulse">
@@ -276,13 +366,13 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
           if (filteredRows.length === 0) return <p className="text-sm text-muted-foreground text-center py-10">No items match.</p>
           return (
             <>
-              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={loc.location.name} />}
+              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={loc.location.name} onOpenLots={openLots} />}
               {stockRows.length > 0 && nonStockRows.length > 0 && (
                 <div className="px-5 py-2 bg-muted/30 border-y flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   <FileText className="h-3.5 w-3.5" /> Non-Stock Items
                 </div>
               )}
-              {nonStockRows.length > 0 && <NonStockTable rows={nonStockRows} />}
+              {nonStockRows.length > 0 && <NonStockTable rows={nonStockRows} onOpenPo={onOpenPo} />}
             </>
           )
         }

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { PhotoSourceMenu } from '@/components/ui/file-preview'
 
 interface StockLocation { id: string; name: string; type: string }
 // Normalized picker row — flattens /api/purchasing/stock's discriminated
@@ -71,14 +72,11 @@ function compressPhoto(file: File): Promise<string> {
 }
 
 function PhotoUpload({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLInputElement>(null)
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
-    const b64 = await compressPhoto(f)
-    onChange(b64)
+  const [menuOpen, setMenuOpen] = useState(false)
+  async function handleFiles(files: File[]) {
+    if (files[0]) onChange(await compressPhoto(files[0]))
   }
-  const { isDragging, dropProps } = useFileDrop(async files => { if (files[0]) onChange(await compressPhoto(files[0])) })
+  const { isDragging, dropProps } = useFileDrop(handleFiles)
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium">{label} <span className="text-destructive">*</span></label>
@@ -88,14 +86,16 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
           <button onClick={() => onChange('')} className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"><X className="h-3.5 w-3.5" /></button>
         </div>
       ) : (
-        <button onClick={() => ref.current?.click()} {...dropProps} className={`w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-6 transition-colors ${
-          isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
-        }`}>
-          <Camera className="h-6 w-6" />
-          <span className="text-sm">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
-        </button>
+        <div className="relative">
+          <button onClick={() => setMenuOpen(o => !o)} {...dropProps} className={`w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-6 transition-colors ${
+            isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+          }`}>
+            <Camera className="h-6 w-6" />
+            <span className="text-sm">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
+          </button>
+          <PhotoSourceMenu open={menuOpen} onClose={() => setMenuOpen(false)} onFiles={handleFiles} />
+        </div>
       )}
-      <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
     </div>
   )
 }
@@ -103,6 +103,9 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
 export default function TransfersPage() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
+  // Tablet/mobile card layout (< lg) — same pattern as Purchase Orders/Requests.
+  const [cardPage, setCardPage] = useState(1)
+  const CARD_PAGE_SIZE = 10
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([])
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
@@ -241,8 +244,11 @@ export default function TransfersPage() {
     setDispatchLines(detail.items.map(i => {
       const hasPU = !!(i.purchaseUnit && i.purchaseUnit !== i.baseUnit && i.conversionFactor > 1)
       const cf = i.conversionFactor ?? 1
-      const initQty = hasPU ? i.requestedQty / cf : i.requestedQty
-      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: i.requestedQty, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: hasPU }
+      // Capped by whichever is lower — what was requested, or what's actually on the
+      // shelf right now (stock may have moved since the transfer was requested).
+      const cap = Math.min(i.requestedQty, i.availableQty ?? i.requestedQty)
+      const initQty = hasPU ? cap / cf : cap
+      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: cap, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: hasPU }
     }))
     setDispatchPhoto(''); setExpectedReceiverName(''); setDispatchError(''); setDispatchModal(true)
   }
@@ -308,7 +314,11 @@ export default function TransfersPage() {
   }
 
   // ── List ──
-  if (view === 'list') return (
+  if (view === 'list') {
+  const cardTotalPages = Math.max(1, Math.ceil(transfers.length / CARD_PAGE_SIZE))
+  const cardCurrentPage = Math.min(cardPage, cardTotalPages)
+  const cardPageItems = transfers.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
+  return (
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Stock Transfers</h2>
@@ -319,7 +329,8 @@ export default function TransfersPage() {
           <Plus className="h-4 w-4" /> Create Transfer
         </button>
       </div>
-      <div className="rounded-lg border overflow-hidden">
+      {/* Desktop table — full column set, only makes sense at lg+ width */}
+      <div className="hidden lg:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -380,8 +391,73 @@ export default function TransfersPage() {
           </tbody>
         </table></div>
       </div>
+
+      {/* Tablet/mobile card layout — one transfer per card, two lines, own 10-per-page pagination */}
+      <div className="lg:hidden space-y-2">
+        {loading ? (
+          [...Array(5)].map((_, i) => (
+            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
+              <div className="h-3.5 w-32 rounded bg-muted" />
+              <div className="h-3.5 w-48 rounded bg-muted" />
+            </div>
+          ))
+        ) : transfers.length === 0 ? (
+          <div className="text-center py-12 text-sm text-muted-foreground border rounded-lg">No transfers yet.</div>
+        ) : cardPageItems.map(t => (
+          <button
+            key={t.id}
+            onClick={() => openDetail(t)}
+            className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs font-semibold">
+                {t.transferNumber}
+                {t.purchaseOrder && <span className="font-sans font-normal text-muted-foreground"> · PO {t.purchaseOrder.poNumber}{t.legSequence ? ` L${t.legSequence}` : ''}</span>}
+              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[t.status] ?? ''}`}>{STATUS_LABEL[t.status] ?? t.status}</span>
+                <span className="text-xs text-muted-foreground">{fmtDate(t.createdAt)}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1 min-w-0 truncate">
+                <span className="truncate">{t.fromLocation?.name ?? '—'}</span>
+                <ArrowRight className="h-3 w-3 shrink-0" />
+                <span className="font-medium text-foreground truncate">{t.toLocation?.name ?? '—'}</span>
+                <span> · {t.contents ?? `${t.itemCount} items`}</span>
+              </span>
+              <span className="shrink-0 tabular-nums">{t.totalValue ? fmtMoney(t.totalValue) : '—'}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {!loading && transfers.length > 0 && cardTotalPages > 1 && (
+        <div className="lg:hidden flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {cardCurrentPage} of {cardTotalPages} · {transfers.length} transfer{transfers.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCardPage(p => Math.max(1, p - 1))}
+              disabled={cardCurrentPage <= 1}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
+            <button
+              onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
+              disabled={cardCurrentPage >= cardTotalPages}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
+  }
 
   // ── Create ──
   if (view === 'create') {
@@ -487,7 +563,9 @@ export default function TransfersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {lines.map((line, idx) => (
+                  {lines.map((line, idx) => {
+                    const cap = line.usePurchaseUnit ? line.availableQty / line.conversionFactor : line.availableQty
+                    return (
                     <tr key={line.itemId} className="hover:bg-muted/20">
                       <td className="px-5 py-3">
                         <p className="font-medium text-sm">{line.itemName}</p>
@@ -501,10 +579,10 @@ export default function TransfersPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5">
                             <input
-                              type="number" min={1}
+                              type="number" min={1} max={cap}
                               className="w-20 border rounded-md px-2.5 py-1.5 text-sm text-right tabular-nums focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition"
                               value={line.inputQty}
-                              onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inputQty: Number(e.target.value) }))}
+                              onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inputQty: Math.min(Math.max(1, Number(e.target.value)), cap) }))}
                             />
                             {line.purchaseUnit && line.purchaseUnit !== line.baseUnit && line.conversionFactor > 1 ? (
                               <button
@@ -533,7 +611,8 @@ export default function TransfersPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table></div>
               <div className="px-5 py-2.5 border-t bg-muted/20">
@@ -835,13 +914,15 @@ export default function TransfersPage() {
                             {line.max} <span className="text-xs">{line.baseUnit}</span>
                           </td>
                           <td className="py-2.5 text-right">
-                            {line.editing ? (
+                            {line.editing ? (() => {
+                              const cap = line.usePurchaseUnit ? line.max / line.conversionFactor : line.max
+                              return (
                               <div className="flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1.5">
-                                  <input type="number" min={0} autoFocus
+                                  <input type="number" min={0} max={cap} autoFocus
                                     className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
                                     value={line.qty}
-                                    onChange={e => setDispatchLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Number(e.target.value) }))} />
+                                    onChange={e => setDispatchLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Math.min(Math.max(0, Number(e.target.value)), cap) }))} />
                                   {hasPU ? (
                                     <button onClick={() => setDispatchLines(l => l.map((li, idx) => idx !== i ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit, qty: 1 }))}
                                       className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'border-dashed border-[#bdac7e]/60 text-muted-foreground hover:border-[#bdac7e]'}`}>
@@ -855,7 +936,8 @@ export default function TransfersPage() {
                                   <span className="text-xs text-muted-foreground">= {line.qty * line.conversionFactor} {line.baseUnit}</span>
                                 )}
                               </div>
-                            ) : (
+                              )
+                            })() : (
                               <span className="tabular-nums font-medium">
                                 {hasPU && line.usePurchaseUnit ? (
                                   <>
@@ -970,13 +1052,15 @@ export default function TransfersPage() {
                             {line.max} <span className="text-xs">{line.baseUnit}</span>
                           </td>
                           <td className="py-2.5 text-right">
-                            {line.editing ? (
+                            {line.editing ? (() => {
+                              const cap = line.usePurchaseUnit ? line.max / line.conversionFactor : line.max
+                              return (
                               <div className="flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1.5">
-                                  <input type="number" min={0} autoFocus
+                                  <input type="number" min={0} max={cap} autoFocus
                                     className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
                                     value={line.qty}
-                                    onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Number(e.target.value) }))} />
+                                    onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Math.min(Math.max(0, Number(e.target.value)), cap) }))} />
                                   {hasPU ? (
                                     <button onClick={() => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit, qty: 1 }))}
                                       className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'border-dashed border-[#bdac7e]/60 text-muted-foreground hover:border-[#bdac7e]'}`}>
@@ -990,7 +1074,8 @@ export default function TransfersPage() {
                                   <span className="text-xs text-muted-foreground">= {line.qty * line.conversionFactor} {line.baseUnit}</span>
                                 )}
                               </div>
-                            ) : (
+                              )
+                            })() : (
                               <span className="tabular-nums font-medium">
                                 {hasPU && line.usePurchaseUnit ? (
                                   <>

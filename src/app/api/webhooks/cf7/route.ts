@@ -102,18 +102,33 @@ export async function POST(request: NextRequest) {
     const checkOut  = pick(data, 'field_CheckOut', 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
     const tripType  = pick(data, 'field_TripType', 'trip-type',  'trip_type',  'tripType',  'trip')
     const message   = pick(data, 'field_Request',  'request',    'message',    'your-message', 'Request', 'Message')
-    // UTM fields — the WordPress form doesn't send these yet as of this writing, but
-    // capturing them defensively costs nothing and this starts working the moment
-    // hidden utm_* fields are added there, with no backend change needed.
+    // First-touch attribution ("Original" touch in Freshsales terms) — the form's ft_*
+    // fields, persisted client-side (e.g. cookie) from the visitor's very first session,
+    // as opposed to this specific submission's own traffic source below.
+    const ftUtmSource   = pick(data, 'ft_utm_source',   'ft-utm-source')
+    const ftUtmMedium   = pick(data, 'ft_utm_medium',   'ft-utm-medium')
+    const ftUtmCampaign = pick(data, 'ft_utm_campaign', 'ft-utm-campaign')
+    const ftUtmTerm     = pick(data, 'ft_utm_term',     'ft-utm-term')
+    const ftUtmContent  = pick(data, 'ft_utm_content',  'ft-utm-content')
+    const ftGclid       = pick(data, 'ft_gclid')
+    const ftGbraid      = pick(data, 'ft_gbraid')
+    const ftWbraid      = pick(data, 'ft_wbraid')
+    const ftFbclid      = pick(data, 'ft_fbclid')
+    // This submission's own touch ("Created from" touch in Freshsales terms) — the
+    // form's bare utm_*/click-id fields, i.e. whatever traffic source led to this
+    // specific inquiry (which may differ from the visitor's first-ever touch above).
     const utmSource   = pick(data, 'utm_source',   'utm-source')
     const utmMedium   = pick(data, 'utm_medium',   'utm-medium')
     const utmCampaign = pick(data, 'utm_campaign', 'utm-campaign')
     const utmTerm     = pick(data, 'utm_term',     'utm-term')
     const utmContent  = pick(data, 'utm_content',  'utm-content')
-    // Google Click ID — needed to later match a booking back to the Google Ads click that
-    // produced it (offline conversion import). Same "not sent yet, harmless to capture
-    // defensively" reasoning as the UTM fields above.
-    const gclid = pick(data, 'gclid')
+    // Click IDs — needed to later match a booking back to the ad click that produced it
+    // (offline conversion import). gclid = Google Ads, gbraid/wbraid = Google Ads'
+    // app/privacy-sandbox web variants, fbclid = Meta/Facebook.
+    const gclid  = pick(data, 'gclid')
+    const gbraid = pick(data, 'gbraid')
+    const wbraid = pick(data, 'wbraid')
+    const fbclid = pick(data, 'fbclid')
     const rawUrl = pick(data, 'page-url', 'page_url', 'url', 'form-url')
     const url = isHttpUrl(rawUrl) ? rawUrl : ''
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
@@ -196,12 +211,27 @@ export async function POST(request: NextRequest) {
         message:      message  || null,
         website:      website || null,
         url:          url     || null,
-        utmSource:    utmSource   || null,
-        utmMedium:    utmMedium   || null,
-        utmCampaign:  utmCampaign || null,
-        utmTerm:      utmTerm     || null,
-        utmContent:   utmContent  || null,
-        gclid:        gclid       || null,
+        // First touch — prefers the form's ft_* capture; falls back to the bare field so
+        // this keeps working even before ft_* fields exist on a given form.
+        utmSource:    ftUtmSource   || utmSource   || null,
+        utmMedium:    ftUtmMedium   || utmMedium   || null,
+        utmCampaign:  ftUtmCampaign || utmCampaign || null,
+        utmTerm:      ftUtmTerm     || utmTerm     || null,
+        utmContent:   ftUtmContent  || utmContent  || null,
+        gclid:        ftGclid       || gclid       || null,
+        gbraid:       ftGbraid      || gbraid      || null,
+        wbraid:       ftWbraid      || wbraid      || null,
+        fbclid:       ftFbclid      || fbclid      || null,
+        // This submission's own touch — always the bare (non-ft_) fields.
+        lastSource:   utmSource   || null,
+        lastMedium:   utmMedium   || null,
+        lastCampaign: utmCampaign || null,
+        lastTerm:     utmTerm     || null,
+        lastContent:  utmContent  || null,
+        lastGclid:    gclid       || null,
+        lastGbraid:   gbraid      || null,
+        lastWbraid:   wbraid      || null,
+        lastFbclid:   fbclid      || null,
         rawPayload:   toJsonSafe(data),
       },
     })

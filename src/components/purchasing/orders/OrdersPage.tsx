@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
-import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { FilePreview, MultiFilePicker, PhotoSourceMenu } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
 
@@ -800,6 +800,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [itemsPopoverOrder, setItemsPopoverOrder] = useState<PurchaseOrder | null>(null)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 14
+  // Separate pagination for the tablet/mobile card layout (< lg) — a 10-column-wide
+  // table doesn't fit a tablet screen even with horizontal scroll, so below `lg` we
+  // swap to stacked two-line cards instead. Own page size/state since the card layout
+  // fits fewer rows per screen than the desktop table.
+  const [cardPage, setCardPage] = useState(1)
+  const CARD_PAGE_SIZE = 10
 
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
@@ -844,7 +850,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [transitPhoto, setTransitPhoto] = useState<string | null>(null)
   const [transitSaving, setTransitSaving] = useState(false)
   const [transitError, setTransitError] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [transitPhotoMenuOpen, setTransitPhotoMenuOpen] = useState(false)
   const { isDragging: isDraggingTransitPhoto, dropProps: transitPhotoDropProps } = useFileDrop(files => { if (files[0]) handlePhotoFile(files[0]) })
 
   // cancel form
@@ -902,7 +908,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [receiverName, setReceiverName] = useState('')
   const [receiveLines, setReceiveLines] = useState<{ poItemId: string; itemId: string | null; itemName: string; orderedQty: number; receivedQty: number; unitCost: number; outcome: string; batch: string; expiryDate: string; unit?: string | null }[]>([])
   const [receivePhoto, setReceivePhoto] = useState<string | null>(null)
-  const receivePhotoRef = useRef<HTMLInputElement>(null)
+  const [receivePhotoMenuOpen, setReceivePhotoMenuOpen] = useState(false)
   const { isDragging: isDraggingReceivePhoto, dropProps: receivePhotoDropProps } = useFileDrop(files => { if (files[0]) handleReceivePhotoFile(files[0]) })
   const [receiveSaving, setReceiveSaving] = useState(false)
   const [receiveError, setReceiveError] = useState('')
@@ -920,7 +926,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // the PO to move goods through the rest of the route.
   const [legActionModal, setLegActionModal] = useState<{ leg: TransitLeg; action: 'dispatch' | 'receive' } | null>(null)
   const [legPhoto, setLegPhoto] = useState<string | null>(null)
-  const legFileInputRef = useRef<HTMLInputElement>(null)
+  const [legPhotoMenuOpen, setLegPhotoMenuOpen] = useState(false)
   const { isDragging: isDraggingLegPhoto, dropProps: legPhotoDropProps } = useFileDrop(files => { if (files[0]) handleLegPhotoFile(files[0]) })
   const [legReceiverName, setLegReceiverName] = useState('')
   const [legSaving, setLegSaving] = useState(false)
@@ -1127,6 +1133,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const currentPage = Math.min(page, totalPages)
   const pageOrders = visibleOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
+  const cardTotalPages = Math.max(1, Math.ceil(visibleOrders.length / CARD_PAGE_SIZE))
+  const cardCurrentPage = Math.min(cardPage, cardTotalPages)
+  const cardPageOrders = visibleOrders.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
+
   if (view === 'list') return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1137,39 +1147,42 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </button>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+      {/* Grid on tablet/mobile (2 filters per row, tidy) — reverts to the desktop
+          flex-wrap row at lg where there's room for everything on one line. */}
+      <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center">
+        <div className="relative w-full lg:w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
-            className="h-9 w-56 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
+            className="h-9 w-full border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
             placeholder="Search item..."
             value={itemSearch}
-            onChange={e => { setItemSearch(e.target.value); setPage(1) }}
+            onChange={e => { setItemSearch(e.target.value); setPage(1); setCardPage(1) }}
           />
         </div>
-        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1) }}>
+        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All suppliers</option>
           {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1) }}>
+        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All destinations</option>
           {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1) }}>
+        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All requesters</option>
           {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input type="date" className="h-9 border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1) }} />
+        <input type="date" className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
         {hasActiveFilters && (
           <button
-            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1) }}
-            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1); setCardPage(1) }}
+            className="col-span-2 lg:col-span-1 text-left lg:text-center text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
           >
             Clear filters
           </button>
         )}
       </div>
-      <div className="rounded-lg border overflow-hidden">
+      {/* Desktop table — full column set, only makes sense at lg+ width */}
+      <div className="hidden lg:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -1256,7 +1269,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         </table></div>
       </div>
       {!loading && visibleOrders.length > 0 && totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="hidden lg:flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Page {currentPage} of {totalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
           </p>
@@ -1279,6 +1292,73 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </div>
         </div>
       )}
+
+      {/* Tablet/mobile card layout — one PO per card, two lines, own 10-per-page pagination */}
+      <div className="lg:hidden space-y-2">
+        {loading ? (
+          [...Array(5)].map((_, i) => (
+            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
+              <div className="h-3.5 w-32 rounded bg-muted" />
+              <div className="h-3.5 w-48 rounded bg-muted" />
+            </div>
+          ))
+        ) : visibleOrders.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
+            {hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}
+          </div>
+        ) : cardPageOrders.map(o => (
+          <button
+            key={o.id}
+            onClick={() => openDetail(o)}
+            className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs font-semibold">{o.poNumber}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
+                <span className="text-xs text-muted-foreground">{fmtDate(o.orderedAt)}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="truncate min-w-0">
+                {o.items.length === 0 ? '—' : (
+                  <>
+                    <span className="font-medium text-foreground">{o.items[0].itemName}</span>
+                    {o.items.length > 1 && <span> +{o.items.length - 1} more</span>}
+                    {' · '}{o.supplierName ?? 'TBD'}
+                  </>
+                )}
+              </span>
+              <span className="flex items-center gap-1 shrink-0"><MapPin className="h-3 w-3" />{currentLocationLabel(o)}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {!loading && visibleOrders.length > 0 && cardTotalPages > 1 && (
+        <div className="lg:hidden flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {cardCurrentPage} of {cardTotalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCardPage(p => Math.max(1, p - 1))}
+              disabled={cardCurrentPage <= 1}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
+            <button
+              onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
+              disabled={cardCurrentPage >= cardTotalPages}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {itemsPopoverOrder && (
         <ItemsDetailModal order={itemsPopoverOrder} onClose={() => setItemsPopoverOrder(null)} />
       )}
@@ -2383,30 +2463,31 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="p-5 space-y-4">
                 {transitError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{transitError}</div>}
 
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoFile(f) }} />
-
                 {transitPhoto ? (
-                  <div className="space-y-3">
+                  <div className="relative space-y-3">
                     <img src={transitPhoto} alt="Dispatch proof" className="w-full rounded-xl object-cover max-h-64 border" />
-                    <button onClick={() => { setTransitPhoto(null); fileInputRef.current?.click() }}
+                    <button onClick={() => { setTransitPhoto(null); setTransitPhotoMenuOpen(true) }}
                       className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
                       Replace photo
                     </button>
+                    <PhotoSourceMenu open={transitPhotoMenuOpen} onClose={() => setTransitPhotoMenuOpen(false)} onFiles={files => { if (files[0]) handlePhotoFile(files[0]) }} />
                   </div>
                 ) : (
-                  <button onClick={() => fileInputRef.current?.click()} {...transitPhotoDropProps}
-                    className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
-                      isDraggingTransitPhoto ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
-                    }`}>
-                    <div className="h-12 w-12 rounded-full bg-amber-50 flex items-center justify-center">
-                      <Camera className="h-6 w-6 text-amber-500" />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
-                      <p className="text-xs mt-0.5">Packing slip, shipping label, or proof of dispatch</p>
-                    </div>
-                  </button>
+                  <div className="relative">
+                    <button onClick={() => setTransitPhotoMenuOpen(o => !o)} {...transitPhotoDropProps}
+                      className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
+                        isDraggingTransitPhoto ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
+                      }`}>
+                      <div className="h-12 w-12 rounded-full bg-amber-50 flex items-center justify-center">
+                        <Camera className="h-6 w-6 text-amber-500" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
+                        <p className="text-xs mt-0.5">Packing slip, shipping label, or proof of dispatch</p>
+                      </div>
+                    </button>
+                    <PhotoSourceMenu open={transitPhotoMenuOpen} onClose={() => setTransitPhotoMenuOpen(false)} onFiles={files => { if (files[0]) handlePhotoFile(files[0]) }} />
+                  </div>
                 )}
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
@@ -2459,30 +2540,31 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </div>
                 )}
 
-                <input ref={legFileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleLegPhotoFile(f) }} />
-
                 {legPhoto ? (
-                  <div className="space-y-3">
+                  <div className="relative space-y-3">
                     <img src={legPhoto} alt="Proof" className="w-full rounded-xl object-cover max-h-64 border" />
-                    <button onClick={() => { setLegPhoto(null); legFileInputRef.current?.click() }}
+                    <button onClick={() => { setLegPhoto(null); setLegPhotoMenuOpen(true) }}
                       className="w-full py-2 text-sm text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
                       Replace photo
                     </button>
+                    <PhotoSourceMenu open={legPhotoMenuOpen} onClose={() => setLegPhotoMenuOpen(false)} onFiles={files => { if (files[0]) handleLegPhotoFile(files[0]) }} />
                   </div>
                 ) : (
-                  <button onClick={() => legFileInputRef.current?.click()} {...legPhotoDropProps}
-                    className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
-                      isDraggingLegPhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
-                    }`}>
-                    <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
-                      <Camera className="h-6 w-6 text-green-500" />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-medium text-sm">{isDraggingLegPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
-                      <p className="text-xs mt-0.5">{legActionModal.action === 'dispatch' ? 'Proof of dispatch' : 'Proof of arrival'}</p>
-                    </div>
-                  </button>
+                  <div className="relative">
+                    <button onClick={() => setLegPhotoMenuOpen(o => !o)} {...legPhotoDropProps}
+                      className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
+                        isDraggingLegPhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                      }`}>
+                      <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
+                        <Camera className="h-6 w-6 text-green-500" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-medium text-sm">{isDraggingLegPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
+                        <p className="text-xs mt-0.5">{legActionModal.action === 'dispatch' ? 'Proof of dispatch' : 'Proof of arrival'}</p>
+                      </div>
+                    </button>
+                    <PhotoSourceMenu open={legPhotoMenuOpen} onClose={() => setLegPhotoMenuOpen(false)} onFiles={files => { if (files[0]) handleLegPhotoFile(files[0]) }} />
+                  </div>
                 )}
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
@@ -2922,29 +3004,31 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 {/* Receipt photo */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold">Receipt Photo <span className="text-red-500">*</span></label>
-                  <input ref={receivePhotoRef} type="file" accept="image/*" capture="environment" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleReceivePhotoFile(f) }} />
                   {receivePhoto ? (
-                    <div className="space-y-2">
+                    <div className="relative space-y-2">
                       <img src={receivePhoto} alt="Receipt proof" className="w-full rounded-xl object-cover max-h-52 border" />
-                      <button onClick={() => { setReceivePhoto(null); receivePhotoRef.current?.click() }}
+                      <button onClick={() => { setReceivePhoto(null); setReceivePhotoMenuOpen(true) }}
                         className="w-full py-1.5 text-xs text-muted-foreground border rounded-lg hover:bg-muted transition-colors">
                         Replace photo
                       </button>
+                      <PhotoSourceMenu open={receivePhotoMenuOpen} onClose={() => setReceivePhotoMenuOpen(false)} onFiles={files => { if (files[0]) handleReceivePhotoFile(files[0]) }} />
                     </div>
                   ) : (
-                    <button onClick={() => receivePhotoRef.current?.click()} {...receivePhotoDropProps}
-                      className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2.5 transition-colors ${
-                        isDraggingReceivePhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
-                      }`}>
-                      <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
-                        <Camera className="h-5 w-5 text-green-500" />
-                      </div>
-                      <div className="text-center">
-                        <p className="font-medium text-sm">{isDraggingReceivePhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
-                        <p className="text-xs mt-0.5">Photo of the goods, packaging, or condition on arrival</p>
-                      </div>
-                    </button>
+                    <div className="relative">
+                      <button onClick={() => setReceivePhotoMenuOpen(o => !o)} {...receivePhotoDropProps}
+                        className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2.5 transition-colors ${
+                          isDraggingReceivePhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                        }`}>
+                        <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
+                          <Camera className="h-5 w-5 text-green-500" />
+                        </div>
+                        <div className="text-center">
+                          <p className="font-medium text-sm">{isDraggingReceivePhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
+                          <p className="text-xs mt-0.5">Photo of the goods, packaging, or condition on arrival</p>
+                        </div>
+                      </button>
+                      <PhotoSourceMenu open={receivePhotoMenuOpen} onClose={() => setReceivePhotoMenuOpen(false)} onFiles={files => { if (files[0]) handleReceivePhotoFile(files[0]) }} />
+                    </div>
                   )}
                 </div>
 

@@ -85,9 +85,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!dispatchPhotoKey) return NextResponse.json({ error: 'Foto dispatch wajib diupload' }, { status: 400 })
     const dispatchItems = items as { itemId: string | null; itemName: string; dispatchedQty: number }[]
 
-    const [fromLoc] = await Promise.all([
-      db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: { name: true } }),
-    ])
+    // Stock is re-checked here (not trusted from the client) — it can have moved since
+    // the transfer was requested (another transfer, a sale, a stock count). Dispatching
+    // more than what's physically on the shelf is rejected outright rather than allowed
+    // to go negative with just a logged exception.
+    const toCheck = dispatchItems.filter(it => Number(it.dispatchedQty) > 0)
+    const lots = await db.stockLot.findMany({ where: { locationId: transfer.fromLocationId } })
+    const stockMap = new Map<string, number>()
+    for (const lot of lots) {
+      const key = lot.itemId ?? `name:${lot.itemName}`
+      stockMap.set(key, (stockMap.get(key) ?? 0) + lot.quantity)
+    }
+    const insufficient = toCheck
+      .map(it => ({ ...it, available: stockMap.get(it.itemId ?? `name:${it.itemName}`) ?? 0 }))
+      .filter(it => Number(it.dispatchedQty) > it.available)
+    if (insufficient.length > 0) {
+      const detail = insufficient.map(it => `${it.itemName} (tersedia: ${it.available}, diminta: ${it.dispatchedQty})`).join(', ')
+      return NextResponse.json({ error: `Stok tidak cukup untuk: ${detail}` }, { status: 409 })
+    }
 
     await db.$transaction(async (tx) => {
       for (const it of dispatchItems) {
@@ -98,27 +113,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ? { itemId: it.itemId, locationId: transfer.fromLocationId }
           : { itemId: null, itemName: it.itemName, locationId: transfer.fromLocationId }
         const lot = await tx.stockLot.findFirst({ where: lotWhere })
-        const currentQty = lot?.quantity ?? 0
-
-        // Auto-create Negative Stock exception if insufficient
-        if (currentQty < qty) {
-          await tx.inventoryException.create({
-            data: {
-              id: crypto.randomUUID(),
-              type: 'NEGATIVE_STOCK',
-              itemId: it.itemId || null,
-              itemName: it.itemName,
-              locationId: transfer.fromLocationId,
-              locationName: fromLoc?.name ?? '—',
-              qty: qty - currentQty,
-              reason: `Stock kurang saat dispatch transfer ${transfer.transferNumber}`,
-              referenceId: id,
-              referenceType: 'StockTransfer',
-              status: 'OPEN',
-              updatedAt: new Date(),
-            },
-          })
-        }
 
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: qty }, updatedAt: new Date() } })

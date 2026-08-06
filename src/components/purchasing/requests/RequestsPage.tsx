@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL } from '@/lib/purchasing/quotationBands'
+import { PhotoSourceMenu } from '@/components/ui/file-preview'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -34,7 +35,7 @@ interface Supplier { id: string; name: string; locations: SupplierLocation[]; co
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -104,6 +105,10 @@ export default function RequestsPage() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [filterStatus, setFilterStatus] = useState('ALL')
+  // Tablet/mobile card layout (< lg) paginates independently of the desktop table,
+  // which just renders the full filtered list — see OrdersPage.tsx for the same pattern.
+  const [cardPage, setCardPage] = useState(1)
+  const CARD_PAGE_SIZE = 10
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
   const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
@@ -128,7 +133,6 @@ export default function RequestsPage() {
   // Custom request modal (create view)
   const [customModal, setCustomModal] = useState(false)
   const [customForm, setCustomForm] = useState({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] as string[] })
-  const customFileRef = useRef<HTMLInputElement>(null)
   const [compressingCustomImage, setCompressingCustomImage] = useState(false)
   const { isDragging: isDraggingCustomImage, dropProps: customImageDropProps } = useFileDrop(
     files => processCustomImages(Array.from(files)), compressingCustomImage
@@ -325,7 +329,9 @@ export default function RequestsPage() {
   }
 
   function addToCart(item: PurchaseItem, unit: string) {
-    const key = `${item.id}-${unit}`
+    // Keying by requester too — adding the same item while a different person is
+    // "active" must land as its own line, not silently bump someone else's quantity.
+    const key = `${item.id}-${unit}-${requestedByEmployeeId || 'none'}`
     setCart(prev => {
       const existing = prev.find(l => l.key === key)
       if (existing) return prev.map(l => l.key === key ? { ...l, quantity: l.quantity + 1 } : l)
@@ -335,6 +341,7 @@ export default function RequestsPage() {
         supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false,
         notes: '', search: '', open: false, isCustom: false,
         imageKeys: item.imageKey ? [item.imageKey] : [],
+        requestedByEmployeeId: requestedByEmployeeId || undefined,
       }]
     })
   }
@@ -375,6 +382,7 @@ export default function RequestsPage() {
       supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false,
       notes: customForm.notes.trim(), search: '', open: false, isCustom: true,
       imageKeys: customForm.images,
+      requestedByEmployeeId: requestedByEmployeeId || undefined,
     }])
     setCustomForm({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] })
     setCustomModal(false)
@@ -401,22 +409,48 @@ export default function RequestsPage() {
     setSaving(true)
     setSaveError('')
     if (cart.length === 0) { setSaveError('Add at least one item to the request'); setSaving(false); return }
-    const res = await fetch('/api/purchasing/requests', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: requestedByEmployeeId || undefined, notes,
-        items: cart.map(l => ({
-          itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
-          unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
-        })),
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
+
+    // Group by requester — each distinct "Requested By" (including blank, meaning
+    // "myself / general stock") becomes its own PR, all sharing the same delivery
+    // location and notes. Submitted one at a time (not Promise.all) since PR number
+    // generation isn't safe under concurrent writes.
+    const groups = new Map<string, RequestLine[]>()
+    for (const line of cart) {
+      const key = line.requestedByEmployeeId || ''
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(line)
+    }
+
+    const created: { prNumber: string; requesterName: string }[] = []
+    for (const [empId, lines] of groups) {
+      const res = await fetch('/api/purchasing/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: empId || undefined, notes,
+          items: lines.map(l => ({
+            itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
+            unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        const madeSoFar = created.length ? ` (${created.map(c => c.prNumber).join(', ')} was already created before this failed)` : ''
+        setSaveError(`${data.error ?? 'An error occurred'}${madeSoFar}`)
+        setSaving(false)
+        return
+      }
+      const requesterName = empId ? (employees.find(e => e.id === empId)?.fullName ?? 'Unknown') : 'Myself / general stock'
+      created.push({ prNumber: data.prNumber, requesterName })
+    }
+
     setSaving(false)
     setView('list')
     setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes(''); setCart([]); setCartOpen(false)
+    if (created.length > 1) {
+      alert(`${created.length} Purchase Requests created:\n${created.map(c => `${c.prNumber} — ${c.requesterName}`).join('\n')}`)
+    }
     load()
   }
 
@@ -445,6 +479,9 @@ export default function RequestsPage() {
       acc[t.key] = t.key === 'ALL' ? requests.length : requests.filter(r => r.status === t.key).length
       return acc
     }, {})
+    const cardTotalPages = Math.max(1, Math.ceil(filtered.length / CARD_PAGE_SIZE))
+    const cardCurrentPage = Math.min(cardPage, cardTotalPages)
+    const cardPageItems = filtered.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
     return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -457,11 +494,12 @@ export default function RequestsPage() {
         </button>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 border-b">
+      {/* Filter tabs — horizontally scrollable so 6 tabs + count badges don't get
+          cramped on a narrower tablet width */}
+      <div className="flex gap-1 border-b overflow-x-auto">
         {FILTER_TABS.filter(t => t.key === 'ALL' || counts[t.key] > 0).map(t => (
-          <button key={t.key} onClick={() => setFilterStatus(t.key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
+          <button key={t.key} onClick={() => { setFilterStatus(t.key); setCardPage(1) }}
+            className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
               filterStatus === t.key ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}>
             {t.label}
@@ -474,7 +512,8 @@ export default function RequestsPage() {
         ))}
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
+      {/* Desktop table — full column set, only makes sense at lg+ width */}
+      <div className="hidden lg:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -558,6 +597,73 @@ export default function RequestsPage() {
           </tbody>
         </table></div>
       </div>
+
+      {/* Tablet/mobile card layout — one PR per card, two lines, own 10-per-page pagination */}
+      <div className="lg:hidden space-y-2">
+        {loading ? (
+          [...Array(5)].map((_, i) => (
+            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
+              <div className="h-3.5 w-32 rounded bg-muted" />
+              <div className="h-3.5 w-48 rounded bg-muted" />
+            </div>
+          ))
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
+            <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            {requests.length === 0 ? 'No PRs yet. Click "New PR" to get started.' : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`}
+          </div>
+        ) : cardPageItems.map(r => (
+          <button
+            key={r.id}
+            onClick={() => openDetail(r)}
+            className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
+                {r.prNumber}
+                {r.isUrgent && <UrgentBadge />}
+              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="truncate min-w-0">
+                <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
+                {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {r.totalBudget > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(r.totalBudget)}` : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {!loading && filtered.length > 0 && cardTotalPages > 1 && (
+        <div className="lg:hidden flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {cardCurrentPage} of {cardTotalPages} · {filtered.length} PR{filtered.length !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCardPage(p => Math.max(1, p - 1))}
+              disabled={cardCurrentPage <= 1}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
+            <button
+              onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
+              disabled={cardCurrentPage >= cardTotalPages}
+              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
   }
@@ -577,9 +683,9 @@ export default function RequestsPage() {
         catalogCategory={catalogCategory} setCatalogCategory={setCatalogCategory}
         customModal={customModal} setCustomModal={setCustomModal}
         customForm={customForm} setCustomForm={setCustomForm}
-        customFileRef={customFileRef} compressingCustomImage={compressingCustomImage}
+        compressingCustomImage={compressingCustomImage}
         isDraggingCustomImage={isDraggingCustomImage} customImageDropProps={customImageDropProps}
-        handleCustomImages={handleCustomImages} removeCustomImage={removeCustomImage} addCustomToCart={addCustomToCart}
+        onCustomImageFiles={processCustomImages} removeCustomImage={removeCustomImage} addCustomToCart={addCustomToCart}
         saveError={saveError} saving={saving} submit={submit}
         onBack={() => setView('list')}
       />
@@ -1238,9 +1344,9 @@ function CreateRequestView({
   catalogCategory, setCatalogCategory,
   customModal, setCustomModal,
   customForm, setCustomForm,
-  customFileRef, compressingCustomImage,
+  compressingCustomImage,
   isDraggingCustomImage, customImageDropProps,
-  handleCustomImages, removeCustomImage, addCustomToCart,
+  onCustomImageFiles, removeCustomImage, addCustomToCart,
   saveError, saving, submit,
   onBack,
 }: {
@@ -1258,11 +1364,10 @@ function CreateRequestView({
   customModal: boolean; setCustomModal: (v: boolean) => void
   customForm: { itemName: string; quantity: number; unit: string; notes: string; images: string[] }
   setCustomForm: React.Dispatch<React.SetStateAction<{ itemName: string; quantity: number; unit: string; notes: string; images: string[] }>>
-  customFileRef: React.RefObject<HTMLInputElement | null>
   compressingCustomImage: boolean
   isDraggingCustomImage: boolean
   customImageDropProps: FileDropProps
-  handleCustomImages: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onCustomImageFiles: (files: File[]) => void
   removeCustomImage: (index: number) => void
   addCustomToCart: () => void
   saveError: string; saving: boolean; submit: () => void
@@ -1278,6 +1383,8 @@ function CreateRequestView({
     (catalogCategory === 'All' || i.category === catalogCategory) &&
     (!catalogSearch || i.name.toLowerCase().includes(catalogSearch.toLowerCase()) || i.sku.toLowerCase().includes(catalogSearch.toLowerCase()))
   ), [items, catalogType, catalogCategory, catalogSearch])
+
+  const [customPhotoMenuOpen, setCustomPhotoMenuOpen] = useState(false)
 
   const PAGE_SIZE = 12
   const [page, setPage] = useState(1)
@@ -1549,15 +1656,17 @@ function CreateRequestView({
                       </button>
                     </div>
                   ))}
-                  <button onClick={() => customFileRef.current?.click()} disabled={compressingCustomImage} {...customImageDropProps}
-                    className={`aspect-square flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
-                      isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
-                    }`}>
-                    <Camera className="h-5 w-5" />
-                    <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
-                  </button>
+                  <div className="relative aspect-square">
+                    <button onClick={() => setCustomPhotoMenuOpen(o => !o)} disabled={compressingCustomImage} {...customImageDropProps}
+                      className={`w-full h-full flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
+                        isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+                      }`}>
+                      <Camera className="h-5 w-5" />
+                      <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
+                    </button>
+                    <PhotoSourceMenu open={customPhotoMenuOpen} onClose={() => setCustomPhotoMenuOpen(false)} onFiles={onCustomImageFiles} multiple />
+                  </div>
                 </div>
-                <input ref={customFileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleCustomImages} />
               </div>
             </div>
             <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
@@ -1623,7 +1732,7 @@ function RequestCartPanel({
             <option value="">— Myself / general stock —</option>
             {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
           </select>
-          <p className="text-[11px] text-muted-foreground">Who actually needs this — e.g. a ship crew member you&apos;re requesting on behalf of.</p>
+          <p className="text-[11px] text-muted-foreground">Applies to items you add next. Switch this to add items for someone else — each person becomes their own PR automatically.</p>
         </div>
 
         {/* Items */}
@@ -1635,33 +1744,57 @@ function RequestCartPanel({
               <p className="text-xs">No items yet</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {cart.map(line => (
-                <div key={line.key} className="flex items-center gap-2.5 border rounded-lg p-2">
-                  <div className="relative w-10 h-10 rounded-md bg-muted/50 shrink-0 overflow-hidden flex items-center justify-center">
-                    {line.imageKeys?.[0] ? <img src={line.imageKeys[0]} alt={line.itemName} className="w-full h-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
-                    {!!line.imageKeys && line.imageKeys.length > 1 && (
-                      <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-semibold px-1 rounded-tl">+{line.imageKeys.length - 1}</span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">{line.itemName}</p>
-                    <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : line.itemUnit}</p>
-                  </div>
-                  {line.isCustom ? (
-                    <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.itemUnit}</span>
-                  ) : (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => changeCartQty(line.key!, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
-                      <span className="text-xs font-semibold tabular-nums w-4 text-center">{line.quantity}</span>
-                      <button onClick={() => changeCartQty(line.key!, 1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
+            <div className="space-y-4">
+              {(() => {
+                // Grouped into sections by requester — matches how submit() splits the
+                // cart into one PR per requester. Section order follows first-added.
+                const order: string[] = []
+                const groups = new Map<string, RequestLine[]>()
+                for (const line of cart) {
+                  const key = line.requestedByEmployeeId || ''
+                  if (!groups.has(key)) { groups.set(key, []); order.push(key) }
+                  groups.get(key)!.push(line)
+                }
+                return order.map(empId => {
+                  const lines = groups.get(empId)!
+                  const label = empId ? (employees.find(e => e.id === empId)?.fullName ?? 'Unknown') : 'Myself / general stock'
+                  return (
+                    <div key={empId || '__none__'} className="space-y-2">
+                      {order.length > 1 && (
+                        <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1">
+                          <Users className="h-3 w-3" /> {label} <span className="font-normal text-muted-foreground normal-case">— will be its own PR</span>
+                        </p>
+                      )}
+                      {lines.map(line => (
+                        <div key={line.key} className="flex items-center gap-2.5 border rounded-lg p-2">
+                          <div className="relative w-10 h-10 rounded-md bg-muted/50 shrink-0 overflow-hidden flex items-center justify-center">
+                            {line.imageKeys?.[0] ? <img src={line.imageKeys[0]} alt={line.itemName} className="w-full h-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
+                            {!!line.imageKeys && line.imageKeys.length > 1 && (
+                              <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-semibold px-1 rounded-tl">+{line.imageKeys.length - 1}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium truncate">{line.itemName}</p>
+                            <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : line.itemUnit}</p>
+                          </div>
+                          {line.isCustom ? (
+                            <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.itemUnit}</span>
+                          ) : (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={() => changeCartQty(line.key!, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
+                              <span className="text-xs font-semibold tabular-nums w-4 text-center">{line.quantity}</span>
+                              <button onClick={() => changeCartQty(line.key!, 1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
+                            </div>
+                          )}
+                          <button onClick={() => removeCartLine(line.key!)} className="text-muted-foreground hover:text-destructive shrink-0">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                  <button onClick={() => removeCartLine(line.key!)} className="text-muted-foreground hover:text-destructive shrink-0">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+                  )
+                })
+              })()}
             </div>
           )}
         </div>
@@ -1678,13 +1811,18 @@ function RequestCartPanel({
       </div>
 
       <div className="p-5 border-t shrink-0">
-        <button
-          onClick={submit} disabled={saving || cart.length === 0}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
-        >
-          {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
-          {saving ? 'Submitting…' : 'Submit Request'}
-        </button>
+        {(() => {
+          const groupCount = new Set(cart.map(l => l.requestedByEmployeeId || '')).size
+          return (
+            <button
+              onClick={submit} disabled={saving || cart.length === 0}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+            >
+              {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+              {saving ? 'Submitting…' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}
+            </button>
+          )
+        })()}
       </div>
     </div>
   )

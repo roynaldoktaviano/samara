@@ -1,9 +1,53 @@
 'use client'
 
 import { useRef } from 'react'
-import { FileText, Camera } from 'lucide-react'
+import { FileText, Camera, Image as ImageIcon } from 'lucide-react'
 import { isPdfDataUrl, readUploadFile } from '@/lib/fileUpload'
 import { useFileDrop } from '@/hooks/useFileDrop'
+
+// A file input with capture="environment" alone forces the camera app directly on many
+// tablet/Android browsers, skipping the gallery entirely — no way to pick an existing
+// photo. This renders two hidden inputs (one with capture, one without) behind a small
+// "Take Photo / Choose from Gallery" menu, so callers keep their own trigger button's
+// look and just toggle `open` from that trigger's onClick.
+export function PhotoSourceMenu({ open, onClose, onFiles, multiple = false }: {
+  open: boolean
+  onClose: () => void
+  onFiles: (files: File[]) => void
+  multiple?: boolean
+}) {
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    onClose()
+    if (files.length) onFiles(files)
+  }
+
+  return (
+    <>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple={multiple} className="hidden" onChange={handleChange} />
+      <input ref={galleryRef} type="file" accept="image/*" multiple={multiple} className="hidden" onChange={handleChange} />
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={onClose} />
+          <div className="absolute left-0 top-full mt-1 z-50 bg-white border rounded-lg shadow-xl overflow-hidden w-48">
+            <button type="button" onClick={() => cameraRef.current?.click()}
+              className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 transition-colors">
+              <Camera className="h-4 w-4 text-muted-foreground" /> Take Photo
+            </button>
+            <button type="button" onClick={() => galleryRef.current?.click()}
+              className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 border-t transition-colors">
+              <ImageIcon className="h-4 w-4 text-muted-foreground" /> Choose from Gallery
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
 
 export function FilePreview({ src, alt, className, onClick }: { src: string; alt: string; className?: string; onClick?: () => void }) {
   if (isPdfDataUrl(src)) {
