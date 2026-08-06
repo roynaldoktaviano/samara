@@ -7,14 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 interface LegalEntity { id: string; name: string; code: string | null }
 interface EmployeeRole { id: string; title: string }
 interface Location { id: string; name: string; type: string }
+interface AppUser { id: string; name: string | null; email: string; role: string }
 interface Employee {
   id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
   resignedAt: string | null; resignStatus: string | null; resignReason: string | null
   gender: string | null; employmentStatus: string | null; leaveBalance: number | null; joinDate: string | null
   legalEntity: LegalEntity | null; location: Location | null; role: EmployeeRole | null
+  managerId: string | null; manager: { id: string; fullName: string } | null
+  userId: string | null; user: { id: string; name: string | null; email: string } | null
 }
 
-const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '' }
+const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '', managerId: '', userId: '' }
 
 const GENDERS = ['Male', 'Female']
 const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation', 'Intern']
@@ -68,6 +71,7 @@ export default function EmployeesPage() {
   const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([])
   const [roles, setRoles] = useState<EmployeeRole[]>([])
   const [locations, setLocations] = useState<Location[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
@@ -95,16 +99,20 @@ export default function EmployeesPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [empRes, entRes, roleRes, locRes] = await Promise.all([
+    const [empRes, entRes, roleRes, locRes, userRes] = await Promise.all([
       fetch('/api/hr/employees'),
       fetch('/api/hr/legal-entities'),
       fetch('/api/hr/roles'),
       fetch('/api/purchasing/locations'),
+      // Admin/Super Admin only — HR editors won't be able to link login accounts,
+      // the picker below just stays empty for them rather than failing the page load.
+      fetch('/api/users'),
     ])
     if (empRes.ok) setEmployees(await empRes.json())
     if (entRes.ok) setLegalEntities(await entRes.json())
     if (roleRes.ok) setRoles(await roleRes.json())
     if (locRes.ok) setLocations((await locRes.json()).filter((l: Location & { isActive?: boolean }) => l.isActive !== false))
+    if (userRes.ok) setUsers(await userRes.json())
     setLoading(false)
   }, [])
 
@@ -119,6 +127,8 @@ export default function EmployeesPage() {
       gender: emp.gender ?? '', employmentStatus: emp.employmentStatus ?? '',
       leaveBalance: emp.leaveBalance != null ? String(emp.leaveBalance) : '',
       joinDate: emp.joinDate ? emp.joinDate.slice(0, 10) : '',
+      managerId: emp.managerId ?? '',
+      userId: emp.userId ?? '',
     })
     setEditing(emp); setFormError(''); setModal(true)
   }
@@ -316,6 +326,7 @@ export default function EmployeesPage() {
                 <th className="text-left px-4 py-3 font-medium">Work Location</th>
                 <th className="text-left px-4 py-3 font-medium">Department</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
+                <th className="text-left px-4 py-3 font-medium">Reports To</th>
                 <th className="text-left px-4 py-3 font-medium">Gender</th>
                 <th className="text-left px-4 py-3 font-medium">Employment Status</th>
                 <th className="text-center px-4 py-3 font-medium">Leave</th>
@@ -327,20 +338,26 @@ export default function EmployeesPage() {
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
-                <tr><td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
                   <IdCard className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
                 </td></tr>
               ) : paginated.map(emp => (
                 <tr key={emp.id} className={`hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
-                    <p className="font-medium">{emp.fullName}</p>
+                    <p className="font-medium flex items-center gap-1.5">
+                      {emp.fullName}
+                      {emp.userId && (
+                        <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.legalEntity?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.location?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.department ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.role?.title ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.manager?.fullName ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.gender ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.employmentStatus ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs text-center">{emp.leaveBalance ?? '—'}</td>
@@ -521,6 +538,36 @@ export default function EmployeesPage() {
                       <option value="">—</option>
                       {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
                     </select>
+                  </div>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reports To (Manager)</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.managerId} onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}
+                    >
+                      <option value="">— No manager set —</option>
+                      {employees.filter(e => e.isActive && e.id !== editing?.id).map(e => (
+                        <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">Drives who approves this employee&apos;s purchase requests.</p>
+                  </div>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linked Login Account</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.userId} onChange={e => setForm(f => ({ ...f, userId: e.target.value }))}
+                    >
+                      <option value="">— No login linked —</option>
+                      {users
+                        .filter(u => u.id === form.userId || !employees.some(e => e.userId === u.id && e.id !== editing?.id))
+                        .map(u => <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>)}
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">
+                      {users.length === 0 ? 'Only Admin/Super Admin can link login accounts.' : 'Required for this person to approve requests or receive notifications.'}
+                    </p>
                   </div>
                 </div>
               </div>

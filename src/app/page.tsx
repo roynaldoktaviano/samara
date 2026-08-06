@@ -43,6 +43,7 @@ import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
 import PurchasingItemTypesPage from '@/components/purchasing/item-types/ItemTypesPage'
 import PurchasingLocationsPage from '@/components/purchasing/locations/LocationsPage'
 import PurchasingRequestsPage from '@/components/purchasing/requests/RequestsPage'
+import MyApprovalsPage from '@/components/approvals/MyApprovalsPage'
 import PurchasingOrdersPage from '@/components/purchasing/OrdersAndDeliveryFees'
 import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
 import PurchasingTransfersPage from '@/components/purchasing/transfers/TransfersPage'
@@ -91,7 +92,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -122,6 +123,7 @@ const MARKETING_SUB_GROUPS = [
 
 const navigationItems: NavItem[] = [
   { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING'], group: 'main' },
+  { id: 'my-approvals',  label: 'Approval Saya',  icon: CheckCircle2, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'WAREHOUSE'], group: 'main' },
   { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN'],                               group: 'chat' },
   { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN'],                               group: 'chat' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
@@ -394,6 +396,7 @@ export default function Home() {
 
   const [pendingRefunds, setPendingRefunds] = useState(0)
   const [pendingRequestOrders, setPendingRequestOrders] = useState(0)
+  const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
@@ -425,6 +428,16 @@ export default function Home() {
       }
     } catch { /* silent */ }
   }, [session])
+
+  const fetchPendingMyApprovals = useCallback(async () => {
+    try {
+      const res = await fetch('/api/purchasing/my-approvals')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingMyApprovals(Array.isArray(data) ? data.length : 0)
+      }
+    } catch { /* silent */ }
+  }, [])
 
   const fetchPendingRefunds = useCallback(async () => {
     try {
@@ -495,11 +508,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
     const interval = setInterval(refresh, 30000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -694,6 +707,7 @@ export default function Home() {
       case 'marketing-performance': return <MarketingComingSoon title="Performance" desc="A cross-campaign, cross-channel rollup — revenue, ROAS, and channel comparison." icon={LineChart} />
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
       case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
+      case 'my-approvals':   return <MyApprovalsPage />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
@@ -812,6 +826,7 @@ export default function Home() {
                   (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
                   (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0) ||
                   (item.id === 'purchasing-requests' && pendingRequestOrders > 0) ||
+                  (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
@@ -822,6 +837,7 @@ export default function Home() {
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
                   item.id === 'purchasing-requests' ? pendingRequestOrders :
+                  item.id === 'my-approvals' ? pendingMyApprovals :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :

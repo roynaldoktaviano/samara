@@ -215,7 +215,10 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: '/login' },
   session: {
     strategy: 'jwt',
-    maxAge:    8 * 60 * 60,
-    updateAge: 60 * 60,
+    // Sliding window: session stays alive up to 30 days as long as the app is opened
+    // at least once every 30 days — each open within that window pushes expiry forward
+    // another 30 days (via updateAge), rather than a hard cutoff from first login.
+    maxAge:    30 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
   },
 }

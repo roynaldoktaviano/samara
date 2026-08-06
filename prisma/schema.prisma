@@ -106,6 +106,7 @@ model User {
   waitingListItems               WaitingList[]
   stockMovements                 StockMovement[]
   purchaseRequests               PurchaseRequest[]           @relation("PRRequestedBy")
+  purchaseRequestsApproved       PurchaseRequest[]           @relation("PRApprovedBy")
   purchaseRequestsVerified       PurchaseRequest[]           @relation("PRVerifiedBy")
   purchaseRequestsConverted      PurchaseRequest[]           @relation("PRConvertedBy")
   purchaseRequestsRejected       PurchaseRequest[]           @relation("PRRejectedBy")
@@ -134,6 +135,8 @@ model User {
   agentLeadsPromoted             AgentLead[]                 @relation("AgentLeadPromotedBy")
   mediaFilesUploaded             MediaFile[]
   promosCreated                  Promo[]
+  employeeProfile                Employee?
+  pushSubscriptions              PushSubscription[]
 }
 
 model Customer {
@@ -1138,6 +1141,23 @@ model ActivityLog {
   @@index([entity, action])
 }
 
+// One row per subscribed browser/device (a user can have several — phone + laptop).
+// Populated by POST /api/push/subscribe after the client calls pushManager.subscribe();
+// consumed by src/lib/push.ts to actually send a web push via the `web-push` library.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model Notification {
   id              String           @id @default(cuid())
   userId          String
@@ -1274,6 +1294,7 @@ model PurchaseItemCategory {
 // PurchaseOrderStatus for what happens to the goods from there.
 enum PurchaseRequestStatus {
   DRAFT
+  PENDING_APPROVAL
   ON_PROCESS
   CONVERTED
   REJECTED
@@ -1482,6 +1503,7 @@ model PurchaseRequest {
   prNumber              String                @unique
   requestedById         String
   requestedByEmployeeId String?
+  approverEmployeeId    String?
   deliveryLocationId    String?
   notes                 String?
   status                PurchaseRequestStatus @default(DRAFT)
@@ -1494,6 +1516,8 @@ model PurchaseRequest {
   // One {action}At/{action}ById pair per status transition — lets KPI reporting
   // compute response time between any two steps (e.g. same-day verification, or
   // draft-to-PO turnaround) without re-deriving it from an activity log.
+  approvedById          String?
+  approvedAt            DateTime?
   verifiedById          String?
   verifiedAt            DateTime?
   convertedById         String?
@@ -1507,7 +1531,9 @@ model PurchaseRequest {
 
   requestedBy         User                  @relation("PRRequestedBy", fields: [requestedById], references: [id])
   requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  approverEmployee    Employee?             @relation("PRApproverEmployee", fields: [approverEmployeeId], references: [id], onDelete: SetNull)
   deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   verifiedBy          User?                 @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
   convertedBy         User?                 @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
   rejectedBy          User?                 @relation("PRRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
@@ -1521,11 +1547,13 @@ model PurchaseRequest {
   @@index([createdAt])
   @@index([requestedById])
   @@index([requestedByEmployeeId])
+  @@index([approverEmployeeId])
   @@index([deliveryLocationId])
   @@index([convertedById])
   @@index([rejectedById])
   @@index([cancelledById])
   @@index([verifiedById])
+  @@index([approvedById])
 }
 
 model Supplier {
@@ -2152,9 +2180,16 @@ model Employee {
   manager       Employee?  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
   directReports Employee[] @relation("EmployeeManager")
 
-  purchaseRequests        PurchaseRequest[]
-  purchaseOrdersRequested PurchaseOrder[]
-  goodsReceipts           GoodsReceipt[]
+  // Links this Employee record to their login account — lets the system resolve
+  // "who is logged in" to an org-chart position, and resolve a manager's Employee
+  // row back to the User account that should see/approve the request.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  purchaseRequests          PurchaseRequest[]
+  purchaseRequestsToApprove PurchaseRequest[] @relation("PRApproverEmployee")
+  purchaseOrdersRequested   PurchaseOrder[]
+  goodsReceipts             GoodsReceipt[]
 
   @@index([legalEntityId])
   @@index([locationId])

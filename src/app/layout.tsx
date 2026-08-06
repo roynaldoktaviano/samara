@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from 'sonner'
 import { Providers } from "@/components/providers";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,6 +58,7 @@ export default function RootLayout({
           {children}
           <Toaster />
           <Sonner position="top-right" richColors expand closeButton duration={5000} />
+          <PushNotificationPrompt />
         </Providers>
         <ServiceWorkerRegister />
       </body>
