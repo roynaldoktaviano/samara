@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
@@ -506,6 +507,124 @@ function EmployeeCombobox({ value, employees, onChange }: {
             </div>
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+type OrderLine = { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }
+
+// Portal-based so the dropdown isn't clipped by the line-items table's
+// overflow-x-auto scroll container (a plain absolute/relative pair would get cut
+// off at the table's bottom edge, since setting overflow-x forces overflow-y to
+// clip too per the CSS spec).
+function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItems, inp, setLines, pickItem, pickCustomItem }: {
+  idx: number; line: OrderLine; locked: boolean
+  purchaseItems: PurchaseItem[]; historicalCustomItems: { name: string; unit: string }[]
+  inp: string
+  setLines: React.Dispatch<React.SetStateAction<OrderLine[]>>
+  pickItem: (idx: number, item: PurchaseItem) => void
+  pickCustomItem: (idx: number, name: string, unit?: string) => void
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!line.open || !wrapRef.current) { setPos(null); return }
+    const update = () => {
+      const r = wrapRef.current!.getBoundingClientRect()
+      setPos({ top: r.bottom, left: r.left, width: r.width })
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [line.open])
+
+  const sugg = line.search.length >= 1
+    ? purchaseItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()) || i.sku.toLowerCase().includes(line.search.toLowerCase())).slice(0, 8)
+    : purchaseItems.slice(0, 8)
+  const customSugg = (line.search.length >= 1
+    ? historicalCustomItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()))
+    : historicalCustomItems
+  ).slice(0, 5)
+
+  if (!line.open) {
+    return (
+      <button disabled={locked} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: true, search: '' }))}
+        className={`${inp} text-left flex items-center gap-2 ${!line.itemName ? 'text-muted-foreground' : ''}`}>
+        {line.itemName
+          ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.itemName}</span></>
+          : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select item...</span></>
+        }
+      </button>
+    )
+  }
+
+  const close = () => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: false, search: '' }))
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+      <input autoFocus className={`${inp} pl-8`} placeholder="Search item..."
+        value={line.search}
+        onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, search: e.target.value }))}
+        onKeyDown={e => {
+          if (e.key !== 'Enter') return
+          e.preventDefault()
+          // Picks the top match — catalog items first, then non-stock items
+          // previously used, then falls back to the typed text as a custom item.
+          if (sugg[0]) pickItem(idx, sugg[0])
+          else if (customSugg[0]) pickCustomItem(idx, customSugg[0].name, customSugg[0].unit)
+          else if (line.search.trim()) pickCustomItem(idx, line.search)
+        }}
+      />
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={close} />
+          <div className="fixed z-50 bg-white border rounded-lg shadow-xl max-h-52 overflow-y-auto"
+            style={{ top: pos.top + 2, left: pos.left, width: pos.width }}>
+            {sugg.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted-foreground">No items found</p>
+            ) : sugg.map(item => (
+              <button key={item.id} onClick={() => pickItem(idx, item)}
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="font-medium flex-1">{item.name}</span>
+                <span className="text-muted-foreground text-xs font-mono">{item.sku}</span>
+                <span className="text-muted-foreground text-xs">{item.baseUnit}</span>
+                {item.avgPrice > 0 && <span className="text-xs text-amber-700 font-medium">{fmtMoney(item.avgPrice)}</span>}
+              </button>
+            ))}
+            {customSugg.length > 0 && (
+              <div className="border-t">
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Previously used (non-stock)</p>
+                {customSugg.map(c => (
+                  <button key={c.name} onClick={() => pickCustomItem(idx, c.name, c.unit)}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-medium flex-1">{c.name}</span>
+                    {c.unit && <span className="text-muted-foreground text-xs">{c.unit}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {line.search.trim()
+              && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase())
+              && !historicalCustomItems.some(c => c.name.toLowerCase() === line.search.trim().toLowerCase()) && (
+              <button onClick={() => pickCustomItem(idx, line.search)}
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 flex items-center gap-2.5 border-t transition-colors">
+                <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                <span className="font-medium text-green-700 flex-1">Use &quot;{line.search.trim()}&quot;</span>
+                <span className="text-xs text-green-600">Not in master list</span>
+              </button>
+            )}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   )
@@ -1332,13 +1451,6 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </thead>
             <tbody className="divide-y">
               {lines.map((line, idx) => {
-                const sugg = line.search.length >= 1
-                  ? purchaseItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()) || i.sku.toLowerCase().includes(line.search.toLowerCase())).slice(0, 8)
-                  : purchaseItems.slice(0, 8)
-                const customSugg = (line.search.length >= 1
-                  ? historicalCustomItems.filter(i => i.name.toLowerCase().includes(line.search.toLowerCase()))
-                  : historicalCustomItems
-                ).slice(0, 5)
                 const subtotal = line.orderedQty * line.unitCost
                 const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-right`
                 return (
@@ -1347,75 +1459,11 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
                     {/* Item picker */}
                     <td className="px-2 py-2.5 relative">
-                      {line.open ? (
-                        <>
-                          {/* Backdrop */}
-                          <div className="fixed inset-0 z-40" onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: false, search: '' }))} />
-                          <div className="relative z-50">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                              <input autoFocus className={`${inp} pl-8`} placeholder="Search item..."
-                                value={line.search}
-                                onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, search: e.target.value }))}
-                                onKeyDown={e => {
-                                  if (e.key !== 'Enter') return
-                                  e.preventDefault()
-                                  // Picks the top match — catalog items first, then non-stock items
-                                  // previously used, then falls back to the typed text as a custom item.
-                                  if (sugg[0]) pickItem(idx, sugg[0])
-                                  else if (customSugg[0]) pickCustomItem(idx, customSugg[0].name, customSugg[0].unit)
-                                  else if (line.search.trim()) pickCustomItem(idx, line.search)
-                                }}
-                              />
-                            </div>
-                            <div className="absolute left-0 right-0 top-full mt-0.5 bg-white border rounded-lg shadow-xl max-h-52 overflow-y-auto">
-                              {sugg.length === 0 ? (
-                                <p className="px-3 py-3 text-sm text-muted-foreground">No items found</p>
-                              ) : sugg.map(item => (
-                                <button key={item.id} onClick={() => pickItem(idx, item)}
-                                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
-                                  <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <span className="font-medium flex-1">{item.name}</span>
-                                  <span className="text-muted-foreground text-xs font-mono">{item.sku}</span>
-                                  <span className="text-muted-foreground text-xs">{item.baseUnit}</span>
-                                  {item.avgPrice > 0 && <span className="text-xs text-amber-700 font-medium">{fmtMoney(item.avgPrice)}</span>}
-                                </button>
-                              ))}
-                              {customSugg.length > 0 && (
-                                <div className="border-t">
-                                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Previously used (non-stock)</p>
-                                  {customSugg.map(c => (
-                                    <button key={c.name} onClick={() => pickCustomItem(idx, c.name, c.unit)}
-                                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
-                                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                      <span className="font-medium flex-1">{c.name}</span>
-                                      {c.unit && <span className="text-muted-foreground text-xs">{c.unit}</span>}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                              {line.search.trim()
-                                && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase())
-                                && !historicalCustomItems.some(c => c.name.toLowerCase() === line.search.trim().toLowerCase()) && (
-                                <button onClick={() => pickCustomItem(idx, line.search)}
-                                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 flex items-center gap-2.5 border-t transition-colors">
-                                  <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                                  <span className="font-medium text-green-700 flex-1">Use &quot;{line.search.trim()}&quot;</span>
-                                  <span className="text-xs text-green-600">Not in master list</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <button disabled={locked} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, open: true, search: '' }))}
-                          className={`${inp} text-left flex items-center gap-2 ${!line.itemName ? 'text-muted-foreground' : ''}`}>
-                          {line.itemName
-                            ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.itemName}</span></>
-                            : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select item...</span></>
-                          }
-                        </button>
-                      )}
+                      <ItemPickerCell
+                        idx={idx} line={line} locked={locked}
+                        purchaseItems={purchaseItems} historicalCustomItems={historicalCustomItems} inp={inp}
+                        setLines={setLines} pickItem={pickItem} pickCustomItem={pickCustomItem}
+                      />
                     </td>
 
                     <td className="px-2 py-2.5">

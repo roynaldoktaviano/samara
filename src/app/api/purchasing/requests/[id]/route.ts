@@ -92,7 +92,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   })
 
-  return NextResponse.json({ ...request, items, requestedBy: requester, canTransfer })
+  return NextResponse.json({ ...request, items, requestedBy: requester, createdBy: requesterUser, canTransfer })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

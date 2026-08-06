@@ -46,6 +46,11 @@ export async function GET() {
       ...r,
       itemCount: r.items.length,
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
+      // createdBy is always the ERP login that submitted the PR (e.g. a warehouse account).
+      // requestedByEmployee (already in the include) is who it's actually for — optional,
+      // e.g. warehouse forwarding a specific ship crew member's request. Both are exposed
+      // separately so the UI can show "Created by X · Requested by Y" instead of picking one.
+      createdBy: userMap.get(r.requestedById) ?? null,
       // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
       // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
       requestedBy: r.requestedByEmployee
@@ -62,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { deliveryLocationId, notes, items } = body
+  const { deliveryLocationId, notes, items, requestedByEmployeeId } = body
   if (!items || !Array.isArray(items) || items.length === 0) {
     return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
   }
@@ -72,6 +77,7 @@ export async function POST(req: NextRequest) {
       id: crypto.randomUUID(),
       prNumber,
       requestedById: session.user.id,
+      requestedByEmployeeId: requestedByEmployeeId || null,
       deliveryLocationId: deliveryLocationId || null,
       notes: notes?.trim() || null,
       status: 'DRAFT',

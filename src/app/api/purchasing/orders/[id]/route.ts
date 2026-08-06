@@ -328,18 +328,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const poNum = order.poNumber
   const supplier = order.supplierName ?? 'supplier'
 
-  if (status === 'ORDERED') {
-    notifyByRole(db, ['WAREHOUSE', 'ADMIN'], 'PO_ORDERED',
-      `PO Siap Diterima`,
-      `${poNum} dari ${supplier} sudah dikonfirmasi — harap siapkan penerimaan barang`,
-      id,
-    ).catch(console.error)
-  } else if (status === 'IN_TRANSIT') {
-    notifyByRole(db, ['WAREHOUSE', 'ADMIN'], 'PO_IN_TRANSIT',
-      `Barang Dalam Pengiriman`,
-      `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang`,
-      id,
-    ).catch(console.error)
+  if (status === 'ORDERED' || status === 'IN_TRANSIT') {
+    // Warehouse only cares about POs that actually pass through a warehouse — same rule
+    // as the "involves warehouse" filter on their PO list (src/components/purchasing/orders/OrdersPage.tsx).
+    // Blasting every PO to every warehouse user (regardless of destination) was noise.
+    const forNotify = await db.purchaseOrder.findUnique({
+      where: { id },
+      select: {
+        deliveryLocation: { select: { type: true } },
+        transitStops: { select: { location: { select: { type: true } } } },
+      },
+    })
+    const involvesWarehouse = forNotify?.deliveryLocation?.type === 'WAREHOUSE'
+      || !!forNotify?.transitStops.some(s => s.location.type === 'WAREHOUSE')
+    const notifyRoles = involvesWarehouse ? ['WAREHOUSE', 'ADMIN'] : ['ADMIN']
+
+    if (status === 'ORDERED') {
+      notifyByRole(db, notifyRoles, 'PO_ORDERED',
+        `PO Siap Diterima`,
+        `${poNum} dari ${supplier} sudah dikonfirmasi — harap siapkan penerimaan barang`,
+        id,
+      ).catch(console.error)
+    } else {
+      notifyByRole(db, notifyRoles, 'PO_IN_TRANSIT',
+        `Barang Dalam Pengiriman`,
+        `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang`,
+        id,
+      ).catch(console.error)
+    }
   } else if (status === 'RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
       `Barang Diterima`,

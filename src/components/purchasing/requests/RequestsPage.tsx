@@ -32,6 +32,7 @@ interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseIt
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
+interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
 interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null }
 interface PurchaseRequest {
@@ -44,7 +45,9 @@ interface PurchaseRequest {
   totalBudget: number
   notes: string | null
   createdAt: string
+  createdBy: { name: string } | null
   requestedBy: { name: string } | null
+  requestedByEmployee: { id: string; fullName: string; employeeNumber: string } | null
   verifiedBy: { name: string } | null
   verifiedAt: string | null
   convertedBy: { name: string } | null
@@ -97,6 +100,7 @@ export default function RequestsPage() {
   const [items, setItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [locations, setLocations] = useState<StockLocation[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [filterStatus, setFilterStatus] = useState('ALL')
@@ -108,6 +112,7 @@ export default function RequestsPage() {
 
   // Form state (create view — catalog + cart, mirrors the /request-order page)
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
+  const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<RequestLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
@@ -166,16 +171,18 @@ export default function RequestsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rRes, iRes, sRes, lRes] = await Promise.all([
+    const [rRes, iRes, sRes, lRes, eRes] = await Promise.all([
       fetch('/api/purchasing/requests'),
       fetch('/api/purchasing/items'),
       fetch('/api/purchasing/suppliers'),
       fetch('/api/purchasing/locations'),
+      fetch('/api/purchasing/employees'),
     ])
     if (rRes.ok) setRequests(await rRes.json())
     if (iRes.ok) setItems((await iRes.json()).filter((i: PurchaseItem & { isActive: boolean }) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: Supplier & { isActive: boolean }) => s.isActive))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive))
+    if (eRes.ok) setEmployees(await eRes.json())
     setLoading(false)
   }, [])
 
@@ -398,7 +405,7 @@ export default function RequestsPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        deliveryLocationId: deliveryLocationId || undefined, notes,
+        deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: requestedByEmployeeId || undefined, notes,
         items: cart.map(l => ({
           itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
           unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
@@ -409,7 +416,7 @@ export default function RequestsPage() {
     if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false)
     setView('list')
-    setDeliveryLocationId(''); setNotes(''); setCart([]); setCartOpen(false)
+    setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes(''); setCart([]); setCartOpen(false)
     load()
   }
 
@@ -517,7 +524,14 @@ export default function RequestsPage() {
                     </span>
                   ) : '—'}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{r.requestedBy?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {r.requestedByEmployee ? (
+                    <>
+                      <p className="text-foreground">{r.requestedByEmployee.fullName}</p>
+                      <p className="text-[11px]">Created by {r.createdBy?.name ?? '—'}</p>
+                    </>
+                  ) : (r.createdBy?.name ?? '—')}
+                </td>
                 <td className="px-4 py-3 text-center text-muted-foreground">{r.itemCount}</td>
                 <td className="px-4 py-3 text-right tabular-nums text-sm">
                   {r.totalBudget > 0
@@ -552,8 +566,9 @@ export default function RequestsPage() {
   if (view === 'create') {
     return (
       <CreateRequestView
-        items={items} locations={locations}
+        items={items} locations={locations} employees={employees}
         deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+        requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
         notes={notes} setNotes={setNotes}
         cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
         addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
@@ -588,7 +603,8 @@ export default function RequestsPage() {
               {selected.isUrgent && <UrgentBadge />}
             </h2>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {fmtDate(selected.createdAt)} · requested by {selected.requestedBy?.name ?? '—'}
+              {fmtDate(selected.createdAt)} · created by {selected.createdBy?.name ?? '—'}
+              {selected.requestedByEmployee && <> · requested by {selected.requestedByEmployee.fullName}</>}
               {selected.verifiedBy && <> · verified by {selected.verifiedBy.name}</>}
               {' · '}
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status] ?? ''}`}>
@@ -678,6 +694,8 @@ export default function RequestsPage() {
             <h3 className="font-semibold text-sm">Info</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><p className="text-xs text-muted-foreground">Delivery Location</p><p className="font-medium">{detail.deliveryLocation?.name ?? '—'}</p></div>
+              <div><p className="text-xs text-muted-foreground">Created By</p><p className="font-medium">{detail.createdBy?.name ?? '—'}</p></div>
+              <div><p className="text-xs text-muted-foreground">Requested By</p><p className="font-medium">{detail.requestedByEmployee?.fullName ?? <span className="text-muted-foreground/60 italic font-normal">Same as created by</span>}</p></div>
               {detail.neededByDate && (
                 <div>
                   <p className="text-xs text-muted-foreground">Needed By</p>
@@ -1209,8 +1227,9 @@ export default function RequestsPage() {
 // ── Create view (catalog browse + cart) ──
 
 function CreateRequestView({
-  items, locations,
+  items, locations, employees,
   deliveryLocationId, setDeliveryLocationId,
+  requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   cart, cartOpen, setCartOpen,
   addToCart, changeCartQty, removeCartLine,
@@ -1225,8 +1244,9 @@ function CreateRequestView({
   saveError, saving, submit,
   onBack,
 }: {
-  items: PurchaseItem[]; locations: StockLocation[]
+  items: PurchaseItem[]; locations: StockLocation[]; employees: EmployeeOption[]
   deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
+  requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
   cart: RequestLine[]; cartOpen: boolean; setCartOpen: (v: boolean) => void
   addToCart: (item: PurchaseItem, unit: string) => void
@@ -1447,6 +1467,7 @@ function CreateRequestView({
             <RequestCartPanel
               cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
               locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+              employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
               notes={notes} setNotes={setNotes}
               submit={submit} saving={saving}
             />
@@ -1467,6 +1488,7 @@ function CreateRequestView({
               <RequestCartPanel
                 cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
                 locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
+                employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
                 notes={notes} setNotes={setNotes}
                 submit={submit} saving={saving}
                 embedded
@@ -1555,12 +1577,14 @@ function CreateRequestView({
 function RequestCartPanel({
   cart, removeCartLine, changeCartQty,
   locations, deliveryLocationId, setDeliveryLocationId,
+  employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   submit, saving,
   embedded = false,
 }: {
   cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
   locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
+  employees: EmployeeOption[]; requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
   submit: () => void; saving: boolean
   embedded?: boolean
@@ -1585,6 +1609,21 @@ function RequestCartPanel({
             <option value="">— Select location —</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
+        </div>
+
+        {/* Requested By — who this is actually for (e.g. a ship crew member), separate
+            from who's submitting it (always the logged-in account). Optional: leave
+            blank if you're requesting for yourself / general stock. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By <span className="font-normal normal-case">(optional)</span></label>
+          <select
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
+          >
+            <option value="">— Myself / general stock —</option>
+            {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
+          </select>
+          <p className="text-[11px] text-muted-foreground">Who actually needs this — e.g. a ship crew member you&apos;re requesting on behalf of.</p>
         </div>
 
         {/* Items */}
