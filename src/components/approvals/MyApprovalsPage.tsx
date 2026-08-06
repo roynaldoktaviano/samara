@@ -18,7 +18,7 @@ interface ApprovalRequest {
 }
 
 function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function UrgentBadge() {
@@ -61,12 +61,12 @@ export default function MyApprovalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Approval Saya</h2>
-        <p className="text-muted-foreground text-sm mt-1">Purchase request yang menunggu persetujuan kamu sebagai atasan</p>
+        <h2 className="text-2xl font-bold tracking-tight">My Approvals</h2>
+        <p className="text-muted-foreground text-sm mt-1">Purchase requests awaiting your approval as manager</p>
       </div>
 
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PR No.</th>
@@ -74,7 +74,7 @@ export default function MyApprovalsPage() {
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-center px-4 py-3 font-medium">Items</th>
               <th className="text-right px-4 py-3 font-medium">Est. Budget</th>
-              <th className="text-left px-4 py-3 font-medium">Diajukan</th>
+              <th className="text-left px-4 py-3 font-medium">Submitted</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -88,7 +88,7 @@ export default function MyApprovalsPage() {
             ) : requests.length === 0 ? (
               <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                Tidak ada PR yang menunggu approval kamu.
+                No PRs waiting for your approval.
               </td></tr>
             ) : requests.map(r => (
               <tr key={r.id} className="hover:bg-muted/30">
@@ -130,7 +130,7 @@ export default function MyApprovalsPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {rejectModal && (
@@ -140,15 +140,15 @@ export default function MyApprovalsPage() {
               <h3 className="font-semibold text-base">Reject {rejectModal.prNumber}?</h3>
             </div>
             <div className="px-6 py-5 text-sm text-muted-foreground">
-              Requester akan diberi tahu bahwa request ini ditolak. Kalau masih dibutuhkan, requester perlu buat PR baru.
+              The requester will be notified that this request was rejected. If it's still needed, they'll need to submit a new PR.
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Batal</button>
+              <button onClick={() => setRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
               <button
                 disabled={actingId === rejectModal.id}
                 onClick={() => act(rejectModal.id, 'reject')}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
-                Ya, Reject
+                Yes, Reject
               </button>
             </div>
           </div>

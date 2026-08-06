@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
 
 type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR'
 
@@ -20,6 +20,60 @@ interface UserRecord {
   email: string
   role: Role
   createdAt: string
+  employeeProfile: { id: string; fullName: string; employeeNumber: string } | null
+}
+
+interface EmployeeOption { id: string; fullName: string; employeeNumber: string }
+
+function EmployeeCombobox({ value, options, onChange }: {
+  value: string; options: EmployeeOption[]; onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? options.filter(e => e.fullName.toLowerCase().includes(q) || e.employeeNumber.toLowerCase().includes(q)) : options
+  const selected = options.find(e => e.id === value)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No employee linked —'}</span>
+        <IdCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {value && (
+                <button type="button" onClick={() => { onChange(''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  — No employee linked —
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No employees found</p>
+              )}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 const ROLES: { value: Role; label: string; desc: string; color: string; modules: string }[] = [
@@ -111,6 +165,7 @@ export default function UsersPage() {
   const { data: session } = useSession()
   const [users, setUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editUser, setEditUser] = useState<UserRecord | null>(null)
@@ -118,6 +173,7 @@ export default function UsersPage() {
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [formRole, setFormRole] = useState<Role>('SALES')
+  const [formEmployeeId, setFormEmployeeId] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -132,11 +188,20 @@ export default function UsersPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchUsers() }, [])
+  const fetchEmployees = async () => {
+    const res = await fetch('/api/hr/employees')
+    if (res.ok) setEmployees(await res.json())
+  }
+
+  useEffect(() => { fetchUsers(); fetchEmployees() }, [])
+
+  // Employees already linked to a different login shouldn't be pickable here —
+  // the currently-selected one stays visible so switching back is possible.
+  const employeeOptions = employees.filter(e => e.id === formEmployeeId || !users.some(u => u.employeeProfile?.id === e.id && u.id !== editUser?.id))
 
   const openAdd = () => {
     setEditUser(null)
-    setFormName(''); setFormEmail(''); setFormPassword(''); setFormRole('SALES')
+    setFormName(''); setFormEmail(''); setFormPassword(''); setFormRole('SALES'); setFormEmployeeId('')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -144,6 +209,7 @@ export default function UsersPage() {
   const openEdit = (u: UserRecord) => {
     setEditUser(u)
     setFormName(u.name ?? ''); setFormEmail(u.email); setFormPassword(''); setFormRole(u.role)
+    setFormEmployeeId(u.employeeProfile?.id ?? '')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -153,7 +219,7 @@ export default function UsersPage() {
     setSaving(true)
     try {
       if (editUser) {
-        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole }
+        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole, employeeId: formEmployeeId }
         if (formPassword) body.password = formPassword
         const res = await fetch(`/api/users/${editUser.id}`, {
           method: 'PUT',
@@ -165,12 +231,13 @@ export default function UsersPage() {
         const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole }),
+          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole, employeeId: formEmployeeId }),
         })
         if (!res.ok) { const d = await res.json(); setFormError(d.error ?? 'Failed'); return }
       }
       setDialogOpen(false)
       fetchUsers()
+      fetchEmployees()
     } finally {
       setSaving(false)
     }
@@ -276,9 +343,16 @@ export default function UsersPage() {
                             {(u.name ?? u.email).charAt(0)}
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium text-sm truncate">{u.name ?? '—'}</p>
-                            {isSelf && (
-                              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">you</span>
+                            <p className="font-medium text-sm truncate flex items-center gap-1.5">
+                              {u.name ?? '—'}
+                              {isSelf && (
+                                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">you</span>
+                              )}
+                            </p>
+                            {u.employeeProfile && (
+                              <p className="text-[11px] text-muted-foreground truncate" title="Linked employee">
+                                {u.employeeProfile.fullName} ({u.employeeProfile.employeeNumber})
+                              </p>
                             )}
                           </div>
                         </div>
@@ -397,6 +471,12 @@ export default function UsersPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Link to Employee</Label>
+              <EmployeeCombobox value={formEmployeeId} options={employeeOptions} onChange={setFormEmployeeId} />
+              <p className="text-[11px] text-muted-foreground">Connects this login to an HR employee record for approvals and org-chart lookups.</p>
             </div>
 
             {/* Access preview */}

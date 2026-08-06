@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 async function generateTrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const prefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`

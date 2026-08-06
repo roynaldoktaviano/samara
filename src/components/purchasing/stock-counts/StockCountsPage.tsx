@@ -254,7 +254,7 @@ export default function StockCountsPage() {
             <div className="px-5 py-3 bg-muted/40 border-b">
               <h3 className="text-sm font-semibold">Item Count</h3>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
                 <tr>
                   <th className="text-left px-4 py-2.5 font-medium">Item</th>
@@ -344,7 +344,7 @@ export default function StockCountsPage() {
                   )
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           {/* Right panel: photo + notes */}
@@ -418,7 +418,7 @@ export default function StockCountsPage() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Count No.</th>
@@ -457,7 +457,7 @@ export default function StockCountsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 

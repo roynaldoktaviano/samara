@@ -128,7 +128,7 @@ export default function POReimbursements() {
       </div>
 
       <div className="rounded-xl border overflow-hidden bg-card">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
@@ -171,7 +171,7 @@ export default function POReimbursements() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Detail modal */}

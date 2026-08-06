@@ -633,7 +633,7 @@ function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: (
           </button>
         </div>
         <div className="overflow-y-auto">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground bg-muted/30 sticky top-0">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Item</th>
@@ -652,7 +652,7 @@ function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: (
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     </div>
@@ -981,8 +981,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
   // ── List ──
   const WAREHOUSE_STATUSES = ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
+  // "Involves the warehouse" — either the final destination is a warehouse location,
+  // or the shipping route transits through one, even if the final stop is elsewhere
+  // (e.g. straight to a vessel).
+  const involvesWarehouse = (o: PurchaseOrder) =>
+    o.deliveryLocation?.type === 'WAREHOUSE' || !!o.transitStops?.some(s => s.location.type === 'WAREHOUSE')
   const scopedOrders = warehouseView
-    ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status))
+    ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status) && involvesWarehouse(o))
     : orders
   const supplierOptions = Array.from(new Set(scopedOrders.map(o => o.supplierName).filter((n): n is string => !!n))).sort()
   const destinationOptions = Array.from(new Set(scopedOrders.map(o => o.deliveryLocation?.name).filter((n): n is string => !!n))).sort()
@@ -1046,7 +1051,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         )}
       </div>
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
@@ -1129,7 +1134,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 )
               })}
           </tbody>
-        </table>
+        </table></div>
       </div>
       {!loading && visibleOrders.length > 0 && totalPages > 1 && (
         <div className="flex items-center justify-between">
@@ -1313,7 +1318,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </div>
           )}
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground border-b bg-muted/30">
               <tr>
                 <th className="text-center w-10 px-3 py-2.5 font-medium">#</th>
@@ -1465,7 +1470,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
 
           <div className="px-5 py-4 bg-muted/20 border-t space-y-2.5">
             <div className="flex items-center justify-between">
@@ -2031,7 +2036,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
           <div className="rounded-lg border overflow-hidden">
             <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase">Items Ordered</div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
@@ -2096,7 +2101,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </tfoot>
                 )
               })()}
-            </table>
+            </table></div>
           </div>
 
           {(() => {

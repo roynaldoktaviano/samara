@@ -116,7 +116,7 @@ export default function DeliveryFeePayments() {
       </div>
 
       <div className="rounded-xl border overflow-hidden bg-card">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">Fee No.</th>
@@ -166,7 +166,7 @@ export default function DeliveryFeePayments() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Detail modal */}

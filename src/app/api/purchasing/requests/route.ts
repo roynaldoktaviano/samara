@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()
@@ -25,7 +25,11 @@ export async function GET() {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  // Warehouse only requests items for warehouse stock (or forwards a ship's request) —
+  // they should only ever see their own submissions, not Purchasing's full queue.
+  const isWarehouse = role === 'WAREHOUSE'
   const requests = await db.purchaseRequest.findMany({
+    where: isWarehouse ? { requestedById: session.user.id } : undefined,
     orderBy: { createdAt: 'desc' },
     include: {
       items: { select: { id: true, quantity: true, estimatedCost: true } },

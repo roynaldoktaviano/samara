@@ -17,7 +17,7 @@ export async function PUT(
   }
 
   const { id } = await params
-  const { name, email, role, password } = await req.json()
+  const { name, email, role, password, employeeId } = await req.json()
 
   if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
@@ -34,10 +34,24 @@ export async function PUT(
 
   try {
     const db = await getDb(session)
+
+    if (employeeId !== undefined) {
+      // Unlink whichever employee currently holds this login (if any) before
+      // attaching it elsewhere — Employee.userId is unique, so leaving the old
+      // link in place would make the new one fail.
+      await db.employee.updateMany({ where: { userId: id }, data: { userId: null } })
+      if (employeeId) {
+        await db.employee.update({ where: { id: employeeId }, data: { userId: id } })
+      }
+    }
+
     const user = await db.user.update({
       where: { id },
       data,
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: {
+        id: true, name: true, email: true, role: true, createdAt: true,
+        employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },
+      },
     })
 
     logActivity({

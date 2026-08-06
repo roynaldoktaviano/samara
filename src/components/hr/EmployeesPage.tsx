@@ -66,6 +66,106 @@ function downloadFile(content: string, filename: string, mime = 'text/csv;charse
   URL.revokeObjectURL(url)
 }
 
+function ManagerCombobox({ value, options, onChange }: {
+  value: string; options: { id: string; fullName: string; employeeNumber: string }[]; onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? options.filter(e => e.fullName.toLowerCase().includes(q) || e.employeeNumber.toLowerCase().includes(q)) : options
+  const selected = options.find(e => e.id === value)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm text-left flex items-center justify-between focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all">
+        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No manager set —'}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {value && (
+                <button type="button" onClick={() => { onChange(''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  — No manager set —
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No employees found</p>
+              )}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function UserCombobox({ value, options, onChange }: {
+  value: string; options: { id: string; name: string | null; email: string }[]; onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? options.filter(u => (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) : options
+  const selected = options.find(u => u.id === value)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm text-left flex items-center justify-between focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all">
+        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? (selected.name ? `${selected.name} (${selected.email})` : selected.email) : '— No login linked —'}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search login account..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {value && (
+                <button type="button" onClick={() => { onChange(''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  — No login linked —
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No accounts found</p>
+              )}
+              {opts.map(u => (
+                <button key={u.id} type="button" onClick={() => { onChange(u.id); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  {u.name ? `${u.name} (${u.email})` : u.email}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([])
@@ -318,13 +418,11 @@ export default function EmployeesPage() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Employee</th>
-                <th className="text-left px-4 py-3 font-medium">Legal Entity</th>
                 <th className="text-left px-4 py-3 font-medium">Work Location</th>
-                <th className="text-left px-4 py-3 font-medium">Department</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium">Reports To</th>
                 <th className="text-left px-4 py-3 font-medium">Gender</th>
@@ -338,12 +436,12 @@ export default function EmployeesPage() {
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
-                <tr><td colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">
                   <IdCard className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
                 </td></tr>
               ) : paginated.map(emp => (
-                <tr key={emp.id} className={`hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
+                <tr key={emp.id} onClick={() => openEdit(emp)} className={`cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium flex items-center gap-1.5">
                       {emp.fullName}
@@ -353,9 +451,7 @@ export default function EmployeesPage() {
                     </p>
                     <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.legalEntity?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.location?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.department ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.role?.title ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.manager?.fullName ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.gender ?? '—'}</td>
@@ -363,7 +459,7 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs text-center">{emp.leaveBalance ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatServiceYear(emp.joinDate, emp.resignedAt)}</td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                     <button onClick={() => toggleActive(emp)} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
                       {emp.isActive
                         ? <ToggleRight className="h-5 w-5 text-green-600 mx-auto" />
@@ -375,7 +471,7 @@ export default function EmployeesPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => openEdit(emp)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                         <Pencil className="h-3.5 w-3.5" />
@@ -388,7 +484,7 @@ export default function EmployeesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -542,29 +638,21 @@ export default function EmployeesPage() {
 
                   <div className="col-span-2 space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reports To (Manager)</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.managerId} onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}
-                    >
-                      <option value="">— No manager set —</option>
-                      {employees.filter(e => e.isActive && e.id !== editing?.id).map(e => (
-                        <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>
-                      ))}
-                    </select>
+                    <ManagerCombobox
+                      value={form.managerId}
+                      options={employees.filter(e => e.isActive && e.id !== editing?.id)}
+                      onChange={id => setForm(f => ({ ...f, managerId: id }))}
+                    />
                     <p className="text-[11px] text-muted-foreground">Drives who approves this employee&apos;s purchase requests.</p>
                   </div>
 
                   <div className="col-span-2 space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linked Login Account</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.userId} onChange={e => setForm(f => ({ ...f, userId: e.target.value }))}
-                    >
-                      <option value="">— No login linked —</option>
-                      {users
-                        .filter(u => u.id === form.userId || !employees.some(e => e.userId === u.id && e.id !== editing?.id))
-                        .map(u => <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>)}
-                    </select>
+                    <UserCombobox
+                      value={form.userId}
+                      options={users.filter(u => u.id === form.userId || !employees.some(e => e.userId === u.id && e.id !== editing?.id))}
+                      onChange={id => setForm(f => ({ ...f, userId: id }))}
+                    />
                     <p className="text-[11px] text-muted-foreground">
                       {users.length === 0 ? 'Only Admin/Super Admin can link login accounts.' : 'Required for this person to approve requests or receive notifications.'}
                     </p>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -90,6 +91,8 @@ function UrgentBadge() {
 }
 
 export default function RequestsPage() {
+  const { data: session } = useSession()
+  const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [items, setItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -465,7 +468,7 @@ export default function RequestsPage() {
       </div>
 
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PR No.</th>
@@ -526,7 +529,7 @@ export default function RequestsPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'DRAFT' ? (
+                  {r.status === 'DRAFT' && !isWarehouse ? (
                     <button
                       onClick={() => changeStatus(r.id, 'ON_PROCESS')}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors whitespace-nowrap">
@@ -539,7 +542,7 @@ export default function RequestsPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   )
@@ -601,21 +604,25 @@ export default function RequestsPage() {
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {selected.status === 'DRAFT' && (
               <>
-                <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
-                  className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
-                  Verify
-                </button>
-                <button onClick={() => changeStatus(selected.id, 'REJECTED')}
-                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
-                  Reject
-                </button>
+                {!isWarehouse && (
+                  <>
+                    <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
+                      className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
+                      Verify
+                    </button>
+                    <button onClick={() => changeStatus(selected.id, 'REJECTED')}
+                      className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                      Reject
+                    </button>
+                  </>
+                )}
                 <button onClick={() => deleteReq(selected)}
                   className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                   Delete
                 </button>
               </>
             )}
-            {selected.status === 'ON_PROCESS' && (
+            {selected.status === 'ON_PROCESS' && !isWarehouse && (
               <>
                 <button onClick={convertToPO}
                   className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
@@ -627,10 +634,13 @@ export default function RequestsPage() {
                 </button>
               </>
             )}
+            {selected.status === 'ON_PROCESS' && isWarehouse && (
+              <span className="text-sm text-muted-foreground italic">Being processed by Purchasing</span>
+            )}
             {selected.status === 'CONVERTED' && (
               <span className="text-sm text-muted-foreground italic">Converted to Purchase Order</span>
             )}
-            {selected.status === 'REJECTED' && (
+            {selected.status === 'REJECTED' && !isWarehouse && (
               <button onClick={() => changeStatus(selected.id, 'DRAFT')}
                 className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-muted transition-colors">
                 Reopen
@@ -714,14 +724,14 @@ export default function RequestsPage() {
             <div className="px-5 py-3 bg-muted/50 border-b">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground bg-muted/20">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
-                  {detail.status === 'ON_PROCESS' && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
+                  {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   <th className="text-right px-5 py-2.5 font-medium">Est. Price</th>
                   <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
                   <th className="w-10" />
@@ -733,7 +743,7 @@ export default function RequestsPage() {
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
-                  const editable = detail.status === 'ON_PROCESS'
+                  const editable = detail.status === 'ON_PROCESS' && !isWarehouse
                   const isCustom = !item.itemId
                   const chosenFromLocationId = fulfillment[item.id!] ?? null
                   return (
@@ -768,8 +778,8 @@ export default function RequestsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && e.stopPropagation()}>
-                        {detail.status !== 'ON_PROCESS' ? (
+                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
+                        {detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>
                         ) : chosenFromLocationId ? (
                           <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
@@ -798,7 +808,7 @@ export default function RequestsPage() {
                           : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
                         }
                       </td>
-                      {detail.status === 'ON_PROCESS' && (
+                      {detail.status === 'ON_PROCESS' && !isWarehouse && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
                           {!item.transferEligible || !item.warehouseStock?.length ? (
                             <span className="text-xs text-muted-foreground">Purchase Order</span>
@@ -836,13 +846,13 @@ export default function RequestsPage() {
               </tbody>
               <tfoot className="bg-muted/30 border-t">
                 <tr>
-                  <td colSpan={detail.status === 'ON_PROCESS' ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
+                  <td colSpan={detail.status === 'ON_PROCESS' && !isWarehouse ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
                   <td className="px-5 py-3 text-right font-bold" colSpan={2}>
                     Rp {new Intl.NumberFormat('id-ID').format(detail.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0))}
                   </td>
                 </tr>
               </tfoot>
-            </table>
+            </table></div>
           </div>
         </>
       )}
@@ -896,7 +906,7 @@ export default function RequestsPage() {
                 <p className="text-sm font-medium">{editItemModal.itemName}</p>
               )}
 
-              {detail?.status !== 'ON_PROCESS' ? (
+              {detail?.status !== 'ON_PROCESS' || isWarehouse ? (
                 <p className="text-xs text-muted-foreground italic bg-muted/40 rounded-md px-3 py-2.5">
                   Price, supplier and quotations can only be set once this request has been verified (On Process).
                 </p>
@@ -1054,8 +1064,8 @@ export default function RequestsPage() {
               )}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
-              <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">{detail?.status === 'ON_PROCESS' ? 'Cancel' : 'Close'}</button>
-              {detail?.status === 'ON_PROCESS' && (
+              <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">{detail?.status === 'ON_PROCESS' && !isWarehouse ? 'Cancel' : 'Close'}</button>
+              {detail?.status === 'ON_PROCESS' && !isWarehouse && (
               <button onClick={saveEditItem} disabled={editItemSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
                 {editItemSaving ? 'Saving...' : 'Save'}
               </button>

@@ -6,12 +6,13 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const request = await db.purchaseRequest.findUnique({
     where: { id },
@@ -26,6 +27,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
+  if (role === 'WAREHOUSE' && request.requestedById !== session.user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
   const [requesterUser, lots, purchaseItems, warehouses] = await Promise.all([
@@ -269,10 +274,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
+  const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, requestedById: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (role === 'WAREHOUSE' && existing.requestedById !== session.user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR yang masih Draft yang bisa dihapus' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
   await db.purchaseRequest.delete({ where: { id } })

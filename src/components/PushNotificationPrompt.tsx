@@ -49,8 +49,8 @@ export function PushNotificationPrompt() {
           <Bell className="h-4 w-4 text-[#7a6a3f]" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">Aktifkan notifikasi?</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Dapat notif langsung di HP/laptop untuk approval, PO, dan pembayaran — walau tab-nya tertutup.</p>
+          <p className="text-sm font-semibold">Enable notifications?</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Get instant alerts on your phone/laptop for approvals, POs, and payments — even when the tab is closed.</p>
           {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
           <div className="flex items-center gap-2 mt-2.5">
             <button
@@ -58,10 +58,10 @@ export function PushNotificationPrompt() {
               disabled={subscribing}
               className="px-3 py-1.5 text-xs font-medium bg-[#bdac7e] hover:bg-[#a89860] disabled:opacity-50 text-white rounded-md transition-colors"
             >
-              {subscribing ? 'Mengaktifkan...' : 'Aktifkan'}
+              {subscribing ? 'Enabling...' : 'Enable'}
             </button>
             <button onClick={dismiss} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-              Nanti saja
+              Maybe later
             </button>
           </div>
         </div>

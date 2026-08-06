@@ -440,7 +440,7 @@ export default function ItemsPage() {
 
       {/* Table */}
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium w-24">SKU</th>
@@ -541,7 +541,7 @@ export default function ItemsPage() {
               )
             })}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Pagination */}
@@ -995,7 +995,7 @@ export default function ItemsPage() {
                           </div>
                         </div>
                         <div className="rounded-lg border bg-white overflow-hidden">
-                          <table className="w-full text-xs">
+                          <div className="overflow-x-auto"><table className="w-full text-xs">
                             <thead className="bg-muted/40 text-muted-foreground">
                               <tr>
                                 <th className="text-left px-3 py-2 font-medium">#</th>
@@ -1067,7 +1067,7 @@ export default function ItemsPage() {
                                 <td className="px-3 py-2 text-right font-bold text-xs">Rp {fmt(Math.round(totalValue))}</td>
                               </tr>
                             </tfoot>
-                          </table>
+                          </table></div>
                         </div>
                       </div>
                     )

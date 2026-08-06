@@ -83,7 +83,7 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
       </p>
 
       <div className="rounded-md border overflow-hidden bg-white">
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto"><table className="w-full text-xs">
           <thead className="bg-muted/50 text-muted-foreground">
             <tr>
               <th className="text-left px-3 py-1.5 font-medium">Item</th>
@@ -102,7 +102,7 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       <div className="space-y-1 pt-1">
@@ -366,7 +366,7 @@ export default function DeliveryFeesPage() {
         </div>
 
         <div className="rounded-xl border overflow-hidden bg-card">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Fee No.</th>
@@ -402,7 +402,7 @@ export default function DeliveryFeesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     )

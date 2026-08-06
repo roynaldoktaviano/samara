@@ -192,7 +192,7 @@ export default function AgentLeadsPage() {
                 )}
               </div>
             </div>
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-xs">
               <thead className="text-muted-foreground">
                 <tr>
                   <th className="text-left px-4 py-1.5 font-medium">Name</th>
@@ -213,7 +213,7 @@ export default function AgentLeadsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ))}
       </div>

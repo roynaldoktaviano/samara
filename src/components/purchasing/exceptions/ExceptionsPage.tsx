@@ -207,7 +207,7 @@ export default function ExceptionsPage() {
               desc={filterStatus === 'OPEN' ? 'All exceptions have been resolved.' : 'Exceptions are auto-created from transfers, receiving and stock counts.'} />
           ) : (
             <div className="rounded-xl border overflow-hidden">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="bg-muted/50 text-xs text-muted-foreground">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium">Date</th>
@@ -273,7 +273,7 @@ export default function ExceptionsPage() {
                     )
                   })}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           )}
         </>
@@ -282,7 +282,7 @@ export default function ExceptionsPage() {
           <EmptyState icon={<Package className="h-8 w-8 opacity-20" />} title="All stock levels are safe" desc="No items below minimum stock." />
         ) : (
           <div className="rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium">Item</th>
@@ -312,7 +312,7 @@ export default function ExceptionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )
       ) : tab === 'overdue-po' ? (
@@ -320,7 +320,7 @@ export default function ExceptionsPage() {
           <EmptyState icon={<Clock className="h-8 w-8 opacity-20" />} title="No overdue POs" desc="All orders are within the estimated arrival time." />
         ) : (
           <div className="rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium">PO No.</th>
@@ -345,7 +345,7 @@ export default function ExceptionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )
       ) : (
@@ -353,7 +353,7 @@ export default function ExceptionsPage() {
           <EmptyState icon={<AlertTriangle className="h-8 w-8 opacity-20" />} title="No stale stock" desc="All items have had movement in the last 30 days." />
         ) : (
           <div className="rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium">Item</th>
@@ -373,7 +373,7 @@ export default function ExceptionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )
       )}

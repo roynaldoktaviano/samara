@@ -315,7 +315,7 @@ export default function SuppliersPage() {
                 {detail.history.length === 0 ? (
                   <p className="text-center py-8 text-sm text-muted-foreground">No orders yet</p>
                 ) : (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead className="text-xs text-muted-foreground border-b bg-muted/20">
                       <tr>
                         <th className="text-left px-4 py-2.5 font-medium">PO No.</th>
@@ -336,7 +336,7 @@ export default function SuppliersPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
               </div>
             </div>

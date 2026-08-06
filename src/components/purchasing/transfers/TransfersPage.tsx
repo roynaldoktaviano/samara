@@ -320,7 +320,7 @@ export default function TransfersPage() {
         </button>
       </div>
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">Transfer No.</th>
@@ -378,7 +378,7 @@ export default function TransfersPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   )
@@ -477,7 +477,7 @@ export default function TransfersPage() {
             </div>
           ) : (
             <>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="text-xs text-muted-foreground bg-muted/20 border-b">
                   <tr>
                     <th className="text-left px-5 py-2.5 font-medium">Item</th>
@@ -535,7 +535,7 @@ export default function TransfersPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               <div className="px-5 py-2.5 border-t bg-muted/20">
                 <button onClick={openPicker} className="text-xs text-[#bdac7e] hover:text-[#a89860] font-medium">+ Tambah / ubah item</button>
               </div>
@@ -739,7 +739,7 @@ export default function TransfersPage() {
           {/* Items table */}
           <div className="rounded-lg border overflow-hidden">
             <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase">Item List</div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
@@ -788,7 +788,7 @@ export default function TransfersPage() {
                   </tr>
                 </tfoot>
               )}
-            </table>
+            </table></div>
           </div>
           {detail.notes && <p className="text-sm text-muted-foreground">Notes: {detail.notes}</p>}
         </>
@@ -811,7 +811,7 @@ export default function TransfersPage() {
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">Qty Dispatched</label>
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead className="text-xs text-muted-foreground border-b">
                     <tr>
                       <th className="text-left py-2 font-medium">Item</th>
@@ -897,7 +897,7 @@ export default function TransfersPage() {
                       )
                     })}
                   </tbody>
-                </table>
+                </table></div>
               </div>
               <PhotoUpload label="Dispatch Photo" value={dispatchPhoto} onChange={setDispatchPhoto} />
             </div>
@@ -946,7 +946,7 @@ export default function TransfersPage() {
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">Qty Received</label>
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead className="text-xs text-muted-foreground border-b">
                     <tr>
                       <th className="text-left py-2 font-medium">Item</th>
@@ -1032,7 +1032,7 @@ export default function TransfersPage() {
                       )
                     })}
                   </tbody>
-                </table>
+                </table></div>
                 <p className="text-xs text-muted-foreground pt-1">Jika qty berbeda dari yang dikirim, exception Transfer Discrepancy akan dibuat otomatis.</p>
               </div>
               <PhotoUpload label="Receive Photo" value={receivePhoto} onChange={setReceivePhoto} />

@@ -294,7 +294,7 @@ export default function ReportsPage() {
                     <div>
                       <p className="text-sm font-semibold mb-3">Exception Register</p>
                       <div className="rounded-lg border overflow-hidden">
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto"><table className="w-full text-sm">
                           <thead className="bg-muted/40 text-xs text-muted-foreground">
                             <tr>
                               <th className="text-left px-4 py-3 font-medium">Date</th>
@@ -331,7 +331,7 @@ export default function ReportsPage() {
                                 </tr>
                               ))}
                           </tbody>
-                        </table>
+                        </table></div>
                       </div>
                     </div>
 
@@ -340,7 +340,7 @@ export default function ReportsPage() {
                       <div>
                         <p className="text-sm font-semibold mb-3">Low Stock Items</p>
                         <div className="rounded-lg border overflow-hidden">
-                          <table className="w-full text-sm">
+                          <div className="overflow-x-auto"><table className="w-full text-sm">
                             <thead className="bg-muted/40 text-xs text-muted-foreground">
                               <tr>
                                 <th className="text-left px-4 py-3 font-medium">Item</th>
@@ -363,7 +363,7 @@ export default function ReportsPage() {
                                 </tr>
                               ))}
                             </tbody>
-                          </table>
+                          </table></div>
                         </div>
                       </div>
                     )}

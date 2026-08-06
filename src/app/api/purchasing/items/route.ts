@@ -6,11 +6,14 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+// Warehouse needs the item catalog to build a Purchase Request, but item/pricing
+// management itself (POST below) stays Purchasing-only.
+const READ_ALLOWED = [...ALLOWED, 'WAREHOUSE']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, READ_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const [items, lots] = await Promise.all([

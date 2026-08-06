@@ -162,7 +162,8 @@ export default function PurchaseOrderPayments() {
               return (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Items ({selected.order.items.length})</p>
-                  <div className="rounded-lg border overflow-hidden overflow-x-auto">
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50 text-xs text-muted-foreground">
                         <tr>
@@ -211,6 +212,7 @@ export default function PurchaseOrderPayments() {
                         </tr>
                       </tfoot>
                     </table>
+                    </div>
                   </div>
                 </div>
               )
@@ -321,7 +323,7 @@ export default function PurchaseOrderPayments() {
       </div>
 
       <div className="rounded-xl border overflow-hidden bg-card">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-3 font-medium">PO No.</th>
@@ -367,7 +369,7 @@ export default function PurchaseOrderPayments() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   )

@@ -16,7 +16,10 @@ export async function GET() {
 
   const tenantDb = await getDb(session)
   const users = await tenantDb.user.findMany({
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: {
+      id: true, name: true, email: true, role: true, createdAt: true,
+      employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },
+    },
     orderBy: { createdAt: 'asc' },
   })
   return NextResponse.json(users)
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { name, email, password, role } = await req.json()
+  const { name, email, password, role, employeeId } = await req.json()
   if (!email || !password || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
@@ -86,6 +89,10 @@ export async function POST(req: Request) {
     await tenantDb.user.delete({ where: { id: user.id } }).catch(() => {})
     console.error('[users/POST] central DB registration failed, rolled back:', err)
     return NextResponse.json({ error: 'Failed to register user — please try again' }, { status: 500 })
+  }
+
+  if (employeeId) {
+    await tenantDb.employee.update({ where: { id: employeeId }, data: { userId: user.id } }).catch(() => {})
   }
 
   logActivity({

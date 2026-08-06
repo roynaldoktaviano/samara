@@ -91,6 +91,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
   const filtered = (rows: Row[]) => rows.filter(r => matchesSearch(r) && (itemKind === 'all' || r.kind === itemKind))
 
   const StockTable = ({ rows, locationId, locationName }: { rows: StockRow[]; locationId: string; locationName: string }) => (
+    <div className="overflow-x-auto">
     <table className="w-full text-sm">
       <thead className="bg-muted/50 text-xs text-muted-foreground">
         <tr>
@@ -143,9 +144,11 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
         })}
       </tbody>
     </table>
+    </div>
   )
 
   const NonStockTable = ({ rows }: { rows: NonStockRow[] }) => (
+    <div className="overflow-x-auto">
     <table className="w-full text-sm">
       <thead className="bg-muted/50 text-xs text-muted-foreground">
         <tr>
@@ -182,6 +185,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
         ))}
       </tbody>
     </table>
+    </div>
   )
 
   if (loading) return (

@@ -192,7 +192,7 @@ export default function LocationsPage() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Nama Lokasi</th>
@@ -264,7 +264,7 @@ export default function LocationsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
@@ -536,7 +536,7 @@ export default function LocationsPage() {
                       </div>
                     )}
                   </div>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead className="text-xs text-muted-foreground border-b sticky top-0 bg-white">
                       <tr>
                         <th className="text-left px-6 py-2.5 font-medium">Item</th>
@@ -566,7 +566,7 @@ export default function LocationsPage() {
                         )
                       })}
                     </tbody>
-                  </table>
+                  </table></div>
                 </>
               )}
             </div>
