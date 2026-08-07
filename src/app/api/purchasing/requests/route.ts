@@ -29,7 +29,12 @@ export async function GET() {
   // they should only ever see their own submissions, not Purchasing's full queue.
   const isWarehouse = role === 'WAREHOUSE'
   const requests = await db.purchaseRequest.findMany({
-    where: isWarehouse ? { requestedById: session.user.id } : undefined,
+    where: {
+      // PRs still awaiting the requester's manager haven't been approved yet — Purchasing
+      // shouldn't see them until the approval endpoint flips them to DRAFT.
+      status: { not: 'PENDING_APPROVAL' },
+      ...(isWarehouse ? { requestedById: session.user.id } : {}),
+    },
     orderBy: { createdAt: 'desc' },
     include: {
       items: { select: { id: true, quantity: true, estimatedCost: true } },

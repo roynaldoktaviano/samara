@@ -1149,8 +1149,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       </div>
       {/* Grid on tablet/mobile (2 filters per row, tidy) — reverts to the desktop
           flex-wrap row at lg where there's room for everything on one line. */}
-      <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center">
-        <div className="relative w-full lg:w-56">
+      <div className="grid grid-cols-2 gap-2 desktop:flex desktop:flex-wrap desktop:items-center">
+        <div className="relative w-full desktop:w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
             className="h-9 w-full border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
@@ -1159,30 +1159,30 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             onChange={e => { setItemSearch(e.target.value); setPage(1); setCardPage(1) }}
           />
         </div>
-        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All suppliers</option>
           {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All destinations</option>
           {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All requesters</option>
           {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input type="date" className="h-9 w-full lg:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
+        <input type="date" className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
         {hasActiveFilters && (
           <button
             onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1); setCardPage(1) }}
-            className="col-span-2 lg:col-span-1 text-left lg:text-center text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            className="col-span-2 desktop:col-span-1 text-left desktop:text-center text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
           >
             Clear filters
           </button>
         )}
       </div>
       {/* Desktop table — full column set, only makes sense at lg+ width */}
-      <div className="hidden lg:block rounded-lg border overflow-hidden">
+      <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -1269,7 +1269,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         </table></div>
       </div>
       {!loading && visibleOrders.length > 0 && totalPages > 1 && (
-        <div className="hidden lg:flex items-center justify-between">
+        <div className="hidden desktop:flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Page {currentPage} of {totalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
           </p>
@@ -1294,7 +1294,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       )}
 
       {/* Tablet/mobile card layout — one PO per card, two lines, own 10-per-page pagination */}
-      <div className="lg:hidden space-y-2">
+      <div className="desktop:hidden space-y-2">
         {loading ? (
           [...Array(5)].map((_, i) => (
             <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
@@ -1335,7 +1335,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         ))}
       </div>
       {!loading && visibleOrders.length > 0 && cardTotalPages > 1 && (
-        <div className="lg:hidden flex items-center justify-between">
+        <div className="desktop:hidden flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Page {cardCurrentPage} of {cardTotalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
           </p>

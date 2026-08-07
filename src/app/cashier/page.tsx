@@ -54,8 +54,8 @@ const fmtDateRange = (s: string, e: string) => {
 
 const FONTS = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600&display=swap" rel="stylesheet" />
 
-// Below this width, the sidebar collapses into a top bar and the cart becomes a slide-up drawer (tablet portrait / phone).
-const COMPACT_BREAKPOINT = 900
+// Below this width, the sidebar collapses into a top bar and the cart becomes a slide-up drawer (tablet portrait/landscape / phone).
+const COMPACT_BREAKPOINT = 1367
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false)
   useEffect(() => {

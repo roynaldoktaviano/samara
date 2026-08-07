@@ -60,7 +60,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
 
   return (
     <>
-      <div className="hidden lg:block overflow-x-auto">
+      <div className="hidden desktop:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -115,7 +115,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
         </table>
       </div>
 
-      <div className="lg:hidden divide-y">
+      <div className="desktop:hidden divide-y">
         {pageRows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
           const isLow = item.minStock > 0 && qty < item.minStock
           return (
@@ -136,7 +136,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
         })}
       </div>
       {totalPages > 1 && (
-        <div className="lg:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
+        <div className="desktop:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
           <span className="text-xs text-muted-foreground">{currentPage} / {totalPages}</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setCardPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
@@ -158,7 +158,7 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
 
   return (
     <>
-      <div className="hidden lg:block overflow-x-auto">
+      <div className="hidden desktop:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -197,7 +197,7 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
         </table>
       </div>
 
-      <div className="lg:hidden divide-y">
+      <div className="desktop:hidden divide-y">
         {pageRows.map(r => (
           <div key={r.id} className="px-4 py-3">
             <div className="flex items-center justify-between gap-2">
@@ -219,7 +219,7 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
         ))}
       </div>
       {totalPages > 1 && (
-        <div className="lg:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
+        <div className="desktop:hidden flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
           <span className="text-xs text-muted-foreground">{currentPage} / {totalPages}</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setCardPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}

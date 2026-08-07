@@ -330,7 +330,7 @@ export default function TransfersPage() {
         </button>
       </div>
       {/* Desktop table — full column set, only makes sense at lg+ width */}
-      <div className="hidden lg:block rounded-lg border overflow-hidden">
+      <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -393,7 +393,7 @@ export default function TransfersPage() {
       </div>
 
       {/* Tablet/mobile card layout — one transfer per card, two lines, own 10-per-page pagination */}
-      <div className="lg:hidden space-y-2">
+      <div className="desktop:hidden space-y-2">
         {loading ? (
           [...Array(5)].map((_, i) => (
             <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
@@ -432,7 +432,7 @@ export default function TransfersPage() {
         ))}
       </div>
       {!loading && transfers.length > 0 && cardTotalPages > 1 && (
-        <div className="lg:hidden flex items-center justify-between">
+        <div className="desktop:hidden flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Page {cardCurrentPage} of {cardTotalPages} · {transfers.length} transfer{transfers.length !== 1 ? 's' : ''}
           </p>

@@ -513,7 +513,7 @@ export default function RequestsPage() {
       </div>
 
       {/* Desktop table — full column set, only makes sense at lg+ width */}
-      <div className="hidden lg:block rounded-lg border overflow-hidden">
+      <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -599,7 +599,7 @@ export default function RequestsPage() {
       </div>
 
       {/* Tablet/mobile card layout — one PR per card, two lines, own 10-per-page pagination */}
-      <div className="lg:hidden space-y-2">
+      <div className="desktop:hidden space-y-2">
         {loading ? (
           [...Array(5)].map((_, i) => (
             <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
@@ -641,7 +641,7 @@ export default function RequestsPage() {
         ))}
       </div>
       {!loading && filtered.length > 0 && cardTotalPages > 1 && (
-        <div className="lg:hidden flex items-center justify-between">
+        <div className="desktop:hidden flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             Page {cardCurrentPage} of {cardTotalPages} · {filtered.length} PR{filtered.length !== 1 ? 's' : ''}
           </p>
@@ -1412,7 +1412,7 @@ function CreateRequestView({
         </div>
         <button
           onClick={() => setCartOpen(true)}
-          className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium"
+          className="desktop:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium"
         >
           <ShoppingCart className="h-4 w-4" />
           {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
@@ -1421,7 +1421,7 @@ function CreateRequestView({
 
       {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+      <div className="grid grid-cols-1 desktop:grid-cols-[1fr_360px] gap-6">
         {/* ── Catalog ── */}
         <div className="space-y-4 min-w-0">
           <div className="flex flex-col sm:flex-row gap-2.5">
@@ -1569,7 +1569,7 @@ function CreateRequestView({
         </div>
 
         {/* ── Sidebar (desktop) ── */}
-        <div className="hidden lg:block">
+        <div className="hidden desktop:block">
           <div className="sticky top-4">
             <RequestCartPanel
               cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
@@ -1584,7 +1584,7 @@ function CreateRequestView({
 
       {/* ── Mobile cart drawer ── */}
       {cartOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 desktop:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
           <div className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
