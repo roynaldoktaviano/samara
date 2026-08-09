@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { invalidateQuotationApproval } from '@/lib/purchasing/quotationApproval'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -63,5 +64,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       createdById: session.user.id,
     },
   })
+  // New evidence invalidates any approval already on file — it was made on an
+  // incomplete quotation set.
+  await invalidateQuotationApproval(db, itemId)
   return NextResponse.json(quotation)
 }

@@ -14,7 +14,11 @@ export async function GET() {
   const db = await getDb(session)
   const suppliers = await db.supplier.findMany({
     orderBy: { name: 'asc' },
-    include: { _count: { select: { orders: true } } },
+    include: {
+      // Cancelled orders don't count toward "we've bought from them before" — a supplier
+      // whose only history is cancelled POs hasn't actually proven anything.
+      _count: { select: { orders: { where: { status: { not: 'CANCELLED' } } } } },
+    },
   })
   return NextResponse.json(suppliers)
 }

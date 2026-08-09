@@ -11,7 +11,7 @@ const config: Config = {
   theme: {
   	extend: {
   		screens: {
-  			desktop: '1367px'
+  			desktop: '1152px'
   		},
   		colors: {
   			background: 'hsl(var(--background))',

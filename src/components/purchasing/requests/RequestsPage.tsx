@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
-import { getBand, requiredQuotationCount, BAND_LABEL } from '@/lib/purchasing/quotationBands'
+import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
+import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -31,11 +32,11 @@ function compressImage(file: File): Promise<string> {
 
 interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; imageKey: string | null; avgPrice: number; isActive: boolean }
 interface SupplierLocation { city: string; address: string }
-interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null }
+interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null; _count?: { orders: number } }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -94,6 +95,29 @@ function UrgentBadge() {
   )
 }
 
+// Rupiah-formatted price input — `value`/`onChange` carry a plain digit string (no
+// thousand separators) so existing parseFloat(...)/Number(...) callers keep working
+// unchanged; only the display is formatted with a "Rp" prefix and "." separators.
+// Blank (not "0") shows the placeholder — nothing pre-filled to type over.
+function RupiahInput({ value, onChange, placeholder = '0', className = '', autoFocus }: {
+  value: string; onChange: (digits: string) => void; placeholder?: string; className?: string; autoFocus?: boolean
+}) {
+  return (
+    <div className="relative">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">Rp</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        value={value ? new Intl.NumberFormat('id-ID').format(Number(value)) : ''}
+        onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
+        className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 ${className}`}
+      />
+    </div>
+  )
+}
+
 export default function RequestsPage() {
   const { data: session } = useSession()
   const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
@@ -146,15 +170,40 @@ export default function RequestsPage() {
   const [editItemError, setEditItemError] = useState('')
 
   // Quotations / sourcing-compliance sub-section of the Edit Item modal (KPI 5)
-  const [quoteForm, setQuoteForm] = useState({ supplierId: '', supplierName: '', price: '' })
+  const [quoteForm, setQuoteForm] = useState({ supplierId: '', supplierName: '', price: '', fileKey: '' })
   const [quoteSaving, setQuoteSaving] = useState(false)
   const [quoteError, setQuoteError] = useState('')
+  const [quoteFileBusy, setQuoteFileBusy] = useState(false)
+  const [quoteFileLightbox, setQuoteFileLightbox] = useState<string | null>(null)
   const [exemptionChecked, setExemptionChecked] = useState(false)
   const [exemptionReasonText, setExemptionReasonText] = useState('')
+  // True only while the exemption above was filled in automatically (recurring-supplier
+  // detection), never when Purchasing checked the box themselves — so switching to a
+  // different, non-recurring supplier can safely clear it without ever touching a reason
+  // someone typed by hand.
+  const [exemptionAutoSet, setExemptionAutoSet] = useState(false)
   const [justificationText, setJustificationText] = useState('')
+
+  // A reason is required for every supplier selection made against gathered quotations
+  // (band B/C items) — not just when the pick isn't the cheapest — so there's always a
+  // documented "why" on file for KPI 5 reporting.
+  const editItemBand = editItemModal ? getBand((editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)) : 'A'
+  const editItemQuotations = editItemModal?.quotations ?? []
+  const needsSupplierJustification = editItemBand !== 'A' && editItemQuotations.length > 0 && !!editItemSupplierId
 
   // Price/supplier history for the item being edited — lets Purchasing reuse a past purchase
   const [priceHistory, setPriceHistory] = useState<{ supplierId: string | null; supplierName: string | null; price: number; poNumber: string; orderedAt: string }[]>([])
+  // Quotations already gathered for this same item on OTHER purchase requests — lets
+  // Purchasing reuse one instead of asking the supplier to re-quote.
+  const [quotationHistory, setQuotationHistory] = useState<{ supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string; prNumber: string }[]>([])
+  const [reusingQuotation, setReusingQuotation] = useState(false)
+
+  // The chosen supplier has fulfilled this exact item before (any past PO) — price
+  // naturally fluctuates and stays exempt, but a supplier who's never supplied this item
+  // is a fresh sourcing decision and still needs quotations + manager approval. Mirrors
+  // itemRequiresQuotationApproval in src/lib/purchasing/quotationApproval.ts server-side.
+  const historyExempt = editItemBand !== 'A' && !!editItemSupplierId && priceHistory.some(h => h.supplierId === editItemSupplierId)
+  const [submittingApproval, setSubmittingApproval] = useState(false)
 
   // Reference photo lightbox
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; name: string } | null>(null)
@@ -192,11 +241,12 @@ export default function RequestsPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function fetchDetail(id: string) {
+  async function fetchDetail(id: string): Promise<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null> {
     setDetailLoading(true)
     const res = await fetch(`/api/purchasing/requests/${id}`)
+    let data: (PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null = null
     if (res.ok) {
-      const data = await res.json()
+      data = await res.json()
       setDetail(data)
       // Default eligible items to the warehouse with the most stock; the approver
       // can flip any of them back to "Purchase Order" before approving. Preserve any
@@ -204,7 +254,7 @@ export default function RequestsPage() {
       // silently reset a fulfillment pick the approver already made).
       setFulfillment(prev => {
         const next = { ...prev }
-        for (const item of data.items as RequestLine[]) {
+        for (const item of data!.items as RequestLine[]) {
           if (next[item.id!] !== undefined) continue
           const best = item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]
           next[item.id!] = best?.locationId ?? null
@@ -213,6 +263,7 @@ export default function RequestsPage() {
       })
     }
     setDetailLoading(false)
+    return data
   }
 
   async function openDetail(req: PurchaseRequest) {
@@ -248,19 +299,31 @@ export default function RequestsPage() {
 
   function openEditItem(item: RequestLine) {
     setEditItemModal(item)
-    setEditItemCost(String(item.estimatedCost ?? 0))
+    setEditItemCost(item.estimatedCost ? String(item.estimatedCost) : '')
     setEditItemSupplierId(item.supplierId || '')
     setEditItemError('')
-    setExemptionChecked(!!item.exemptionReason)
-    setExemptionReasonText(item.exemptionReason ?? '')
+    // No saved exemption yet but the item's current supplier already has an established
+    // order history — auto-exempt rather than making Purchasing tick the box themselves.
+    const recurringSupplier = !item.exemptionReason && item.supplierId ? suppliers.find(s => s.id === item.supplierId) : undefined
+    if (recurringSupplier && isRecurringSupplier(recurringSupplier.id)) {
+      setExemptionChecked(true)
+      setExemptionReasonText(`Recurring supplier — ${recurringSupplier._count?.orders} previous order${recurringSupplier._count?.orders === 1 ? '' : 's'} on file`)
+      setExemptionAutoSet(true)
+    } else {
+      setExemptionChecked(!!item.exemptionReason)
+      setExemptionReasonText(item.exemptionReason ?? '')
+      setExemptionAutoSet(false)
+    }
     setJustificationText(item.selectionJustification ?? '')
-    setQuoteForm({ supplierId: '', supplierName: '', price: '' })
+    setQuoteForm({ supplierId: '', supplierName: '', price: '', fileKey: '' })
     setQuoteError('')
     setPriceHistory([])
+    setQuotationHistory([])
     const qs = item.itemId ? `itemId=${encodeURIComponent(item.itemId)}` : `itemName=${encodeURIComponent(item.itemName)}`
-    fetch(`/api/purchasing/items/price-history?${qs}`)
+    const excludeQs = item.id ? `&excludeRequestItemId=${encodeURIComponent(item.id)}` : ''
+    fetch(`/api/purchasing/items/price-history?${qs}${excludeQs}`)
       .then(res => res.ok ? res.json() : null)
-      .then(data => { if (data) setPriceHistory(data.history ?? []) })
+      .then(data => { if (data) { setPriceHistory(data.history ?? []); setQuotationHistory(data.quotations ?? []) } })
       .catch(() => {})
   }
 
@@ -271,6 +334,10 @@ export default function RequestsPage() {
 
   async function saveEditItem() {
     if (!editItemModal?.id || !detail) return
+    if (needsSupplierJustification && !justificationText.trim()) {
+      setEditItemError('Please provide a reason for the selected supplier')
+      return
+    }
     setEditItemSaving(true); setEditItemError('')
     const supplier = suppliers.find(s => s.id === editItemSupplierId)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}`, {
@@ -303,6 +370,18 @@ export default function RequestsPage() {
     fetchDetail(detail.id)
   }
 
+  async function handleQuoteFile(file: File) {
+    setQuoteFileBusy(true)
+    try {
+      const dataUrl = await readUploadFile(file)
+      setQuoteForm(f => ({ ...f, fileKey: dataUrl }))
+    } catch {
+      setQuoteError('Failed to read file')
+    } finally {
+      setQuoteFileBusy(false)
+    }
+  }
+
   async function addQuotation() {
     if (!editItemModal?.id || !detail) return
     if (!quoteForm.supplierName.trim() || !quoteForm.price) { setQuoteError('Supplier and price are required'); return }
@@ -313,12 +392,13 @@ export default function RequestsPage() {
         supplierId: quoteForm.supplierId || undefined,
         supplierName: quoteForm.supplierName,
         price: parseFloat(quoteForm.price) || 0,
+        fileKey: quoteForm.fileKey || undefined,
       }),
     })
     const data = await res.json()
     setQuoteSaving(false)
     if (!res.ok) { setQuoteError(data.error ?? 'Failed to add quotation'); return }
-    setQuoteForm({ supplierId: '', supplierName: '', price: '' })
+    setQuoteForm({ supplierId: '', supplierName: '', price: '', fileKey: '' })
     await refreshQuotations()
   }
 
@@ -388,9 +468,81 @@ export default function RequestsPage() {
     setCustomModal(false)
   }
 
+  function isRecurringSupplier(supplierId: string) {
+    const s = suppliers.find(sup => sup.id === supplierId)
+    return (s?._count?.orders ?? 0) >= RECURRING_SUPPLIER_ORDER_THRESHOLD
+  }
+
+  // The one place that sets the item's Chosen Supplier — used by the supplier picker,
+  // and by the quotations list's "Use" shortcut so both paths behave identically.
+  function chooseSupplier(supplierId: string) {
+    setEditItemSupplierId(supplierId)
+    const s = suppliers.find(sup => sup.id === supplierId)
+    // Picking an established supplier (3+ past orders) auto-exempts the item from
+    // gathering fresh quotations — but only fills in over a blank field or a previous
+    // auto-fill; a reason Purchasing typed by hand (for this or a prior supplier) is
+    // never overwritten. Switching away from a supplier we auto-exempted, to one that
+    // isn't recurring, clears the now-stale auto reason instead of leaving it behind.
+    if (isRecurringSupplier(supplierId)) {
+      if (exemptionAutoSet || !exemptionChecked) {
+        setExemptionChecked(true)
+        setExemptionReasonText(`Recurring supplier — ${s?._count?.orders} previous order${s?._count?.orders === 1 ? '' : 's'} on file`)
+        setExemptionAutoSet(true)
+      }
+    } else if (exemptionAutoSet) {
+      setExemptionChecked(false)
+      setExemptionReasonText('')
+      setExemptionAutoSet(false)
+    }
+  }
+
   function selectSupplierForTarget(s: Supplier) {
-    if (supplierModal === 'quotation') setQuoteForm(f => ({ ...f, supplierId: s.id, supplierName: s.name }))
-    else setEditItemSupplierId(s.id)
+    if (supplierModal === 'quotation') { setQuoteForm(f => ({ ...f, supplierId: s.id, supplierName: s.name })); return }
+    chooseSupplier(s.id)
+  }
+
+  // "Use" on a quotation already gathered for this PR item — makes it the Chosen Supplier
+  // instead of requiring the same pick to be made twice (once as a quotation, once above).
+  function applyQuotation(q: { supplierId: string | null; price: number }) {
+    setEditItemCost(String(q.price))
+    if (q.supplierId) chooseSupplier(q.supplierId)
+  }
+
+  // "Use" on a quotation gathered for the same item on a DIFFERENT PR — copies it in as a
+  // quotation on this item too (so it still counts toward the required N and stays on file
+  // for this PR's own audit trail), then selects it as Chosen Supplier.
+  async function reuseQuotation(q: { supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }) {
+    if (!editItemModal?.id || !detail) return
+    setReusingQuotation(true); setQuoteError('')
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        supplierId: q.supplierId || undefined,
+        supplierName: q.supplierName,
+        price: q.price,
+        fileKey: q.fileKey || undefined,
+        submittedAt: q.submittedAt,
+      }),
+    })
+    const data = await res.json()
+    setReusingQuotation(false)
+    if (!res.ok) { setQuoteError(data.error ?? 'Failed to reuse quotation'); return }
+    applyQuotation(q)
+    await refreshQuotations()
+  }
+
+  // Sends the item's gathered quotations to the submitting staffer's manager for
+  // approval — Convert to PO stays blocked (server-enforced) until they act on it.
+  async function submitForApproval() {
+    if (!editItemModal?.id || !detail) return
+    setSubmittingApproval(true); setQuoteError('')
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations/approval`, { method: 'POST' })
+    const data = await res.json()
+    setSubmittingApproval(false)
+    if (!res.ok) { setQuoteError(data.error ?? 'Failed to submit for approval'); return }
+    const fresh = await fetchDetail(detail.id)
+    const freshItem = fresh?.items.find(i => i.id === editItemModal.id)
+    if (freshItem) setEditItemModal(freshItem)
   }
 
   async function quickAddSupplier(name: string) {
@@ -908,14 +1060,25 @@ export default function RequestsPage() {
                         ) : chosenFromLocationId ? (
                           <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
                         ) : (
-                          <button
-                            onClick={() => openEditItem(item)}
-                            className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
-                              item.supplierName ? 'bg-white text-foreground border-gray-300 hover:bg-muted' : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
-                            }`}
-                          >
-                            {item.supplierName ?? 'Select supplier...'}
-                          </button>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => openEditItem(item)}
+                              className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
+                                item.supplierName ? 'bg-white text-foreground border-gray-300 hover:bg-muted' : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                              }`}
+                            >
+                              {item.supplierName ?? 'Select supplier...'}
+                            </button>
+                            {getBand(item.quantity * item.estimatedCost) !== 'A' && (
+                              item.quotationApprovedAt ? (
+                                <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Approved</span>
+                              ) : item.quotationRejectedAt ? (
+                                <span className="text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap">Rejected</span>
+                              ) : item.quotationSubmittedAt ? (
+                                <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap">Pending approval</span>
+                              ) : null
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right">
@@ -984,26 +1147,25 @@ export default function RequestsPage() {
       {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
       {editItemModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">{editItemModal.itemId ? 'Edit Item' : 'Custom Request Detail'}</h3>
-              <button onClick={() => setEditItemModal(null)} className="text-muted-foreground hover:text-foreground">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-base">{editItemModal.itemId ? 'Edit Item' : 'Custom Request Detail'}</h3>
+                <p className="text-sm text-muted-foreground truncate">{editItemModal.itemName}</p>
+              </div>
+              <button onClick={() => setEditItemModal(null)} className="text-muted-foreground hover:text-foreground shrink-0">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
               {editItemError && (
                 <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
                   <AlertTriangle className="h-4 w-4 shrink-0" /> {editItemError}
                 </div>
               )}
 
-              {!editItemModal.itemId ? (
-                <>
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Description</p>
-                    <p className="text-sm">{editItemModal.itemName}</p>
-                  </div>
+              {!editItemModal.itemId && (editItemModal.notes || !!editItemModal.imageKeys?.length) && (
+                <div className="rounded-lg border p-4 space-y-3">
                   {editItemModal.notes && (
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
@@ -1024,10 +1186,7 @@ export default function RequestsPage() {
                       </div>
                     </div>
                   )}
-                  <div className="border-t" />
-                </>
-              ) : (
-                <p className="text-sm font-medium">{editItemModal.itemName}</p>
+                </div>
               )}
 
               {detail?.status !== 'ON_PROCESS' || isWarehouse ? (
@@ -1036,75 +1195,80 @@ export default function RequestsPage() {
                 </p>
               ) : (
                 <>
-                  {priceHistory.length > 0 && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Previous Purchases</p>
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pricing &amp; Supplier</p>
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        {priceHistory.map((h, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => useHistoryEntry(h)}
-                            className="w-full flex items-center justify-between gap-2 border rounded-md px-3 py-2 text-sm hover:bg-amber-50 hover:border-amber-300 transition-colors text-left"
-                          >
-                            <div className="min-w-0">
-                              <p className="font-medium truncate">{h.supplierName ?? 'Unknown supplier'}</p>
-                              <p className="text-xs text-muted-foreground">{h.poNumber} · {new Date(h.orderedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-amber-700 shrink-0">Rp {new Intl.NumberFormat('id-ID').format(h.price)} · Use</span>
-                          </button>
-                        ))}
+                        <label className="text-xs font-medium text-muted-foreground">Estimated Price</label>
+                        <RupiahInput value={editItemCost} onChange={setEditItemCost} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">Chosen Supplier</label>
+                        <button
+                          type="button"
+                          onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                          className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
+                            {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
+                          </span>
+                          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        </button>
                       </div>
                     </div>
-                  )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estimated Price</label>
-                      <input
-                        type="number" min={0}
-                        className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        value={editItemCost}
-                        onChange={e => setEditItemCost(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier</label>
-                      <button
-                        type="button"
-                        onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
-                        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      >
-                        <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
-                          {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
-                        </span>
-                        <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      </button>
-                    </div>
+                    {priceHistory.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <p className="text-[11px] font-medium text-muted-foreground">Bought before — tap to reuse</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {priceHistory.map((h, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => useHistoryEntry(h)}
+                              title={`${h.poNumber} · ${new Date(h.orderedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                              className="flex items-center gap-1.5 border rounded-full pl-3 pr-2.5 py-1.5 text-xs hover:bg-amber-50 hover:border-amber-300 transition-colors"
+                            >
+                              <span className="font-medium">{h.supplierName ?? 'Unknown supplier'}</span>
+                              <span className="text-muted-foreground">Rp {new Intl.NumberFormat('id-ID').format(h.price)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {(() => {
-                    const itemValue = (editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)
-                    const band = getBand(itemValue)
+                    const band = editItemBand
                     if (band === 'A') return null
-                    const quotations = editItemModal.quotations ?? []
+                    if (historyExempt) {
+                      return (
+                        <div className="flex items-start gap-2.5 rounded-lg border border-dashed px-3.5 py-3 text-xs text-muted-foreground bg-muted/20">
+                          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+                          <p>
+                            <span className="font-medium text-foreground">{suppliers.find(s => s.id === editItemSupplierId)?.name}</span> has supplied this item before —
+                            no quotation approval needed. Picking a different supplier will require quotations + approval.
+                          </p>
+                        </div>
+                      )
+                    }
+                    const quotations = editItemQuotations
                     const required = requiredQuotationCount(band)
-                    const cheapest = quotations.length ? quotations.reduce((a, b) => (a.price < b.price ? a : b)) : null
-                    const needsJustification = !!cheapest && cheapest.price < (parseFloat(editItemCost) || 0)
-                      && (cheapest.supplierId ?? null) !== (editItemSupplierId || null)
                     return (
-                      <div className="space-y-3 pt-3 border-t">
+                      <div className="rounded-lg border p-4 space-y-4">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quotations</p>
-                          <span className="text-[11px] text-muted-foreground text-right">{BAND_LABEL[band]} — needs {required} quotation{required > 1 ? 's' : ''}</span>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sourcing &amp; Approval</p>
+                          <span className="text-[11px] font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5 whitespace-nowrap">{BAND_LABEL[band]} · needs {required}</span>
                         </div>
 
                         {quoteError && (
                           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{quoteError}</div>
                         )}
 
+                        <div className="space-y-1.5">
+                        <p className="text-[11px] font-medium text-muted-foreground">Quotations on file ({quotations.length}/{required})</p>
                         {quotations.length === 0 ? (
-                          <p className="text-xs text-muted-foreground/60 italic">No quotations on file yet.</p>
+                          <p className="text-xs text-muted-foreground/60 italic">None yet — add at least {required} below.</p>
                         ) : (
                           <div className="space-y-1.5">
                             {quotations.map(q => (
@@ -1115,6 +1279,18 @@ export default function RequestsPage() {
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                                  {q.fileKey && (
+                                    <button onClick={() => setQuoteFileLightbox(q.fileKey)} className="text-muted-foreground hover:text-blue-600 transition-colors" title="View quotation document">
+                                      <Paperclip className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  {q.supplierId && q.supplierId === editItemSupplierId ? (
+                                    <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Chosen</span>
+                                  ) : (
+                                    <button onClick={() => applyQuotation(q)} className="text-[11px] font-medium text-amber-700 hover:text-amber-900 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-50 transition-colors whitespace-nowrap">
+                                      Use
+                                    </button>
+                                  )}
                                   <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -1123,7 +1299,34 @@ export default function RequestsPage() {
                             ))}
                           </div>
                         )}
+                        </div>
 
+                        {quotationHistory.length > 0 && (
+                          <div className="space-y-1.5 rounded-md border border-dashed border-amber-200 bg-amber-50/40 p-2.5">
+                            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wide">Quotations from other requests</p>
+                            {quotationHistory.map((q, i) => (
+                              <div key={i} className="flex items-center justify-between text-sm bg-white border rounded-md px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{q.supplierName}</p>
+                                  <p className="text-xs text-muted-foreground">{q.prNumber} · {new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                                  <button
+                                    onClick={() => reuseQuotation(q)}
+                                    disabled={reusingQuotation}
+                                    className="text-[11px] font-medium text-amber-700 hover:text-amber-900 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-50 transition-colors disabled:opacity-50 whitespace-nowrap"
+                                  >
+                                    Use
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="space-y-2 pt-4 border-t">
+                        <p className="text-[11px] font-medium text-muted-foreground">Add a quotation</p>
                         <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
                           <div className="space-y-1">
                             <label className="text-[11px] text-muted-foreground">Supplier</label>
@@ -1139,12 +1342,7 @@ export default function RequestsPage() {
                           </div>
                           <div className="space-y-1">
                             <label className="text-[11px] text-muted-foreground">Price</label>
-                            <input
-                              type="number" min={0}
-                              className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              value={quoteForm.price}
-                              onChange={e => setQuoteForm(f => ({ ...f, price: e.target.value }))}
-                            />
+                            <RupiahInput value={quoteForm.price} onChange={v => setQuoteForm(f => ({ ...f, price: v }))} />
                           </div>
                           <button
                             onClick={addQuotation}
@@ -1155,8 +1353,31 @@ export default function RequestsPage() {
                           </button>
                         </div>
 
+                        <input
+                          id="quote-file-input" type="file" accept="image/*,application/pdf" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleQuoteFile(f) }}
+                        />
+                        {quoteForm.fileKey ? (
+                          <div className="flex items-center gap-2 text-xs border rounded-md px-2.5 py-1.5 bg-muted/30 w-fit">
+                            {isPdfDataUrl(quoteForm.fileKey) ? <FileText className="h-3.5 w-3.5 text-red-500 shrink-0" /> : <ImagePlus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                            <span className="text-muted-foreground">Quotation document attached</span>
+                            <button type="button" onClick={() => setQuoteForm(f => ({ ...f, fileKey: '' }))} className="text-muted-foreground hover:text-red-600">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="quote-file-input"
+                            className={`inline-flex items-center gap-1.5 text-xs border border-dashed rounded-md px-2.5 py-1.5 w-fit cursor-pointer transition-colors ${quoteFileBusy ? 'opacity-50 pointer-events-none' : 'text-muted-foreground hover:text-foreground hover:border-amber-400'}`}
+                          >
+                            <Paperclip className="h-3.5 w-3.5" /> {quoteFileBusy ? 'Uploading…' : 'Attach quotation document (optional)'}
+                          </label>
+                        )}
+                        </div>
+
+                        <div className="space-y-2 pt-4 border-t">
                         <label className="flex items-start gap-2 text-xs">
-                          <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => setExemptionChecked(e.target.checked)} />
+                          <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => { setExemptionChecked(e.target.checked); setExemptionAutoSet(false) }} />
                           <span>Exempt from quotation count (approved catalogue price / recurring supplier agreement)</span>
                         </label>
                         {exemptionChecked && (
@@ -1165,22 +1386,74 @@ export default function RequestsPage() {
                             placeholder="Exemption reason..."
                             className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
                             value={exemptionReasonText}
-                            onChange={e => setExemptionReasonText(e.target.value)}
+                            onChange={e => { setExemptionReasonText(e.target.value); setExemptionAutoSet(false) }}
                           />
                         )}
 
-                        {needsJustification && (
+                        {needsSupplierJustification && (
                           <div className="space-y-1">
-                            <label className="text-xs font-semibold text-amber-700">Selected supplier isn&apos;t the cheapest quote — justification required</label>
+                            <label className="text-xs font-semibold text-amber-700">Reason for choosing this supplier — required</label>
                             <textarea
                               rows={2}
-                              placeholder="e.g. better quality, faster delivery..."
+                              placeholder="e.g. cheapest quote, better quality, faster delivery..."
                               className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
                               value={justificationText}
                               onChange={e => setJustificationText(e.target.value)}
                             />
                           </div>
                         )}
+                        </div>
+
+                        <div className="pt-4 border-t">
+                        {(() => {
+                          const hasUnsavedChanges = editItemSupplierId !== (editItemModal.supplierId || '')
+                            || editItemCost !== String(editItemModal.estimatedCost ?? 0)
+                            || justificationText !== (editItemModal.selectionJustification ?? '')
+                          const submitDisabled = submittingApproval || quotations.length < required || !editItemSupplierId || hasUnsavedChanges
+
+                          if (editItemModal.quotationApprovedAt) {
+                            return (
+                              <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                Approved by {editItemModal.quotationApprovedBy?.name ?? '—'} on {new Date(editItemModal.quotationApprovedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </div>
+                            )
+                          }
+                          if (editItemModal.quotationRejectedAt) {
+                            return (
+                              <div className="space-y-2">
+                                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                                  <p className="font-semibold">Rejected by {editItemModal.quotationRejectedBy?.name ?? '—'}</p>
+                                  {editItemModal.quotationRejectionReason && <p className="mt-0.5">{editItemModal.quotationRejectionReason}</p>}
+                                </div>
+                                {hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before resubmitting.</p>}
+                                <button onClick={submitForApproval} disabled={submitDisabled}
+                                  className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
+                                  {submittingApproval ? 'Submitting...' : 'Resubmit for Approval'}
+                                </button>
+                              </div>
+                            )
+                          }
+                          if (editItemModal.quotationSubmittedAt) {
+                            return (
+                              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                                <Clock className="h-3.5 w-3.5 shrink-0" />
+                                Pending approval by {editItemModal.quotationApprover?.name ?? '—'}
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className="space-y-1.5">
+                              {hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before submitting for approval.</p>}
+                              {quotations.length < required && <p className="text-[11px] text-muted-foreground italic">Gather {required - quotations.length} more quotation{required - quotations.length > 1 ? 's' : ''} first.</p>}
+                              <button onClick={submitForApproval} disabled={submitDisabled}
+                                className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
+                                {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
+                              </button>
+                            </div>
+                          )
+                        })()}
+                        </div>
                       </div>
                     )
                   })()}
@@ -1190,7 +1463,12 @@ export default function RequestsPage() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
               <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">{detail?.status === 'ON_PROCESS' && !isWarehouse ? 'Cancel' : 'Close'}</button>
               {detail?.status === 'ON_PROCESS' && !isWarehouse && (
-              <button onClick={saveEditItem} disabled={editItemSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
+              <button
+                onClick={saveEditItem}
+                disabled={editItemSaving || (needsSupplierJustification && !justificationText.trim())}
+                title={needsSupplierJustification && !justificationText.trim() ? 'Provide a reason for the selected supplier first' : undefined}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium"
+              >
                 {editItemSaving ? 'Saving...' : 'Save'}
               </button>
               )}
@@ -1322,6 +1600,29 @@ export default function RequestsPage() {
               className="flex items-center gap-1.5 bg-white text-foreground text-sm font-medium px-3 py-1.5 rounded-full hover:bg-white/90 transition-colors"
             >
               <Download className="h-3.5 w-3.5" /> Download
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quotation Document Viewer ── */}
+      {quoteFileLightbox && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={() => setQuoteFileLightbox(null)}>
+          <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+            {isPdfDataUrl(quoteFileLightbox) ? (
+              <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+                <embed src={quoteFileLightbox} type="application/pdf" className="w-full h-[75vh]" />
+                <div className="p-3 flex justify-center">
+                  <a href={quoteFileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                    Open PDF in new tab
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <img src={quoteFileLightbox} alt="Quotation document" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+            )}
+            <button onClick={() => setQuoteFileLightbox(null)} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>

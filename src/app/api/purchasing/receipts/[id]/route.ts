@@ -13,7 +13,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const receipt = await db.goodsReceipt.findUnique({ where: { id }, include: { items: true } })
+  const receipt = await db.goodsReceipt.findUnique({
+    where: { id },
+    include: { items: { include: { item: { select: { purchaseUnit: true } } } } },
+  })
   if (!receipt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const [receiver, receiverEmployee, location, order] = await Promise.all([
     receipt.receivedById ? db.user.findUnique({ where: { id: receipt.receivedById }, select: { id: true, name: true } }) : null,
@@ -21,5 +24,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     db.stockLocation.findUnique({ where: { id: receipt.locationId }, select: { id: true, name: true } }),
     db.purchaseOrder.findUnique({ where: { id: receipt.orderId }, select: { id: true, poNumber: true, supplierName: true } }),
   ])
-  return NextResponse.json({ ...receipt, receiver, receiverEmployee, location, order })
+  const items = receipt.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? null, item: undefined }))
+  return NextResponse.json({ ...receipt, items, receiver, receiverEmployee, location, order })
 }

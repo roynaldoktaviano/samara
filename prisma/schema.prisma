@@ -94,49 +94,53 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id                             String                      @id @default(cuid())
-  email                          String                      @unique
-  name                           String?
-  password                       String
-  role                           Role                        @default(SALES)
-  createdAt                      DateTime                    @default(now())
-  updatedAt                      DateTime                    @updatedAt
-  bookings                       Booking[]                   @relation("SalespersonBookings")
-  managedAgents                  Agent[]                     @relation("AgentSalesperson")
-  waitingListItems               WaitingList[]
-  stockMovements                 StockMovement[]
-  purchaseRequests               PurchaseRequest[]           @relation("PRRequestedBy")
-  purchaseRequestsApproved       PurchaseRequest[]           @relation("PRApprovedBy")
-  purchaseRequestsVerified       PurchaseRequest[]           @relation("PRVerifiedBy")
-  purchaseRequestsConverted      PurchaseRequest[]           @relation("PRConvertedBy")
-  purchaseRequestsRejected       PurchaseRequest[]           @relation("PRRejectedBy")
-  purchaseRequestsCancelled      PurchaseRequest[]           @relation("PRCancelledBy")
-  purchaseOrdersCreated          PurchaseOrder[]
-  goodsReceipts                  GoodsReceipt[]
-  transfersDispatched            StockTransfer[]             @relation("TransferDispatch")
-  transfersReceived              StockTransfer[]             @relation("TransferReceive")
-  transfersExpectedReceive       StockTransfer[]             @relation("TransferExpectedReceive")
-  inventoryExceptionsResolved    InventoryException[]        @relation("ExceptionResolvedBy")
-  crewRequests                   CrewRequest[]
-  stockCountsBy                  StockCount[]                @relation("StockCountBy")
-  stockCountsApproved            StockCount[]                @relation("StockCountApprove")
-  poPaymentRequestsMade          POPaymentRequest[]          @relation("POPaymentRequestedBy")
-  poPaymentRequestsPaid          POPaymentRequest[]          @relation("POPaymentPaidBy")
-  poReimbursementsMade           POReimbursement[]           @relation("POReimbursementRequestedBy")
-  poReimbursementsPaid           POReimbursement[]           @relation("POReimbursementPaidBy")
-  poFollowUpsCreated             PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
-  poFollowUpsEscalatedTo         PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
-  purchaseQuotationsCreated      PurchaseQuotation[]
-  deliveryFeesCreated            DeliveryFee[]
-  deliveryFeePaymentRequestsMade DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
-  deliveryFeePaymentRequestsPaid DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
-  deliveryFeeReimbursementsMade  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
-  deliveryFeeReimbursementsPaid  DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
-  agentLeadsPromoted             AgentLead[]                 @relation("AgentLeadPromotedBy")
-  mediaFilesUploaded             MediaFile[]
-  promosCreated                  Promo[]
-  employeeProfile                Employee?
-  pushSubscriptions              PushSubscription[]
+  id                                     String                      @id @default(cuid())
+  email                                  String                      @unique
+  name                                   String?
+  password                               String
+  role                                   Role                        @default(SALES)
+  createdAt                              DateTime                    @default(now())
+  updatedAt                              DateTime                    @updatedAt
+  bookings                               Booking[]                   @relation("SalespersonBookings")
+  managedAgents                          Agent[]                     @relation("AgentSalesperson")
+  waitingListItems                       WaitingList[]
+  stockMovements                         StockMovement[]
+  purchaseRequests                       PurchaseRequest[]           @relation("PRRequestedBy")
+  purchaseRequestsApproved               PurchaseRequest[]           @relation("PRApprovedBy")
+  purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
+  purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
+  purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
+  purchaseRequestsCancelled              PurchaseRequest[]           @relation("PRCancelledBy")
+  purchaseRequestItemQuotationsSubmitted PurchaseRequestItem[]       @relation("PRItemQuotationSubmittedBy")
+  purchaseRequestItemQuotationsToApprove PurchaseRequestItem[]       @relation("PRItemQuotationApprover")
+  purchaseRequestItemQuotationsApproved  PurchaseRequestItem[]       @relation("PRItemQuotationApprovedBy")
+  purchaseRequestItemQuotationsRejected  PurchaseRequestItem[]       @relation("PRItemQuotationRejectedBy")
+  purchaseOrdersCreated                  PurchaseOrder[]
+  goodsReceipts                          GoodsReceipt[]
+  transfersDispatched                    StockTransfer[]             @relation("TransferDispatch")
+  transfersReceived                      StockTransfer[]             @relation("TransferReceive")
+  transfersExpectedReceive               StockTransfer[]             @relation("TransferExpectedReceive")
+  inventoryExceptionsResolved            InventoryException[]        @relation("ExceptionResolvedBy")
+  crewRequests                           CrewRequest[]
+  stockCountsBy                          StockCount[]                @relation("StockCountBy")
+  stockCountsApproved                    StockCount[]                @relation("StockCountApprove")
+  poPaymentRequestsMade                  POPaymentRequest[]          @relation("POPaymentRequestedBy")
+  poPaymentRequestsPaid                  POPaymentRequest[]          @relation("POPaymentPaidBy")
+  poReimbursementsMade                   POReimbursement[]           @relation("POReimbursementRequestedBy")
+  poReimbursementsPaid                   POReimbursement[]           @relation("POReimbursementPaidBy")
+  poFollowUpsCreated                     PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
+  poFollowUpsEscalatedTo                 PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
+  purchaseQuotationsCreated              PurchaseQuotation[]
+  deliveryFeesCreated                    DeliveryFee[]
+  deliveryFeePaymentRequestsMade         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
+  deliveryFeePaymentRequestsPaid         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
+  deliveryFeeReimbursementsMade          DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
+  deliveryFeeReimbursementsPaid          DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
+  agentLeadsPromoted                     AgentLead[]                 @relation("AgentLeadPromotedBy")
+  mediaFilesUploaded                     MediaFile[]
+  promosCreated                          Promo[]
+  employeeProfile                        Employee?
+  pushSubscriptions                      PushSubscription[]
 }
 
 model Customer {
@@ -1611,19 +1615,41 @@ model PurchaseRequestItem {
   supplierName           String?
   notes                  String?
   imageKeys              Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
-  // Sourcing-evidence tracking for KPI 5 (compliance/quotation rules) — soft/reporting-only,
-  // never blocks PR conversion. exemptionReason: catalogue-price/recurring-agreement exception
-  // per the Purchasing Approval Matrix footnote. selectionJustification: expected whenever the
-  // chosen supplier isn't the cheapest quotation on file — not server-enforced, just reported.
+  // Sourcing-evidence tracking for KPI 5 (compliance/quotation rules). exemptionReason:
+  // catalogue-price/recurring-agreement exception per the Purchasing Approval Matrix
+  // footnote. selectionJustification: expected whenever the chosen supplier isn't the
+  // cheapest quotation on file.
   exemptionReason        String?
   selectionJustification String?
 
-  request    PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  item       PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  supplier   Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  quotations PurchaseQuotation[]
+  // Supplier-selection approval (Purchasing Approval Matrix, band B+) — the item's
+  // gathered quotations must be approved by the submitting Purchasing staffer's manager
+  // before the PR can convert to a PO. quotationApproverId is resolved and fixed at
+  // submission time (not re-derived later, so a later org-chart change doesn't retarget
+  // an approval already in flight). Cleared back to null (along with submittedAt) by
+  // src/lib/purchasing/quotationApproval.ts whenever the underlying decision changes
+  // (supplier, price, or the quotation list itself) after being submitted/approved, so
+  // an approval can never silently cover a since-changed decision.
+  quotationSubmittedById   String?
+  quotationApproverId      String?
+  quotationSubmittedAt     DateTime?
+  quotationApprovedById    String?
+  quotationApprovedAt      DateTime?
+  quotationRejectedById    String?
+  quotationRejectedAt      DateTime?
+  quotationRejectionReason String?
+
+  request              PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item                 PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier             Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  quotations           PurchaseQuotation[]
+  quotationSubmittedBy User?               @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
+  quotationApprover    User?               @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
+  quotationApprovedBy  User?               @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
+  quotationRejectedBy  User?               @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
+  @@index([quotationApproverId])
 }
 
 // Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the

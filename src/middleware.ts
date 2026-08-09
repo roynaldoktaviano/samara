@@ -27,6 +27,9 @@ const PUBLIC_PATHS = [
   '/agent-portal',
   '/api/agent-portal',
   '/media-kit',
+  // Sales presentation microsite — gated by its own shared password, not staff NextAuth
+  '/sales-pro',
+  '/api/sales-pro',
   // Guest-facing form — access controlled by its own per-guest token, not staff login
   '/guest-form',
   '/api/guest-form',

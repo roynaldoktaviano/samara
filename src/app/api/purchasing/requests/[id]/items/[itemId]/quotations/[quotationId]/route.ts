@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { invalidateQuotationApproval } from '@/lib/purchasing/quotationApproval'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -24,5 +25,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!quotation || quotation.requestItemId !== itemId) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 })
 
   await db.purchaseQuotation.delete({ where: { id: quotationId } })
+  await invalidateQuotationApproval(db, itemId)
   return NextResponse.json({ ok: true })
 }

@@ -22,6 +22,11 @@ export function requiredQuotationCount(band: PurchaseBand): number {
   return 3
 }
 
+// A supplier with this many (or more) non-cancelled past orders on file is treated as an
+// established/recurring relationship — Purchasing no longer needs fresh quotations to prove
+// the price is fair, per the Approval Matrix's "recurring supplier agreement" exemption.
+export const RECURRING_SUPPLIER_ORDER_THRESHOLD = 3
+
 export const BAND_LABEL: Record<PurchaseBand, string> = {
   A: 'Band A (up to Rp 2,000,000)',
   B: 'Band B (Rp 2,000,000 – 10,000,000)',

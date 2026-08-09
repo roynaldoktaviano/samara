@@ -2023,8 +2023,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end pt-1">
             {detail.status !== 'DRAFT' && (
-              <button disabled title="PDF export is still being finalized"
-                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg opacity-50 cursor-not-allowed">
+              <button onClick={() => window.open(`/print/purchase-order/${detail.id}`, '_blank')}
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                 <FileDown className="h-3.5 w-3.5" /> Download PDF
               </button>
             )}
@@ -2285,9 +2285,18 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <div key={r.id} className="rounded-lg border p-4">
                   <div className="flex items-center justify-between mb-2">
                     <p className="font-mono text-sm font-medium">{r.grNumber}</p>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">{fmtDate(r.receivedAt)}</p>
-                      {r.receiverName && <p className="text-xs text-muted-foreground mt-0.5">by {r.receiverName}</p>}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">{fmtDate(r.receivedAt)}</p>
+                        {r.receiverName && <p className="text-xs text-muted-foreground mt-0.5">by {r.receiverName}</p>}
+                      </div>
+                      <button
+                        onClick={() => window.open(`/print/goods-receipt/${r.id}`, '_blank')}
+                        title="Print / download tanda terima"
+                        className="flex items-center gap-1.5 text-xs border rounded-md px-2.5 py-1.5 hover:bg-muted transition-colors shrink-0"
+                      >
+                        <FileDown className="h-3 w-3" /> Tanda Terima
+                      </button>
                     </div>
                   </div>
                   <div className="space-y-1">

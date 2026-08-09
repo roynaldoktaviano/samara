@@ -20,20 +20,38 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const itemId = searchParams.get('itemId')
   const itemName = searchParams.get('itemName')
-  if (!itemId && !itemName?.trim()) return NextResponse.json({ history: [] })
+  // The PurchaseRequestItem currently being edited — excluded from the cross-PR
+  // quotations lookup below so an item never "reuses" a quote gathered on itself.
+  const excludeRequestItemId = searchParams.get('excludeRequestItemId')
+  if (!itemId && !itemName?.trim()) return NextResponse.json({ history: [], quotations: [] })
 
-  const orderItems = await db.purchaseOrderItem.findMany({
-    where: {
-      unitCost: { gt: 0 },
-      ...(itemId ? { itemId } : { itemName: { equals: itemName!.trim(), mode: 'insensitive' } }),
-    },
-    orderBy: { order: { orderedAt: 'desc' } },
-    take: 20,
-    select: {
-      unitCost: true,
-      order: { select: { poNumber: true, orderedAt: true, supplierId: true, supplierName: true } },
-    },
-  })
+  const itemMatch = itemId ? { itemId } : { itemName: { equals: itemName!.trim(), mode: 'insensitive' as const } }
+
+  const [orderItems, quotationRows] = await Promise.all([
+    db.purchaseOrderItem.findMany({
+      where: { unitCost: { gt: 0 }, ...itemMatch },
+      orderBy: { order: { orderedAt: 'desc' } },
+      take: 20,
+      select: {
+        unitCost: true,
+        order: { select: { poNumber: true, orderedAt: true, supplierId: true, supplierName: true } },
+      },
+    }),
+    // Quotations gathered for this same item on OTHER purchase requests — lets Purchasing
+    // reuse a quote already on file instead of asking the supplier to re-quote something
+    // that was already priced recently for a different PR.
+    db.purchaseQuotation.findMany({
+      where: {
+        requestItem: { ...itemMatch, ...(excludeRequestItemId ? { id: { not: excludeRequestItemId } } : {}) },
+      },
+      orderBy: { submittedAt: 'desc' },
+      take: 20,
+      select: {
+        supplierId: true, supplierName: true, price: true, fileKey: true, submittedAt: true,
+        requestItem: { select: { request: { select: { prNumber: true } } } },
+      },
+    }),
+  ])
 
   // Dedupe by supplier — keep only the most recent purchase per supplier, capped at 3.
   const seenSuppliers = new Set<string>()
@@ -52,5 +70,23 @@ export async function GET(req: NextRequest) {
     if (history.length >= 3) break
   }
 
-  return NextResponse.json({ history })
+  // Same dedupe rule for quotations — most recent quote per supplier, capped at 3.
+  const seenQuoteSuppliers = new Set<string>()
+  const quotations: { supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string; prNumber: string }[] = []
+  for (const q of quotationRows) {
+    const key = q.supplierId ?? q.supplierName
+    if (seenQuoteSuppliers.has(key)) continue
+    seenQuoteSuppliers.add(key)
+    quotations.push({
+      supplierId: q.supplierId,
+      supplierName: q.supplierName,
+      price: q.price,
+      fileKey: q.fileKey,
+      submittedAt: q.submittedAt.toISOString(),
+      prNumber: q.requestItem.request.prNumber,
+    })
+    if (quotations.length >= 3) break
+  }
+
+  return NextResponse.json({ history, quotations })
 }

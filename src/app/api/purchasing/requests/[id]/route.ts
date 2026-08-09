@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApproval'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
@@ -17,7 +18,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const request = await db.purchaseRequest.findUnique({
     where: { id },
     include: {
-      items: { include: { quotations: { orderBy: { price: 'asc' } } } },
+      items: {
+        include: {
+          quotations: { orderBy: { price: 'asc' } },
+          quotationApprover: { select: { id: true, name: true } },
+          quotationApprovedBy: { select: { id: true, name: true } },
+          quotationRejectedBy: { select: { id: true, name: true } },
+        },
+      },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
@@ -108,6 +116,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const valid = ['DRAFT', 'ON_PROCESS', 'CONVERTED', 'REJECTED', 'CANCELLED']
   if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+
+  // Convert to PO must never happen on an unresolved supplier decision — every item that
+  // needed quotations (band B+, no known-supplier history) must have its pick approved by
+  // the submitting Purchasing staffer's manager first. Checked here, before anything is
+  // written, so a client can't bypass the UI gate by calling this endpoint directly.
+  if (status === 'CONVERTED') {
+    const current = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
+    if (!current) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    if (current.status !== 'ON_PROCESS') {
+      return NextResponse.json({ error: 'Only a request that is On Process can be converted to a PO' }, { status: 409 })
+    }
+
+    const items = await db.purchaseRequestItem.findMany({
+      where: { requestId: id },
+      select: { itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true },
+    })
+    const unapproved: string[] = []
+    for (const item of items) {
+      if (item.quotationApprovedAt) continue
+      if (await itemRequiresQuotationApproval(db, item)) unapproved.push(item.itemName)
+    }
+    if (unapproved.length > 0) {
+      return NextResponse.json({
+        error: `Supplier selection still needs approval for: ${unapproved.join(', ')}`,
+      }, { status: 409 })
+    }
+  }
+
   const request = await db.purchaseRequest.update({
     where: { id },
     data: {

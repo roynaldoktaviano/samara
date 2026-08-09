@@ -13,6 +13,19 @@ export function isPushSupported(): boolean {
   return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
+// `navigator.serviceWorker.ready` only resolves once a worker is actively controlling the
+// page — if registration (fired fire-and-forget from ServiceWorkerRegister on mount) never
+// completes, e.g. it's still racing on a first-ever page load, or a previous deploy's worker
+// is stuck waiting, this promise just hangs forever. It never rejects, so a plain try/catch
+// around it doesn't help — the "Enable" button would sit on "Enabling…" indefinitely with no
+// feedback. Racing it against a timeout guarantees the caller always gets an answer.
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ])
+}
+
 export async function subscribeToPush(): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isPushSupported()) return { ok: false, error: 'Push notifications are not supported in this browser' }
 
@@ -23,7 +36,7 @@ export async function subscribeToPush(): Promise<{ ok: true } | { ok: false; err
   if (permission !== 'granted') return { ok: false, error: 'Permission denied' }
 
   try {
-    const registration = await navigator.serviceWorker.ready
+    const registration = await withTimeout(navigator.serviceWorker.ready, 8000, 'Service worker did not become ready in time')
     let subscription = await registration.pushManager.getSubscription()
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
@@ -42,6 +55,7 @@ export async function subscribeToPush(): Promise<{ ok: true } | { ok: false; err
     return { ok: true }
   } catch (err) {
     console.error('[push-client] subscribe failed:', err)
-    return { ok: false, error: 'Failed to subscribe' }
+    const message = err instanceof Error ? err.message : 'Failed to subscribe'
+    return { ok: false, error: message === 'Service worker did not become ready in time' ? `${message} — try reloading the page` : 'Failed to subscribe' }
   }
 }
