@@ -1,3 +1,5 @@
+import { cache } from 'react'
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { PrintButton } from '../../../PrintButton'
 import { getPrintContext } from '@/lib/print-helpers'
@@ -12,6 +14,37 @@ function fmtRange(start: Date, end: Date) {
   return `${fmt(start)} – ${fmt(end)}`
 }
 
+// Filename-safe segment: strips spaces/punctuation so it works unquoted in a downloaded filename.
+function slug(s: string) {
+  return s.replace(/[^a-zA-Z0-9]+/g, '') || 'Guest'
+}
+
+// Shared across generateMetadata and the page component so the booking is only fetched once per request.
+const getBooking = cache(async (bookingId: string) => {
+  const { db, company } = await getPrintContext()
+  const booking = await db.booking.findUnique({
+    where: { id: bookingId },
+    include: {
+      yacht: { include: { crew: { orderBy: { position: 'asc' } } } },
+      agent: { select: { name: true } },
+      guests: {
+        include: { customer: true, cabin: true },
+        orderBy: [{ isLead: 'desc' }, { id: 'asc' }],
+      },
+    },
+  })
+  return { db, company, booking }
+})
+
+export async function generateMetadata({ params }: { params: Promise<{ bookingId: string }> }): Promise<Metadata> {
+  const { bookingId } = await params
+  const { booking } = await getBooking(bookingId)
+  if (!booking) return {}
+  const lead = booking.guests.find(g => g.isLead)?.customer.name ?? booking.guests[0]?.customer.name ?? 'Guest'
+  const dateSlug = fmtRange(new Date(booking.startDate), new Date(booking.endDate)).replace(/–/g, '-').replace(/\s+/g, '')
+  return { title: `CrewGuestSheet_${slug(booking.yacht?.name ?? '')}_${dateSlug}_${slug(lead)}` }
+}
+
 const GOLD = '#bdac7e'
 const DARK = '#1a252f'
 
@@ -24,7 +57,7 @@ function Banner({ sub, name, logo }: { sub?: string; name: string; logo: string 
         {sub && <p style={{ color: GOLD, fontSize: 11, margin: '4px 0 0' }}>{sub}</p>}
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logo} alt={name} style={{ width: 44, height: 44, opacity: 0.9 }} />
+      <img src={logo} alt={name} style={{ width: 44, height: 44, minWidth: 44, flexShrink: 0, objectFit: 'contain', opacity: 0.9 }} />
     </div>
   )
 }
@@ -60,19 +93,7 @@ function Sec({ title, children, accent, last }: { title: string; children: React
 
 export default async function CrewSheetBookingPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = await params
-  const { db, company } = await getPrintContext()
-
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: {
-      yacht: { include: { crew: { orderBy: { position: 'asc' } } } },
-      agent: { select: { name: true } },
-      guests: {
-        include: { customer: true, cabin: true },
-        orderBy: [{ isLead: 'desc' }, { id: 'asc' }],
-      },
-    },
-  })
+  const { company, booking } = await getBooking(bookingId)
 
   if (!booking) notFound()
 
@@ -354,13 +375,17 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
 
             {/* Operational Notes — crew/ops only, shown prominently so it isn't missed */}
             {g.operationalNotes && (
-              <div style={{ background: '#fff8e6', border: '1.5px solid #e8b93f', borderRadius: 5, padding: '10px 14px', marginBottom: 12 }}>
+              <div style={{ background: '#fff8e6', border: '1.5px solid #e8b93f', borderRadius: 5, padding: '8px 12px', marginBottom: 10, pageBreakInside: 'avoid', breakInside: 'avoid' }}>
                 <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px', color: '#a1720b', fontWeight: 700, margin: '0 0 4px' }}>Notes — Crew &amp; Operations Only</p>
-                <p style={{ fontSize: 12, color: DARK, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{g.operationalNotes}</p>
+                <p style={{ fontSize: 12, color: DARK, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{g.operationalNotes}</p>
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            {/* When Notes pushes this row past the remaining page space, Chrome's print
+               engine moves the whole row to the next page anyway (can't split a grid row
+               mid-break) — force the break here deliberately so it starts flush at the top
+               of the next page instead of leaving a stray gap under Notes. */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10, ...(g.operationalNotes ? { pageBreakBefore: 'always' as const, breakBefore: 'page' as const } : {}) }}>
               <Sec title="Arrival Details" last>
                 <Field label="Pick-up Date & Time" value={g.arrivalPickupTime || undefined} />
                 <Field label="Hotel / Airport" value={g.arrivalHotel || undefined} />
