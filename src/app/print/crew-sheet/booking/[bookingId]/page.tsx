@@ -97,6 +97,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
     departurePickupTime: string; departureHotel: string; departureFlight: string
     emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
+    operationalNotes: string
     medicalData: any; foodData: any; drinksData: any; divingData: any; surfingData: any
   }
 
@@ -128,6 +129,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     dietaryRequirements: g.customer.dietaryRequirements ?? '',
     allergies: g.customer.allergies ?? '',
     drinkPreferences: g.customer.drinkPreferences ?? '',
+    operationalNotes: (g.customer as any).operationalNotes ?? '',
     medicalData: (g.customer as any).medicalData ?? {},
     foodData:    (g.customer as any).foodData    ?? {},
     drinksData:  (g.customer as any).drinksData  ?? {},
@@ -349,6 +351,14 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                 <Field label="Passport Expiry Date" value={g.passportExpiry || undefined} />
               </div>
             </Sec>
+
+            {/* Operational Notes — crew/ops only, shown prominently so it isn't missed */}
+            {g.operationalNotes && (
+              <div style={{ background: '#fff8e6', border: '1.5px solid #e8b93f', borderRadius: 5, padding: '10px 14px', marginBottom: 12 }}>
+                <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px', color: '#a1720b', fontWeight: 700, margin: '0 0 4px' }}>Notes — Crew &amp; Operations Only</p>
+                <p style={{ fontSize: 12, color: DARK, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{g.operationalNotes}</p>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
               <Sec title="Arrival Details" last>

@@ -97,6 +97,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
     departurePickupTime: string; departureHotel: string; departureFlight: string
     emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
+    operationalNotes: string
     medicalData: any; foodData: any; drinksData: any; divingData: any
   }
   const fmtDate = (d: Date | null | undefined) => d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
@@ -118,6 +119,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
       departurePickupTime: bg?.departurePickupTime ?? '', departureHotel: bg?.departureHotel ?? '', departureFlight: bg?.departureFlight ?? '',
       emergencyContact: c.emergencyContact ?? '', dietaryRequirements: c.dietaryRequirements ?? '',
       allergies: c.allergies ?? '', drinkPreferences: c.drinkPreferences ?? '',
+      operationalNotes: c.operationalNotes ?? '',
       medicalData: c.medicalData ?? {}, foodData: c.foodData ?? {}, drinksData: c.drinksData ?? {},
       divingData: c.divingData ?? {},
     }
@@ -349,6 +351,14 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                 <Field label="Passport Expiry Date" value={g.passportExpiry || undefined} />
               </div>
             </Sec>
+
+            {/* Operational Notes — crew/ops only, shown prominently so it isn't missed */}
+            {g.operationalNotes && (
+              <div style={{ background: '#fff8e6', border: '1.5px solid #e8b93f', borderRadius: 5, padding: '10px 14px', marginBottom: 12 }}>
+                <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px', color: '#a1720b', fontWeight: 700, margin: '0 0 4px' }}>Notes — Crew &amp; Operations Only</p>
+                <p style={{ fontSize: 12, color: DARK, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{g.operationalNotes}</p>
+              </div>
+            )}
 
             {/* Travel + Contact — 3 col */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>

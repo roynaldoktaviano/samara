@@ -37,6 +37,14 @@ function netBooking(b: {
   return b.confirmedAmount - commission
 }
 
+// If a booking has no confirmed/refunded Payment records yet, fall back to depositPaid
+// (same field the Finance Overview tab uses) so revenue isn't shown as $0 for bookings
+// that were paid but never had their payment explicitly marked "confirmed".
+function confirmedAmountOf(b: { payments: { amount: number }[]; depositPaid: number }) {
+  const paymentsSum = b.payments.reduce((s, p) => s + p.amount, 0)
+  return paymentsSum > 0 ? paymentsSum : b.depositPaid
+}
+
 export async function GET(request: NextRequest) {
   const db = await getDb()
   try {
@@ -60,7 +68,7 @@ export async function GET(request: NextRequest) {
         },
         select: {
           id: true, tripType: true, source: true, startDate: true, yachtId: true,
-          totalPrice: true, discount: true,
+          totalPrice: true, discount: true, depositPaid: true,
           services: { select: { price: true, quantity: true } },
           agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
           payments: { where: { status: { in: ['confirmed', 'refunded'] } }, select: { amount: true } },
@@ -147,7 +155,7 @@ export async function GET(request: NextRequest) {
 
       for (const b of vBookings) {
         const month = new Date(b.startDate).getMonth()
-        const confirmedAmount = b.payments.reduce((s, p) => s + p.amount, 0)
+        const confirmedAmount = confirmedAmountOf(b)
         const rev   = netBooking({ ...b, confirmedAmount })
 
         // Get unique cabins for this booking
@@ -187,7 +195,7 @@ export async function GET(request: NextRequest) {
     for (const b of allBookings) {
       if (!b.yachtId) continue
       const m   = new Date(b.startDate).getMonth()
-      const confirmedAmount = b.payments.reduce((s, p) => s + p.amount, 0)
+      const confirmedAmount = confirmedAmountOf(b)
       const rev = netBooking({ ...b, confirmedAmount })
       vesselMonthGrid[m][b.yachtId] = (vesselMonthGrid[m][b.yachtId] ?? 0) + rev
     }
