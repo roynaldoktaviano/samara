@@ -95,6 +95,14 @@ interface Inquiry {
   createdAt: string
 }
 
+interface PageView {
+  id: string
+  url: string
+  referrer?: string | null
+  title?: string | null
+  occurredAt: string
+}
+
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const statusColor: Record<string, string> = {
   confirmed: 'bg-green-100 text-green-700',
@@ -121,6 +129,7 @@ export default function Guests() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
   const [attributionInquiry, setAttributionInquiry] = useState<Inquiry | null>(null)
+  const [pageViews, setPageViews] = useState<PageView[] | null>(null)
 
   // single delete
   const [deleteTarget, setDeleteTarget] = useState<Guest | null>(null)
@@ -163,6 +172,8 @@ export default function Guests() {
     setDetailLoading(true)
     setInquiries(null)
     fetch(`/api/customers/${g.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
+    setPageViews(null)
+    fetch(`/api/customers/${g.id}/page-views`).then(r => r.ok ? r.json() : []).then(setPageViews).catch(() => setPageViews([]))
     try {
       const res = await fetch(`/api/customers/${g.id}`)
       if (res.ok) setDetail(await res.json())
@@ -171,7 +182,7 @@ export default function Guests() {
     }
   }
 
-  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null) }
+  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
 
   const openEdit = (g: Guest, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -642,6 +653,29 @@ export default function Guests() {
                                 <Target className="h-3 w-3" /> View attribution
                               </button>
                             )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Website Journey */}
+                  <div>
+                    <p className="text-sm font-semibold mb-3">Website Journey</p>
+                    {pageViews === null ? (
+                      <p className="text-sm text-muted-foreground">Loading…</p>
+                    ) : pageViews.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No page views recorded yet</p>
+                    ) : (
+                      <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                        {pageViews.map(pv => (
+                          <div key={pv.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                            <span className="text-xs font-mono truncate">
+                              {isHttpUrl(pv.url) ? <a href={pv.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{pv.title || pv.url}</a> : (pv.title || pv.url)}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground shrink-0">{new Date(pv.occurredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                         ))}
                       </div>

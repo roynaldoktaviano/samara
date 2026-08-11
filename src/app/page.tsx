@@ -124,8 +124,8 @@ const MARKETING_SUB_GROUPS = [
 const navigationItems: NavItem[] = [
   { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING'], group: 'main' },
   { id: 'my-approvals',  label: 'My Approvals',  icon: CheckCircle2, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'WAREHOUSE'], group: 'main' },
-  { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN'],                               group: 'chat' },
-  { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN'],                               group: 'chat' },
+  { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN', 'SALES'],                      group: 'chat' },
+  { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },
   { id: 'customers',     label: 'Guests',          icon: Users,      roles: ['ADMIN', 'SALES', 'MARKETING'],            group: 'operations' },
@@ -473,7 +473,7 @@ export default function Home() {
   const fetchUnreadWhatsapp = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
-      if (role !== 'ADMIN') return
+      if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/whatsapp/conversations')
       if (res.ok) {
         const data = await res.json()
@@ -485,7 +485,7 @@ export default function Home() {
   const fetchUnreadInstagram = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
-      if (role !== 'ADMIN') return
+      if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/instagram/conversations')
       if (res.ok) {
         const data = await res.json()
@@ -497,7 +497,7 @@ export default function Home() {
   const fetchUnreadEmailInbox = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
-      if (role !== 'ADMIN') return
+      if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/email-inbox/conversations')
       if (res.ok) {
         const data = await res.json()

@@ -56,6 +56,25 @@ model UserTenant {
   @@map("user_tenants")
 }
 
+// Records every CF7 (or future webhook source) submission that got rejected
+// before it could become a Lead — wrong/missing secret, unresolvable tenant
+// slug, or a form payload with no recognizable name/email/phone. Lives in the
+// central DB (not a tenant DB) because tenant resolution itself can be the
+// thing that failed, so there may be no tenant database to write into yet.
+model WebhookFailureLog {
+  id         String   @id @default(cuid())
+  source     String   // 'CF7'
+  tenantSlug String?  // raw ?tenant= query value, even if it didn't resolve to a real tenant
+  reason     String   // 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'exception'
+  detail     String?  // exception message, when reason = 'exception'
+  rawPayload Json?    // best-effort parsed form fields, for diagnosing why it was rejected
+  createdAt  DateTime @default(now())
+
+  @@index([source, createdAt])
+  @@index([tenantSlug, createdAt])
+  @@map("webhook_failure_logs")
+}
+
 model SuperAdminLog {
   id         String   @id @default(cuid())
   adminEmail String

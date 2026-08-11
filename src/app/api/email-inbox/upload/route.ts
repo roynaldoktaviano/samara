@@ -8,7 +8,7 @@ const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!isR2Configured()) {
     return NextResponse.json({ error: 'File hosting is not configured (R2 env vars missing)' }, { status: 500 })

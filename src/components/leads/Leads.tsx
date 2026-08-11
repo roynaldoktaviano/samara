@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2, Target } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Loader2, Target, AlertTriangle } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
@@ -64,6 +64,29 @@ interface Inquiry {
   createdAt: string
 }
 
+interface PageView {
+  id: string
+  url: string
+  referrer?: string | null
+  title?: string | null
+  occurredAt: string
+}
+
+interface WebhookFailure {
+  id: string
+  reason: 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'exception'
+  detail?: string | null
+  rawPayload?: Record<string, unknown> | null
+  createdAt: string
+}
+
+const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
+  unknown_tenant:              'Tenant/website tidak dikenali',
+  unauthorized:                'Secret webhook salah/tidak cocok',
+  insufficient_contact_data:   'Form tidak ada nama/email/telepon yang dikenali',
+  exception:                   'Error server saat memproses',
+}
+
 /* ─── Main Component ─────────────────────────────────────────────────────── */
 export default function Leads() {
   const { data: session } = useSession()
@@ -87,6 +110,7 @@ export default function Leads() {
   const [detail, setDetail] = useState<Lead | null>(null)
   const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
   const [attributionInquiry, setAttributionInquiry] = useState<Inquiry | null>(null)
+  const [pageViews, setPageViews] = useState<PageView[] | null>(null)
 
   // single delete
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null)
@@ -98,6 +122,11 @@ export default function Leads() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkErrors, setBulkErrors] = useState<string[]>([])
+
+  // submissions the CF7 webhook rejected before they ever became a Lead
+  const [failuresOpen, setFailuresOpen] = useState(false)
+  const [failures, setFailures] = useState<WebhookFailure[]>([])
+  const [loadingFailures, setLoadingFailures] = useState(false)
 
   const PAGE_SIZE = 20
 
@@ -119,6 +148,18 @@ export default function Leads() {
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
 
+  const fetchFailures = useCallback(async () => {
+    setLoadingFailures(true)
+    try {
+      const res = await fetch('/api/leads/webhook-failures')
+      if (res.ok) setFailures(await res.json())
+    } finally {
+      setLoadingFailures(false)
+    }
+  }, [])
+
+  useEffect(() => { if (failuresOpen) fetchFailures() }, [failuresOpen, fetchFailures])
+
   useEffect(() => {
     fetch('/api/leads/websites').then(r => r.ok ? r.json() : []).then(setWebsites).catch(() => {})
   }, [])
@@ -136,9 +177,11 @@ export default function Leads() {
     setDetailOpen(true)
     setInquiries(null)
     fetch(`/api/leads/${l.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
+    setPageViews(null)
+    fetch(`/api/leads/${l.id}/page-views`).then(r => r.ok ? r.json() : []).then(setPageViews).catch(() => setPageViews([]))
   }
 
-  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null) }
+  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
 
   const openEdit = (l: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -242,6 +285,9 @@ export default function Leads() {
               Google Ads CSV
             </Button>
           )}
+          <Button variant="outline" onClick={() => setFailuresOpen(true)}>
+            <AlertTriangle className="mr-2 h-4 w-4" /> Gagal Masuk
+          </Button>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Download className="mr-2 h-4 w-4" /> Import from Freshsales
           </Button>
@@ -548,6 +594,25 @@ export default function Leads() {
                     </div>
                   )}
                 </div>
+                <div className="text-sm">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Website Journey</p>
+                  {pageViews === null ? (
+                    <p className="text-xs text-muted-foreground">Loading…</p>
+                  ) : pageViews.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No page views recorded yet</p>
+                  ) : (
+                    <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                      {pageViews.map(pv => (
+                        <div key={pv.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                          <span className="text-xs font-mono truncate">
+                            {isHttpUrl(pv.url) ? <a href={pv.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{pv.title || pv.url}</a> : (pv.title || pv.url)}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground shrink-0">{new Date(pv.occurredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -614,6 +679,55 @@ export default function Leads() {
               </div>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Rejected webhook submissions — leads that never made it in ─────── */}
+      <Dialog open={failuresOpen} onOpenChange={setFailuresOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Submission yang Gagal Masuk</DialogTitle>
+            <DialogDescription>
+              Form dari website yang ditolak sebelum sempat jadi Lead — dipakai untuk cocokin sama Freshchat/sumber lain kalau ada lead yang kelihatannya &quot;hilang&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          {loadingFailures ? (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+            </div>
+          ) : failures.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic py-6 text-center">Tidak ada submission yang gagal dalam catatan sistem.</p>
+          ) : (
+            <div className="space-y-2">
+              {failures.map(f => {
+                const payload = f.rawPayload ?? {}
+                const previewName  = (payload['field_FirstName'] ?? payload['first-name'] ?? payload['your-name'] ?? payload['name']) as string | undefined
+                const previewEmail = (payload['field_Email'] ?? payload['email'] ?? payload['your-email']) as string | undefined
+                const previewPhone = (payload['field_PhoneWA'] ?? payload['phone'] ?? payload['your-phone']) as string | undefined
+                const hasPreview = previewName || previewEmail || previewPhone
+                return (
+                  <div key={f.id} className="rounded-lg border p-3 text-sm space-y-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">{FAILURE_REASON_LABEL[f.reason]}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(f.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {hasPreview ? (
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                        {previewName  && <span>{previewName}</span>}
+                        {previewEmail && <span className="font-mono">{previewEmail}</span>}
+                        {previewPhone && <span className="font-mono">{previewPhone}</span>}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">Tidak ada data form yang bisa dibaca (submission kosong/format tidak dikenali).</p>
+                    )}
+                    {f.detail && <p className="text-xs text-muted-foreground break-all">{f.detail}</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

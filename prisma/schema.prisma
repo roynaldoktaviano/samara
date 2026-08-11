@@ -180,6 +180,7 @@ model Customer {
   waitingListItems     WaitingList[]
   waitingListHistories WaitingListHistory[] @relation("WaitingListHistoryCustomer")
   inquiries            Inquiry[]
+  pageViews            PageView[]
 
   @@index([deletedAt])
   @@index([name])
@@ -202,11 +203,38 @@ model Lead {
   updatedAt           DateTime  @updatedAt
 
   inquiries Inquiry[]
+  pageViews PageView[]
 
   @@index([deletedAt])
   @@index([name])
   @@index([email])
   @@index([createdAt])
+}
+
+// One row per page load on the tenant's website, reported by the client-side
+// tracker in functions.php. Rows start unowned (leadId/customerId both null,
+// tied only to the anonymous visitorId cookie) and get retroactively linked
+// to whichever Lead/Customer a CF7 submission resolves to — see the visitorId
+// handling in POST /api/webhooks/cf7. This is what builds the "visitor
+// journey" view Freshsales shows on a contact's timeline.
+model PageView {
+  id         String    @id @default(cuid())
+  visitorId  String
+  leadId     String?
+  customerId String?
+  url        String
+  referrer   String?
+  title      String?
+  occurredAt DateTime
+  createdAt  DateTime  @default(now())
+
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([visitorId])
+  @@index([leadId])
+  @@index([customerId])
+  @@index([occurredAt])
 }
 
 // One row per form/inquiry submission — links to whichever of Lead/Customer

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { withRetry } from '@/lib/db'
+import { findDuplicateInquiry, enrichInquiry } from '@/lib/inquiry-dedup'
 import type { Prisma } from '@prisma/client'
 
 export const maxDuration = 60
@@ -388,14 +389,20 @@ export async function POST(req: NextRequest) {
       }))
       const hasInquirySet = new Set(existingInquiries.map(i => i.leadId))
       const idByFsId = new Map(updatedLeads.map(l => [l.freshsalesContactId, l.id]))
-      const inquiryRows = updateRowsWithInquiry
-        .map(r => {
-          const leadId = idByFsId.get(r.freshsalesContactId)
-          if (!leadId || hasInquirySet.has(leadId) || !r.inquiry) return null
-          const { createdAt, ...rest } = r.inquiry
-          return { leadId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
+      const inquiryRows: { leadId: string; source: string; [key: string]: unknown }[] = []
+      for (const r of updateRowsWithInquiry) {
+        const leadId = idByFsId.get(r.freshsalesContactId)
+        if (!leadId || hasInquirySet.has(leadId) || !r.inquiry) continue
+        // Same-content Inquiry can already exist under a different source
+        // (e.g. CF7 webhook fired for the same real-world submission) —
+        // enrich that one instead of adding a duplicate row.
+        const dup = await findDuplicateInquiry(db, {
+          leadId, checkInDate: r.inquiry.checkInDate, checkOutDate: r.inquiry.checkOutDate, guestCount: r.inquiry.guestCount,
         })
-        .filter((x): x is NonNullable<typeof x> => !!x)
+        if (dup) { await enrichInquiry(db, dup.id, r.inquiry); continue }
+        const { createdAt, ...rest } = r.inquiry
+        inquiryRows.push({ leadId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) })
+      }
       if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
     }
     created = toCreate.length
@@ -465,14 +472,20 @@ export async function POST(req: NextRequest) {
       }))
       const hasInquirySet = new Set(existingInquiries.map(i => i.customerId))
       const idByFsId = new Map(updatedCustomers.map(c => [c.freshsalesContactId, c.id]))
-      const inquiryRows = updateRowsWithInquiry
-        .map(r => {
-          const customerId = idByFsId.get(r.freshsalesContactId)
-          if (!customerId || hasInquirySet.has(customerId) || !r.inquiry) return null
-          const { createdAt, ...rest } = r.inquiry
-          return { customerId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) }
+      const inquiryRows: { customerId: string; source: string; [key: string]: unknown }[] = []
+      for (const r of updateRowsWithInquiry) {
+        const customerId = idByFsId.get(r.freshsalesContactId)
+        if (!customerId || hasInquirySet.has(customerId) || !r.inquiry) continue
+        // Same-content Inquiry can already exist under a different source
+        // (e.g. CF7 webhook fired for the same real-world submission) —
+        // enrich that one instead of adding a duplicate row.
+        const dup = await findDuplicateInquiry(db, {
+          customerId, checkInDate: r.inquiry.checkInDate, checkOutDate: r.inquiry.checkOutDate, guestCount: r.inquiry.guestCount,
         })
-        .filter((x): x is NonNullable<typeof x> => !!x)
+        if (dup) { await enrichInquiry(db, dup.id, r.inquiry); continue }
+        const { createdAt, ...rest } = r.inquiry
+        inquiryRows.push({ customerId, source: 'freshsales', ...rest, ...(createdAt ? { createdAt } : {}) })
+      }
       if (inquiryRows.length) await withRetry(db, () => db.inquiry.createMany({ data: inquiryRows }))
     }
     created = toCreate.length

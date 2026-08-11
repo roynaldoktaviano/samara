@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { findDuplicateInquiry, enrichInquiry } from '@/lib/inquiry-dedup'
 import type { Prisma } from '@prisma/client'
 
 import { roleMatches } from '@/lib/role-utils'
@@ -97,7 +98,16 @@ export async function POST(req: NextRequest) {
       const createdAt = d.createdAt ? new Date(d.createdAt) : null
       if (d.action === 'merge' && d.existingId) {
         await db.lead.update({ where: { id: d.existingId }, data: { ...profile, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) } })
-        if (d.inquiry) await db.inquiry.create({ data: { leadId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
+        if (d.inquiry) {
+          const dup = await findDuplicateInquiry(db, {
+            leadId: d.existingId,
+            checkInDate: d.inquiry.checkInDate ? new Date(d.inquiry.checkInDate) : null,
+            checkOutDate: d.inquiry.checkOutDate ? new Date(d.inquiry.checkOutDate) : null,
+            guestCount: d.inquiry.guestCount,
+          })
+          if (dup) await enrichInquiry(db, dup.id, d.inquiry)
+          else await db.inquiry.create({ data: { leadId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
+        }
         merged++
       } else {
         const lead = await db.lead.upsert({
@@ -114,7 +124,16 @@ export async function POST(req: NextRequest) {
       const createdAt = d.createdAt ? new Date(d.createdAt) : null
       if (d.action === 'merge' && d.existingId) {
         await db.customer.update({ where: { id: d.existingId }, data: { ...d.data, freshsalesContactId: d.freshsalesContactId, ...(createdAt ? { createdAt } : {}) } })
-        if (d.inquiry) await db.inquiry.create({ data: { customerId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
+        if (d.inquiry) {
+          const dup = await findDuplicateInquiry(db, {
+            customerId: d.existingId,
+            checkInDate: d.inquiry.checkInDate ? new Date(d.inquiry.checkInDate) : null,
+            checkOutDate: d.inquiry.checkOutDate ? new Date(d.inquiry.checkOutDate) : null,
+            guestCount: d.inquiry.guestCount,
+          })
+          if (dup) await enrichInquiry(db, dup.id, d.inquiry)
+          else await db.inquiry.create({ data: { customerId: d.existingId, ...toInquiryCreateData(d.inquiry) } })
+        }
         merged++
       } else {
         const customer = await db.customer.upsert({

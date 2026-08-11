@@ -3,6 +3,7 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 import { isHttpUrl } from '@/lib/url-safety'
+import { logWebhookFailure } from '@/lib/webhook-log'
 
 // This endpoint is meant to be called directly from the browser (client-side
 // JS on the WordPress site listening for the wpcf7mailsent event), not just
@@ -53,27 +54,20 @@ function toJsonSafe(data: Record<string, unknown>): Record<string, string> {
 }
 
 export async function POST(request: NextRequest) {
+  // Raw ?tenant= as given, before it's known to resolve to anything — kept
+  // around so a failure log can still be written even when the tenant lookup
+  // below fails.
+  const rawTenantSlug = request.nextUrl.searchParams.get('tenant')
+
+  // ── Parse body (JSON or form-encoded) ──────────────────────────────────────
+  // Done up front, before any validation, so every rejection path below —
+  // including "unknown tenant" and "bad secret" — can still log what was
+  // actually submitted. A parse failure here just leaves `data` empty rather
+  // than aborting the request; the "insufficient contact data" check further
+  // down will catch that case and still log it.
+  const contentType = request.headers.get('content-type') ?? ''
+  let data: Record<string, unknown> = {}
   try {
-    // ── Resolve which tenant this lead belongs to ────────────────────────────
-    // Each tenant's WordPress site should post to `?secret=...&tenant=<slug>`.
-    // Falls back to 'samara' when omitted, so existing form configs keep working.
-    // Resolved before the secret check below, since the secret itself is per-tenant.
-    const tenantSlug = request.nextUrl.searchParams.get('tenant')
-    const resolved = await resolveTenantBySlugFull(tenantSlug)
-    if (!resolved) return json({ error: 'Unknown or inactive tenant' }, 400)
-    const { db, tenant } = resolved
-
-    // ── Verify secret token ──────────────────────────────────────────────────
-    const secret   = request.nextUrl.searchParams.get('secret')
-    const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
-    if (!expected || secret !== expected) {
-      return json({ error: 'Unauthorized' }, 401)
-    }
-
-    // ── Parse body (JSON or form-encoded) ────────────────────────────────────
-    const contentType = request.headers.get('content-type') ?? ''
-    let data: Record<string, unknown> = {}
-
     if (contentType.includes('application/json')) {
       data = await request.json()
     } else if (
@@ -89,6 +83,27 @@ export async function POST(request: NextRequest) {
       } catch {
         for (const [k, v] of new URLSearchParams(text).entries()) data[k] = v
       }
+    }
+  } catch { /* leave data empty — still worth logging on rejection below */ }
+
+  try {
+    // ── Resolve which tenant this lead belongs to ────────────────────────────
+    // Each tenant's WordPress site should post to `?secret=...&tenant=<slug>`.
+    // Falls back to 'samara' when omitted, so existing form configs keep working.
+    // Resolved before the secret check below, since the secret itself is per-tenant.
+    const resolved = await resolveTenantBySlugFull(rawTenantSlug)
+    if (!resolved) {
+      logWebhookFailure({ source: 'CF7', tenantSlug: rawTenantSlug, reason: 'unknown_tenant', rawPayload: toJsonSafe(data) })
+      return json({ error: 'Unknown or inactive tenant' }, 400)
+    }
+    const { db, tenant } = resolved
+
+    // ── Verify secret token ──────────────────────────────────────────────────
+    const secret   = request.nextUrl.searchParams.get('secret')
+    const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
+    if (!expected || secret !== expected) {
+      logWebhookFailure({ source: 'CF7', tenantSlug: tenant.slug, reason: 'unauthorized', rawPayload: toJsonSafe(data) })
+      return json({ error: 'Unauthorized' }, 401)
     }
 
     // ── Extract fields ────────────────────────────────────────────────────────
@@ -132,8 +147,13 @@ export async function POST(request: NextRequest) {
     const rawUrl = pick(data, 'page-url', 'page_url', 'url', 'form-url')
     const url = isHttpUrl(rawUrl) ? rawUrl : ''
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
+    // Anonymous visitor-id cookie set by the same client-side tracker that reports
+    // page views to /api/webhooks/pageview — used below to retroactively attach this
+    // visitor's browsing history to whichever Lead/Customer this submission resolves to.
+    const visitorId = pick(data, 'visitorId', 'visitor_id')
 
     if (!firstName && !email && !phone) {
+      logWebhookFailure({ source: 'CF7', tenantSlug: tenant.slug, reason: 'insufficient_contact_data', rawPayload: toJsonSafe(data) })
       return json({ error: 'Insufficient contact data' }, 400)
     }
 
@@ -242,8 +262,20 @@ export async function POST(request: NextRequest) {
       detail: `Website inquiry: ${fullName}${message ? ` · ${message}` : ''}`,
     }, db).catch(() => {})
 
+    // Attach this visitor's page-view history (recorded anonymously up to now via
+    // /api/webhooks/pageview) to the Lead/Customer this submission just resolved to.
+    // Only claims rows still unowned — an existing owner (from a prior submission)
+    // is left alone.
+    if (visitorId) {
+      db.pageView.updateMany({
+        where: { visitorId, leadId: null, customerId: null },
+        data: ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId },
+      }).catch(() => {})
+    }
+
     return json({ ok: true, ownerType, ownerId })
   } catch (error) {
+    logWebhookFailure({ source: 'CF7', tenantSlug: rawTenantSlug, reason: 'exception', detail: String(error), rawPayload: toJsonSafe(data) })
     console.error('[CF7 webhook]', error)
     return json({ error: 'Internal server error' }, 500)
   }
