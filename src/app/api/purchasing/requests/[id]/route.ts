@@ -193,6 +193,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const createdPoNumbers: string[] = []
+  const createdPoIds: string[] = []
   const createdTransferNumbers: string[] = []
 
   // Auto-create draft POs (grouped by supplier) for items not fulfilled via transfer
@@ -221,18 +222,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
         const poNumber = `${prefix}${String(seq).padStart(3, '0')}`
         createdPoNumbers.push(poNumber)
+        const poId = crypto.randomUUID()
+        createdPoIds.push(poId)
         const supplierId = supplierKey === '__none__' ? null : supplierKey
         const supplierName = groupItems[0]?.supplierName ?? null
         await db.purchaseOrder.create({
           data: {
-            id: crypto.randomUUID(),
+            id: poId,
             poNumber,
             requestId: id,
             supplierId,
             supplierName,
             deliveryLocationId: request.deliveryLocationId,
             status: 'DRAFT',
-            createdById: request.requestedById,
+            createdById: session.user.id,
             updatedAt: new Date(),
             ...(requester && {
               requestedByEmployeeId: request.requestedByEmployeeId,
@@ -303,7 +306,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  return NextResponse.json({ ...request, createdPoNumbers, createdTransferNumbers })
+  return NextResponse.json({ ...request, createdPoNumbers, createdPoIds, createdTransferNumbers })
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -32,7 +32,7 @@ export async function itemRequiresQuotationApproval(
   db: PrismaClient,
   item: { itemId: string | null; itemName: string; quantity: number; estimatedCost: number; supplierId: string | null },
 ): Promise<boolean> {
-  const band = getBand(item.quantity * item.estimatedCost)
+  const band = getBand(item.estimatedCost)
   if (band === 'A') return false
   if (!item.supplierId) return true
   const historicalOrder = await db.purchaseOrderItem.findFirst({

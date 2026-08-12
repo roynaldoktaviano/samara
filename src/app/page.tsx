@@ -713,7 +713,7 @@ export default function Home() {
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
       case 'purchasing-overview':   return <PurchasingOverview />
-      case 'purchasing-requests':  return <PurchasingRequestsPage />
+      case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />

@@ -8,6 +8,18 @@ import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
+// For PO-driven transit legs only (transfer.purchaseOrderId set) — ad-hoc transfers made
+// directly in the Transfers module aren't scoped this way. A leg's destination is usually a
+// Vessel when it's the final hop of a shipping route; crew there have no ERP login and confirm
+// via the token-based receive link instead (see receive-link/route.ts), so Vessel destinations
+// skip this check entirely rather than requiring a WAREHOUSE/PURCHASING account to act on it.
+async function legLocationAllowsRole(db: Awaited<ReturnType<typeof getDb>>, locationId: string, role: string): Promise<boolean> {
+  const loc = await db.stockLocation.findUnique({ where: { id: locationId }, select: { type: true, managedBy: true } })
+  if (!loc || loc.type === 'VESSEL') return true
+  const allowed = loc.managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+  return roleMatches(role, allowed)
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
@@ -83,6 +95,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'dispatch') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Transfer sudah diproses' }, { status: 409 })
     if (!dispatchPhotoKey) return NextResponse.json({ error: 'Foto dispatch wajib diupload' }, { status: 400 })
+    if (transfer.purchaseOrderId && !(await legLocationAllowsRole(db, transfer.fromLocationId, role))) {
+      return NextResponse.json({ error: 'Only the team managing this location can dispatch from it' }, { status: 403 })
+    }
     const dispatchItems = items as { itemId: string | null; itemName: string; dispatchedQty: number }[]
 
     // Stock is re-checked here (not trusted from the client) — it can have moved since
@@ -148,6 +163,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (action === 'receive') {
+    if (transfer.purchaseOrderId && !(await legLocationAllowsRole(db, transfer.toLocationId, role))) {
+      return NextResponse.json({ error: 'Only the team managing this location can receive here' }, { status: 403 })
+    }
     const receiveItems = items as { itemId: string | null; itemName: string; receivedQty: number }[]
     const result = await receiveTransferLeg(db, id, {
       items: receiveItems,

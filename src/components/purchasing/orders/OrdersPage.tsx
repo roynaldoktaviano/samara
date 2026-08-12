@@ -28,7 +28,7 @@ interface TransitLeg {
   id: string; legSequence: number | null; status: string; dispatchedAt: string | null; receivedAt: string | null
   dispatchPhotoKey: string | null; receivePhotoKey: string | null; receivedByName: string | null
   dispatchedBy: { name: string | null } | null
-  fromLocation: { name: string }; toLocation: { name: string }
+  fromLocation: { name: string; type: string; managedBy: string }; toLocation: { name: string; type: string; managedBy: string }
   items: TransitLegItem[]
 }
 interface PurchaseOrder {
@@ -67,7 +67,7 @@ interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedByName?: string | null
   confirmedByName?: string | null
-  request?: { prNumber: string; createdAt: string } | null
+  request?: { prNumber: string; createdAt: string; neededByDate?: string | null } | null
   cancellationReason?: string | null
   cancelledAt?: string | null
   cancelledByName?: string | null
@@ -966,6 +966,11 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         setDraftSupplier(d.supplierName ?? '')
         setDraftNotes(d.notes ?? '')
         setDraftSupplierEditing(false)
+        setDeliveryLocationId(d.deliveryLocationId ?? '')
+        setTransitStopIds(d.transitStops?.map((s: TransitStop) => s.locationId) ?? [])
+        // Default to the PR's "needed by" date — Purchasing can still change it before confirming.
+        const fallbackNeeded = d.request?.neededByDate ? d.request.neededByDate.split('T')[0] : ''
+        setDraftExpectedAt(d.expectedAt ? d.expectedAt.split('T')[0] : fallbackNeeded)
       }
     }
     setDetailLoading(false)
@@ -1770,7 +1775,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     setDraftSaving(true); setDraftError('')
     const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'ORDERED', supplierName: draftSupplier, expectedAt: draftExpectedAt || undefined, notes: draftNotes || undefined }),
+      body: JSON.stringify({
+        status: 'ORDERED', supplierName: draftSupplier, expectedAt: draftExpectedAt || undefined, notes: draftNotes || undefined,
+        deliveryLocationId: deliveryLocationId || undefined, transitStops: transitStopIds,
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setDraftError(data.error ?? 'Failed'); setDraftSaving(false); return }
@@ -2077,17 +2085,24 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               const openLeg = detail.transitTransfers?.find(t => t.status === 'PENDING' || t.status === 'DISPATCHED')
               if (!openLeg) return null
               const action = openLeg.status === 'PENDING' ? 'dispatch' : 'receive'
+              // Vessel destinations are received via the crew token link (no ERP login), not this
+              // button — everyone else is gated by which team manages the acting location.
+              const actingLoc = action === 'dispatch' ? openLeg.fromLocation : openLeg.toLocation
+              if (actingLoc.type !== 'VESSEL') {
+                const allowed = actingLoc.managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+                if (!allowed.includes(role)) return null
+              }
               return (
                 <button onClick={() => openLegAction(openLeg, action)}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
-                  {action === 'dispatch' ? `Dispatch to ${openLeg.toLocation.name}` : `Confirm Arrival at ${openLeg.toLocation.name}`}
+                  {action === 'dispatch' ? `Send to ${openLeg.toLocation.name}` : `Confirm Arrival at ${openLeg.toLocation.name}`}
                 </button>
               )
             })()}
             {detail.status === 'ORDERED' && canTransit && (detail.paymentRequests.some(p => p.status === 'PAID') || detail.reimbursements.some(r => r.status === 'PAID')) && (
               <button onClick={() => { setTransitPhoto(null); setTransitError(''); setTransitModal(true) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                <Camera className="h-3.5 w-3.5" /> Goods In Transit
+                <Camera className="h-3.5 w-3.5" /> Goods In Delivery
               </button>
             )}
             {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !hasAnyPaymentRecord && (
@@ -2145,8 +2160,64 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     <label className="text-sm font-medium text-muted-foreground">Expected Arrival</label>
                     <input type="date" className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
                       value={draftExpectedAt} onChange={e => setDraftExpectedAt(e.target.value)} />
+                    {detail.request?.neededByDate && (
+                      <p className="text-xs text-muted-foreground mt-1">Defaulted from the PR&apos;s needed-by date — adjust if needed.</p>
+                    )}
                   </div>
                 </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Delivery Location</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <select
+                      className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                      value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
+                    >
+                      <option value="">— Pilih lokasi —</option>
+                      {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  </div>
+                  {deliveryLocationId && (() => {
+                    const loc = locations.find(l => l.id === deliveryLocationId)
+                    return loc ? <p className="text-xs text-muted-foreground mt-1">Diterima oleh tim <span className="font-medium">{loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'}</span></p> : null
+                  })()}
+                </div>
+
+                {/* Shipping Route — optional transit stops between the supplier and the Delivery
+                    Location above; each hop auto-chains into a Transfer once goods arrive. */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">Shipping Route <span className="font-normal">(optional — routes goods through one or more transit stops before Delivery Location)</span></label>
+                  {transitStopIds.length > 0 && (
+                    <div className="space-y-1.5">
+                      {transitStopIds.map((locId, idx) => {
+                        const loc = locations.find(l => l.id === locId)
+                        return (
+                          <div key={locId} className="flex items-center gap-2 border rounded-md px-3 py-1.5 bg-white text-sm">
+                            <span className="text-xs font-semibold text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                            <span className="flex-1 truncate">{loc?.name ?? locId}</span>
+                            <button type="button" disabled={idx === 0}
+                              onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]; return next })}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↑</button>
+                            <button type="button" disabled={idx === transitStopIds.length - 1}
+                              onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]; return next })}
+                              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↓</button>
+                            <button type="button" onClick={() => setTransitStopIds(ids => ids.filter(id => id !== locId))}
+                              className="text-red-500 hover:text-red-700 px-1"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )
+                      })}
+                      <p className="text-xs text-muted-foreground">
+                        Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— pilih Delivery Location —'}</span>
+                      </p>
+                    </div>
+                  )}
+                  <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white" value=""
+                    onChange={e => { const v = e.target.value; if (v) setTransitStopIds(ids => [...ids, v]) }}>
+                    <option value="">+ Add transit stop…</option>
+                    {locations.filter(l => l.id !== deliveryLocationId && !transitStopIds.includes(l.id)).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-muted-foreground">Notes</label>
                   <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none"
@@ -2464,7 +2535,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
-                  <h3 className="font-semibold">Mark as In Transit</h3>
+                  <h3 className="font-semibold">Mark as In Delivery</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Upload dispatch photo before continuing</p>
                 </div>
                 <button onClick={() => setTransitModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
@@ -2503,7 +2574,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setTransitModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={confirmTransit} disabled={!transitPhoto || transitSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {transitSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><Upload className="h-3.5 w-3.5" />Confirm In Transit</>}
+                  {transitSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><Upload className="h-3.5 w-3.5" />Confirm In Delivery</>}
                 </button>
               </div>
             </div>
@@ -2522,7 +2593,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <div>
                   <h3 className="font-semibold">
                     {legActionModal.action === 'dispatch'
-                      ? `Dispatch to ${legActionModal.leg.toLocation.name}`
+                      ? `Send to ${legActionModal.leg.toLocation.name}`
                       : `Confirm Arrival at ${legActionModal.leg.toLocation.name}`}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{legActionModal.leg.fromLocation.name} → {legActionModal.leg.toLocation.name}</p>

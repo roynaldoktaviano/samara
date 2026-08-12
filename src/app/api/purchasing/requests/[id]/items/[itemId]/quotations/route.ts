@@ -45,6 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!supplierName?.trim()) return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
   if (!price || Number(price) <= 0) return NextResponse.json({ error: 'Price must be greater than 0' }, { status: 400 })
+  if (!fileKey?.trim()) return NextResponse.json({ error: 'Quotation document is required as proof for the approver' }, { status: 400 })
 
   let resolvedSupplierId: string | null = supplierId || null
   if (!resolvedSupplierId) {

@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       items: { include: { item: { select: { purchaseUnit: true } } } },
-      deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
+      deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true, address: true } },
       booking: { select: { bookingCode: true, tripType: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
       createdBy: { select: { name: true } },
       supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
@@ -27,6 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         select: {
           prNumber: true,
           createdAt: true,
+          neededByDate: true,
           requestedBy: { select: { name: true } },
           requestedByEmployee: { select: { fullName: true, employeeNumber: true, department: true, location: { select: { name: true } } } },
         },
@@ -56,7 +57,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           id: true, legSequence: true, status: true, dispatchedAt: true, receivedAt: true,
           dispatchPhotoKey: true, receivePhotoKey: true, receivedByName: true,
           dispatchedBy: { select: { name: true } },
-          fromLocation: { select: { name: true } }, toLocation: { select: { name: true } },
+          fromLocation: { select: { name: true, type: true, managedBy: true } }, toLocation: { select: { name: true, type: true, managedBy: true } },
           items: { select: { id: true, itemId: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true } },
         },
       },
@@ -328,10 +329,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const poNum = order.poNumber
   const supplier = order.supplierName ?? 'supplier'
 
-  if (status === 'ORDERED' || status === 'IN_TRANSIT') {
+  if (status === 'IN_TRANSIT') {
     // Warehouse only cares about POs that actually pass through a warehouse — same rule
     // as the "involves warehouse" filter on their PO list (src/components/purchasing/orders/OrdersPage.tsx).
     // Blasting every PO to every warehouse user (regardless of destination) was noise.
+    // Nothing fires at ORDERED — Purchasing confirming a draft PO internally doesn't mean
+    // the supplier has even shipped anything yet, so there's nothing for Warehouse to
+    // prepare for. The first useful signal is once goods are actually moving.
     const forNotify = await db.purchaseOrder.findUnique({
       where: { id },
       select: {
@@ -343,19 +347,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       || !!forNotify?.transitStops.some(s => s.location.type === 'WAREHOUSE')
     const notifyRoles = involvesWarehouse ? ['WAREHOUSE', 'ADMIN'] : ['ADMIN']
 
-    if (status === 'ORDERED') {
-      notifyByRole(db, notifyRoles, 'PO_ORDERED',
-        `PO Siap Diterima`,
-        `${poNum} dari ${supplier} sudah dikonfirmasi — harap siapkan penerimaan barang`,
-        id,
-      ).catch(console.error)
-    } else {
-      notifyByRole(db, notifyRoles, 'PO_IN_TRANSIT',
-        `Barang Dalam Pengiriman`,
-        `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang`,
-        id,
-      ).catch(console.error)
-    }
+    notifyByRole(db, notifyRoles, 'PO_IN_TRANSIT',
+      `Barang Dalam Pengiriman`,
+      `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang — harap siapkan penerimaan barang`,
+      id,
+    ).catch(console.error)
   } else if (status === 'RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
       `Barang Diterima`,

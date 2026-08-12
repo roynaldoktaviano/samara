@@ -7,13 +7,26 @@ import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
+function toFloatOrNull(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = parseFloat(v as string)
+  return Number.isNaN(n) ? null : n
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, employeeNumber, legalEntityId, locationId, department, roleId, isActive, resignedAt, resignStatus, resignReason, gender, employmentStatus, leaveBalance, joinDate, managerId, userId } = await req.json()
+  const {
+    fullName, employeeNumber, legalEntityId, locationId, department, roleId, isActive, resignedAt, resignStatus, resignReason, gender, employmentStatus, leaveBalance, joinDate, managerId, userId, phone, address, birthDate,
+    nikPassport, nationality, religion, placeOfBirth, motherName, personalEmail, maritalStatus, addressCurrent,
+    emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+    npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
+    basicSalary, allowance, uangLayar, uangMakan,
+    seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles,
+  } = await req.json()
 
   if (employeeNumber) {
     const dup = await db.employee.findFirst({ where: { employeeNumber: employeeNumber.trim(), NOT: { id } } })
@@ -40,6 +53,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(joinDate !== undefined && { joinDate: joinDate ? new Date(joinDate) : null }),
         ...(managerId !== undefined && { managerId: managerId || null }),
         ...(userId !== undefined && { userId: userId || null }),
+        ...(phone !== undefined && { phone: phone?.trim() || null }),
+        ...(address !== undefined && { address: address?.trim() || null }),
+        ...(birthDate !== undefined && { birthDate: birthDate ? new Date(birthDate) : null }),
+        ...(nikPassport !== undefined && { nikPassport: nikPassport?.trim() || null }),
+        ...(nationality !== undefined && { nationality: nationality?.trim() || null }),
+        ...(religion !== undefined && { religion: religion?.trim() || null }),
+        ...(placeOfBirth !== undefined && { placeOfBirth: placeOfBirth?.trim() || null }),
+        ...(motherName !== undefined && { motherName: motherName?.trim() || null }),
+        ...(personalEmail !== undefined && { personalEmail: personalEmail?.trim() || null }),
+        ...(maritalStatus !== undefined && { maritalStatus: maritalStatus || null }),
+        ...(addressCurrent !== undefined && { addressCurrent: addressCurrent?.trim() || null }),
+        ...(emergencyContactName !== undefined && { emergencyContactName: emergencyContactName?.trim() || null }),
+        ...(emergencyContactPhone !== undefined && { emergencyContactPhone: emergencyContactPhone?.trim() || null }),
+        ...(emergencyContactRelation !== undefined && { emergencyContactRelation: emergencyContactRelation?.trim() || null }),
+        ...(npwp !== undefined && { npwp: npwp?.trim() || null }),
+        ...(kkNumber !== undefined && { kkNumber: kkNumber?.trim() || null }),
+        ...(bankName !== undefined && { bankName: bankName?.trim() || null }),
+        ...(bankAccountNumber !== undefined && { bankAccountNumber: bankAccountNumber?.trim() || null }),
+        ...(bankAccountName !== undefined && { bankAccountName: bankAccountName?.trim() || null }),
+        ...(bpjsKesehatanNumber !== undefined && { bpjsKesehatanNumber: bpjsKesehatanNumber?.trim() || null }),
+        ...(bpjsTkNumber !== undefined && { bpjsTkNumber: bpjsTkNumber?.trim() || null }),
+        ...(basicSalary !== undefined && { basicSalary: toFloatOrNull(basicSalary) }),
+        ...(allowance !== undefined && { allowance: toFloatOrNull(allowance) }),
+        ...(uangLayar !== undefined && { uangLayar: toFloatOrNull(uangLayar) }),
+        ...(uangMakan !== undefined && { uangMakan: toFloatOrNull(uangMakan) }),
+        ...(seamanBookFiles !== undefined && { seamanBookFiles: Array.isArray(seamanBookFiles) ? seamanBookFiles : [] }),
+        ...(bstFiles !== undefined && { bstFiles: Array.isArray(bstFiles) ? bstFiles : [] }),
+        ...(medicalCheckupFiles !== undefined && { medicalCheckupFiles: Array.isArray(medicalCheckupFiles) ? medicalCheckupFiles : [] }),
+        ...(ijazahFiles !== undefined && { ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [] }),
+        ...(certificateFiles !== undefined && { certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [] }),
         ...(isActive !== undefined && {
           isActive,
           // Reactivating clears any prior resignation record; deactivating records it from the payload.

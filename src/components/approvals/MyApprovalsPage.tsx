@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download } from 'lucide-react'
+import { FilePreview } from '@/components/ui/file-preview'
+import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 
 interface ApprovalRequest {
   id: string
@@ -29,7 +31,7 @@ interface QuotationApprovalItem {
   quotationSubmittedAt: string
   request: { id: string; prNumber: string }
   quotationSubmittedBy: { name: string | null } | null
-  quotations: { id: string; supplierName: string; price: number; submittedAt: string }[]
+  quotations: { id: string; supplierId: string | null; supplierName: string; price: number; submittedAt: string; fileKey: string | null }[]
 }
 
 function fmtDate(s: string) {
@@ -52,6 +54,10 @@ export default function MyApprovalsPage() {
   const [rejectModal, setRejectModal] = useState<ApprovalRequest | null>(null)
   const [quoteRejectModal, setQuoteRejectModal] = useState<QuotationApprovalItem | null>(null)
   const [quoteRejectReason, setQuoteRejectReason] = useState('')
+  // Which quotation the approver has picked for each pending item — this is the approver's
+  // own decision, not something Purchasing set; nothing is pre-selected.
+  const [chosenQuotation, setChosenQuotation] = useState<Record<string, string>>({})
+  const [fileLightbox, setFileLightbox] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -85,7 +91,7 @@ export default function MyApprovalsPage() {
     const res = await fetch(`/api/purchasing/requests/${item.requestId}/items/${item.id}/quotations/approval`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, reason }),
+      body: JSON.stringify({ action, reason, quotationId: action === 'approve' ? chosenQuotation[item.id] : undefined }),
     })
     const data = await res.json()
     setActingId(null)
@@ -180,45 +186,69 @@ export default function MyApprovalsPage() {
       ) : (
         <div className="space-y-3">
           {quotationItems.map(q => {
-            const cheapest = q.quotations.length ? q.quotations.reduce((a, b) => (a.price < b.price ? a : b)) : null
+            const chosenId = chosenQuotation[q.id]
             return (
               <div key={q.id} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-xs text-muted-foreground">{q.request.prNumber}</p>
-                    <p className="font-semibold text-sm mt-0.5">{q.itemName} <span className="text-muted-foreground font-normal">· {q.quantity} {q.unit}</span></p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Submitted by {q.quotationSubmittedBy?.name ?? '—'} · {fmtDate(q.quotationSubmittedAt)}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Chosen Supplier</p>
-                    <p className="font-semibold text-sm">{q.supplierName ?? '—'}</p>
-                    <p className="text-sm font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.estimatedCost)}</p>
-                  </div>
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">{q.request.prNumber}</p>
+                  <p className="font-semibold text-sm mt-0.5">{q.itemName} <span className="text-muted-foreground font-normal">· {q.quantity} {q.unit}</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Submitted by {q.quotationSubmittedBy?.name ?? '—'} · {fmtDate(q.quotationSubmittedAt)}
+                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Quotations on file</p>
-                  {q.quotations.map(quote => (
-                    <div key={quote.id} className="flex items-center justify-between text-xs border rounded-md px-2.5 py-1.5">
-                      <span className={quote.supplierName === q.supplierName ? 'font-semibold' : ''}>
-                        {quote.supplierName}{quote.id === cheapest?.id && <span className="ml-1.5 text-green-600 font-medium">(cheapest)</span>}
-                      </span>
-                      <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(quote.price)}</span>
-                    </div>
-                  ))}
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Pick which quotation to use</p>
+                  <div className="grid grid-cols-5 gap-3">
+                  {q.quotations.map(quote => {
+                    const isChosen = quote.id === chosenId
+                    return (
+                      <div key={quote.id} className={`border rounded-md overflow-hidden text-xs ${isChosen ? 'border-green-400 bg-green-50' : ''}`}>
+                        {quote.fileKey ? (
+                          <div className="relative">
+                            <FilePreview
+                              src={quote.fileKey}
+                              alt="Quotation document"
+                              onClick={() => setFileLightbox(quote.fileKey)}
+                              className="w-full h-20 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                            />
+                            <button
+                              onClick={() => downloadDataUrl(quote.fileKey!, `${quote.supplierName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-quotation.${extFromDataUrl(quote.fileKey!)}`)}
+                              title="Download quotation document"
+                              className="absolute top-1 right-1 bg-white/90 hover:bg-white text-foreground rounded-full p-1 shadow transition-colors"
+                            >
+                              <Download className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full h-20 border-b border-dashed flex items-center justify-center text-[11px] text-muted-foreground/60 italic">No document</div>
+                        )}
+                        <div className="px-3 py-3 space-y-2.5">
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className={`truncate ${isChosen ? 'font-semibold' : ''}`}>{quote.supplierName}</span>
+                            <span className="font-medium shrink-0">Rp {new Intl.NumberFormat('id-ID').format(quote.price)}</span>
+                          </div>
+                          {isChosen ? (
+                            <div className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-white bg-green-600 rounded-md py-2">
+                              <CheckCircle2 className="h-4 w-4" /> Chosen
+                            </div>
+                          ) : (
+                            <button onClick={() => setChosenQuotation(prev => ({ ...prev, [q.id]: quote.id }))}
+                              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-md py-2 transition-colors shadow-sm">
+                              Use this quote
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  </div>
                 </div>
 
-                {q.selectionJustification && (
-                  <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                    <span className="font-semibold">Reason: </span>{q.selectionJustification}
-                  </div>
-                )}
-
                 <div className="flex items-center justify-end gap-2 pt-1">
+                  {!chosenId && <p className="text-[11px] text-muted-foreground italic mr-auto">Pick a quotation above first.</p>}
                   <button
-                    disabled={actingId === q.id}
+                    disabled={actingId === q.id || !chosenId}
                     onClick={() => actOnQuotation(q, 'approve')}
                     className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
                     <CheckCircle2 className="h-3 w-3" /> Approve
@@ -284,6 +314,28 @@ export default function MyApprovalsPage() {
                 Yes, Reject
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {fileLightbox && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={() => setFileLightbox(null)}>
+          <div className="relative inline-block" onClick={e => e.stopPropagation()}>
+            {isPdfDataUrl(fileLightbox) ? (
+              <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
+                <embed src={fileLightbox} type="application/pdf" className="w-full h-[75vh]" />
+                <div className="p-3 flex justify-center">
+                  <a href={fileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                    Open PDF in new tab
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <img src={fileLightbox} alt="Quotation document" className="block max-w-[90vw] max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl object-contain" />
+            )}
+            <button onClick={() => setFileLightbox(null)} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}

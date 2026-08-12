@@ -1418,6 +1418,7 @@ model StockLocation {
   yachtId      String?
   parentId     String?
   manager      String?
+  address      String?
   storageClass String?
   managedBy    String            @default("WAREHOUSE")
   isActive     Boolean           @default(true)
@@ -1643,6 +1644,10 @@ model PurchaseRequestItem {
   supplierName           String?
   notes                  String?
   imageKeys              Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
+  // Custom (non-catalog) requests only — catalog items are always stock-tracked via their
+  // PurchaseItem record, so this only matters when itemId is null. Purely a classification
+  // for now: it does not yet change Goods Receipt / StockLot behavior.
+  isStockItem            Boolean @default(true)
   // Sourcing-evidence tracking for KPI 5 (compliance/quotation rules). exemptionReason:
   // catalogue-price/recurring-agreement exception per the Purchasing Approval Matrix
   // footnote. selectionJustification: expected whenever the chosen supplier isn't the
@@ -2224,6 +2229,49 @@ model Employee {
   employmentStatus String? // e.g. Permanent | Contract | Probation | Intern
   leaveBalance     Int?
   joinDate         DateTime?
+  phone            String?
+  address          String?
+  birthDate        DateTime?
+
+  // Contact Info — extended personal data
+  nikPassport   String? // NIK (national ID) or Passport number
+  nationality   String?
+  religion      String?
+  placeOfBirth  String?
+  motherName    String?
+  personalEmail String?
+  maritalStatus String? // PTKP: TK | K0 | K1 | K2 | K3
+  addressCurrent String? // Address 2 — current address, if different from ID
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+
+  // Legal / Tax
+  npwp     String?
+  kkNumber String? // Kartu Keluarga (family card) number
+
+  // Bank
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountName   String?
+
+  // BPJS
+  bpjsKesehatanNumber String?
+  bpjsTkNumber        String?
+
+  // Compensation
+  basicSalary Float?
+  allowance   Float?
+  uangLayar   Float?
+  uangMakan   Float?
+
+  // Documents — each stored as data-URL strings, same pattern as PurchaseQuotation.fileKey
+  seamanBookFiles     String[] @default([]) // Buku Pelaut
+  bstFiles            String[] @default([]) // Basic Safety Training certificate
+  medicalCheckupFiles String[] @default([])
+  ijazahFiles         String[] @default([])
+  certificateFiles    String[] @default([])
+
   isActive         Boolean   @default(true)
   resignedAt       DateTime?
   resignStatus     String? // RESIGNED | TERMINATED | CONTRACT_ENDED | OTHER

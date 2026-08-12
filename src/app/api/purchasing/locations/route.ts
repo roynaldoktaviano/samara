@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { name, type, yachtId, parentId, manager, storageClass, managedBy } = body
+  const { name, type, yachtId, parentId, manager, address, storageClass, managedBy } = body
   if (!name?.trim() || !type) return NextResponse.json({ error: 'name dan type wajib diisi' }, { status: 400 })
   if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'yachtId wajib untuk lokasi kapal' }, { status: 400 })
   const location = await db.stockLocation.create({
@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       yachtId: type === 'VESSEL' ? yachtId : null,
       parentId: parentId || null,
       manager: manager?.trim() || null,
+      address: address?.trim() || null,
       storageClass: storageClass || null,
       managedBy: managedBy || 'WAREHOUSE',
     },

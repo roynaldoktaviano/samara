@@ -4,7 +4,6 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
-import { getBand } from '@/lib/purchasing/quotationBands'
 import { CLEARED_QUOTATION_APPROVAL_FIELDS } from '@/lib/purchasing/quotationApproval'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -24,39 +23,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const existingItem = await db.purchaseRequestItem.findUnique({
     where: { id: itemId },
-    select: { id: true, requestId: true, quantity: true, estimatedCost: true, supplierId: true, selectionJustification: true },
+    select: { id: true, requestId: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true },
   })
   if (!existingItem || existingItem.requestId !== id) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
 
   const body = await req.json()
-  const { estimatedCost, supplierId, supplierName, exemptionReason, selectionJustification } = body
+  const { estimatedCost, supplierId, supplierName, exemptionReason, isStockItem } = body
 
-  // A reason must be on file for every supplier picked against gathered quotations (band
-  // B+ items with at least one quotation on record) — mirrors the client-side gate in
-  // RequestsPage so the check can't be skipped by calling this endpoint directly.
-  const finalEstimatedCost = estimatedCost !== undefined ? (Number(estimatedCost) || 0) : existingItem.estimatedCost
-  const finalSupplierId = supplierId !== undefined ? (supplierId || null) : existingItem.supplierId
-  const finalJustification = selectionJustification !== undefined ? (String(selectionJustification).trim()) : (existingItem.selectionJustification ?? '')
-  const band = getBand(existingItem.quantity * finalEstimatedCost)
-  if (band !== 'A' && finalSupplierId && !finalJustification) {
-    const quotationCount = await db.purchaseQuotation.count({ where: { requestItemId: itemId } })
-    if (quotationCount > 0) {
-      return NextResponse.json({ error: 'Please provide a reason for the selected supplier' }, { status: 400 })
-    }
-  }
+  // Once a quotation has been approved, price and supplier are locked to the approver's
+  // decision — Purchasing can no longer overwrite them from this endpoint.
+  const priceLocked = !!existingItem.quotationApprovedAt
+  const finalEstimatedCost = !priceLocked && estimatedCost !== undefined ? (Number(estimatedCost) || 0) : existingItem.estimatedCost
+  const finalSupplierId = !priceLocked && supplierId !== undefined ? (supplierId || null) : existingItem.supplierId
 
   // A previously submitted/approved/rejected decision no longer means anything once the
   // price or the chosen supplier actually changes — clear it so Convert to PO can't rely
   // on stale sign-off for a decision nobody re-approved.
-  const decisionChanged = finalEstimatedCost !== existingItem.estimatedCost || finalSupplierId !== existingItem.supplierId
+  const decisionChanged = !priceLocked && (finalEstimatedCost !== existingItem.estimatedCost || finalSupplierId !== existingItem.supplierId)
 
   const item = await db.purchaseRequestItem.update({
     where: { id: itemId },
     data: {
-      ...(estimatedCost !== undefined && { estimatedCost: Number(estimatedCost) || 0 }),
-      ...(supplierId !== undefined && { supplierId: supplierId || null, supplierName: supplierName || null }),
+      ...(!priceLocked && estimatedCost !== undefined && { estimatedCost: Number(estimatedCost) || 0 }),
+      ...(!priceLocked && supplierId !== undefined && { supplierId: supplierId || null, supplierName: supplierName || null }),
       ...(exemptionReason !== undefined && { exemptionReason: exemptionReason?.trim() || null }),
-      ...(selectionJustification !== undefined && { selectionJustification: selectionJustification?.trim() || null }),
+      ...(isStockItem !== undefined && { isStockItem: !!isStockItem }),
       ...(decisionChanged && CLEARED_QUOTATION_APPROVAL_FIELDS),
     },
   })

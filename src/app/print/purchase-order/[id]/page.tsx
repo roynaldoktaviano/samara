@@ -34,7 +34,7 @@ interface OrderDetail {
   status: string
   supplierName: string | null
   supplier: SupplierDetail | null
-  deliveryLocation: { name: string; type: string } | null
+  deliveryLocation: { name: string; type: string; address: string | null } | null
   notes: string | null
   orderedAt: string
   expectedAt: string | null
@@ -45,10 +45,6 @@ interface OrderDetail {
 }
 
 const ACCENT = '#bdac7e'
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit',
-  PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
-}
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -112,164 +108,133 @@ export default function PurchaseOrderPrintPage() {
         @media print {
           @page { margin: 0; size: A4 portrait; }
           html, body { background: white; }
-          .so  { display: none !important; }
           .nc  { break-inside: avoid; page-break-inside: avoid; }
         }
         @media screen {
           table.po { display: block; max-width: 700px; margin: 0 auto; background: white; }
-          table.po > thead, table.po > tfoot { display: none; }
           table.po > tbody, table.po > tbody > tr, table.po > tbody > tr > td { display: block; }
           body { padding: 24px 0 40px; }
         }
       `}</style>
 
       <table className="po" style={{ borderCollapse: 'collapse', width: '100%', fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", fontSize: 11, color: '#1f2937' }}>
-        <thead>
-          <tr>
-            <td style={{ background: 'white', padding: '11px 32px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 8, letterSpacing: 2, color: '#b8a882', textTransform: 'uppercase', fontWeight: 600 }}>
-                  {order.poNumber}
-                </div>
-                <img src={co.logoUrl} alt={co.name} style={{ height: 22, objectFit: 'contain', display: 'block' }} />
-              </div>
-            </td>
-          </tr>
-        </thead>
-
-        <tfoot>
-          <tr>
-            <td style={{ background: 'white', padding: '10px 32px 13px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: '#374151', marginBottom: 3 }}>
-                    {co.name}
-                  </div>
-                  <div style={{ fontSize: 8, color: '#9ca3af', lineHeight: 1.6 }}>{co.website}</div>
-                </div>
-                <div style={{ fontSize: 9, color: '#d1d5db' }}>Generated {fmtDate(new Date().toISOString())}</div>
-              </div>
-            </td>
-          </tr>
-        </tfoot>
-
         <tbody>
           <tr>
             <td>
-              <div style={{ maxWidth: 700, margin: '0 auto', background: 'white', display: 'flex', flexDirection: 'column', minHeight: 'calc(297mm - 1.4cm)' }}>
-
-                <div className="so" style={{ backgroundColor: ACCENT, height: 5, flexShrink: 0 }} />
+              <div style={{ background: 'white', display: 'flex', flexDirection: 'column', minHeight: '297mm' }}>
 
                 {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '14px 22px', borderRight: '1px solid #e5e7eb', minWidth: 190 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '24px 32px 16px' }}>
+                  <div>
                     <img src={co.logoUrl} alt={co.name} style={{ width: 120, objectFit: 'contain' }} />
-                    {co.tagline && <div style={{ color: '#9ca3af', fontSize: 8, letterSpacing: 1.5, marginTop: 4 }}>{co.tagline}</div>}
+                    {co.tagline && <div style={{ color: '#9ca3af', fontSize: 8, letterSpacing: 1.5, marginTop: 6 }}>{co.tagline}</div>}
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px' }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: '#111827', letterSpacing: 1, marginBottom: 4 }}>PURCHASE ORDER</div>
-                      <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#374151', fontWeight: 700 }}>{order.poNumber}</div>
-                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>Date: {fmtDate(order.orderedAt ?? order.createdAt)}</div>
-                    </div>
-                    <div style={{
-                      border: `2px solid ${order.status === 'CANCELLED' ? '#dc2626' : ACCENT}`,
-                      borderRadius: 6,
-                      color: order.status === 'CANCELLED' ? '#dc2626' : '#92793f',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: 1.5,
-                      padding: '5px 12px',
-                      textTransform: 'uppercase',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {STATUS_LABEL[order.status] ?? order.status}
-                    </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{fmtDate(order.orderedAt ?? order.createdAt)}</div>
+                    <div style={{ fontSize: 9, color: '#9ca3af', marginTop: 2 }}>Purchase Order Date</div>
                   </div>
                 </div>
 
-                {/* Vendor / Ship To */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '14px 22px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
-                  <div style={{ paddingRight: 20, borderRight: '1px solid #f3f4f6' }}>
-                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 7 }}>Vendor</div>
-                    <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{order.supplierName ?? order.supplier?.name ?? '—'}</div>
-                    {order.supplier?.contact && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{order.supplier.contact}</div>}
-                    {order.supplier?.phone && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{order.supplier.phone}</div>}
-                    {order.supplier?.email && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{order.supplier.email}</div>}
-                    {supplierLoc?.address && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{supplierLoc.address}{supplierLoc.city ? `, ${supplierLoc.city}` : ''}</div>}
+                {/* Title band */}
+                <div style={{ backgroundColor: ACCENT, padding: '12px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: 'white', letterSpacing: 2 }}>PURCHASE ORDER</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>#{order.poNumber}</div>
+                    {order.request?.prNumber && (
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>PR Reference: {order.request.prNumber}</div>
+                    )}
                   </div>
-                  <div style={{ paddingLeft: 20 }}>
-                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: ACCENT, textTransform: 'uppercase', marginBottom: 7 }}>Ship To</div>
-                    <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{order.deliveryLocation?.name ?? '—'}</div>
-                    <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{co.address}</div>
-                    {([
-                      ...(order.expectedAt ? [['Expected Delivery', fmtDate(order.expectedAt)]] : []),
-                      ...(order.request?.prNumber ? [['PR Reference', order.request.prNumber]] : []),
-                      ...(order.requestedByName ? [['Requested By', order.requestedByName]] : []),
-                    ] as [string, string][]).map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', gap: 6, marginTop: 5 }}>
-                        <span style={{ color: '#9ca3af', fontSize: 10, width: 100, flexShrink: 0 }}>{k}</span>
-                        <span style={{ color: '#111827', fontSize: 10, fontWeight: 500 }}>{v}</span>
-                      </div>
-                    ))}
+                </div>
+                {order.status === 'CANCELLED' && (
+                  <div style={{ padding: '6px 32px', backgroundColor: '#fee2e2', textAlign: 'center', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#dc2626' }}>
+                    VOID — THIS ORDER HAS BEEN CANCELLED
+                  </div>
+                )}
+
+                {/* Vendor / Ship To */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '16px 32px', gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#111827', marginBottom: 6 }}>VENDOR</div>
+                    <div style={{ fontSize: 10, color: '#4b5563', lineHeight: 1.7 }}>
+                      <div style={{ fontWeight: 600, color: '#111827' }}>{order.supplierName ?? order.supplier?.name ?? '—'}</div>
+                      {order.supplier?.contact && <div>{order.supplier.contact}</div>}
+                      {order.supplier?.phone && <div>{order.supplier.phone}</div>}
+                      {order.supplier?.email && <div>{order.supplier.email}</div>}
+                      {supplierLoc?.address && <div>{supplierLoc.address}{supplierLoc.city ? `, ${supplierLoc.city}` : ''}</div>}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#111827', marginBottom: 6 }}>SHIP TO</div>
+                    <div style={{ fontSize: 10, color: '#4b5563', lineHeight: 1.7 }}>
+                      <div style={{ fontWeight: 600, color: '#111827' }}>{order.deliveryLocation?.name ?? '—'}</div>
+                      {order.deliveryLocation?.address ? (
+                        <div>{order.deliveryLocation.address}</div>
+                      ) : (
+                        <>
+                          <div>{co.name}</div>
+                          <div>{co.address}</div>
+                        </>
+                      )}
+                      <div>{co.phone}</div>
+                    </div>
                   </div>
                 </div>
 
                 {/* Items */}
-                <div style={{ padding: '0 22px', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', backgroundColor: '#f9fafb', padding: '6px 10px', borderRadius: '5px 5px 0 0', borderBottom: `2px solid ${ACCENT}`, marginTop: 14 }}>
-                    <span style={{ flex: 1, fontSize: 8, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Item</span>
-                    <span style={{ width: 90, textAlign: 'right', fontSize: 8, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Qty</span>
-                    <span style={{ width: 110, textAlign: 'right', fontSize: 8, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Unit Price</span>
-                    <span style={{ width: 120, textAlign: 'right', fontSize: 8, fontWeight: 700, letterSpacing: 1.5, color: '#6b7280', textTransform: 'uppercase' }}>Subtotal</span>
+                <div>
+                  <div style={{ display: 'flex', backgroundColor: ACCENT, padding: '8px 32px' }}>
+                    <span style={{ flex: 1, fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'white', textTransform: 'uppercase' }}>Item Description</span>
+                    <span style={{ width: 80, textAlign: 'right', fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'white', textTransform: 'uppercase' }}>Qty</span>
+                    <span style={{ width: 100, textAlign: 'right', fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'white', textTransform: 'uppercase' }}>Unit Price</span>
+                    <span style={{ width: 110, textAlign: 'right', fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'white', textTransform: 'uppercase' }}>Total</span>
                   </div>
 
                   {order.items.map((it, i) => (
-                    <div key={i} className="nc" style={{ display: 'flex', alignItems: 'center', padding: '9px 10px', borderBottom: '1px solid #f3f4f6' }}>
-                      <span style={{ flex: 1, fontSize: 11, color: '#111827', fontWeight: 500 }}>{it.itemName}</span>
-                      <span style={{ width: 90, textAlign: 'right', fontSize: 11, color: '#374151' }}>{it.orderedQty} {it.unit ?? ''}</span>
-                      <span style={{ width: 110, textAlign: 'right', fontSize: 11, color: '#374151' }}>Rp {new Intl.NumberFormat('id-ID').format(it.unitCost)}</span>
-                      <span style={{ width: 120, textAlign: 'right', fontSize: 11, color: '#111827', fontWeight: 600 }}>Rp {new Intl.NumberFormat('id-ID').format(it.orderedQty * it.unitCost)}</span>
+                    <div key={i} className="nc" style={{ display: 'flex', alignItems: 'center', padding: '8px 32px', borderBottom: '1px solid #e5e7eb' }}>
+                      <span style={{ flex: 1, fontSize: 11, color: '#111827', fontWeight: 600 }}>{it.itemName}</span>
+                      <span style={{ width: 80, textAlign: 'right', fontSize: 11, color: '#374151' }}>{it.orderedQty} {it.unit ?? ''}</span>
+                      <span style={{ width: 100, textAlign: 'right', fontSize: 11, color: '#374151' }}>Rp {new Intl.NumberFormat('id-ID').format(it.unitCost)}</span>
+                      <span style={{ width: 110, textAlign: 'right', fontSize: 11, color: '#111827', fontWeight: 600 }}>Rp {new Intl.NumberFormat('id-ID').format(it.orderedQty * it.unitCost)}</span>
                     </div>
                   ))}
 
-                  <div style={{ backgroundColor: '#f9fafb', borderRadius: '0 0 5px 5px', padding: '10px', marginBottom: 14, marginTop: 6 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 5, padding: '8px 10px' }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>Total</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>Rp {new Intl.NumberFormat('id-ID').format(total)}</div>
+                  <div style={{ padding: '0 32px' }}>
+                    <div style={{ marginTop: 10, marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                      <div style={{ width: 260 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 4px' }}>
+                          <span style={{ fontSize: 10, color: '#92793f', fontWeight: 600 }}>SUBTOTAL</span>
+                          <span style={{ fontSize: 10, color: '#374151', fontWeight: 500 }}>Rp {new Intl.NumberFormat('id-ID').format(total)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: ACCENT, padding: '10px 12px', marginTop: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'white', textTransform: 'uppercase' }}>Total</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: 'white' }}>Rp {new Intl.NumberFormat('id-ID').format(total)}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Notes */}
-                {order.notes && (
-                  <div style={{ margin: '0 22px 12px', padding: '8px 12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, flexShrink: 0 }}>
-                    <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#92400e', textTransform: 'uppercase', marginBottom: 3 }}>Notes</div>
-                    <div style={{ fontSize: 10, color: '#78350f' }}>{order.notes}</div>
-                  </div>
-                )}
+                {/* Spacer pushes Remarks + Footer to the bottom of the page */}
+                <div style={{ flex: 1 }} />
 
-                {/* Signature */}
-                <div className="nc" style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 22px 0', flexShrink: 0 }}>
-                  <div style={{ width: 200 }}>
-                    <div style={{ borderTop: '1px solid #d1d5db', paddingTop: 6, fontSize: 9, color: '#9ca3af', textAlign: 'center' }}>Authorized Signature</div>
-                  </div>
-                  <div style={{ width: 200 }}>
-                    <div style={{ borderTop: '1px solid #d1d5db', paddingTop: 6, fontSize: 9, color: '#9ca3af', textAlign: 'center' }}>Vendor Acknowledgement</div>
+                {/* Remarks */}
+                <div className="nc" style={{ padding: '0 32px 20px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#111827', marginBottom: 5 }}>Remarks / Instructions</div>
+                  <div style={{ fontSize: 9, color: '#6b7280', lineHeight: 1.6 }}>
+                    {order.notes || 'Please review quantities and prices carefully. Report any discrepancies within 3 days of order confirmation.'}
                   </div>
                 </div>
 
-                <div className="so" style={{ flex: 1 }} />
-
-                <div className="so" style={{ flexShrink: 0 }}>
-                  <div style={{ margin: '20px 22px 0', paddingTop: 10, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500 }}>{co.name}</div>
-                      <div style={{ fontSize: 9, color: '#9ca3af', marginTop: 1 }}>{co.website} · {co.phone}</div>
-                    </div>
-                    <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#d1d5db' }}>{order.poNumber}</div>
+                {/* Footer */}
+                <div style={{ backgroundColor: ACCENT, padding: '12px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'white' }}>{co.name}</div>
+                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{co.address}</div>
                   </div>
-                  <div style={{ backgroundColor: ACCENT, height: 5 }} />
+                  <div style={{ textAlign: 'right', fontSize: 8, color: 'rgba(255,255,255,0.85)' }}>
+                    <div>{co.phone}</div>
+                    <div>{co.email}</div>
+                  </div>
                 </div>
 
               </div>

@@ -33,10 +33,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     },
   })
   if (!item || item.requestId !== id) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
-  if (!item.supplierId) return NextResponse.json({ error: 'Choose a supplier first' }, { status: 400 })
   if (item.quotationApprovedAt) return NextResponse.json({ error: 'This item is already approved' }, { status: 409 })
 
-  const band = getBand(item.quantity * item.estimatedCost)
+  const band = getBand(item.estimatedCost)
   if (band === 'A') return NextResponse.json({ error: 'This item does not require quotation approval' }, { status: 400 })
 
   const needsApproval = await itemRequiresQuotationApproval(db, item)
@@ -49,14 +48,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: `At least ${required} quotation${required > 1 ? 's' : ''} required before submitting for approval` }, { status: 400 })
   }
 
-  if (!item.selectionJustification?.trim()) {
-    const quotations = await db.purchaseQuotation.findMany({ where: { requestItemId: itemId }, select: { supplierId: true, price: true } })
-    const cheapest = quotations.reduce((a, b) => (a.price < b.price ? a : b))
-    if ((cheapest.supplierId ?? null) !== item.supplierId) {
-      return NextResponse.json({ error: 'Provide a reason for the selected supplier first' }, { status: 400 })
-    }
-  }
-
+  // Which quotation to use is the approver's call, not Purchasing's — gathering
+  // quotations is all this step requires. No supplier pick or justification here.
   const approverId = await resolveQuotationApproverId(db, session.user.id)
   if (!approverId) return NextResponse.json({ error: 'No approver could be resolved — contact an admin' }, { status: 500 })
 
@@ -99,9 +92,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
 
   const body = await req.json()
-  const { action, reason } = body as { action?: 'approve' | 'reject'; reason?: string }
+  const { action, reason, quotationId } = body as { action?: 'approve' | 'reject'; reason?: string; quotationId?: string }
   if (action !== 'approve' && action !== 'reject') return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   if (action === 'reject' && !reason?.trim()) return NextResponse.json({ error: 'A reason is required to reject' }, { status: 400 })
+  if (action === 'approve' && !quotationId) return NextResponse.json({ error: 'Choose which quotation to use first' }, { status: 400 })
 
   const item = await db.purchaseRequestItem.findUnique({
     where: { id: itemId },
@@ -114,10 +108,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'This is not yours to approve' }, { status: 403 })
   }
 
+  let approveData: { supplierId: string; supplierName: string; estimatedCost: number } | undefined
+  if (action === 'approve') {
+    const quotation = await db.purchaseQuotation.findUnique({ where: { id: quotationId! }, select: { requestItemId: true, supplierId: true, supplierName: true, price: true } })
+    if (!quotation || quotation.requestItemId !== itemId) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 })
+    if (!quotation.supplierId) return NextResponse.json({ error: 'That quotation has no supplier on file' }, { status: 400 })
+    approveData = { supplierId: quotation.supplierId, supplierName: quotation.supplierName, estimatedCost: quotation.price }
+  }
+
   const updated = await db.purchaseRequestItem.update({
     where: { id: itemId },
     data: action === 'approve'
-      ? { quotationApprovedById: session.user.id, quotationApprovedAt: new Date() }
+      ? { ...approveData!, quotationApprovedById: session.user.id, quotationApprovedAt: new Date() }
       : { quotationRejectedById: session.user.id, quotationRejectedAt: new Date(), quotationRejectionReason: reason!.trim() },
   })
 

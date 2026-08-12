@@ -187,8 +187,9 @@ export async function GET(req: NextRequest) {
     B: { total: 0, compliant: 0 }, C: { total: 0, compliant: 0 }, D: { total: 0, compliant: 0 }, E: { total: 0, compliant: 0 },
   }
   for (const item of convertedItems) {
-    const value = item.quantity * item.estimatedCost
-    const band = getBand(value)
+    // Band is decided by unit price, not line total — a bulk order of a cheap item
+    // shouldn't need the same sourcing rigor as one expensive unit.
+    const band = getBand(item.estimatedCost)
     if (band === 'A') continue
     eligibleItemTotal++
     const required = requiredQuotationCount(band)

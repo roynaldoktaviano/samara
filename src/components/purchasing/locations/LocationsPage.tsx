@@ -6,7 +6,7 @@ import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Warehouse, Ship, Eye,
 interface Yacht { id: string; name: string }
 interface StockLocation {
   id: string; name: string; type: string; yachtId: string | null
-  parentId: string | null; manager: string | null; storageClass: string | null
+  parentId: string | null; manager: string | null; address: string | null; storageClass: string | null
   managedBy: string; isActive: boolean
   yacht?: { id: string; name: string } | null
   parent?: { id: string; name: string } | null
@@ -35,7 +35,7 @@ const STORAGE_COLOR: Record<string, string> = {
 
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
-const BLANK = { name: '', type: 'WAREHOUSE', yachtId: '', parentId: '', manager: '', storageClass: '', managedBy: 'WAREHOUSE' }
+const BLANK = { name: '', type: 'WAREHOUSE', yachtId: '', parentId: '', manager: '', address: '', storageClass: '', managedBy: 'WAREHOUSE' }
 
 export default function LocationsPage() {
   const [locations, setLocations] = useState<StockLocation[]>([])
@@ -79,6 +79,7 @@ export default function LocationsPage() {
       yachtId: loc.yachtId ?? '',
       parentId: loc.parentId ?? '',
       manager: loc.manager ?? '',
+      address: loc.address ?? '',
       storageClass: loc.storageClass ?? '',
       managedBy: loc.managedBy ?? 'WAREHOUSE',
     })
@@ -94,6 +95,7 @@ export default function LocationsPage() {
       yachtId: form.type === 'VESSEL' ? form.yachtId : undefined,
       parentId: form.parentId || undefined,
       manager: form.manager || undefined,
+      address: form.address || undefined,
       storageClass: form.storageClass || undefined,
       managedBy: form.managedBy,
     }
@@ -106,7 +108,7 @@ export default function LocationsPage() {
   async function toggleActive(loc: StockLocation) {
     await fetch(`/api/purchasing/locations/${loc.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: loc.name, type: loc.type, yachtId: loc.yachtId, parentId: loc.parentId, manager: loc.manager, storageClass: loc.storageClass, managedBy: loc.managedBy, isActive: !loc.isActive }),
+      body: JSON.stringify({ name: loc.name, type: loc.type, yachtId: loc.yachtId, parentId: loc.parentId, manager: loc.manager, address: loc.address, storageClass: loc.storageClass, managedBy: loc.managedBy, isActive: !loc.isActive }),
     })
     load()
   }
@@ -457,6 +459,18 @@ export default function LocationsPage() {
                       onChange={e => setForm(f => ({ ...f, manager: e.target.value }))}
                     />
                   </div>
+                </div>
+
+                {/* Address */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Alamat</label>
+                  <textarea
+                    className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400 resize-none"
+                    placeholder="Alamat lengkap lokasi ini — dipakai sebagai Ship To di PO"
+                    rows={2}
+                    value={form.address}
+                    onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                  />
                 </div>
               </div>
 

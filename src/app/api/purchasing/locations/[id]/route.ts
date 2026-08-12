@@ -14,7 +14,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { name, type, yachtId, parentId, manager, storageClass, managedBy, isActive } = body
+  const { name, type, yachtId, parentId, manager, address, storageClass, managedBy, isActive } = body
   if (!name?.trim() || !type) return NextResponse.json({ error: 'name dan type wajib diisi' }, { status: 400 })
   if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'Pilih kapal untuk lokasi tipe Kapal' }, { status: 400 })
   const location = await db.stockLocation.update({
@@ -25,6 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       yachtId: type === 'VESSEL' ? yachtId : null,
       parentId: parentId || null,
       manager: manager?.trim() || null,
+      address: address?.trim() || null,
       storageClass: storageClass || null,
       ...(managedBy && { managedBy }),
       ...(isActive !== undefined && { isActive: Boolean(isActive) }),

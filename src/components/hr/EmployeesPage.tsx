@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MultiFilePicker } from '@/components/ui/file-preview'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface EmployeeRole { id: string; title: string }
@@ -12,15 +13,38 @@ interface Employee {
   id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
   resignedAt: string | null; resignStatus: string | null; resignReason: string | null
   gender: string | null; employmentStatus: string | null; leaveBalance: number | null; joinDate: string | null
+  phone: string | null; address: string | null; birthDate: string | null
+  nikPassport: string | null; nationality: string | null; religion: string | null; placeOfBirth: string | null
+  motherName: string | null; personalEmail: string | null; maritalStatus: string | null; addressCurrent: string | null
+  emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactRelation: string | null
+  npwp: string | null; kkNumber: string | null
+  bankName: string | null; bankAccountNumber: string | null; bankAccountName: string | null
+  bpjsKesehatanNumber: string | null; bpjsTkNumber: string | null
+  basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null
+  seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]
   legalEntity: LegalEntity | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
 }
 
-const BLANK = { fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '', managerId: '', userId: '' }
+const BLANK = {
+  fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '', managerId: '', userId: '', phone: '', address: '', birthDate: '',
+  nikPassport: '', nationality: '', religion: '', placeOfBirth: '', motherName: '', personalEmail: '', maritalStatus: '', addressCurrent: '',
+  emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '',
+  npwp: '', kkNumber: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bpjsKesehatanNumber: '', bpjsTkNumber: '',
+  basicSalary: '', allowance: '', uangLayar: '', uangMakan: '',
+  seamanBookFiles: [] as string[], bstFiles: [] as string[], medicalCheckupFiles: [] as string[], ijazahFiles: [] as string[], certificateFiles: [] as string[],
+}
 
 const GENDERS = ['Male', 'Female']
-const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation', 'Intern']
+const EMPLOYMENT_STATUSES = ['Probation', 'Internship', 'Freelance', 'Contract (PKWT)', 'Permanent (PKWTT)']
+const DEPARTMENTS = ['Management', 'Finance', 'Human Resources', 'Sales', 'Marketing', 'Kitchen', 'Bar', 'Housekeeping', 'Engineering', 'Deckhand']
+const MARITAL_STATUSES = ['TK', 'K0', 'K1', 'K2', 'K3']
+
+/** Ensures an existing value not in the preset list still shows up as an option, so editing an old record doesn't silently blank it out. */
+function withCurrent(list: string[], current: string): string[] {
+  return current && !list.includes(current) ? [...list, current] : list
+}
 
 function formatServiceYear(joinDate: string | null, endDate: string | null): string {
   if (!joinDate) return '—'
@@ -183,6 +207,7 @@ export default function EmployeesPage() {
   const [pageSize, setPageSize] = useState(10)
 
   const [modal, setModal] = useState(false)
+  const [modalTab, setModalTab] = useState<'details' | 'contact' | 'bank' | 'salary' | 'documents'>('details')
   const [editing, setEditing] = useState<Employee | null>(null)
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
@@ -218,7 +243,7 @@ export default function EmployeesPage() {
 
   useEffect(() => { load() }, [load])
 
-  function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModalTab('details'); setModal(true) }
   function openEdit(emp: Employee) {
     setForm({
       fullName: emp.fullName, employeeNumber: emp.employeeNumber,
@@ -229,8 +254,24 @@ export default function EmployeesPage() {
       joinDate: emp.joinDate ? emp.joinDate.slice(0, 10) : '',
       managerId: emp.managerId ?? '',
       userId: emp.userId ?? '',
+      phone: emp.phone ?? '',
+      address: emp.address ?? '',
+      birthDate: emp.birthDate ? emp.birthDate.slice(0, 10) : '',
+      nikPassport: emp.nikPassport ?? '', nationality: emp.nationality ?? '', religion: emp.religion ?? '',
+      placeOfBirth: emp.placeOfBirth ?? '', motherName: emp.motherName ?? '', personalEmail: emp.personalEmail ?? '',
+      maritalStatus: emp.maritalStatus ?? '', addressCurrent: emp.addressCurrent ?? '',
+      emergencyContactName: emp.emergencyContactName ?? '', emergencyContactPhone: emp.emergencyContactPhone ?? '', emergencyContactRelation: emp.emergencyContactRelation ?? '',
+      npwp: emp.npwp ?? '', kkNumber: emp.kkNumber ?? '',
+      bankName: emp.bankName ?? '', bankAccountNumber: emp.bankAccountNumber ?? '', bankAccountName: emp.bankAccountName ?? '',
+      bpjsKesehatanNumber: emp.bpjsKesehatanNumber ?? '', bpjsTkNumber: emp.bpjsTkNumber ?? '',
+      basicSalary: emp.basicSalary != null ? String(emp.basicSalary) : '',
+      allowance: emp.allowance != null ? String(emp.allowance) : '',
+      uangLayar: emp.uangLayar != null ? String(emp.uangLayar) : '',
+      uangMakan: emp.uangMakan != null ? String(emp.uangMakan) : '',
+      seamanBookFiles: emp.seamanBookFiles ?? [], bstFiles: emp.bstFiles ?? [], medicalCheckupFiles: emp.medicalCheckupFiles ?? [],
+      ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [],
     })
-    setEditing(emp); setFormError(''); setModal(true)
+    setEditing(emp); setFormError(''); setModalTab('details'); setModal(true)
   }
 
   async function save() {
@@ -550,7 +591,7 @@ export default function EmployeesPage() {
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
               <div className="px-6 pt-6 pb-5" style={{ background: 'linear-gradient(135deg, #bdac7e 0%, #a89860 100%)' }}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -568,13 +609,32 @@ export default function EmployeesPage() {
                 </div>
               </div>
 
-              <div className="px-6 py-5 space-y-4 max-h-[65vh] overflow-y-auto">
+              {/* Tabs */}
+              <div className="flex items-center gap-1 px-6 pt-4 border-b bg-gray-50/50">
+                {([
+                  { value: 'details', label: 'Details' },
+                  { value: 'contact', label: 'Contact Info' },
+                  { value: 'bank', label: 'Bank & Tax' },
+                  { value: 'salary', label: 'Salary' },
+                  { value: 'documents', label: 'Documents' },
+                ] as const).map(t => (
+                  <button key={t.value} type="button" onClick={() => setModalTab(t.value)}
+                    className={`px-3.5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                      modalTab === t.value ? 'border-[#bdac7e] text-[#8a744a]' : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
                 {formError && (
                   <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
                     <AlertTriangle className="h-4 w-4 shrink-0" /> {formError}
                   </div>
                 )}
 
+                {modalTab === 'details' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -619,14 +679,17 @@ export default function EmployeesPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Department</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
                       value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                    />
+                    >
+                      <option value="">—</option>
+                      {withCurrent(DEPARTMENTS, form.department).map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role / Position</label>
                     <select
                       className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
                       value={form.roleId} onChange={e => setForm(f => ({ ...f, roleId: e.target.value }))}
@@ -634,6 +697,47 @@ export default function EmployeesPage() {
                       <option value="">—</option>
                       {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
                     </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment Status</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.employmentStatus} onChange={e => setForm(f => ({ ...f, employmentStatus: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {withCurrent(EMPLOYMENT_STATUSES, form.employmentStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gender</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Join Date</label>
+                    <input
+                      type="date"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.joinDate} onChange={e => setForm(f => ({ ...f, joinDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Balance (days)</label>
+                    <input
+                      type="number"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="e.g. 12"
+                      value={form.leaveBalance} onChange={e => setForm(f => ({ ...f, leaveBalance: e.target.value }))}
+                    />
                   </div>
 
                   <div className="col-span-2 space-y-1.5">
@@ -658,6 +762,280 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                 </div>
+                )}
+
+                {modalTab === 'contact' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone Number</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <input
+                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
+                        placeholder="e.g. 0812-3456-7890"
+                        value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Personal Email</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
+                      placeholder="personal@email.com"
+                      value={form.personalEmail} onChange={e => setForm(f => ({ ...f, personalEmail: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Birth Date</label>
+                    <div className="relative">
+                      <Cake className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <input
+                        type="date"
+                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                        value={form.birthDate} onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Place of Birth</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.placeOfBirth} onChange={e => setForm(f => ({ ...f, placeOfBirth: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NIK / Passport</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.nikPassport} onChange={e => setForm(f => ({ ...f, nikPassport: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nationality</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="e.g. Indonesia"
+                      value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Religion</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.religion} onChange={e => setForm(f => ({ ...f, religion: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Marital Status (PTKP)</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.maritalStatus} onChange={e => setForm(f => ({ ...f, maritalStatus: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {withCurrent(MARITAL_STATUSES, form.maritalStatus).map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mother&apos;s Name</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.motherName} onChange={e => setForm(f => ({ ...f, motherName: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 1 (as per ID)</label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <textarea
+                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all resize-none placeholder:text-gray-400"
+                        placeholder="Alamat lengkap sesuai KTP"
+                        rows={2}
+                        value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 2 (current, if different)</label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400 pointer-events-none" />
+                      <textarea
+                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all resize-none placeholder:text-gray-400"
+                        placeholder="Alamat domisili saat ini, jika berbeda dari KTP"
+                        rows={2}
+                        value={form.addressCurrent} onChange={e => setForm(f => ({ ...f, addressCurrent: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 border-t border-dashed pt-4">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Emergency Contact</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Name</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          value={form.emergencyContactName} onChange={e => setForm(f => ({ ...f, emergencyContactName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Phone No.</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          value={form.emergencyContactPhone} onChange={e => setForm(f => ({ ...f, emergencyContactPhone: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Relation</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          placeholder="e.g. Spouse, Parent"
+                          value={form.emergencyContactRelation} onChange={e => setForm(f => ({ ...f, emergencyContactRelation: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {modalTab === 'bank' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NPWP</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.npwp} onChange={e => setForm(f => ({ ...f, npwp: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">KK (Kartu Keluarga) No.</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.kkNumber} onChange={e => setForm(f => ({ ...f, kkNumber: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Kesehatan No.</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.bpjsKesehatanNumber} onChange={e => setForm(f => ({ ...f, bpjsKesehatanNumber: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Ketenagakerjaan No.</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.bpjsTkNumber} onChange={e => setForm(f => ({ ...f, bpjsTkNumber: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="col-span-2 border-t border-dashed pt-4">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Bank Details</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Bank Name</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          placeholder="e.g. Bank Mandiri"
+                          value={form.bankName} onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Account No.</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          value={form.bankAccountNumber} onChange={e => setForm(f => ({ ...f, bankAccountNumber: e.target.value }))}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <label className="text-xs text-muted-foreground">Account Holder Name</label>
+                        <input
+                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                          value={form.bankAccountName} onChange={e => setForm(f => ({ ...f, bankAccountName: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {modalTab === 'salary' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
+                    <input
+                      type="number"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="Rp"
+                      value={form.basicSalary} onChange={e => setForm(f => ({ ...f, basicSalary: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</label>
+                    <input
+                      type="number"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="Rp"
+                      value={form.allowance} onChange={e => setForm(f => ({ ...f, allowance: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar</label>
+                    <input
+                      type="number"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="Rp"
+                      value={form.uangLayar} onChange={e => setForm(f => ({ ...f, uangLayar: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan</label>
+                    <input
+                      type="number"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="Rp"
+                      value={form.uangMakan} onChange={e => setForm(f => ({ ...f, uangMakan: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                )}
+
+                {modalTab === 'documents' && (
+                <div className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buku Pelaut</label>
+                    <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BST (Basic Safety Training)</label>
+                    <MultiFilePicker files={form.bstFiles} onChange={files => setForm(f => ({ ...f, bstFiles: files }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Medical Check Up</label>
+                    <MultiFilePicker files={form.medicalCheckupFiles} onChange={files => setForm(f => ({ ...f, medicalCheckupFiles: files }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ijazah</label>
+                    <MultiFilePicker files={form.ijazahFiles} onChange={files => setForm(f => ({ ...f, ijazahFiles: files }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certificates</label>
+                    <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} />
+                  </div>
+                </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">

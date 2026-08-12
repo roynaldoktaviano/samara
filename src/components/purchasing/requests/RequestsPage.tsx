@@ -6,8 +6,8 @@ import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileTe
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
-import { PhotoSourceMenu } from '@/components/ui/file-preview'
-import { readUploadFile, isPdfDataUrl } from '@/lib/fileUpload'
+import { PhotoSourceMenu, FilePreview } from '@/components/ui/file-preview'
+import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -36,7 +36,7 @@ interface Supplier { id: string; name: string; locations: SupplierLocation[]; co
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -99,8 +99,8 @@ function UrgentBadge() {
 // thousand separators) so existing parseFloat(...)/Number(...) callers keep working
 // unchanged; only the display is formatted with a "Rp" prefix and "." separators.
 // Blank (not "0") shows the placeholder — nothing pre-filled to type over.
-function RupiahInput({ value, onChange, placeholder = '0', className = '', autoFocus }: {
-  value: string; onChange: (digits: string) => void; placeholder?: string; className?: string; autoFocus?: boolean
+function RupiahInput({ value, onChange, placeholder = '0', className = '', autoFocus, disabled, title }: {
+  value: string; onChange: (digits: string) => void; placeholder?: string; className?: string; autoFocus?: boolean; disabled?: boolean; title?: string
 }) {
   return (
     <div className="relative">
@@ -110,15 +110,17 @@ function RupiahInput({ value, onChange, placeholder = '0', className = '', autoF
         inputMode="numeric"
         autoFocus={autoFocus}
         placeholder={placeholder}
+        disabled={disabled}
+        title={title}
         value={value ? new Intl.NumberFormat('id-ID').format(Number(value)) : ''}
         onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
-        className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 ${className}`}
+        className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted/40 ${className}`}
       />
     </div>
   )
 }
 
-export default function RequestsPage() {
+export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) => void } = {}) {
   const { data: session } = useSession()
   const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
@@ -136,7 +138,7 @@ export default function RequestsPage() {
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
   const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
-  const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; transferNumbers: string[] } | null>(null)
+  const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
   // Form state (create view — catalog + cart, mirrors the /request-order page)
@@ -166,6 +168,7 @@ export default function RequestsPage() {
   const [editItemModal, setEditItemModal] = useState<RequestLine | null>(null)
   const [editItemCost, setEditItemCost] = useState('')
   const [editItemSupplierId, setEditItemSupplierId] = useState('')
+  const [editItemIsStockItem, setEditItemIsStockItem] = useState(true)
   const [editItemSaving, setEditItemSaving] = useState(false)
   const [editItemError, setEditItemError] = useState('')
 
@@ -182,14 +185,11 @@ export default function RequestsPage() {
   // different, non-recurring supplier can safely clear it without ever touching a reason
   // someone typed by hand.
   const [exemptionAutoSet, setExemptionAutoSet] = useState(false)
-  const [justificationText, setJustificationText] = useState('')
 
-  // A reason is required for every supplier selection made against gathered quotations
-  // (band B/C items) — not just when the pick isn't the cheapest — so there's always a
-  // documented "why" on file for KPI 5 reporting.
-  const editItemBand = editItemModal ? getBand((editItemModal.quantity || 0) * (parseFloat(editItemCost) || 0)) : 'A'
+  // Band is decided by unit price, not line total (quantity × price) — a bulk order of a
+  // cheap item shouldn't need the same sourcing rigor as one expensive unit.
+  const editItemBand = editItemModal ? getBand(parseFloat(editItemCost) || 0) : 'A'
   const editItemQuotations = editItemModal?.quotations ?? []
-  const needsSupplierJustification = editItemBand !== 'A' && editItemQuotations.length > 0 && !!editItemSupplierId
 
   // Price/supplier history for the item being edited — lets Purchasing reuse a past purchase
   const [priceHistory, setPriceHistory] = useState<{ supplierId: string | null; supplierName: string | null; price: number; poNumber: string; orderedAt: string }[]>([])
@@ -293,7 +293,7 @@ export default function RequestsPage() {
     if (!res.ok) { alert(data.error ?? 'Failed to convert to PO'); return }
     setSelected(s => s ? { ...s, status: 'CONVERTED' } : s)
     await fetchDetail(selected.id)
-    setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], transferNumbers: data.createdTransferNumbers ?? [] })
+    setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], poIds: data.createdPoIds ?? [], transferNumbers: data.createdTransferNumbers ?? [] })
     load()
   }
 
@@ -301,6 +301,7 @@ export default function RequestsPage() {
     setEditItemModal(item)
     setEditItemCost(item.estimatedCost ? String(item.estimatedCost) : '')
     setEditItemSupplierId(item.supplierId || '')
+    setEditItemIsStockItem(item.isStockItem ?? true)
     setEditItemError('')
     // No saved exemption yet but the item's current supplier already has an established
     // order history — auto-exempt rather than making Purchasing tick the box themselves.
@@ -314,7 +315,6 @@ export default function RequestsPage() {
       setExemptionReasonText(item.exemptionReason ?? '')
       setExemptionAutoSet(false)
     }
-    setJustificationText(item.selectionJustification ?? '')
     setQuoteForm({ supplierId: '', supplierName: '', price: '', fileKey: '' })
     setQuoteError('')
     setPriceHistory([])
@@ -334,10 +334,6 @@ export default function RequestsPage() {
 
   async function saveEditItem() {
     if (!editItemModal?.id || !detail) return
-    if (needsSupplierJustification && !justificationText.trim()) {
-      setEditItemError('Please provide a reason for the selected supplier')
-      return
-    }
     setEditItemSaving(true); setEditItemError('')
     const supplier = suppliers.find(s => s.id === editItemSupplierId)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}`, {
@@ -347,7 +343,7 @@ export default function RequestsPage() {
         supplierId: editItemSupplierId || null,
         supplierName: supplier?.name || null,
         exemptionReason: exemptionChecked ? exemptionReasonText.trim() : '',
-        selectionJustification: justificationText.trim(),
+        isStockItem: editItemIsStockItem,
       }),
     })
     const data = await res.json()
@@ -385,6 +381,7 @@ export default function RequestsPage() {
   async function addQuotation() {
     if (!editItemModal?.id || !detail) return
     if (!quoteForm.supplierName.trim() || !quoteForm.price) { setQuoteError('Supplier and price are required'); return }
+    if (!quoteForm.fileKey) { setQuoteError('Attach the quotation document — proof is required for the approver'); return }
     setQuoteSaving(true); setQuoteError('')
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -501,16 +498,10 @@ export default function RequestsPage() {
     chooseSupplier(s.id)
   }
 
-  // "Use" on a quotation already gathered for this PR item — makes it the Chosen Supplier
-  // instead of requiring the same pick to be made twice (once as a quotation, once above).
-  function applyQuotation(q: { supplierId: string | null; price: number }) {
-    setEditItemCost(String(q.price))
-    if (q.supplierId) chooseSupplier(q.supplierId)
-  }
-
-  // "Use" on a quotation gathered for the same item on a DIFFERENT PR — copies it in as a
-  // quotation on this item too (so it still counts toward the required N and stays on file
-  // for this PR's own audit trail), then selects it as Chosen Supplier.
+  // "Add" on a quotation gathered for the same item on a DIFFERENT PR — copies it in as a
+  // quotation on this item too, so it counts toward the required N and stays on file for
+  // this PR's own audit trail. Which one gets used is the approver's call, not ours — this
+  // does not select it as Chosen Supplier.
   async function reuseQuotation(q: { supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }) {
     if (!editItemModal?.id || !detail) return
     setReusingQuotation(true); setQuoteError('')
@@ -527,7 +518,6 @@ export default function RequestsPage() {
     const data = await res.json()
     setReusingQuotation(false)
     if (!res.ok) { setQuoteError(data.error ?? 'Failed to reuse quotation'); return }
-    applyQuotation(q)
     await refreshQuotations()
   }
 
@@ -898,10 +888,16 @@ export default function RequestsPage() {
             )}
             {selected.status === 'ON_PROCESS' && !isWarehouse && (
               <>
-                <button onClick={convertToPO}
-                  className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
-                  <ShoppingCart className="h-4 w-4" /> Convert to PO
-                </button>
+                {(() => {
+                  const missingSupplier = detail?.items.filter(item => !fulfillment[item.id!] && !item.supplierId) ?? []
+                  return (
+                    <button onClick={convertToPO} disabled={missingSupplier.length > 0}
+                      title={missingSupplier.length > 0 ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
+                      className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
+                      <ShoppingCart className="h-4 w-4" /> Convert to PO
+                    </button>
+                  )
+                })()}
                 <button onClick={() => changeStatus(selected.id, 'REJECTED')}
                   className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                   Reject
@@ -925,9 +921,27 @@ export default function RequestsPage() {
       )}
 
       {approveSummary && (approveSummary.poNumbers.length > 0 || approveSummary.transferNumbers.length > 0) && (
-        <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-1">
+        <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-2">
           <p className="font-medium">Request converted to Purchase Order.</p>
-          {approveSummary.poNumbers.length > 0 && <p>Purchase Order{approveSummary.poNumbers.length > 1 ? 's' : ''}: {approveSummary.poNumbers.join(', ')}</p>}
+          {approveSummary.poNumbers.length > 0 && (
+            <div className="space-y-1.5">
+              <p>Purchase Order{approveSummary.poNumbers.length > 1 ? 's' : ''}: {approveSummary.poNumbers.join(', ')}</p>
+              <div className="flex flex-wrap gap-2">
+                {approveSummary.poNumbers.map((poNumber, i) => {
+                  const poId = approveSummary.poIds[i]
+                  return poId && onOpenPo ? (
+                    <button
+                      key={poId}
+                      onClick={() => onOpenPo(poId)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                    >
+                      <ShoppingCart className="h-3 w-3" /> Go to {poNumber}
+                    </button>
+                  ) : null
+                })}
+              </div>
+            </div>
+          )}
           {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
         </div>
       )}
@@ -1069,7 +1083,7 @@ export default function RequestsPage() {
                             >
                               {item.supplierName ?? 'Select supplier...'}
                             </button>
-                            {getBand(item.quantity * item.estimatedCost) !== 'A' && (
+                            {getBand(item.estimatedCost) !== 'A' && (
                               item.quotationApprovedAt ? (
                                 <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Approved</span>
                               ) : item.quotationRejectedAt ? (
@@ -1200,22 +1214,51 @@ export default function RequestsPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-muted-foreground">Estimated Price</label>
-                        <RupiahInput value={editItemCost} onChange={setEditItemCost} />
+                        <RupiahInput
+                          value={editItemCost}
+                          onChange={setEditItemCost}
+                          disabled={!!editItemModal?.quotationApprovedAt}
+                          title={editItemModal?.quotationApprovedAt ? 'Set by the approved quotation' : undefined}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-muted-foreground">Chosen Supplier</label>
-                        <button
-                          type="button"
-                          onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
-                          className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        >
-                          <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
-                            {suppliers.find(s => s.id === editItemSupplierId)?.name || 'Select or add supplier...'}
-                          </span>
-                          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        </button>
+                        {(() => {
+                          // Once a band applies (quotations required), which supplier gets used is the
+                          // approver's decision — this locks and auto-fills once they pick one. Exempt
+                          // items (recurring supplier, no quotations needed) still let Purchasing set it directly.
+                          const supplierFieldDisabled = editItemBand !== 'A' && !historyExempt
+                          return (
+                            <button
+                              type="button"
+                              disabled={supplierFieldDisabled}
+                              onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
+                              title={supplierFieldDisabled ? 'Set by the approver once they pick a quotation' : undefined}
+                              className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-background"
+                            >
+                              <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
+                                {suppliers.find(s => s.id === editItemSupplierId)?.name || (supplierFieldDisabled ? 'Set by approver once a quotation is chosen' : 'Select or add supplier...')}
+                              </span>
+                              <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            </button>
+                          )
+                        })()}
                       </div>
                     </div>
+
+                    {!editItemModal.itemId && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">Item Type</label>
+                        <select
+                          value={editItemIsStockItem ? 'stock' : 'non-stock'}
+                          onChange={e => setEditItemIsStockItem(e.target.value === 'stock')}
+                          className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="stock">Stock Item — tracked in inventory (warehouse, yacht, etc.)</option>
+                          <option value="non-stock">Non-Stock Item — consumed directly, not tracked in stock</option>
+                        </select>
+                      </div>
+                    )}
 
                     {priceHistory.length > 0 && (
                       <div className="space-y-1.5 pt-1">
@@ -1270,33 +1313,49 @@ export default function RequestsPage() {
                         {quotations.length === 0 ? (
                           <p className="text-xs text-muted-foreground/60 italic">None yet — add at least {required} below.</p>
                         ) : (
-                          <div className="space-y-1.5">
-                            {quotations.map(q => (
-                              <div key={q.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
-                                <div className="min-w-0">
-                                  <p className="font-medium truncate">{q.supplierName}</p>
-                                  <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {quotations.map(q => {
+                              const isChosen = !!editItemSupplierId && q.supplierId === editItemSupplierId
+                              const isDeselected = !!editItemSupplierId && !isChosen
+                              return (
+                              <div key={q.id} className={`border rounded-md p-2 text-sm space-y-1.5 transition-opacity ${isChosen ? 'border-green-400 bg-green-50' : ''} ${isDeselected ? 'opacity-50 grayscale' : ''}`}>
+                                {q.fileKey ? (
+                                  <div className="relative">
+                                    <FilePreview
+                                      src={q.fileKey}
+                                      alt="Quotation document"
+                                      onClick={() => setQuoteFileLightbox(q.fileKey)}
+                                      className="w-full h-20 rounded border object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    />
+                                    <button
+                                      onClick={() => downloadDataUrl(q.fileKey!, `${q.supplierName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-quotation.${extFromDataUrl(q.fileKey!)}`)}
+                                      title="Download quotation document"
+                                      className="absolute top-1 right-1 bg-white/90 hover:bg-white text-foreground rounded-full p-1 shadow transition-colors"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                    </button>
+                                    {isChosen && (
+                                      <span className="absolute top-1 left-1 flex items-center gap-1 text-[10px] font-semibold text-white bg-green-600 rounded-full px-2 py-0.5 shadow">
+                                        <CheckCircle2 className="h-3 w-3" /> Chosen
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-20 rounded border border-dashed flex items-center justify-center text-[11px] text-muted-foreground/60 italic">No document</div>
+                                )}
+                                <div className="flex items-center justify-between gap-2 min-w-0">
+                                  <p className={`truncate ${isChosen ? 'font-semibold' : 'font-medium'}`}>{q.supplierName}</p>
+                                  <span className="font-medium shrink-0">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
-                                  {q.fileKey && (
-                                    <button onClick={() => setQuoteFileLightbox(q.fileKey)} className="text-muted-foreground hover:text-blue-600 transition-colors" title="View quotation document">
-                                      <Paperclip className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                  {q.supplierId && q.supplierId === editItemSupplierId ? (
-                                    <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Chosen</span>
-                                  ) : (
-                                    <button onClick={() => applyQuotation(q)} className="text-[11px] font-medium text-amber-700 hover:text-amber-900 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-50 transition-colors whitespace-nowrap">
-                                      Use
-                                    </button>
-                                  )}
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                                   <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
                               </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         )}
                         </div>
@@ -1317,7 +1376,7 @@ export default function RequestsPage() {
                                     disabled={reusingQuotation}
                                     className="text-[11px] font-medium text-amber-700 hover:text-amber-900 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-50 transition-colors disabled:opacity-50 whitespace-nowrap"
                                   >
-                                    Use
+                                    Add
                                   </button>
                                 </div>
                               </div>
@@ -1325,6 +1384,7 @@ export default function RequestsPage() {
                           </div>
                         )}
 
+                        {!editItemModal.quotationApprovedAt && (
                         <div className="space-y-2 pt-4 border-t">
                         <p className="text-[11px] font-medium text-muted-foreground">Add a quotation</p>
                         <div className="grid grid-cols-[1fr_120px_auto] gap-2 items-end">
@@ -1346,7 +1406,8 @@ export default function RequestsPage() {
                           </div>
                           <button
                             onClick={addQuotation}
-                            disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price}
+                            disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price || !quoteForm.fileKey}
+                            title={!quoteForm.fileKey ? 'Attach the quotation document first' : undefined}
                             className="h-9 px-3 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
                           >
                             {quoteSaving ? '...' : '+ Add'}
@@ -1368,13 +1429,15 @@ export default function RequestsPage() {
                         ) : (
                           <label
                             htmlFor="quote-file-input"
-                            className={`inline-flex items-center gap-1.5 text-xs border border-dashed rounded-md px-2.5 py-1.5 w-fit cursor-pointer transition-colors ${quoteFileBusy ? 'opacity-50 pointer-events-none' : 'text-muted-foreground hover:text-foreground hover:border-amber-400'}`}
+                            className={`inline-flex items-center gap-1.5 text-xs border border-dashed rounded-md px-2.5 py-1.5 w-fit cursor-pointer transition-colors ${quoteFileBusy ? 'opacity-50 pointer-events-none' : 'text-amber-700 border-amber-300 hover:text-amber-900 hover:border-amber-400'}`}
                           >
-                            <Paperclip className="h-3.5 w-3.5" /> {quoteFileBusy ? 'Uploading…' : 'Attach quotation document (optional)'}
+                            <Paperclip className="h-3.5 w-3.5" /> {quoteFileBusy ? 'Uploading…' : 'Attach quotation document — required'}
                           </label>
                         )}
                         </div>
+                        )}
 
+                        {!editItemModal.quotationApprovedAt && (
                         <div className="space-y-2 pt-4 border-t">
                         <label className="flex items-start gap-2 text-xs">
                           <input type="checkbox" className="mt-0.5" checked={exemptionChecked} onChange={e => { setExemptionChecked(e.target.checked); setExemptionAutoSet(false) }} />
@@ -1390,26 +1453,15 @@ export default function RequestsPage() {
                           />
                         )}
 
-                        {needsSupplierJustification && (
-                          <div className="space-y-1">
-                            <label className="text-xs font-semibold text-amber-700">Reason for choosing this supplier — required</label>
-                            <textarea
-                              rows={2}
-                              placeholder="e.g. cheapest quote, better quality, faster delivery..."
-                              className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              value={justificationText}
-                              onChange={e => setJustificationText(e.target.value)}
-                            />
-                          </div>
-                        )}
                         </div>
+                        )}
 
                         <div className="pt-4 border-t">
                         {(() => {
-                          const hasUnsavedChanges = editItemSupplierId !== (editItemModal.supplierId || '')
-                            || editItemCost !== String(editItemModal.estimatedCost ?? 0)
-                            || justificationText !== (editItemModal.selectionJustification ?? '')
-                          const submitDisabled = submittingApproval || quotations.length < required || !editItemSupplierId || hasUnsavedChanges
+                          // Which supplier gets used is the approver's call, not ours — Submit
+                          // only needs enough quotations on file, not a pre-picked supplier.
+                          const hasUnsavedChanges = editItemCost !== String(editItemModal.estimatedCost ?? 0)
+                          const submitDisabled = submittingApproval || quotations.length < required || hasUnsavedChanges
 
                           if (editItemModal.quotationApprovedAt) {
                             return (
@@ -1444,8 +1496,8 @@ export default function RequestsPage() {
                           }
                           return (
                             <div className="space-y-1.5">
-                              {hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before submitting for approval.</p>}
                               {quotations.length < required && <p className="text-[11px] text-muted-foreground italic">Gather {required - quotations.length} more quotation{required - quotations.length > 1 ? 's' : ''} first.</p>}
+                              {quotations.length >= required && hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before submitting for approval.</p>}
                               <button onClick={submitForApproval} disabled={submitDisabled}
                                 className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
                                 {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
@@ -1465,8 +1517,7 @@ export default function RequestsPage() {
               {detail?.status === 'ON_PROCESS' && !isWarehouse && (
               <button
                 onClick={saveEditItem}
-                disabled={editItemSaving || (needsSupplierJustification && !justificationText.trim())}
-                title={needsSupplierJustification && !justificationText.trim() ? 'Provide a reason for the selected supplier first' : undefined}
+                disabled={editItemSaving}
                 className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium"
               >
                 {editItemSaving ? 'Saving...' : 'Save'}
@@ -1608,9 +1659,9 @@ export default function RequestsPage() {
       {/* ── Quotation Document Viewer ── */}
       {quoteFileLightbox && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={() => setQuoteFileLightbox(null)}>
-          <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+          <div className="relative inline-block" onClick={e => e.stopPropagation()}>
             {isPdfDataUrl(quoteFileLightbox) ? (
-              <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+              <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
                 <embed src={quoteFileLightbox} type="application/pdf" className="w-full h-[75vh]" />
                 <div className="p-3 flex justify-center">
                   <a href={quoteFileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
@@ -1619,7 +1670,7 @@ export default function RequestsPage() {
                 </div>
               </div>
             ) : (
-              <img src={quoteFileLightbox} alt="Quotation document" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+              <img src={quoteFileLightbox} alt="Quotation document" className="block max-w-[90vw] max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl object-contain" />
             )}
             <button onClick={() => setQuoteFileLightbox(null)} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
               <X className="h-4 w-4" />
