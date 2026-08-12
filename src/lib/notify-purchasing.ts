@@ -36,3 +36,35 @@ export async function notifyByRole(
   // in-app notification that already landed.
   sendPushToUsers(db, users.map(u => u.id), { title, body }).catch(console.error)
 }
+
+// Same as notifyByRole above, but links the notification to a PurchaseRequest
+// (Notification.requestId) instead of a PurchaseOrder — used for PR-stage events
+// (e.g. a new PR submitted) that happen before any PO exists yet.
+export async function notifyByRoleForRequest(
+  db: Db,
+  roles: string[],
+  type: string,
+  title: string,
+  body: string,
+  requestId: string,
+) {
+  const users = await db.user.findMany({
+    where: { role: { in: roles as never[] } },
+    select: { id: true },
+  })
+  if (!users.length) return
+
+  await db.notification.createMany({
+    data: users.map((u) => ({
+      id: crypto.randomUUID(),
+      userId: u.id,
+      type,
+      title,
+      body,
+      requestId,
+    })),
+    skipDuplicates: true,
+  })
+
+  sendPushToUsers(db, users.map(u => u.id), { title, body }).catch(console.error)
+}

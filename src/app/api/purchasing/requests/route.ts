@@ -4,8 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
 async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()
@@ -104,5 +106,16 @@ export async function POST(req: NextRequest) {
     },
     include: { items: true },
   })
+
+  // Notify Purchasing so a new PR doesn't sit unseen — skip when Purchasing/Admin
+  // themselves created it, since they don't need to be told about their own action.
+  if (!roleMatches(role, PURCHASING_ROLES)) {
+    notifyByRoleForRequest(
+      db, PURCHASING_ROLES, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
+      `${prNumber} was submitted with ${request.items.length} item${request.items.length !== 1 ? 's' : ''} and is waiting for review.`,
+      request.id,
+    ).catch(() => {})
+  }
+
   return NextResponse.json(request, { status: 201 })
 }

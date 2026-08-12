@@ -146,6 +146,18 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<RequestLine[]>([])
+
+  // Picking "Requested By" only applies to items added *after* that point (each
+  // person becomes their own PR) — but items added before anyone was picked yet
+  // (still on the "myself / general stock" default) are easy to mistake as already
+  // covered. Backfill those still-blank lines when a name is picked, so setting it
+  // after already adding items doesn't silently leave them unassigned. Lines already
+  // tagged to a *different* specific person are left alone — that's the intentional
+  // multi-requester-per-session split.
+  function updateRequestedByEmployeeId(id: string) {
+    setRequestedByEmployeeId(id)
+    if (id) setCart(prev => prev.map(l => l.requestedByEmployeeId ? l : { ...l, requestedByEmployeeId: id }))
+  }
   const [cartOpen, setCartOpen] = useState(false)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('All')
@@ -816,7 +828,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
       <CreateRequestView
         items={items} locations={locations} employees={employees}
         deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
-        requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
+        requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={updateRequestedByEmployeeId}
         notes={notes} setNotes={setNotes}
         cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
         addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
@@ -1022,8 +1034,6 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
-                  <th className="text-right px-5 py-2.5 font-medium">Est. Price</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -1132,8 +1142,6 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                           )}
                         </td>
                       )}
-                      <td className="px-5 py-3 text-right text-muted-foreground">Rp {new Intl.NumberFormat('id-ID').format(item.estimatedCost)}</td>
-                      <td className="px-5 py-3 text-right font-medium">Rp {new Intl.NumberFormat('id-ID').format(item.quantity * item.estimatedCost)}</td>
                       <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
                         {editable && (
                           <button onClick={() => openEditItem(item)} className="text-muted-foreground hover:text-foreground transition-colors" title="Edit price / supplier">
@@ -1145,14 +1153,6 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                   )
                 })}
               </tbody>
-              <tfoot className="bg-muted/30 border-t">
-                <tr>
-                  <td colSpan={detail.status === 'ON_PROCESS' && !isWarehouse ? 6 : 5} className="px-5 py-3 text-sm font-semibold text-right">Estimated Total</td>
-                  <td className="px-5 py-3 text-right font-bold" colSpan={2}>
-                    Rp {new Intl.NumberFormat('id-ID').format(detail.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0))}
-                  </td>
-                </tr>
-              </tfoot>
             </table></div>
           </div>
         </>
