@@ -2532,15 +2532,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setTransitModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">Mark as In Delivery</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Upload dispatch photo before continuing</p>
                 </div>
                 <button onClick={() => setTransitModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="overflow-y-auto flex-1 min-h-0 p-5 space-y-4">
                 {transitError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{transitError}</div>}
 
                 {transitPhoto ? (
@@ -2570,7 +2570,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </div>
                 )}
               </div>
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setTransitModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={confirmTransit} disabled={!transitPhoto || transitSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
@@ -2588,8 +2588,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setLegActionModal(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">
                     {legActionModal.action === 'dispatch'
@@ -2600,7 +2600,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </div>
                 <button onClick={() => setLegActionModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="overflow-y-auto flex-1 min-h-0 p-5 space-y-4">
                 {legError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{legError}</div>}
 
                 <div className="rounded-xl border divide-y">
@@ -2647,7 +2647,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </div>
                 )}
               </div>
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setLegActionModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitLegAction} disabled={!legPhoto || legSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
@@ -2985,7 +2985,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setReceiveModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden">
 
               {/* Header */}
               <div className="flex items-start justify-between px-6 py-5 border-b shrink-0">
@@ -2999,7 +2999,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               </div>
 
               {/* Body */}
-              <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+              <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-6">
                 {receiveError && (
                   <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5">{receiveError}</div>
                 )}

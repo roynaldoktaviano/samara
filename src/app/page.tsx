@@ -229,6 +229,7 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PO_PAID_BY_PURCHASING: CheckCircle2,
   PO_REIMBURSEMENT_REQUESTED: Banknote,
   PO_REIMBURSEMENT_PAID:      CheckCircle2,
+  PO_FULLY_PAID:              CheckCircle2,
 }
 const NOTIF_COLOR: Record<string, string> = {
   PAYMENT_SUBMITTED: 'text-amber-600',
@@ -244,6 +245,7 @@ const NOTIF_COLOR: Record<string, string> = {
   PO_PAID_BY_PURCHASING: 'text-green-600',
   PO_REIMBURSEMENT_REQUESTED: 'text-amber-600',
   PO_REIMBURSEMENT_PAID: 'text-green-600',
+  PO_FULLY_PAID: 'text-green-600',
 }
 
 function fmtRelative(d: string) {

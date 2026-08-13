@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
+import { toast } from 'sonner'
 import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -156,7 +157,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   // multi-requester-per-session split.
   function updateRequestedByEmployeeId(id: string) {
     setRequestedByEmployeeId(id)
-    if (id) setCart(prev => prev.map(l => l.requestedByEmployeeId ? l : { ...l, requestedByEmployeeId: id }))
+    if (id) setCart(prev => prev.map(l => l.requestedByEmployeeId ? l : { ...l, requestedByEmployeeId: id, key: `${l.itemId}-${l.itemUnit}-${id}` }))
   }
   const [cartOpen, setCartOpen] = useState(false)
   const [catalogSearch, setCatalogSearch] = useState('')
@@ -433,6 +434,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         requestedByEmployeeId: requestedByEmployeeId || undefined,
       }]
     })
+    toast.success(`${item.name} added to cart`)
   }
 
   function changeCartQty(key: string, delta: number) {
@@ -1161,8 +1163,8 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
       {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
       {editItemModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b shrink-0">
               <div className="min-w-0">
                 <h3 className="font-semibold text-base">{editItemModal.itemId ? 'Edit Item' : 'Custom Request Detail'}</h3>
                 <p className="text-sm text-muted-foreground truncate">{editItemModal.itemName}</p>
@@ -1171,7 +1173,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
+            <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               {editItemError && (
                 <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
                   <AlertTriangle className="h-4 w-4 shrink-0" /> {editItemError}
@@ -1512,7 +1514,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 </>
               )}
             </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20">
+            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setEditItemModal(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">{detail?.status === 'ON_PROCESS' && !isWarehouse ? 'Cancel' : 'Close'}</button>
               {detail?.status === 'ON_PROCESS' && !isWarehouse && (
               <button
@@ -1827,8 +1829,9 @@ function CreateRequestView({
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {pageItems.map(item => {
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
-                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
-                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
+                const requesterKey = requestedByEmployeeId || 'none'
+                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}-${requesterKey}`)
+                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}-${requesterKey}`) : undefined
                 return (
                   <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
@@ -1960,15 +1963,15 @@ function CreateRequestView({
       {/* ── Custom Request Modal ── */}
       {customModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
               <div>
                 <h3 className="font-bold text-lg">Custom Request</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">For items not in the catalog — this won&apos;t create a new catalog item, it&apos;s just added to your request for purchasing to review</p>
               </div>
               <button onClick={() => setCustomModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
                 <textarea
@@ -2021,7 +2024,7 @@ function CreateRequestView({
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
+            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
                 className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">

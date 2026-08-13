@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { notifyByRole } from '@/lib/notify-purchasing'
+import { notifyByRole, notifyIfPOFullyPaid } from '@/lib/notify-purchasing'
 import { computePOGrandTotal, summarizePOPayments, describeInstallment } from '@/lib/po-payment'
 
 import { roleMatches } from '@/lib/role-utils'
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} was paid directly by the purchasing team (debit), ${installmentLabel.toLowerCase()} — ${amountFormatted}`,
       id,
     ).catch(console.error)
+    notifyIfPOFullyPaid(db, id).catch(console.error)
   } else {
     notifyByRole(db, ['FINANCE', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAYMENT_REQUESTED',
       `${installmentLabel} Requested`,

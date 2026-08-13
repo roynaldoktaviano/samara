@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { notifyByRole } from '@/lib/notify-purchasing'
+import { notifyByRole, notifyIfPOFullyPaid } from '@/lib/notify-purchasing'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -60,6 +60,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     `${updated.order.poNumber}${updated.order.supplierName ? ` — ${updated.order.supplierName}` : ''} reimbursement to ${updated.requesterName} has been paid (Rp ${new Intl.NumberFormat('id-ID').format(updated.amount)})`,
     existing.orderId,
   ).catch(console.error)
+
+  notifyIfPOFullyPaid(db, existing.orderId).catch(console.error)
 
   return NextResponse.json(updated)
 }
