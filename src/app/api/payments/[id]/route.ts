@@ -99,6 +99,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }))
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+      const finalBankId      = bankId      !== undefined ? bankId      : existing.bankId
+      const finalPaymentLink = paymentLink !== undefined ? paymentLink : existing.paymentLink
+      if (!finalBankId && !finalPaymentLink) {
+        return NextResponse.json({ error: 'Select a bank account or provide a payment link before generating the invoice' }, { status: 400 })
+      }
+
       const EDITABLE_STATUSES = ['requested', 'invoice_ready', 'pending_confirmation']
       if (!EDITABLE_STATUSES.includes(existing.status)) {
         return NextResponse.json({ error: 'Invoice can only be generated or edited while requested, invoice-ready, or pending confirmation' }, { status: 400 })
