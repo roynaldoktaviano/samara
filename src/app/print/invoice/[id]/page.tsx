@@ -209,6 +209,15 @@ export default function InvoicePage() {
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
 
+  // TEMPORARY one-off Bill To override for booking SL1-ST-0144 — remove after this invoice is issued.
+  const billToOverride = b.bookingCode === 'SL1-ST-0144'
+    ? {
+        name: 'Buffalo Tours (Singapore) Pte Ltd',
+        address: '30 Cecil Street, #22-01/08 Prudential Tower, 049712 Singapore',
+        taxId: '201416667N',
+      }
+    : null
+
   return (
     <>
       <style>{`
@@ -377,9 +386,10 @@ export default function InvoicePage() {
 
             {billToAgent ? (
               <>
-                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{b.agent!.name}</div>
-                {b.agentContact?.name && <div style={{ color: '#6b7280', fontSize: 10, marginTop: 3, textTransform: 'uppercase' }}>{b.agentContact.name}</div>}
-                {b.agent!.address && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{b.agent!.address}</div>}
+                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{billToOverride?.name ?? b.agent!.name}</div>
+                {!billToOverride && b.agentContact?.name && <div style={{ color: '#6b7280', fontSize: 10, marginTop: 3, textTransform: 'uppercase' }}>{b.agentContact.name}</div>}
+                {(billToOverride?.address ?? b.agent!.address) && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{billToOverride?.address ?? b.agent!.address}</div>}
+                {billToOverride?.taxId && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>Tax ID / GST No.: {billToOverride.taxId}</div>}
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{guestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
                   {guestsWithCabin.length > 0 ? (

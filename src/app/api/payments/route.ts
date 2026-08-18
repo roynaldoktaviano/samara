@@ -37,6 +37,8 @@ export async function GET(_: NextRequest) {
         billToType: true,
         showNetAmount: true,
         showCommissionNote: true,
+        bankId: true,
+        paymentLink: true,
         submittedByUserId: true,
         submittedByName: true,
         confirmedBy: true,

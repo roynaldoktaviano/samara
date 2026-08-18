@@ -57,6 +57,7 @@ interface Payment {
   showNetAmount: boolean
   showCommissionNote: boolean
   bankId: string | null
+  paymentLink: string | null
   submittedByName: string | null
   confirmedBy: string | null
   confirmedAt: string | null
@@ -270,10 +271,16 @@ export default function Payments() {
     .filter(p => p.status === 'confirmed')
     .reduce((s, p) => s + p.amount, 0)
 
+  const genInvPaymentDestMissing = !genInvBankId && !(genInvUsePayLink && genInvPayLink.trim())
+
   const handleGenerateInvoice = async (silent = false) => {
     if (!selected) return
     const amount = parseFloat(genInvAmount.replace(/,/g, '')) || 0
     if (amount <= 0) return
+    if (genInvPaymentDestMissing) {
+      toast.error('Select a bank account or provide a payment link before generating the invoice')
+      return
+    }
     const isFirstGeneration = selected.status === 'requested'
     setGenInvSaving(true)
     try {
@@ -289,7 +296,7 @@ export default function Payments() {
           billToType: genInvBillTo,
           showNetAmount: genInvShowNet,
           showCommissionNote: genInvShowNet && genInvShowNote,
-          bankId: genInvUsePayLink ? null : (genInvBankId || null),
+          bankId: genInvBankId || null,
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
           silent: silent && !isFirstGeneration,
         }),
@@ -414,8 +421,8 @@ export default function Payments() {
     setGenInvNotes(p.notes ?? '')
     setGenInvBillTo((p.billToType as 'AGENT' | 'CUSTOMER') ?? (p.booking.source === 'AGENT' ? 'AGENT' : 'CUSTOMER'))
     setGenInvBankId(p.bankId ?? null)
-    setGenInvUsePayLink(false)
-    setGenInvPayLink('')
+    setGenInvUsePayLink(!!p.paymentLink)
+    setGenInvPayLink(p.paymentLink ?? '')
     setGenInvShowNet(p.showNetAmount ?? false)
     setGenInvShowNote(p.showCommissionNote ?? false)
     setGenInvEditing(false)
@@ -1446,31 +1453,8 @@ export default function Payments() {
                     {(
                       <>
                         <Separator />
-                        {/* Pay link toggle */}
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            id="usePayLink"
-                            checked={genInvUsePayLink}
-                            onCheckedChange={v => { setGenInvUsePayLink(!!v); setGenInvBankId(null); setGenInvPayLink('') }}
-                          />
-                          <Label htmlFor="usePayLink" className="text-xs cursor-pointer">Use Payment Link instead of bank transfer</Label>
-                        </div>
 
-                        {genInvUsePayLink ? (
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Payment Link URL</Label>
-                            <Input
-                              type="url"
-                              placeholder="https://pay.example.com/..."
-                              value={genInvPayLink}
-                              onChange={e => setGenInvPayLink(e.target.value)}
-                              className="text-sm"
-                            />
-                            {genInvPayLink && (
-                              <p className="text-[11px] text-muted-foreground">This link will appear on the invoice for the client to pay directly.</p>
-                            )}
-                          </div>
-                        ) : banks.length > 0 ? (
+                        {banks.length > 0 && (
                           <div className="space-y-1.5">
                             <Label className="text-xs flex items-center gap-1.5">
                               <Building2 className="h-3.5 w-3.5" /> Bank Account for Invoice
@@ -1495,14 +1479,46 @@ export default function Payments() {
                               )
                             })()}
                           </div>
-                        ) : null}
+                        )}
+
+                        {/* Pay link toggle */}
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="usePayLink"
+                            checked={genInvUsePayLink}
+                            onCheckedChange={v => { setGenInvUsePayLink(!!v); if (!v) setGenInvPayLink('') }}
+                          />
+                          <Label htmlFor="usePayLink" className="text-xs cursor-pointer">Also include a Payment Link</Label>
+                        </div>
+
+                        {genInvUsePayLink && (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Payment Link URL</Label>
+                            <Input
+                              type="url"
+                              placeholder="https://pay.example.com/..."
+                              value={genInvPayLink}
+                              onChange={e => setGenInvPayLink(e.target.value)}
+                              className="text-sm"
+                            />
+                            {genInvPayLink && (
+                              <p className="text-[11px] text-muted-foreground">This link will appear on the invoice for the client to pay directly.</p>
+                            )}
+                          </div>
+                        )}
                       </>
+                    )}
+
+                    {genInvPaymentDestMissing && (
+                      <p className="text-[11px] text-red-600">
+                        Select a bank account or add a payment link before generating the invoice.
+                      </p>
                     )}
 
                     <DialogFooter className="flex-col gap-2 sm:flex-col">
                       <Button
                         className="bg-blue-600 hover:bg-blue-700 text-white w-full"
-                        disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0}
+                        disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0 || genInvPaymentDestMissing}
                         onClick={() => handleGenerateInvoice(false)}
                       >
                         {genInvSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FilePlus className="h-4 w-4 mr-1.5" />}
@@ -1512,7 +1528,7 @@ export default function Payments() {
                         <Button
                           variant="outline"
                           className="w-full"
-                          disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0}
+                          disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0 || genInvPaymentDestMissing}
                           onClick={() => handleGenerateInvoice(true)}
                         >
                           {genInvSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FilePlus className="h-4 w-4 mr-1.5" />}
