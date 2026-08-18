@@ -38,6 +38,7 @@ import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
 import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
+import LeadsStats from '@/components/leads/LeadsStats'
 import PurchasingOverview from '@/components/purchasing/PurchasingOverview'
 import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
 import PurchasingItemTypesPage from '@/components/purchasing/item-types/ItemTypesPage'
@@ -92,7 +93,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
 
 type NavItem = {
   id: View
@@ -143,6 +144,7 @@ const navigationItems: NavItem[] = [
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
   { id: 'sales-stats',   label: 'Sales Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES'],                         group: 'statistics' },
+  { id: 'leads-stats',   label: 'Leads Stats',     icon: TrendingUp, roles: ['ADMIN', 'SALES', 'MARKETING'],            group: 'statistics' },
   { id: 'agents',        label: 'Agents',          icon: Briefcase,  roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'agent-leads',   label: 'Agent Leads',     icon: Users,      roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'vouchers',      label: 'Vouchers',        icon: Tag,        roles: ['ADMIN'],                                  group: 'marketing'  },
@@ -714,6 +716,7 @@ export default function Home() {
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
+      case 'leads-stats':    return <LeadsStats />
       case 'purchasing-overview':   return <PurchasingOverview />
       case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />

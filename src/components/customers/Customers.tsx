@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download, Target } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download, Target, Loader2 } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
@@ -115,6 +115,9 @@ const statusColor: Record<string, string> = {
 export default function Guests() {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
+  const role = (session?.user as { role?: string })?.role ?? ''
+  const canExportGoogleAds = ['ADMIN', 'MARKETING', 'SUPER_ADMIN'].includes(role)
+  const [exportingGoogleAds, setExportingGoogleAds] = useState(false)
 
   const [guests, setGuests] = useState<Guest[]>([])
   const [totalGuests, setTotalGuests] = useState(0)
@@ -246,6 +249,24 @@ export default function Guests() {
     }
   }
 
+  /* ── Google Ads guest export ── */
+  // Guests who clicked a Google Ads ad (have a gclid on their own inquiry) —
+  // see api/customers/google-ads-export. Guest-only, no Lead lookup.
+  const handleExportGoogleAds = async () => {
+    setExportingGoogleAds(true)
+    try {
+      const res = await fetch('/api/customers/google-ads-export')
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `guests-google-ads-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally { setExportingGoogleAds(false) }
+  }
+
   return (
     <div className="space-y-6">
       {!detailOpen && <>
@@ -261,6 +282,12 @@ export default function Guests() {
           <p className="text-muted-foreground">Manage guest profiles and view trip history</p>
         </div>
         <div className="flex items-center gap-2">
+          {canExportGoogleAds && (
+            <Button variant="outline" disabled={exportingGoogleAds} onClick={handleExportGoogleAds} title="Guests who clicked a Google Ads ad (have a Google Click ID)">
+              {exportingGoogleAds ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Google Ads CSV
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Download className="mr-2 h-4 w-4" /> Import from Freshsales
           </Button>

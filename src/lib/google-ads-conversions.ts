@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
+import { findLinkedLeadId } from './customer-lead-link'
 
 export const GOOGLE_ADS_CONVERSION_HEADER = ['Google Click ID', 'Conversion Name', 'Conversion Time', 'Conversion Value', 'Conversion Currency']
 
@@ -58,11 +59,25 @@ export async function getGoogleAdsConversions(db: PrismaClient, since: Date, con
   const customers = await db.customer.findMany({
     where: { id: { in: customerIds } },
     select: {
-      id: true,
+      id: true, email: true, phone: true,
       inquiries: { where: { gclid: { not: null } }, orderBy: { createdAt: 'desc' }, take: 1, select: { gclid: true } },
     },
   })
-  const gclidByCustomer = new Map(customers.map(c => [c.id, c.inquiries[0]?.gclid ?? null]))
+
+  const gclidByCustomer = new Map<string, string | null>()
+  for (const c of customers) {
+    if (c.inquiries[0]?.gclid) {
+      gclidByCustomer.set(c.id, c.inquiries[0].gclid)
+      continue
+    }
+    // No gclid on the Customer's own inquiries — this person may have first
+    // inquired as a Lead (with the click ID) before converting to a Customer.
+    const leadId = await findLinkedLeadId(db, c)
+    const leadGclid = leadId
+      ? (await db.inquiry.findFirst({ where: { leadId, gclid: { not: null } }, orderBy: { createdAt: 'desc' }, select: { gclid: true } }))?.gclid ?? null
+      : null
+    gclidByCustomer.set(c.id, leadGclid)
+  }
 
   const rows: GoogleAdsConversionRow[] = []
   for (const payment of firstPaymentByBooking.values()) {

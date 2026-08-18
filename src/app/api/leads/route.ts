@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search  = searchParams.get('search')
     const website = searchParams.get('website')
+    const source  = searchParams.get('source')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
@@ -24,10 +25,15 @@ export async function GET(request: NextRequest) {
         { phone: { contains: search, mode: 'insensitive' } },
       ]
     }
-    // A lead can have inquiries from more than one site — match if any of them
-    // came from the selected website, rather than pinning to first/latest.
-    if (website) {
-      where.inquiries = { some: { website } }
+    // A lead can have inquiries from more than one site/source — match if any
+    // of them came from the selected website/source, rather than pinning to
+    // first/latest. Kept as separate `some` clauses (not one shared filter)
+    // so a website match and a source match don't have to be the same inquiry.
+    const inquiryFilters: Record<string, unknown>[] = []
+    if (website) inquiryFilters.push({ website })
+    if (source)  inquiryFilters.push({ OR: [{ utmSource: source }, { lastSource: source }] })
+    if (inquiryFilters.length > 0) {
+      where.AND = inquiryFilters.map(f => ({ inquiries: { some: f } }))
     }
 
     const [leads, total] = await Promise.all([
