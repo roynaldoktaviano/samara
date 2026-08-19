@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { FileText, Camera, Image as ImageIcon } from 'lucide-react'
 import { isPdfDataUrl, readUploadFile } from '@/lib/fileUpload'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -30,10 +31,14 @@ export function PhotoSourceMenu({ open, onClose, onFiles, multiple = false }: {
     <>
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple={multiple} className="hidden" onChange={handleChange} />
       <input ref={galleryRef} type="file" accept="image/*" multiple={multiple} className="hidden" onChange={handleChange} />
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={onClose} />
-          <div className="absolute left-0 top-full mt-1 z-50 bg-white border rounded-lg shadow-xl overflow-hidden w-48">
+      {open && typeof document !== 'undefined' && createPortal(
+        // Rendered at document.body via portal, positioned fixed+centered on the
+        // viewport rather than anchored under the trigger button — the trigger often
+        // sits inside a scrollable, overflow-hidden modal (e.g. Custom Request), and
+        // an anchored dropdown there gets clipped out of view on shorter/tablet screens.
+        <div className="fixed inset-0 z-100 flex items-center justify-center px-4" onClick={onClose}>
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="relative bg-white border rounded-lg shadow-xl overflow-hidden w-48" onClick={e => e.stopPropagation()}>
             <button type="button" onClick={() => cameraRef.current?.click()}
               className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 transition-colors">
               <Camera className="h-4 w-4 text-muted-foreground" /> Take Photo
@@ -43,7 +48,8 @@ export function PhotoSourceMenu({ open, onClose, onFiles, multiple = false }: {
               <ImageIcon className="h-4 w-4 text-muted-foreground" /> Choose from Gallery
             </button>
           </div>
-        </>
+        </div>,
+        document.body,
       )}
     </>
   )

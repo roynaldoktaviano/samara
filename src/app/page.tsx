@@ -330,7 +330,17 @@ export default function Home() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const { trigger: triggerTransition } = usePageTransition()
-  const [currentView, setCurrentView] = useState<View>('calendar')
+  const [currentView, setCurrentView] = useState<View>(() => {
+    if (typeof window === 'undefined') return 'calendar'
+    return (localStorage.getItem('lastView') as View | null) ?? 'calendar'
+  })
+  // Remembers the last section visited so a browser refresh lands back where the
+  // user was instead of resetting to the default view. Role/visibility is still
+  // re-checked below (isCurrentViewAllowed) so a stored view the user no longer
+  // has access to falls back safely.
+  useEffect(() => {
+    localStorage.setItem('lastView', currentView)
+  }, [currentView])
   // Set when an email row is clicked in the "All Chats" unified inbox — WhatsApp/Instagram
   // open inline in that same screen, but Email is still its own separate page (deliberately
   // not chat-bubble UI), so this tells it which conversation to auto-open once it mounts.

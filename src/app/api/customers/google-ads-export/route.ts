@@ -3,7 +3,7 @@ import { getDb } from '@/lib/get-db'
 import { requireRole, type AppRole } from '@/lib/auth-guard'
 
 const ALLOWED: AppRole[] = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
-const HEADER = ['Name', 'Email', 'Phone', 'Google Click ID', 'Source', 'Medium', 'Campaign', 'Click Date', 'Deposit Confirmed', 'Deposit Confirmed Date']
+const HEADER = ['Name', 'Email', 'Phone', 'Source', 'Medium', 'Campaign', 'Term', 'Content', 'Google Click ID', 'Google Braid', 'Form URL', 'Click Date']
 const FILENAME = () => `guests-google-ads-${new Date().toISOString().split('T')[0]}.csv`
 
 function csvCell(value: string | number | null | undefined) {
@@ -26,7 +26,7 @@ export async function GET() {
   const inquiries = await db.inquiry.findMany({
     where: { customerId: { not: null }, gclid: { not: null } },
     orderBy: { createdAt: 'desc' },
-    select: { customerId: true, gclid: true, utmSource: true, utmMedium: true, utmCampaign: true, createdAt: true },
+    select: { customerId: true, gclid: true, gbraid: true, utmSource: true, utmMedium: true, utmCampaign: true, utmTerm: true, utmContent: true, url: true, createdAt: true },
   })
 
   // One row per Customer — most recent Google Ads click.
@@ -40,34 +40,24 @@ export async function GET() {
   }
 
   const customerIds = [...byCustomer.keys()]
-  const [customers, confirmedPayments] = await Promise.all([
-    db.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, email: true, phone: true } }),
-    db.payment.findMany({
-      where: { status: 'confirmed', confirmedAt: { not: null }, booking: { customerId: { in: customerIds } } },
-      orderBy: { confirmedAt: 'asc' },
-      select: { confirmedAt: true, booking: { select: { customerId: true } } },
-    }),
-  ])
-  const firstConfirmedByCustomer = new Map<string, Date>()
-  for (const p of confirmedPayments) {
-    const cid = p.booking.customerId
-    if (!firstConfirmedByCustomer.has(cid)) firstConfirmedByCustomer.set(cid, p.confirmedAt!)
-  }
+  const customers = await db.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, email: true, phone: true } })
 
   const rows = customers
-    .map(c => ({ c, click: byCustomer.get(c.id)!, confirmedAt: firstConfirmedByCustomer.get(c.id) ?? null }))
+    .map(c => ({ c, click: byCustomer.get(c.id)! }))
     .sort((a, b) => b.click.createdAt.getTime() - a.click.createdAt.getTime())
-    .map(({ c, click, confirmedAt }) => [
+    .map(({ c, click }) => [
       csvCell(c.name),
       csvCell(c.email),
       csvCell(c.phone),
-      csvCell(click.gclid),
       csvCell(click.utmSource),
       csvCell(click.utmMedium),
       csvCell(click.utmCampaign),
+      csvCell(click.utmTerm),
+      csvCell(click.utmContent),
+      csvCell(click.gclid),
+      csvCell(click.gbraid),
+      csvCell(click.url),
       csvCell(click.createdAt.toISOString().slice(0, 10)),
-      csvCell(confirmedAt ? 'Yes' : 'No'),
-      csvCell(confirmedAt ? confirmedAt.toISOString().slice(0, 10) : ''),
     ])
 
   const csv = [HEADER.join(','), ...rows.map(r => r.join(','))].join('\n')

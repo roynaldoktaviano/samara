@@ -4,6 +4,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
+import { getClientIp, countryFromIp } from '@/lib/geo-country'
 
 // This endpoint is meant to be called directly from the browser (client-side
 // JS on the WordPress site listening for the wpcf7mailsent event), not just
@@ -151,6 +152,10 @@ export async function POST(request: NextRequest) {
     // page views to /api/webhooks/pageview — used below to retroactively attach this
     // visitor's browsing history to whichever Lead/Customer this submission resolves to.
     const visitorId = pick(data, 'visitorId', 'visitor_id')
+    // Best-effort country guess from the submitter's IP — only ever used to fill
+    // in a Lead that doesn't have a nationality yet, never to overwrite one a
+    // human entered (or, for a matched Customer, their passport-verified data).
+    const ipCountry = countryFromIp(getClientIp(request))
 
     if (!firstName && !email && !phone) {
       logWebhookFailure({ source: 'CF7', tenantSlug: tenant.slug, reason: 'insufficient_contact_data', rawPayload: toJsonSafe(data) })
@@ -186,9 +191,9 @@ export async function POST(request: NextRequest) {
       ownerId = updated.id
     } else {
       const existingLead = await (email
-        ? db.lead.findFirst({ where: { email, deletedAt: null } })
+        ? db.lead.findFirst({ where: { email, deletedAt: null }, select: { id: true, nationality: true } })
         : Promise.resolve(null))
-      const matchedLead = existingLead ?? (phone ? await db.lead.findFirst({ where: { phone, deletedAt: null } }) : null)
+      const matchedLead = existingLead ?? (phone ? await db.lead.findFirst({ where: { phone, deletedAt: null }, select: { id: true, nationality: true } }) : null)
 
       if (matchedLead) {
         ownerType = 'lead'
@@ -200,6 +205,7 @@ export async function POST(request: NextRequest) {
             ...(lastName  && { lastName  }),
             ...(email     && { email     }),
             ...(phone     && { phone     }),
+            ...(!matchedLead.nationality && ipCountry && { nationality: ipCountry }),
           },
           select: { id: true },
         })
@@ -208,11 +214,12 @@ export async function POST(request: NextRequest) {
         ownerType = 'lead'
         const created = await db.lead.create({
           data: {
-            name:      fullName,
-            firstName: firstName || null,
-            lastName:  lastName  || null,
-            email:     email     || null,
-            phone:     phone     || null,
+            name:        fullName,
+            firstName:   firstName || null,
+            lastName:    lastName  || null,
+            email:       email     || null,
+            phone:       phone     || null,
+            nationality: ipCountry || null,
           },
           select: { id: true },
         })
