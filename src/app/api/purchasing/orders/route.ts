@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
+import { resolveWarehouseLocationId, warehouseOrderWhere } from '@/lib/purchasing/warehouseScope'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -22,7 +23,13 @@ export async function GET() {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  // Warehouse never sees the full company-wide PO queue — only POs from their own PR,
+  // plus whatever delivers to or transits through their specific gudang.
+  const where = role === 'WAREHOUSE'
+    ? warehouseOrderWhere(session.user.id, await resolveWarehouseLocationId(db, session.user.id))
+    : undefined
   const orders = await db.purchaseOrder.findMany({
+    where,
     orderBy: { createdAt: 'desc' },
     include: {
       items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },

@@ -878,14 +878,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   }
 
   // ── List ──
+  // The actual scoping (own PR's POs, or POs touching this warehouse user's specific
+  // gudang) already happened server-side (GET /api/purchasing/orders) — orders here is
+  // never the full company-wide queue for a WAREHOUSE session. This just hides
+  // not-yet-actionable statuses (DRAFT/CANCELLED) from the warehouse view.
   const WAREHOUSE_STATUSES = ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
-  // "Involves the warehouse" — either the final destination is a warehouse location,
-  // or the shipping route transits through one, even if the final stop is elsewhere
-  // (e.g. straight to a vessel).
-  const involvesWarehouse = (o: PurchaseOrder) =>
-    o.deliveryLocation?.type === 'WAREHOUSE' || !!o.transitStops?.some(s => s.location.type === 'WAREHOUSE')
   const scopedOrders = warehouseView
-    ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status) && involvesWarehouse(o))
+    ? orders.filter(o => WAREHOUSE_STATUSES.includes(o.status))
     : orders
   const supplierOptions = Array.from(new Set(scopedOrders.map(o => o.supplierName).filter((n): n is string => !!n))).sort()
   const destinationOptions = Array.from(new Set(scopedOrders.map(o => o.deliveryLocation?.name).filter((n): n is string => !!n))).sort()

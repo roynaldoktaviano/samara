@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
+import { resolveWarehouseLocationId, warehouseCanViewOrder } from '@/lib/purchasing/warehouseScope'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
@@ -26,6 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
       request: {
         select: {
+          requestedById: true,
           prNumber: true,
           createdAt: true,
           neededByDate: true,
@@ -65,6 +67,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Same scope as the list endpoint — a warehouse user can't open a PO by id-guessing
+  // their way past what they're allowed to see.
+  if (role === 'WAREHOUSE') {
+    const locationId = await resolveWarehouseLocationId(db, session.user.id)
+    if (!warehouseCanViewOrder(order, session.user.id, locationId)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  }
 
   const createdByName = order.createdBy?.name ?? null
   const requestedByName = order.requestedByName ?? order.request?.requestedByEmployee?.fullName ?? null
