@@ -12,6 +12,10 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
+  // geoip-lite loads its .dat files from a path relative to its own __dirname at
+  // runtime (fs.readFileSync) — bundling it rewrites that path and breaks the lookup,
+  // so it must stay a normal require() against the real node_modules copy instead.
+  serverExternalPackages: ['geoip-lite'],
   images: {
     // Lets next/image resize/compress media-kit photos on the fly instead of shipping
     // the original upload to every grid thumbnail — the stored file itself is untouched.
