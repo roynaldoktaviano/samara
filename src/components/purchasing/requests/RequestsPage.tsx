@@ -1900,14 +1900,13 @@ function CreateRequestView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
-          <span className="text-muted-foreground">/</span>
-          <span className="text-sm font-medium">Create Purchase Request</span>
+        <div>
+          <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-1">← Back to Purchase Requests</button>
+          <h2 className="text-2xl font-bold tracking-tight">Create Purchase Request</h2>
         </div>
         <button
           onClick={() => setCartOpen(true)}
-          className="desktop:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium"
+          className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium bg-white hover:bg-muted transition-colors shrink-0"
         >
           <ShoppingCart className="h-4 w-4" />
           {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
@@ -1916,7 +1915,7 @@ function CreateRequestView({
 
       {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
 
-      <div className="grid grid-cols-1 desktop:grid-cols-[1fr_360px] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
         {/* ── Catalog ── */}
         <div className="space-y-4 min-w-0">
           <div className="flex flex-col sm:flex-row gap-2.5">
@@ -1930,30 +1929,30 @@ function CreateRequestView({
             </div>
             <button
               onClick={() => setCustomModal(true)}
-              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border-2 border-dashed border-amber-400 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-50 shrink-0"
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
             >
               <ImagePlus className="h-4 w-4" /> Custom Request
             </button>
           </div>
 
-          <div className="bg-white border rounded-lg p-3">
-            <div className="inline-flex gap-1 bg-muted rounded-md p-1 mb-2.5 flex-wrap">
+          <div className="bg-white border rounded-xl shadow-sm p-3.5 space-y-3">
+            <div className="inline-flex gap-1 bg-muted rounded-lg p-1 flex-wrap">
               <button onClick={() => { setCatalogType('All'); setCatalogCategory('All') }}
-                className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${catalogType === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground'}`}>
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${catalogType === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                 All Items
               </button>
               {ITEM_TYPES.map(t => (
                 <button key={t} onClick={() => { setCatalogType(t); setCatalogCategory('All') }}
-                  className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${catalogType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground'}`}>
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${catalogType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                   {ITEM_TYPE_LABELS[t]}
                 </button>
               ))}
             </div>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap pt-2.5 border-t">
               {categories.map(c => (
                 <button key={c} onClick={() => setCatalogCategory(c)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    catalogCategory === c ? 'bg-amber-600 text-white border-transparent' : 'bg-white text-muted-foreground'
+                    catalogCategory === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground'
                   }`}>
                   {c}
                 </button>
@@ -1967,56 +1966,56 @@ function CreateRequestView({
               <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2.5">
               {pageItems.map(item => {
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
                 const requesterKey = requestedByEmployeeId || 'none'
                 const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}-${requesterKey}`)
                 const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}-${requesterKey}`) : undefined
                 return (
-                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col">
+                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
                       {item.imageKey ? <img src={item.imageKey} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
                     </div>
-                    <div className="p-3 flex flex-col flex-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
-                      <p className="text-sm font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                    <div className="p-2.5 flex flex-col flex-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
+                      <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
                       </p>
-                      <div className="mt-auto pt-2 space-y-1.5">
+                      <div className="mt-auto pt-2 space-y-1">
                         {baseLine ? (
                           <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeCartQty(baseLine.key!, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Minus className="h-3.5 w-3.5" />
+                            <button onClick={() => changeCartQty(baseLine.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Minus className="h-3 w-3" />
                             </button>
-                            <span className="text-xs font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
-                            <button onClick={() => changeCartQty(baseLine.key!, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Plus className="h-3.5 w-3.5" />
+                            <span className="text-[11px] font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
+                            <button onClick={() => changeCartQty(baseLine.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Plus className="h-3 w-3" />
                             </button>
                           </div>
                         ) : (
                           <button onClick={() => addToCart(item, item.baseUnit)}
-                            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors">
-                            <Plus className="h-3.5 w-3.5" /> Add {item.baseUnit}
+                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
+                            <Plus className="h-3 w-3" /> Add {item.baseUnit}
                           </button>
                         )}
 
                         {hasPurchaseUnit && (
                           purchaseLine ? (
                             <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                              <button onClick={() => changeCartQty(purchaseLine.key!, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Minus className="h-3.5 w-3.5" />
+                              <button onClick={() => changeCartQty(purchaseLine.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Minus className="h-3 w-3" />
                               </button>
-                              <span className="text-xs font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
-                              <button onClick={() => changeCartQty(purchaseLine.key!, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Plus className="h-3.5 w-3.5" />
+                              <span className="text-[11px] font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
+                              <button onClick={() => changeCartQty(purchaseLine.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Plus className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
                             <button onClick={() => addToCart(item, item.purchaseUnit)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
-                              <Plus className="h-3.5 w-3.5" /> Add {item.purchaseUnit}
+                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
+                              <Plus className="h-3 w-3" /> Add {item.purchaseUnit}
                             </button>
                           )
                         )}
@@ -2065,8 +2064,10 @@ function CreateRequestView({
         </div>
 
         {/* ── Sidebar (desktop) ── */}
-        <div className="hidden desktop:block">
-          <div className="sticky top-4">
+        <div className="hidden lg:block">
+          {/* top-16 clears the app's own sticky header (h-12 + a little breathing room),
+              so the cart doesn't stick flush under it while scrolling. */}
+          <div className="sticky top-16">
             <RequestCartPanel
               cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty}
               locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
@@ -2080,7 +2081,7 @@ function CreateRequestView({
 
       {/* ── Mobile cart drawer ── */}
       {cartOpen && (
-        <div className="fixed inset-0 z-50 desktop:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
           <div className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
@@ -2195,9 +2196,9 @@ function RequestCartPanel({
   embedded?: boolean
 }) {
   return (
-    <div className={`bg-white rounded-xl border flex flex-col ${!embedded ? 'max-h-[calc(100vh-160px)]' : ''}`}>
+    <div className={`bg-white rounded-xl border shadow-sm flex flex-col ${!embedded ? 'max-h-[calc(100vh-200px)]' : ''}`}>
       {!embedded && (
-        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0">
+        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0 bg-amber-50/60 rounded-t-xl">
           <ShoppingCart className="h-4 w-4 text-amber-700" />
           <h3 className="font-semibold text-sm">Your Request {cart.length > 0 && `(${cart.length})`}</h3>
         </div>

@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
     const toParam   = searchParams.get('to')
     const from = fromParam && DATE_RE.test(fromParam) ? fromParam : null
     const to   = toParam   && DATE_RE.test(toParam)   ? toParam   : null
+    // Matched in JS below (against the same trimmed value used for the byCountry
+    // breakdown) rather than as a DB `where` clause — avoids a raw untrimmed DB value
+    // silently failing to match the trimmed option the client's dropdown sent.
+    const countryParam = searchParams.get('country')?.trim() || null
 
     // `from`/`to` are WITA calendar dates (inclusive) — converted to UTC
     // instants via the +08:00 offset so the boundary lines up with the same
@@ -41,22 +45,31 @@ export async function GET(request: NextRequest) {
     const lt  = to   ? new Date(new Date(`${to}T00:00:00+08:00`).getTime() + DAY_MS) : undefined
     const createdAtFilter = (gte || lt) ? { createdAt: { ...(gte ? { gte } : {}), ...(lt ? { lt } : {}) } } : {}
 
-    const leads = await db.lead.findMany({
+    const leadsInRange = await db.lead.findMany({
       where: { deletedAt: null, ...createdAtFilter },
       select: { id: true, nationality: true, createdAt: true },
     })
+    const leads = countryParam
+      ? leadsInRange.filter(l => (l.nationality?.trim() || 'Unknown') === countryParam)
+      : leadsInRange
+    const leadIdsInScope = countryParam ? new Set(leads.map(l => l.id)) : null
 
     // Inquiries whose lead falls in range — used for the website/source
     // breakdowns. Filtering through the `lead` relation also drops any
-    // inquiry whose leadId is null.
-    const inquiries = await db.inquiry.findMany({
+    // inquiry whose leadId is null. The country filter (if any) is applied
+    // after, against the same lead-id set as above.
+    const inquiriesInRange = await db.inquiry.findMany({
       where: { lead: { deletedAt: null, ...createdAtFilter } },
       select: { leadId: true, website: true, utmSource: true, lastSource: true },
     })
+    const inquiries = leadIdsInScope
+      ? inquiriesInRange.filter(i => i.leadId && leadIdsInScope.has(i.leadId))
+      : inquiriesInRange
 
     const countryCounts = new Map<string, number>()
     const dailyCounts = new Map<string, number>()
     const hourlyCounts = new Map<number, number>()
+    const dowCounts = new Map<number, number>() // 0=Sun..6=Sat, JS Date convention
     for (const l of leads) {
       const country = l.nationality?.trim() || 'Unknown'
       countryCounts.set(country, (countryCounts.get(country) ?? 0) + 1)
@@ -66,6 +79,8 @@ export async function GET(request: NextRequest) {
       dailyCounts.set(dateKey, (dailyCounts.get(dateKey) ?? 0) + 1)
       const hour = wita.getUTCHours()
       hourlyCounts.set(hour, (hourlyCounts.get(hour) ?? 0) + 1)
+      const dow = wita.getUTCDay()
+      dowCounts.set(dow, (dowCounts.get(dow) ?? 0) + 1)
     }
 
     // A lead can have multiple inquiries from different sites/sources — count
@@ -75,11 +90,15 @@ export async function GET(request: NextRequest) {
     const sourceLeads = new Map<string, Set<string>>()
     for (const inq of inquiries) {
       if (!inq.leadId) continue
-      if (inq.website) {
-        if (!websiteLeads.has(inq.website)) websiteLeads.set(inq.website, new Set())
-        websiteLeads.get(inq.website)!.add(inq.leadId)
+      // Trimmed the same way nationality is above — a stray whitespace-only value (seen in
+      // some bulk-imported Freshsales rows) is truthy but would otherwise become its own
+      // blank-labeled bar in the chart instead of being excluded like a real null.
+      const website = inq.website?.trim()
+      if (website) {
+        if (!websiteLeads.has(website)) websiteLeads.set(website, new Set())
+        websiteLeads.get(website)!.add(inq.leadId)
       }
-      const src = inq.utmSource || inq.lastSource
+      const src = (inq.utmSource || inq.lastSource)?.trim()
       if (src) {
         if (!sourceLeads.has(src)) sourceLeads.set(src, new Set())
         sourceLeads.get(src)!.add(inq.leadId)
@@ -110,6 +129,10 @@ export async function GET(request: NextRequest) {
       byCountry: rankByCount(countryCounts),
       daily,
       hourly: Array.from({ length: 24 }, (_, hour) => ({ hour, count: hourlyCounts.get(hour) ?? 0 })),
+      // Mon..Sun order (not JS's native Sun-first) reads more naturally for a business
+      // week — `day` stays in Date.getUTCDay() numbering (0=Sun) so the client's existing
+      // day-name lookup works unchanged either way.
+      dayOfWeek: [1, 2, 3, 4, 5, 6, 0].map(day => ({ day, count: dowCounts.get(day) ?? 0 })),
     })
   } catch (error) {
     console.error('Error fetching lead stats:', error)

@@ -320,10 +320,16 @@ const dropdownVariants = {
   visible: { opacity: 1, scale: 1,    y: 0  },
 }
 
+// Opacity-only — no x/y/scale here. Any of those makes Framer Motion apply a persistent
+// `transform` style to the wrapping motion.div (even at rest, e.g. `translateY(0px)`),
+// which breaks `position: sticky` for every descendant on every page (a transformed
+// ancestor changes containing-block computations the same way it does for `fixed`). That
+// silently broke the Create PR cart sidebar's sticky behavior — this keeps the fade
+// transition without reintroducing the transform.
 const pageVariants = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0  },
-  exit:    { opacity: 0, y: -6 },
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit:    { opacity: 0 },
 }
 
 export default function Home() {
@@ -1271,7 +1277,12 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="p-3 sm:p-4 xl:p-6 overflow-hidden">
+          {/* overflow-x-hidden only — a plain overflow-hidden here clips `position: sticky`
+              on anything inside (e.g. the Create PR cart sidebar), since sticky needs an
+              unbroken chain of visible/scroll overflow up to its scrolling ancestor
+              (`main.overflow-auto` above). pageVariants is opacity-only now (no x/y), so
+              there's no transition overflow left to worry about on either axis anyway. */}
+          <div className="p-3 sm:p-4 xl:p-6 overflow-x-hidden">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeView}

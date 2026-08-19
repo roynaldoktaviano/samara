@@ -15,7 +15,9 @@ export async function GET() {
       distinct: ['website'],
       orderBy: { website: 'asc' },
     })
-    const websites = rows.map(r => r.website).filter((w): w is string => !!w)
+    // Trim + re-dedupe here too — `distinct` above operates on the raw column, so a
+    // whitespace-only value wouldn't collapse into an already-seen trimmed entry.
+    const websites = [...new Set(rows.map(r => r.website?.trim()).filter((w): w is string => !!w))].sort()
     return NextResponse.json(websites)
   } catch (error) {
     console.error('Error fetching lead websites:', error)
