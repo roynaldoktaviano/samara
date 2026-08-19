@@ -79,3 +79,27 @@ export async function attemptFinalizePOStatus(db: DbOrTx, orderId: string): Prom
   if (newStatus) await db.purchaseOrder.update({ where: { id: orderId }, data: { status: newStatus, updatedAt: new Date() } })
   return newStatus
 }
+
+/**
+ * Where a routed PO's goods physically are right now, derived from the most recent open
+ * (PENDING/DISPATCHED) transit leg rather than a stored enum value — status stays
+ * IN_TRANSIT for the whole journey (see spawnNextTransitLeg above), so the current stop
+ * has to be worked out from the transfer chain each time. Returns null for a PO with no
+ * route, and once RECEIVED/CANCELLED since there's no "current leg" left to report.
+ * Shared by the PO list route, the PO detail route, and the PR list route (whose linked
+ * POs need to show the same "On deliver to X" text a Purchasing user sees on the PO itself).
+ */
+export function computeCurrentLegLabel(order: {
+  status: string
+  dispatchedAt: Date | string | null
+  transitStops: { location: { name: string } }[]
+  transitTransfers: { status: string; fromLocation: { name: string }; toLocation: { name: string } }[]
+}): string | null {
+  if (order.transitStops.length === 0 || order.status === 'RECEIVED' || order.status === 'CANCELLED') return null
+  const openLeg = order.transitTransfers.find(t => t.status === 'PENDING' || t.status === 'DISPATCHED')
+  if (openLeg) {
+    return openLeg.status === 'PENDING' ? `Transit in ${openLeg.fromLocation.name}` : `On deliver to ${openLeg.toLocation.name}`
+  }
+  if (order.dispatchedAt) return `On deliver to ${order.transitStops[0].location.name}`
+  return null
+}

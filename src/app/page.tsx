@@ -447,8 +447,13 @@ export default function Home() {
     try {
       const res = await fetch('/api/purchasing/my-approvals')
       if (res.ok) {
+        // Response is { prApprovals, quotationApprovals }, not a flat array — counting
+        // data.length here always read 0, so the sidebar badge never showed even with
+        // items waiting (e.g. a pending supplier-selection approval).
         const data = await res.json()
-        setPendingMyApprovals(Array.isArray(data) ? data.length : 0)
+        const prCount = Array.isArray(data?.prApprovals) ? data.prApprovals.length : 0
+        const quotationCount = Array.isArray(data?.quotationApprovals) ? data.quotationApprovals.length : 0
+        setPendingMyApprovals(prCount + quotationCount)
       }
     } catch { /* silent */ }
   }, [])

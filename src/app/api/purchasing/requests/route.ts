@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
+import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -43,6 +44,23 @@ export async function GET() {
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
+      // So the list can show how far a converted PR's PO(s) actually got (Ordered / On
+      // Delivery / Received) instead of just the terminal "Converted" PR status — including
+      // exactly where a routed PO physically is right now, same text as the PO's own list.
+      orders: {
+        select: {
+          id: true, poNumber: true, status: true, dispatchedAt: true,
+          deliveryLocation: { select: { name: true } },
+          transitStops: { orderBy: { sequence: 'asc' }, select: { location: { select: { name: true } } } },
+          transitTransfers: {
+            where: { status: { in: ['PENDING', 'DISPATCHED'] } },
+            orderBy: { legSequence: 'desc' },
+            take: 1,
+            select: { status: true, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } } },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
   const userIds = [...new Set(requests.map(r => r.requestedById))]
@@ -64,6 +82,14 @@ export async function GET() {
         ? { name: `${r.requestedByEmployee.fullName} (${r.requestedByEmployee.employeeNumber})` }
         : (userMap.get(r.requestedById) ?? null),
       items: undefined,
+      orders: r.orders.map(o => ({
+        id: o.id,
+        poNumber: o.poNumber,
+        status: o.status,
+        dispatchedAt: o.dispatchedAt,
+        deliveryLocation: o.deliveryLocation,
+        currentLegLabel: computeCurrentLegLabel(o),
+      })),
     })),
   )
 }

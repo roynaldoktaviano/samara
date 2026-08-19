@@ -9,6 +9,10 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
 import { PhotoSourceMenu, FilePreview } from '@/components/ui/file-preview'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
+import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
+import { buildPoTimelineSteps, type PoTimelineDetail } from '@/lib/purchasing/poTimelineSteps'
+import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -37,7 +41,7 @@ interface Supplier { id: string; name: string; locations: SupplierLocation[]; co
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -62,6 +66,18 @@ interface PurchaseRequest {
   neededByDate: string | null
   isUrgent: boolean
   urgentReason: string | null
+  // The PO(s) this PR was converted into — lets the list badge show how far the request
+  // actually got, down to exactly where a routed PO physically is right now (same text
+  // as the PO's own list — see currentLocationLabel). The detail Timeline fetches each
+  // one's full detail separately (see poFullDetails state) to show its complete journey.
+  orders?: {
+    id: string
+    poNumber: string
+    status: string
+    dispatchedAt: string | null
+    deliveryLocation: { name: string } | null
+    currentLegLabel?: string | null
+  }[]
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -70,6 +86,25 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
   REJECTED: 'bg-red-100 text-red-700', CANCELLED: 'bg-muted text-muted-foreground',
+}
+// Mirrors OrdersPage's own STATUS_LABEL/STATUS_COLOR so a PO's status reads the same
+// wherever it shows up.
+const PO_STATUS_LABEL: Record<string, string> = {
+  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
+}
+const PO_STATUS_COLOR: Record<string, string> = {
+  DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700',
+  PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
+}
+// Ranks a PR's linked POs by progress so the list can surface the one bottlenecking the
+// whole request — a cancelled PO shouldn't hide that a sibling PO is still stuck at Ordered.
+const PO_PROGRESS_RANK: Record<string, number> = { DRAFT: 0, ORDERED: 1, IN_TRANSIT: 2, PARTIALLY_RECEIVED: 3, RECEIVED: 4 }
+function leastAdvancedPo(orders: PurchaseRequest['orders']): { po: NonNullable<PurchaseRequest['orders']>[number]; count: number } | null {
+  if (!orders || orders.length === 0) return null
+  const active = orders.filter(o => o.status !== 'CANCELLED')
+  const pool = active.length > 0 ? active : orders
+  const least = pool.reduce((a, b) => (PO_PROGRESS_RANK[b.status] ?? 0) < (PO_PROGRESS_RANK[a.status] ?? 0) ? b : a)
+  return { po: least, count: orders.length }
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
@@ -139,7 +174,11 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
   const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
-  const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[] } | null>(null)
+  // Full PO detail (payments, transit legs, receipts) per linked PO id, fetched lazily so
+  // the PR Timeline can render each PO's journey exactly like the PO's own Order Timeline.
+  const [poFullDetails, setPoFullDetails] = useState<Record<string, PoTimelineDetail>>({})
+  const [timelinePhoto, setTimelinePhoto] = useState<string | null>(null)
+  const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[]; remainingItems: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
   // Form state (create view — catalog + cart, mirrors the /request-order page)
@@ -261,6 +300,23 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     if (res.ok) {
       data = await res.json()
       setDetail(data)
+      // Full PO detail (payments, transit legs, receipts) isn't in the PR response —
+      // fetched separately per linked PO, same endpoint OrdersPage.tsx itself uses, so
+      // the PR Timeline can show each PO's journey exactly like the PO's own Timeline.
+      const orders = data!.orders ?? []
+      if (orders.length > 0) {
+        Promise.all(orders.map(async po => {
+          const r = await fetch(`/api/purchasing/orders/${po.id}`)
+          if (!r.ok) return null
+          return [po.id, await r.json() as PoTimelineDetail] as const
+        })).then(results => {
+          setPoFullDetails(prev => {
+            const next = { ...prev }
+            for (const r of results) if (r) next[r[0]] = r[1]
+            return next
+          })
+        })
+      }
       // Default eligible items to the warehouse with the most stock; the approver
       // can flip any of them back to "Purchase Order" before approving. Preserve any
       // choice already made (e.g. re-fetching after editing a supplier shouldn't
@@ -284,6 +340,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     setView('detail')
     setApproveSummary(null)
     setFulfillment({})
+    setPoFullDetails({})
     await fetchDetail(req.id)
   }
 
@@ -304,9 +361,12 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     })
     const data = await res.json()
     if (!res.ok) { alert(data.error ?? 'Failed to convert to PO'); return }
-    setSelected(s => s ? { ...s, status: 'CONVERTED' } : s)
+    // data.status reflects what actually happened: CONVERTED only once every item cleared
+    // approval and was converted — otherwise the request stays ON_PROCESS with the ready
+    // items already sent off, and remainingItems lists what's still waiting.
+    setSelected(s => s ? { ...s, status: data.status } : s)
     await fetchDetail(selected.id)
-    setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], poIds: data.createdPoIds ?? [], transferNumbers: data.createdTransferNumbers ?? [] })
+    setApproveSummary({ poNumbers: data.createdPoNumbers ?? [], poIds: data.createdPoIds ?? [], transferNumbers: data.createdTransferNumbers ?? [], remainingItems: data.remainingItems ?? [] })
     load()
   }
 
@@ -345,8 +405,11 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     if (h.supplierId) setEditItemSupplierId(h.supplierId)
   }
 
-  async function saveEditItem() {
-    if (!editItemModal?.id || !detail) return
+  // Persists the price/supplier/exemption fields without closing the modal — shared by
+  // the explicit Save button and by Submit for Approval, which auto-saves any pending
+  // edits first rather than making Purchasing click Save separately before it'll submit.
+  async function persistEditItem(): Promise<boolean> {
+    if (!editItemModal?.id || !detail) return false
     setEditItemSaving(true); setEditItemError('')
     const supplier = suppliers.find(s => s.id === editItemSupplierId)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}`, {
@@ -361,9 +424,15 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     })
     const data = await res.json()
     setEditItemSaving(false)
-    if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return }
+    if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return false }
+    setEditItemModal(m => m ? { ...m, estimatedCost: parseFloat(editItemCost) || 0, supplierId: editItemSupplierId || '', supplierName: supplier?.name || '' } : m)
+    return true
+  }
+
+  async function saveEditItem() {
+    if (!(await persistEditItem())) return
     setEditItemModal(null)
-    await fetchDetail(detail.id)
+    if (detail) await fetchDetail(detail.id)
   }
 
   // Re-pulls just this item's quotations (so the modal updates immediately) and
@@ -540,6 +609,12 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   async function submitForApproval() {
     if (!editItemModal?.id || !detail) return
     setSubmittingApproval(true); setQuoteError('')
+    // Auto-save a pending price/supplier edit first — the approval endpoint reads the
+    // item's persisted estimatedCost to work out the band, so a submit against a stale
+    // saved price would gate on the wrong band. Saves quietly here instead of making
+    // Purchasing click Save separately before Submit for Approval will even enable.
+    const hasUnsavedChanges = editItemCost !== String(editItemModal.estimatedCost ?? 0)
+    if (hasUnsavedChanges && !(await persistEditItem())) { setSubmittingApproval(false); return }
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${editItemModal.id}/quotations/approval`, { method: 'POST' })
     const data = await res.json()
     setSubmittingApproval(false)
@@ -735,7 +810,19 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.createdAt)}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                  {(() => {
+                    const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
+                    if (!least) return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                    const { po, count } = least
+                    return (
+                      <div className="space-y-0.5">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PO_STATUS_COLOR[po.status] ?? ''}`}>
+                          {po.currentLegLabel ?? PO_STATUS_LABEL[po.status] ?? po.status}{count > 1 && ` (+${count - 1})`}
+                        </span>
+                        <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(po)}</p>
+                      </div>
+                    )
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                   {r.status === 'DRAFT' && !isWarehouse ? (
@@ -774,25 +861,41 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
             onClick={() => openDetail(r)}
             className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
-                {r.prNumber}
-                {r.isUrgent && <UrgentBadge />}
-              </span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
-                <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span className="truncate min-w-0">
-                <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
-                {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
-              </span>
-              <span className="shrink-0 tabular-nums">
-                {r.totalBudget > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(r.totalBudget)}` : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
-              </span>
-            </div>
+            {(() => {
+              const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
+                      {r.prNumber}
+                      {r.isUrgent && <UrgentBadge />}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {least ? (
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${PO_STATUS_COLOR[least.po.status] ?? ''}`}>
+                          {least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}{least.count > 1 && ` (+${least.count - 1})`}
+                        </span>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="truncate min-w-0">
+                      <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
+                      {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
+                    </span>
+                    <span className="shrink-0 tabular-nums">
+                      {r.totalBudget > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(r.totalBudget)}` : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                  {least && (
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(least.po)}</p>
+                  )}
+                </>
+              )
+            })()}
           </button>
         ))}
       </div>
@@ -922,7 +1025,15 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
               <span className="text-sm text-muted-foreground italic">Being processed by Purchasing</span>
             )}
             {selected.status === 'CONVERTED' && (
-              <span className="text-sm text-muted-foreground italic">Converted to Purchase Order</span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-sm text-muted-foreground italic">Converted to Purchase Order</span>
+                {onOpenPo && detail?.orders?.map(po => (
+                  <button key={po.id} onClick={() => onOpenPo(po.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                    <ShoppingCart className="h-3 w-3" /> Go to {po.poNumber}
+                  </button>
+                ))}
+              </div>
             )}
             {selected.status === 'REJECTED' && !isWarehouse && (
               <button onClick={() => changeStatus(selected.id, 'DRAFT')}
@@ -936,7 +1047,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
       {approveSummary && (approveSummary.poNumbers.length > 0 || approveSummary.transferNumbers.length > 0) && (
         <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-2">
-          <p className="font-medium">Request converted to Purchase Order.</p>
+          <p className="font-medium">
+            {approveSummary.remainingItems.length > 0 ? 'Ready items converted — the rest is still waiting on approval.' : 'Request converted to Purchase Order.'}
+          </p>
           {approveSummary.poNumbers.length > 0 && (
             <div className="space-y-1.5">
               <p>Purchase Order{approveSummary.poNumbers.length > 1 ? 's' : ''}: {approveSummary.poNumbers.join(', ')}</p>
@@ -957,6 +1070,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
             </div>
           )}
           {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
+          {approveSummary.remainingItems.length > 0 && (
+            <p className="text-amber-700">Still needs supplier-selection approval, not yet converted: {approveSummary.remainingItems.join(', ')} — the request stays On Process until these clear too, and can be converted again once they do.</p>
+          )}
         </div>
       )}
 
@@ -991,44 +1107,61 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
               {detail.notes && <div><p className="text-xs text-muted-foreground">Notes</p><p>{detail.notes}</p></div>}
             </div>
           </div>
-          <div className="rounded-lg border p-5 space-y-2.5">
-            <h3 className="font-semibold text-sm">Timeline</h3>
-            <ol className="text-sm space-y-1.5">
-              <li className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Created (Draft)</span>
-                <span className="font-medium">{fmtDateTime(detail.createdAt)}</span>
-              </li>
-              {detail.verifiedAt && (
-                <li className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Verified (On Process){detail.verifiedBy && <> · {detail.verifiedBy.name}</>}</span>
-                  <span className="font-medium">{fmtDateTime(detail.verifiedAt)}</span>
-                </li>
-              )}
-              {detail.convertedAt && (
-                <li className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Converted to PO{detail.convertedBy && <> · {detail.convertedBy.name}</>}</span>
-                  <span className="font-medium">{fmtDateTime(detail.convertedAt)}</span>
-                </li>
-              )}
-              {detail.rejectedAt && (
-                <li className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Rejected{detail.rejectedBy && <> · {detail.rejectedBy.name}</>}</span>
-                  <span className="font-medium">{fmtDateTime(detail.rejectedAt)}</span>
-                </li>
-              )}
-              {detail.cancelledAt && (
-                <li className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Cancelled{detail.cancelledBy && <> · {detail.cancelledBy.name}</>}</span>
-                  <span className="font-medium">{fmtDateTime(detail.cancelledAt)}</span>
-                </li>
-              )}
-            </ol>
-          </div>
-          <div className="rounded-lg border overflow-hidden">
-            <div className="px-5 py-3 bg-muted/50 border-b">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
-            </div>
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+          {(() => {
+            // Same connected-dot visual language as the PO's own Order Timeline (green
+            // check = done, hollow grey = not reached yet, red X = rejected/cancelled) —
+            // continues straight past "Converted to PO" into each resulting PO's own
+            // Ordered/On Delivery/Received progress instead of stopping at "Converted".
+            const multiPo = (detail.orders?.length ?? 0) > 1
+            const steps: TimelineStep[] = [
+              {
+                key: 'created', done: true, label: 'PR Submitted', date: fmtDateTime(detail.createdAt),
+                sub: [detail.requestedByEmployee?.fullName ?? detail.createdBy?.name ?? null, detail.prNumber],
+              },
+              {
+                key: 'verified', done: !!detail.verifiedAt, label: 'Verified (On Process)',
+                date: detail.verifiedAt ? fmtDateTime(detail.verifiedAt) : null,
+                sub: [detail.verifiedBy?.name ? `by ${detail.verifiedBy.name}` : null],
+              },
+              {
+                key: 'converted', done: !!detail.convertedAt, label: 'Converted to PO',
+                date: detail.convertedAt ? fmtDateTime(detail.convertedAt) : null,
+                sub: [detail.convertedBy?.name ? `by ${detail.convertedBy.name}` : null],
+              },
+              // Each linked PO's full journey (payments, dispatch, transit leg by leg,
+              // receipts) — identical steps to what OrdersPage.tsx's own Timeline shows,
+              // built by the same shared function once that PO's full detail has loaded.
+              ...(detail.orders ?? []).flatMap((po): TimelineStep[] => {
+                const full = poFullDetails[po.id]
+                if (!full) {
+                  return [{
+                    key: `po-loading-${po.id}`, done: false,
+                    label: multiPo ? `Loading ${po.poNumber}…` : 'Loading PO timeline…',
+                    date: null, sub: [],
+                  }]
+                }
+                return buildPoTimelineSteps(full, { includePrStep: false }).map(s => ({
+                  ...s,
+                  key: `${po.id}-${s.key}`,
+                  label: multiPo ? `${s.label} — ${po.poNumber}` : s.label,
+                }))
+              }),
+              ...(detail.rejectedAt ? [{
+                key: 'rejected', done: true, cancelled: true, label: 'Rejected',
+                date: fmtDateTime(detail.rejectedAt), sub: [detail.rejectedBy?.name ? `by ${detail.rejectedBy.name}` : null],
+              }] : []),
+              ...(detail.cancelledAt ? [{
+                key: 'cancelled', done: true, cancelled: true, label: 'Cancelled',
+                date: fmtDateTime(detail.cancelledAt), sub: [detail.cancelledBy?.name ? `by ${detail.cancelledBy.name}` : null],
+              }] : []),
+            ]
+            return (
+              <div className="grid grid-cols-[1fr_300px] gap-6 items-start">
+                <div className="rounded-lg border overflow-hidden min-w-0">
+                  <div className="px-5 py-3 bg-muted/50 border-b">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
+                  </div>
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground bg-muted/20">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
@@ -1095,7 +1228,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                             >
                               {item.supplierName ?? 'Select supplier...'}
                             </button>
-                            {getBand(item.estimatedCost) !== 'A' && (
+                            {item.convertedAt ? (
+                              <span className="text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-300 rounded-full px-2 py-0.5 whitespace-nowrap">Converted</span>
+                            ) : getBand(item.estimatedCost) !== 'A' && (
                               item.quotationApprovedAt ? (
                                 <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Approved</span>
                               ) : item.quotationRejectedAt ? (
@@ -1156,8 +1291,15 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 })}
               </tbody>
             </table></div>
-          </div>
+                </div>
+                <Timeline steps={steps} title="Timeline" onViewPhoto={setTimelinePhoto} />
+              </div>
+            )
+          })()}
         </>
+      )}
+      {timelinePhoto && (
+        <PhotoLightbox photoKey={timelinePhoto} onClose={() => setTimelinePhoto(null)} />
       )}
 
       {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
@@ -1462,8 +1604,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                         {(() => {
                           // Which supplier gets used is the approver's call, not ours — Submit
                           // only needs enough quotations on file, not a pre-picked supplier.
-                          const hasUnsavedChanges = editItemCost !== String(editItemModal.estimatedCost ?? 0)
-                          const submitDisabled = submittingApproval || quotations.length < required || hasUnsavedChanges
+                          // Any pending price/supplier edit is auto-saved inside submitForApproval,
+                          // so it doesn't need to gate the button here.
+                          const submitDisabled = submittingApproval || quotations.length < required
 
                           if (editItemModal.quotationApprovedAt) {
                             return (
@@ -1480,7 +1623,6 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                                   <p className="font-semibold">Rejected by {editItemModal.quotationRejectedBy?.name ?? '—'}</p>
                                   {editItemModal.quotationRejectionReason && <p className="mt-0.5">{editItemModal.quotationRejectionReason}</p>}
                                 </div>
-                                {hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before resubmitting.</p>}
                                 <button onClick={submitForApproval} disabled={submitDisabled}
                                   className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
                                   {submittingApproval ? 'Submitting...' : 'Resubmit for Approval'}
@@ -1499,7 +1641,6 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                           return (
                             <div className="space-y-1.5">
                               {quotations.length < required && <p className="text-[11px] text-muted-foreground italic">Gather {required - quotations.length} more quotation{required - quotations.length > 1 ? 's' : ''} first.</p>}
-                              {quotations.length >= required && hasUnsavedChanges && <p className="text-[11px] text-muted-foreground italic">Save your changes above before submitting for approval.</p>}
                               <button onClick={submitForApproval} disabled={submitDisabled}
                                 className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
                                 {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
@@ -2079,7 +2220,7 @@ function RequestCartPanel({
             from who's submitting it (always the logged-in account). Optional: leave
             blank if you're requesting for yourself / general stock. */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By <span className="font-normal normal-case">(optional)</span></label>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By </label>
           <select
             className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
             value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}

@@ -1672,6 +1672,12 @@ model PurchaseRequestItem {
   quotationRejectedAt      DateTime?
   quotationRejectionReason String?
 
+  // Set once this item has actually been swept into a PurchaseOrder or StockTransfer by
+  // the convert action. Lets conversion run in multiple passes as items clear quotation
+  // approval at different times — an item already converted is never re-processed, and a
+  // PurchaseRequest only reaches CONVERTED once every item has this set.
+  convertedAt DateTime?
+
   request              PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
   item                 PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
   supplier             Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)

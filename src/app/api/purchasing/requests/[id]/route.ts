@@ -32,6 +32,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       convertedBy: { select: { id: true, name: true } },
       rejectedBy: { select: { id: true, name: true } },
       cancelledBy: { select: { id: true, name: true } },
+      // Lets the frontend show how far conversion got — the detail Timeline fetches each
+      // PO's full detail separately (GET /api/purchasing/orders/[id]) for its complete
+      // journey, so only enough is needed here to know which POs exist and their status.
+      orders: {
+        select: { id: true, poNumber: true, status: true },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -117,10 +124,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const valid = ['DRAFT', 'ON_PROCESS', 'CONVERTED', 'REJECTED', 'CANCELLED']
   if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
-  // Convert to PO must never happen on an unresolved supplier decision — every item that
-  // needed quotations (band B+, no known-supplier history) must have its pick approved by
-  // the submitting Purchasing staffer's manager first. Checked here, before anything is
-  // written, so a client can't bypass the UI gate by calling this endpoint directly.
+  // Which items are actually ready to convert this round. An item blocks itself (not the
+  // rest of the PR) when it needs quotation approval (band B+, no known-supplier history)
+  // and hasn't gotten it yet — pending or rejected are treated the same here: not ready.
+  // Already-converted items (a prior partial-convert pass) are excluded too, so re-running
+  // convert as more items clear approval never re-processes or duplicates them.
+  let readyItemIds: Set<string> | null = null
+  let blockedItemNames: string[] = []
   if (status === 'CONVERTED') {
     const current = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
     if (!current) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
@@ -130,27 +140,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const items = await db.purchaseRequestItem.findMany({
       where: { requestId: id },
-      select: { itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true },
+      select: { id: true, itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true, convertedAt: true },
     })
-    const unapproved: string[] = []
+    const ready = new Set<string>()
     for (const item of items) {
-      if (item.quotationApprovedAt) continue
-      if (await itemRequiresQuotationApproval(db, item)) unapproved.push(item.itemName)
+      if (item.convertedAt) continue // already converted in an earlier pass
+      if (item.quotationApprovedAt || !(await itemRequiresQuotationApproval(db, item))) {
+        ready.add(item.id)
+      } else {
+        blockedItemNames.push(item.itemName)
+      }
     }
-    if (unapproved.length > 0) {
+    if (ready.size === 0) {
       return NextResponse.json({
-        error: `Supplier selection still needs approval for: ${unapproved.join(', ')}`,
+        error: items.every(i => i.convertedAt)
+          ? 'All items are already converted'
+          : `No items are ready to convert yet — supplier selection still needs approval for: ${blockedItemNames.join(', ')}`,
       }, { status: 409 })
     }
+    readyItemIds = ready
   }
+  // A partial-convert pass (some items still blocked) leaves the request ON_PROCESS —
+  // it only reaches CONVERTED once every item has cleared its own approval and been converted.
+  const targetStatus = status === 'CONVERTED' && blockedItemNames.length > 0 ? 'ON_PROCESS' : status
 
   const request = await db.purchaseRequest.update({
     where: { id },
     data: {
-      status,
+      status: targetStatus,
       updatedAt: new Date(),
       ...(status === 'ON_PROCESS' && { verifiedById: session.user.id, verifiedAt: new Date() }),
-      ...(status === 'CONVERTED' && { convertedById: session.user.id, convertedAt: new Date() }),
+      ...(targetStatus === 'CONVERTED' && { convertedById: session.user.id, convertedAt: new Date() }),
       ...(status === 'REJECTED' && { rejectedById: session.user.id, rejectedAt: new Date() }),
       ...(status === 'CANCELLED' && { cancelledById: session.user.id, cancelledAt: new Date() }),
     },
@@ -159,7 +179,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // For items Purchasing chose to fulfill from warehouse stock instead of buying,
   // re-validate stock server-side (never trust client-sent numbers) and route those
-  // items to a Transfer instead of a Purchase Order.
+  // items to a Transfer instead of a Purchase Order. An item not yet ready (still
+  // blocked on quotation approval) is silently skipped here — it stays on the PR for
+  // a later convert pass, same as it does on the PO side below.
   const transferByRequestItemId = new Map<string, { fromLocationId: string; baseQty: number }>()
   if (status === 'CONVERTED' && transferFulfillments?.length) {
     if (!request.deliveryLocationId) {
@@ -174,6 +196,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const warehouseIds = new Set(warehouses.map(w => w.id))
 
     for (const tf of transferFulfillments) {
+      if (readyItemIds && !readyItemIds.has(tf.requestItemId)) continue
       const item = request.items.find(i => i.id === tf.requestItemId)
       if (!item || !item.itemId) return NextResponse.json({ error: 'Item transfer tidak valid' }, { status: 400 })
       if (!warehouseIds.has(tf.fromLocationId) || tf.fromLocationId === request.deliveryLocationId) {
@@ -195,36 +218,53 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const createdPoNumbers: string[] = []
   const createdPoIds: string[] = []
   const createdTransferNumbers: string[] = []
+  // Items actually swept into a PO or Transfer this pass — stamped convertedAt at the end
+  // so a later partial-convert pass never re-processes them.
+  const processedItemIds = new Set<string>()
 
-  // Auto-create draft POs (grouped by supplier) for items not fulfilled via transfer
-  const poItems = request.items.filter(item => !transferByRequestItemId.has(item.id))
-  if (status === 'CONVERTED') {
-    const existingDrafts = await db.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT' } })
-    if (!existingDrafts) {
-      const requester = request.requestedByEmployeeId
-        ? await db.employee.findUnique({
-            where: { id: request.requestedByEmployeeId },
-            select: { fullName: true, department: true, location: { select: { name: true } }, role: { select: { title: true } } },
-          })
-        : null
+  // Auto-create (or append to) draft POs, grouped by supplier, for ready items not
+  // fulfilled via transfer. Appending to an existing DRAFT PO for the same supplier
+  // (rather than always creating a new one) keeps a trickle of approvals from the same
+  // PR from fragmenting into a pile of near-duplicate POs.
+  const poItems = readyItemIds ? request.items.filter(item => readyItemIds!.has(item.id) && !transferByRequestItemId.has(item.id)) : []
+  if (status === 'CONVERTED' && poItems.length > 0) {
+    const requester = request.requestedByEmployeeId
+      ? await db.employee.findUnique({
+          where: { id: request.requestedByEmployeeId },
+          select: { fullName: true, department: true, location: { select: { name: true } }, role: { select: { title: true } } },
+        })
+      : null
 
-      const prefix = `PO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
+    const prefix = `PO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
 
-      const groups = new Map<string, typeof request.items>()
-      for (const item of poItems) {
-        const key = item.supplierId || '__none__'
-        if (!groups.has(key)) groups.set(key, [])
-        groups.get(key)!.push(item)
-      }
+    const groups = new Map<string, typeof request.items>()
+    for (const item of poItems) {
+      const key = item.supplierId || '__none__'
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(item)
+    }
 
-      for (const [supplierKey, groupItems] of groups) {
+    for (const [supplierKey, groupItems] of groups) {
+      const supplierId = supplierKey === '__none__' ? null : supplierKey
+      const existingDraft = await db.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT', supplierId } })
+      const itemsCreate = groupItems.map((it) => ({
+        id: crypto.randomUUID(),
+        itemId: it.itemId ?? null,
+        itemName: it.itemName,
+        unit: it.itemId ? null : it.unit,
+        orderedQty: it.quantity,
+        unitCost: it.estimatedCost,
+      }))
+
+      if (existingDraft) {
+        await db.purchaseOrder.update({ where: { id: existingDraft.id }, data: { items: { create: itemsCreate } } })
+        createdPoNumbers.push(existingDraft.poNumber)
+        createdPoIds.push(existingDraft.id)
+      } else {
         const last = await db.purchaseOrder.findFirst({ where: { poNumber: { startsWith: prefix } }, orderBy: { poNumber: 'desc' }, select: { poNumber: true } })
         const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
         const poNumber = `${prefix}${String(seq).padStart(3, '0')}`
-        createdPoNumbers.push(poNumber)
         const poId = crypto.randomUUID()
-        createdPoIds.push(poId)
-        const supplierId = supplierKey === '__none__' ? null : supplierKey
         const supplierName = groupItems[0]?.supplierName ?? null
         await db.purchaseOrder.create({
           data: {
@@ -244,44 +284,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               requestedByDepartment: requester.department ?? null,
               requestedByRole: requester.role?.title ?? null,
             }),
-            items: {
-              create: groupItems.map((it) => ({
-                id: crypto.randomUUID(),
-                itemId: it.itemId ?? null,
-                itemName: it.itemName,
-                unit: it.itemId ? null : it.unit,
-                orderedQty: it.quantity,
-                unitCost: it.estimatedCost,
-              })),
-            },
+            items: { create: itemsCreate },
           },
         })
+        createdPoNumbers.push(poNumber)
+        createdPoIds.push(poId)
       }
+      for (const it of groupItems) processedItemIds.add(it.id)
     }
   }
 
-  // Create Transfers for items fulfilled from warehouse stock — grouped by source
-  // location, one Transfer per warehouse, destined to the PR's delivery location.
-  // Lands as PENDING: warehouse still has to dispatch (with photo) and the
-  // destination still has to confirm receipt, same as a manually-created transfer.
+  // Create (or append to) Transfers for ready items fulfilled from warehouse stock —
+  // grouped by source location, one Transfer per warehouse, destined to the PR's
+  // delivery location. Lands as PENDING: warehouse still has to dispatch (with photo)
+  // and the destination still has to confirm receipt, same as a manually-created transfer.
   if (status === 'CONVERTED' && transferByRequestItemId.size > 0) {
-    const existingTransfers = await db.stockTransfer.findFirst({ where: { purchaseRequestId: id } })
-    if (!existingTransfers) {
-      const transferGroups = new Map<string, typeof request.items>()
-      for (const item of request.items) {
-        const tf = transferByRequestItemId.get(item.id)
-        if (!tf) continue
-        if (!transferGroups.has(tf.fromLocationId)) transferGroups.set(tf.fromLocationId, [])
-        transferGroups.get(tf.fromLocationId)!.push(item)
-      }
+    const transferGroups = new Map<string, typeof request.items>()
+    for (const item of request.items) {
+      const tf = transferByRequestItemId.get(item.id)
+      if (!tf) continue
+      if (!transferGroups.has(tf.fromLocationId)) transferGroups.set(tf.fromLocationId, [])
+      transferGroups.get(tf.fromLocationId)!.push(item)
+    }
 
-      const trPrefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
+    const trPrefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
 
-      for (const [fromLocationId, groupItems] of transferGroups) {
+    for (const [fromLocationId, groupItems] of transferGroups) {
+      const existingTransfer = await db.stockTransfer.findFirst({ where: { purchaseRequestId: id, fromLocationId, status: 'PENDING' } })
+      const itemsCreate = groupItems.map(it => ({
+        id: crypto.randomUUID(),
+        itemId: it.itemId,
+        itemName: it.itemName,
+        requestedQty: transferByRequestItemId.get(it.id)!.baseQty,
+      }))
+
+      if (existingTransfer) {
+        await db.stockTransfer.update({ where: { id: existingTransfer.id }, data: { items: { create: itemsCreate } } })
+        createdTransferNumbers.push(existingTransfer.transferNumber)
+      } else {
         const last = await db.stockTransfer.findFirst({ where: { transferNumber: { startsWith: trPrefix } }, orderBy: { transferNumber: 'desc' }, select: { transferNumber: true } })
         const seq = last ? (parseInt(last.transferNumber.split('-').pop() ?? '0') || 0) + 1 : 1
         const transferNumber = `${trPrefix}${String(seq).padStart(3, '0')}`
-        createdTransferNumbers.push(transferNumber)
         await db.stockTransfer.create({
           data: {
             id: crypto.randomUUID(),
@@ -292,21 +335,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             status: 'PENDING',
             notes: `Auto-created from ${request.prNumber}`,
             updatedAt: new Date(),
-            items: {
-              create: groupItems.map(it => ({
-                id: crypto.randomUUID(),
-                itemId: it.itemId,
-                itemName: it.itemName,
-                requestedQty: transferByRequestItemId.get(it.id)!.baseQty,
-              })),
-            },
+            items: { create: itemsCreate },
           },
         })
+        createdTransferNumbers.push(transferNumber)
       }
+      for (const it of groupItems) processedItemIds.add(it.id)
     }
   }
 
-  return NextResponse.json({ ...request, createdPoNumbers, createdPoIds, createdTransferNumbers })
+  if (processedItemIds.size > 0) {
+    await db.purchaseRequestItem.updateMany({ where: { id: { in: [...processedItemIds] } }, data: { convertedAt: new Date() } })
+  }
+
+  return NextResponse.json({ ...request, createdPoNumbers, createdPoIds, createdTransferNumbers, remainingItems: blockedItemNames })
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

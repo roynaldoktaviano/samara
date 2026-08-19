@@ -4,9 +4,12 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react
 import { createPortal } from 'react-dom'
 import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
-import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker, PhotoSourceMenu } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
+import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
+import { buildPoTimelineSteps } from '@/lib/purchasing/poTimelineSteps'
+import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 
 
 interface PaymentRequest {
@@ -88,223 +91,24 @@ interface OrderDetail extends PurchaseOrder {
 
 function POTimeline({ detail }: { detail: OrderDetail }) {
   const [viewPhoto, setViewPhoto] = useState<string | null>(null)
-  const fmt = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-  type Step = { key: string; done: boolean; label: string; date: string | null; sub: (string | null | undefined)[]; photos?: string[]; photoLabel?: string; cancelled?: boolean }
-
-  const steps: Step[] = [
-    ...(detail.request ? [{
-      key: 'pr',
-      done: true,
-      label: 'PR Submitted',
-      date: fmt(detail.request.createdAt),
-      sub: [
-        detail.requestedByName,
-        [detail.requestedByOffice, detail.requestedByDepartment, detail.requestedByRole].filter(Boolean).join(' · ') || null,
-        detail.request.prNumber,
-      ],
-    }] : []),
-    {
-      key: 'ordered',
-      done: !['DRAFT'].includes(detail.status),
-      label: 'PO Confirmed',
-      date: !['DRAFT'].includes(detail.status) && detail.orderedAt ? fmt(detail.orderedAt) : null,
-      sub: !['DRAFT'].includes(detail.status)
-        ? [detail.supplierName, detail.confirmedByName ? `by ${detail.confirmedByName}` : null]
-        : [],
-    },
-    // Payment step(s) — a PO can be paid across multiple installments (DP +
-    // final settlement), in any mix of Request Payment/Debit Paid
-    // (POPaymentRequest) and Reimburse (POReimbursement). Every installment
-    // gets its own Requested/Paid step-pair, in chronological order, labeled
-    // Down Payment / Additional Payment / Final Payment based on how much of
-    // the order total it and the installments before it add up to.
-    ...(() => {
-      const installments = [
-        ...detail.paymentRequests.map(p => ({ ...p, kind: 'payment' as const })),
-        ...detail.reimbursements.map(r => ({ ...r, kind: 'reimbursement' as const })),
-      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-
-      let cumulative = 0
-      const paymentSteps: Step[] = []
-      for (const inst of installments) {
-        const label = describeInstallment(detail.grandTotal, cumulative, inst.amount)
-        cumulative += inst.amount
-        const paid = inst.status === 'PAID'
-        const isReimbursement = inst.kind === 'reimbursement'
-        const isCard = inst.kind === 'payment' && inst.paymentMethod === 'CARD'
-
-        if (isCard) {
-          paymentSteps.push({
-            key: `payment-${inst.id}`,
-            done: true,
-            label: `${label} — Debit Paid`,
-            date: inst.paidAt ? fmt(inst.paidAt) : fmt(inst.createdAt),
-            sub: [fmtMoney(inst.amount), (inst.paidBy?.name ?? inst.requestedBy?.name) ? `by ${inst.paidBy?.name ?? inst.requestedBy?.name}` : null],
-            photos: inst.notePhotoKeys,
-            photoLabel: 'View nota',
-          })
-          continue
-        }
-        paymentSteps.push({
-          key: `${inst.kind}-requested-${inst.id}`,
-          done: true,
-          label: isReimbursement ? `${label} (Reimbursement) Requested` : `${label} Requested`,
-          date: fmt(inst.createdAt),
-          sub: [fmtMoney(inst.amount), inst.requestedBy?.name ? `by ${inst.requestedBy.name}` : null],
-          photos: inst.notePhotoKeys,
-          photoLabel: 'View nota',
-        })
-        paymentSteps.push({
-          key: `${inst.kind}-paid-${inst.id}`,
-          done: paid,
-          label: isReimbursement ? `${label} (Reimbursement) Paid` : `${label} Confirmed`,
-          date: paid && inst.paidAt ? fmt(inst.paidAt) : null,
-          sub: paid ? [inst.paidBy?.name ? `by ${inst.paidBy.name}` : null] : [],
-          photos: paid ? inst.transferProofKeys : [],
-          photoLabel: 'View transfer proof',
-        })
-      }
-      return paymentSteps
-    })(),
-    // Routed POs (detail.transitStops.length > 0) ship Supplier -> first stop as the normal
-    // dispatch+receipt flow below, then continue first stop -> ... -> deliveryLocationId as
-    // one auto-chained StockTransfer leg per hop (detail.transitTransfers) — see
-    // src/lib/purchasing/transitChain.ts.
-    {
-      key: 'transit',
-      done: ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(detail.status),
-      label: detail.transitStops && detail.transitStops.length > 0 ? `Dispatched — on deliver to ${detail.transitStops[0].location.name}` : 'In Transit',
-      date: detail.dispatchedAt ? fmt(detail.dispatchedAt) : null,
-      sub: [detail.dispatchedByName],
-      photos: detail.dispatchPhotoKey ? [detail.dispatchPhotoKey] : [],
-      photoLabel: 'View dispatch photo',
-    },
-    ...detail.receipts.map((r, i) => ({
-      key: `gr-${r.id}`,
-      done: true,
-      label: detail.transitStops && detail.transitStops.length > 0
-        ? `Arrived at ${detail.transitStops[0].location.name}`
-        : (detail.receipts.length === 1 ? 'Received' : `Receipt ${i + 1}`),
-      date: fmt(r.receivedAt),
-      sub: [r.receiverName, `${r.items.length} item${r.items.length !== 1 ? 's' : ''}`],
-      photos: r.receivePhotoKey ? [r.receivePhotoKey] : [],
-      photoLabel: 'View receipt photo',
-    })),
-    // One Dispatched/Arrived step-pair per planned hop beyond the first stop (first stop ->
-    // next stop -> ... -> final destination) — placeholders (done: false) until that leg
-    // actually exists as a StockTransfer.
-    ...(() => {
-      if (!detail.transitStops || detail.transitStops.length === 0) return []
-      const routeLocationIds = [...detail.transitStops.map(s => s.locationId), detail.deliveryLocationId].filter((x): x is string => !!x)
-      const locationName = (locId: string) => detail.transitStops!.find(s => s.locationId === locId)?.location.name ?? detail.deliveryLocation?.name ?? locId
-      const legSteps: Step[] = []
-      for (let i = 0; i < routeLocationIds.length - 1; i++) {
-        const legSequence = i + 1
-        const fromName = locationName(routeLocationIds[i])
-        const toName = locationName(routeLocationIds[i + 1])
-        const leg = detail.transitTransfers.find(t => t.legSequence === legSequence)
-        legSteps.push({
-          key: `leg-${legSequence}-dispatch`,
-          done: !!leg?.dispatchedAt,
-          label: `Dispatched from ${fromName}`,
-          date: leg?.dispatchedAt ? fmt(leg.dispatchedAt) : null,
-          sub: [`to ${toName}`, leg?.dispatchedBy?.name ? `by ${leg.dispatchedBy.name}` : null],
-          photos: leg?.dispatchPhotoKey ? [leg.dispatchPhotoKey] : [],
-          photoLabel: 'View dispatch photo',
-        })
-        legSteps.push({
-          key: `leg-${legSequence}-arrive`,
-          done: !!leg?.receivedAt,
-          label: `Arrived at ${toName}`,
-          date: leg?.receivedAt ? fmt(leg.receivedAt) : null,
-          sub: [leg?.receivedByName ? `by ${leg.receivedByName}` : null],
-          photos: leg?.receivePhotoKey ? [leg.receivePhotoKey] : [],
-          photoLabel: 'View receive photo',
-        })
-      }
-      return legSteps
-    })(),
-    ...(!['RECEIVED', 'CANCELLED'].includes(detail.status) && detail.receipts.length === 0 ? [{
-      key: 'receive',
-      done: false,
-      label: 'Received',
-      date: null,
-      sub: [],
-    }] : []),
-    ...(detail.status === 'CANCELLED' ? [{
-      key: 'cancelled',
-      done: true,
-      label: 'Cancelled',
-      date: detail.cancelledAt ? fmt(detail.cancelledAt) : null,
-      sub: [detail.cancelledByName, detail.cancellationReason],
-      cancelled: true,
-    }] : []),
-  ]
+  const steps = buildPoTimelineSteps(detail)
 
   return (
-    <div className="rounded-xl border bg-card p-4 sticky top-4">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4">Order Timeline</p>
-      <div>
-        {steps.map((step, idx) => (
-          <div key={step.key} className="flex gap-3">
-            <div className="flex flex-col items-center">
-              <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${step.cancelled ? 'bg-red-500' : step.done ? 'bg-green-500' : 'border-2 border-muted bg-white'}`}>
-                {step.cancelled
-                  ? <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  : step.done
-                    ? <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    : <div className="h-1.5 w-1.5 rounded-full bg-muted" />}
-              </div>
-              {idx < steps.length - 1 && (
-                <div className="w-px flex-1 my-1.5 min-h-[16px] bg-border" />
-              )}
-            </div>
-            <div className="pb-4 flex-1 min-w-0">
-              <p className={`text-sm font-semibold leading-6 ${step.cancelled ? 'text-red-600' : !step.done ? 'text-muted-foreground/40' : ''}`}>{step.label}</p>
-              {step.date && <p className="text-xs text-muted-foreground">{step.date}</p>}
-              {step.sub.filter(Boolean).map((s, i) => (
-                <p key={i} className="text-xs text-muted-foreground/70 truncate">{s}</p>
-              ))}
-              {step.photos && step.photos.length > 0 && (
-                <div className="flex flex-wrap gap-x-2">
-                  {step.photos.map((p, i) => (
-                    <button key={i} onClick={() => setViewPhoto(p)} className="mt-1 text-xs text-green-600 hover:text-green-700 font-medium underline underline-offset-2">
-                      {step.photos!.length > 1 ? `${step.photoLabel ?? 'View photo'} ${i + 1}` : (step.photoLabel ?? 'View photo')}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+    <>
+      <Timeline steps={steps} sticky onViewPhoto={setViewPhoto} />
       {viewPhoto && (
         <PhotoLightbox photoKey={viewPhoto} onClose={() => setViewPhoto(null)} />
       )}
-    </div>
+    </>
   )
 }
 
-const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
+const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
 const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
 // Where the goods physically are right now — distinct from the static final destination.
 // For routed POs mid-transit, reuses the server-computed currentLegLabel (which already
 // tracks the open transit leg); for a direct (no transit stops) PO, derives it from
 // status + dispatchedAt instead, since there's no per-leg data to draw from.
-function currentLocationLabel(o: PurchaseOrder): string {
-  if (o.status === 'CANCELLED') return '—'
-  if (o.currentLegLabel) return o.currentLegLabel.replace(/^On deliver to/, 'On the way to')
-  if (o.status === 'IN_TRANSIT' && o.dispatchedAt) {
-    return o.deliveryLocation ? `On the way to ${o.deliveryLocation.name}` : 'In transit'
-  }
-  if (o.status === 'PARTIALLY_RECEIVED' || o.status === 'RECEIVED') {
-    return o.deliveryLocation?.name ?? '—'
-  }
-  // DRAFT / ORDERED — ordered but not dispatched yet
-  return o.deliveryLocation ? `Not shipped yet (→ ${o.deliveryLocation.name})` : 'Not shipped yet'
-}
-
 const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid' }
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -313,16 +117,6 @@ const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 const toDateInputValue = (s: string) => {
   const d = new Date(s)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-// Display-only mirror of src/lib/po-payment.ts's describeInstallment — labels
-// a payment/reimbursement installment as a DP, a top-up, or the one that
-// settles the PO, purely from its position and amount relative to the total.
-function describeInstallment(grandTotal: number, requestedBefore: number, amount: number): string {
-  const isFirst = requestedBefore <= 0
-  const completesTotal = requestedBefore + amount >= grandTotal
-  if (isFirst) return completesTotal ? 'Full Payment' : 'Down Payment'
-  return completesTotal ? 'Final Payment' : 'Additional Payment'
 }
 
 function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
@@ -708,32 +502,6 @@ function TripCombobox({ value, valueLabel, trips, onChange }: {
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
-  const isPdf = isPdfDataUrl(photoKey)
-  return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-        {isPdf ? (
-          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
-            <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
-            <div className="p-3 flex justify-center">
-              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
-                Open PDF in new tab
-              </a>
-            </div>
-          </div>
-        ) : (
-          <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
-        )}
-        <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
-          <X className="h-4 w-4" />
-        </button>
-        <p className="text-center text-white/60 text-xs mt-3">Click outside to close</p>
-      </div>
     </div>
   )
 }
@@ -1714,11 +1482,11 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   }
 
   async function confirmTransit() {
-    if (!detail || !transitPhoto) { setTransitError('Photo is required'); return }
+    if (!detail) return
     setTransitSaving(true); setTransitError('')
     const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'IN_TRANSIT', dispatchPhotoKey: transitPhoto }),
+      body: JSON.stringify({ status: 'IN_TRANSIT', ...(transitPhoto && { dispatchPhotoKey: transitPhoto }) }),
     })
     const data = await res.json()
     if (!res.ok) { setTransitError(data.error ?? 'Failed'); setTransitSaving(false); return }
@@ -2536,7 +2304,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">Mark as In Delivery</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Upload dispatch photo before continuing</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Dispatch photo is optional</p>
                 </div>
                 <button onClick={() => setTransitModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
@@ -2562,8 +2330,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         <Camera className="h-6 w-6 text-amber-500" />
                       </div>
                       <div className="text-center">
-                        <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
-                        <p className="text-xs mt-0.5">Packing slip, shipping label, or proof of dispatch</p>
+                        <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo (optional)'}</p>
+                        <p className="text-xs mt-0.5">Packing slip, shipping label, or proof of dispatch — skip if you don't have one yet</p>
                       </div>
                     </button>
                     <PhotoSourceMenu open={transitPhotoMenuOpen} onClose={() => setTransitPhotoMenuOpen(false)} onFiles={files => { if (files[0]) handlePhotoFile(files[0]) }} />
@@ -2572,7 +2340,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setTransitModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-                <button onClick={confirmTransit} disabled={!transitPhoto || transitSaving}
+                <button onClick={confirmTransit} disabled={transitSaving}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
                   {transitSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><Upload className="h-3.5 w-3.5" />Confirm In Delivery</>}
                 </button>

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
+import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
@@ -83,17 +84,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const grandTotal = computePOGrandTotal(order)
   const { paymentStatus, paidTotal, requestedTotal, remaining } = summarizePOPayments(grandTotal, order.paymentRequests, order.reimbursements)
 
-  // Derived label for routed POs — same rule as the list endpoint (see
-  // src/app/api/purchasing/orders/route.ts and src/lib/purchasing/transitChain.ts).
-  let currentLegLabel: string | null = null
-  if (order.transitStops.length > 0 && order.status !== 'RECEIVED' && order.status !== 'CANCELLED') {
-    const openLeg = order.transitTransfers.find(t => t.status === 'PENDING' || t.status === 'DISPATCHED')
-    if (openLeg) {
-      currentLegLabel = openLeg.status === 'PENDING' ? `Transit in ${openLeg.fromLocation.name}` : `On deliver to ${openLeg.toLocation.name}`
-    } else if (order.dispatchedAt) {
-      currentLegLabel = `On deliver to ${order.transitStops[0].location.name}`
-    }
-  }
+  // Derived label for routed POs — same rule as the list endpoint.
+  const currentLegLabel = computeCurrentLegLabel(order)
 
   return NextResponse.json({
     ...order,
@@ -210,9 +202,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     if (status === 'IN_TRANSIT' && !roleMatches(role, TRANSIT_ALLOWED))
       return NextResponse.json({ error: 'Only purchasing team can mark as In Transit' }, { status: 403 })
-
-    if (status === 'IN_TRANSIT' && !dispatchPhotoKey)
-      return NextResponse.json({ error: 'Dispatch photo is required before marking In Transit' }, { status: 400 })
 
     if (status === 'CANCELLED') {
       if (!roleMatches(role, TRANSIT_ALLOWED))

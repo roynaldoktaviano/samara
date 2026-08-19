@@ -40,7 +40,7 @@ interface DeliveryFeeDetail extends DeliveryFee {
 }
 
 const PO_STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
+  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
 }
 const PO_STATUS_COLOR: Record<string, string> = {
   DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-amber-100 text-amber-700', IN_TRANSIT: 'bg-blue-100 text-blue-700',

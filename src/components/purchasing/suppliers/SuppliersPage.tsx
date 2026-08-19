@@ -23,7 +23,7 @@ const STATUS_COLOR: Record<string, string> = {
   RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
 }
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'In Transit',
+  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery',
   PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
 }
 

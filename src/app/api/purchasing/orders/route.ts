@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
+import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -60,18 +61,7 @@ export async function GET() {
     // against the order's real total, not just "any record exists".
     const grandTotal = computePOGrandTotal(o)
     const { paymentStatus } = summarizePOPayments(grandTotal, o.paymentRequests, o.reimbursements)
-    // Derived label for routed POs — status stays IN_TRANSIT for the whole journey (see
-    // src/lib/purchasing/transitChain.ts), so the actual current leg is computed here from
-    // the most recent open transfer instead of a stored enum value.
-    let currentLegLabel: string | null = null
-    if (o.transitStops.length > 0 && o.status !== 'RECEIVED' && o.status !== 'CANCELLED') {
-      const openLeg = o.transitTransfers[0]
-      if (openLeg) {
-        currentLegLabel = openLeg.status === 'PENDING' ? `Transit in ${openLeg.fromLocation.name}` : `On deliver to ${openLeg.toLocation.name}`
-      } else if (o.dispatchedAt) {
-        currentLegLabel = `On deliver to ${o.transitStops[0].location.name}`
-      }
-    }
+    const currentLegLabel = computeCurrentLegLabel(o)
     return {
       ...o,
       itemCount: o.items.length,
