@@ -8,6 +8,7 @@ import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { requireRole } from '@/lib/auth-guard'
 import { BookingStatus } from '@prisma/client'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
   if (depositPaid <= 0)          return BookingStatus.pending
@@ -194,6 +195,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         .catch(() => {})
 
       scheduleTripSheetSync(db, tripSheetId)
+      if (!isSilent) emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json({ ok: true, invoiceNumber })
     }
 
@@ -288,6 +290,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         .catch(() => {})
 
       scheduleTripSheetSync(db, tripSheetId)
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json({ ok: true })
     }
 
@@ -391,6 +394,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
 
       scheduleTripSheetSync(db, tripSheetId)
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json({ ok: true })
     }
 

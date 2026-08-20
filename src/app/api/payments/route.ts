@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { logActivity } from '@/lib/activity'
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 export async function GET(_: NextRequest) {
   const session  = await getServerSession(authOptions)
@@ -191,6 +192,7 @@ export async function POST(request: NextRequest) {
         detail: `Additional DP ${invoiceNumber} (${booking.bookingCode}) — ${amount}, linked to ${parent.invoiceNumber}, no new invoice`,
       }, db).catch(() => {})
 
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json(payment, { status: 201 })
     }
 
@@ -247,6 +249,7 @@ export async function POST(request: NextRequest) {
       detail: `Request invoice ${invoiceNumber} (${paymentType}) — ${booking.bookingCode}`,
     }, db).catch(() => {})
 
+    emitTenantEvent(session.user.tenantId, 'payments')
     return NextResponse.json(payment, { status: 201 })
   } catch (error) {
     console.error('Error creating payment request:', error)

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApproval'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
@@ -348,6 +349,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await db.purchaseRequestItem.updateMany({ where: { id: { in: [...processedItemIds] } }, data: { convertedAt: new Date() } })
   }
 
+  emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   return NextResponse.json({ ...request, createdPoNumbers, createdPoIds, createdTransferNumbers, remainingItems: blockedItemNames })
 }
 
@@ -365,5 +367,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR yang masih Draft yang bisa dihapus' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
   await db.purchaseRequest.delete({ where: { id } })
+  emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   return NextResponse.json({ ok: true })
 }

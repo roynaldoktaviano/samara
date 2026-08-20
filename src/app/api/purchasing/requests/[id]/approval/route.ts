@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { sendPushToUsers } from '@/lib/push'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // Manager-level approval on a PENDING_APPROVAL PurchaseRequest — distinct from the
 // Purchasing team's DRAFT→ON_PROCESS verification in [id]/route.ts. Authorization here
@@ -58,5 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     })
   }
 
+  emitTenantEvent(session.user.tenantId, 'purchasing-requests')
+  emitTenantEvent(session.user.tenantId, 'my-approvals')
   return NextResponse.json(updated)
 }

@@ -17,7 +17,11 @@ export async function GET(request: NextRequest) {
 
   const sales = await withRetry(db, () => db.cashierSale.findMany({
     where: { yachtId, ...(status ? { status } : {}) },
-    include: { items: { orderBy: { createdAt: 'asc' } } },
+    include: {
+      items: { orderBy: { createdAt: 'asc' } },
+      booking: { select: { bookingCode: true } },
+      guest: { select: { customer: { select: { email: true } } } },
+    },
     orderBy: { createdAt: 'desc' },
     take: 100,
   }))
@@ -56,7 +60,11 @@ export async function POST(request: NextRequest) {
       return tx.cashierSale.update({
         where: { id: sale.id },
         data: { total: { increment: total } },
-        include: { items: true },
+        include: {
+          items: true,
+          booking: { select: { bookingCode: true } },
+          guest: { select: { customer: { select: { email: true } } } },
+        },
       })
     }))
 

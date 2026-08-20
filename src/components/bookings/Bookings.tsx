@@ -1029,6 +1029,8 @@ export default function Bookings() {
     })()
     return matchSearch && matchStatus && matchSource && matchType && matchYacht && matchYear && matchMonth && matchSales && matchDate
   })
+  // Completed bookings are done business — push them to the bottom so active ones stay in view.
+  .sort((a, b) => (a.status === 'completed' ? 1 : 0) - (b.status === 'completed' ? 1 : 0))
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage   = Math.min(currentPage, totalPages)

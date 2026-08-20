@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { isHttpUrl } from '@/lib/url-safety'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // Instagram DM webhook placeholder — point whichever provider gets connected
 // (Meta's Instagram Messaging API, or a third-party inbox provider) at:
@@ -51,5 +52,6 @@ export async function POST(request: NextRequest) {
     data: { conversationId: conversation.id, direction: 'IN', body: raw.message ?? null, mediaUrl, mediaType: raw.mediaType ?? null, status: 'DELIVERED', providerMessageId: raw.messageId ?? null },
   })
 
+  emitTenantEvent(tenant.id, 'chat')
   return NextResponse.json({ ok: true })
 }

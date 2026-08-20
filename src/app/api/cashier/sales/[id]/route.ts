@@ -32,7 +32,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         return tx.cashierSale.update({
           where: { id },
           data: { total: { increment: total } },
-          include: { items: { orderBy: { createdAt: 'asc' } } },
+          include: {
+            items: { orderBy: { createdAt: 'asc' } },
+            booking: { select: { bookingCode: true } },
+            guest: { select: { customer: { select: { email: true } } } },
+          },
         })
       }))
 
@@ -46,7 +50,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const result = await withRetry(db, () => db.cashierSale.update({
         where: { id },
         data: { status: 'closed', payMethod, closedAt: new Date() },
-        include: { items: { orderBy: { createdAt: 'asc' } } },
+        include: {
+          items: { orderBy: { createdAt: 'asc' } },
+          booking: { select: { bookingCode: true } },
+          guest: { select: { customer: { select: { email: true } } } },
+        },
       }))
 
       return NextResponse.json(result)

@@ -6,6 +6,7 @@ import { notifyByRole, notifyIfPOFullyPaid } from '@/lib/notify-purchasing'
 import { computePOGrandTotal, summarizePOPayments, describeInstallment } from '@/lib/po-payment'
 
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -79,5 +80,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ).catch(console.error)
   }
 
+  emitTenantEvent(session.user.tenantId, 'purchasing-finance')
   return NextResponse.json(paymentRequest, { status: 201 })
 }

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 async function requireFinanceOrAdmin() {
   const session = await getServerSession(authOptions)
@@ -89,6 +90,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `No refund decision for ${booking.bookingCode}: ${reason}`,
       }, db).catch(() => {})
 
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json(booking)
     }
 
@@ -128,6 +130,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Refund approved for ${booking.bookingCode}: ${reason}`,
       }, db).catch(() => {})
 
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json(booking)
     }
 
@@ -166,6 +169,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Refund proof uploaded for ${booking.bookingCode}`,
       }, db).catch(() => {})
 
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json(booking)
     }
 
@@ -200,6 +204,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         detail: `Refund confirmed by sales for ${booking.bookingCode}`,
       }, db).catch(() => {})
 
+      emitTenantEvent(session.user.tenantId, 'payments')
       return NextResponse.json(booking)
     }
 

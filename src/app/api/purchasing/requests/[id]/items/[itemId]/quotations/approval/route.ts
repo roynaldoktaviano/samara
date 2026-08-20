@@ -6,6 +6,7 @@ import { sendPushToUsers } from '@/lib/push'
 import { roleMatches } from '@/lib/role-utils'
 import { getBand, requiredQuotationCount } from '@/lib/purchasing/quotationBands'
 import { resolveQuotationApproverId, itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApproval'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -78,6 +79,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     url: '/',
   }).catch(console.error)
 
+  emitTenantEvent(session.user.tenantId, 'my-approvals')
   return NextResponse.json({ ok: true, approverId })
 }
 
@@ -143,5 +145,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }).catch(console.error)
   }
 
+  emitTenantEvent(session.user.tenantId, 'my-approvals')
   return NextResponse.json(updated)
 }

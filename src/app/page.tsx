@@ -443,7 +443,7 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json()
         setPendingRequestOrders(Array.isArray(data)
-          ? data.filter((r: { status: string; requestedByEmployeeId: string | null }) => r.status === 'DRAFT' && r.requestedByEmployeeId).length
+          ? data.filter((r: { status: string }) => r.status === 'DRAFT').length
           : 0)
       }
     } catch { /* silent */ }
@@ -534,10 +534,29 @@ export default function Home() {
   useEffect(() => {
     if (!session) return
     const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
-    const interval = setInterval(refresh, 30000)
+    // SSE (below) delivers near-instant updates on data changes; this poll is just a
+    // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
+    const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
   }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+
+  // Realtime push: server emits a topic name whenever another user's action changes one
+  // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
+  // so badges update within ~1-2s instead of waiting for the next poll above.
+  useEffect(() => {
+    if (!session) return
+    const topicHandlers: Record<string, () => void> = {
+      'purchasing-requests': fetchPendingRequestOrders,
+      'my-approvals': fetchPendingMyApprovals,
+      'payments': () => { fetchPendingPayments(); fetchPendingRefunds() },
+      'purchasing-finance': fetchPendingPurchasingFinance,
+      'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() },
+    }
+    const es = new EventSource('/api/realtime/events')
+    es.onmessage = (e) => { topicHandlers[e.data]?.() }
+    return () => es.close()
+  }, [session, fetchPendingRequestOrders, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { putToR2 } from '@/lib/r2'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // WhatsApp Cloud API (Meta) webhook — handles both the one-time GET verification
 // handshake and the actual POST event deliveries.
@@ -165,6 +166,7 @@ export async function POST(request: NextRequest) {
         await db.whatsappMessage.create({
           data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
         })
+        emitTenantEvent(tenant.id, 'chat')
       }
     }
   }

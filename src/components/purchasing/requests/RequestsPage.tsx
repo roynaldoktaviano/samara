@@ -52,7 +52,7 @@ interface PurchaseRequest {
   totalBudget: number
   notes: string | null
   createdAt: string
-  createdBy: { name: string } | null
+  createdBy: { id: string; name: string } | null
   requestedBy: { name: string } | null
   requestedByEmployee: { id: string; fullName: string; employeeNumber: string } | null
   verifiedBy: { name: string } | null
@@ -159,6 +159,9 @@ function RupiahInput({ value, onChange, placeholder = '0', className = '', autoF
 export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) => void } = {}) {
   const { data: session } = useSession()
   const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
+  // "Requested by Me" only makes sense for Admin — Purchasing/Warehouse's whole job here
+  // is processing everyone else's requests, not filtering down to their own.
+  const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [items, setItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -167,6 +170,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [filterStatus, setFilterStatus] = useState('ALL')
+  // Admin/Purchasing see the whole company's queue by default — this scopes it down to
+  // just the PRs the logged-in user themselves created, same distinction as "My Approvals".
+  const [scopeFilter, setScopeFilter] = useState<'ALL' | 'MINE'>('ALL')
   // Tablet/mobile card layout (< lg) paginates independently of the desktop table,
   // which just renders the full filtered list — see OrdersPage.tsx for the same pattern.
   const [cardPage, setCardPage] = useState(1)
@@ -705,11 +711,18 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
   // ── List view ──
   if (view === 'list') {
-    const filtered = filterStatus === 'ALL' ? requests : requests.filter(r => r.status === filterStatus)
+    const scopedRequests = scopeFilter === 'MINE' ? requests.filter(r => r.createdBy?.id === session?.user?.id) : requests
+    const filtered = filterStatus === 'ALL' ? scopedRequests : scopedRequests.filter(r => r.status === filterStatus)
     const counts = FILTER_TABS.reduce<Record<string, number>>((acc, t) => {
-      acc[t.key] = t.key === 'ALL' ? requests.length : requests.filter(r => r.status === t.key).length
+      acc[t.key] = t.key === 'ALL' ? scopedRequests.length : scopedRequests.filter(r => r.status === t.key).length
       return acc
     }, {})
+    const mineCount = requests.filter(r => r.createdBy?.id === session?.user?.id).length
+    const emptyMessage = requests.length === 0
+      ? 'No PRs yet. Click "New PR" to get started.'
+      : scopeFilter === 'MINE' && scopedRequests.length === 0
+        ? "You haven't requested any PRs yet."
+        : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`
     const cardTotalPages = Math.max(1, Math.ceil(filtered.length / CARD_PAGE_SIZE))
     const cardCurrentPage = Math.min(cardPage, cardTotalPages)
     const cardPageItems = filtered.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
@@ -724,6 +737,27 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
           <Plus className="h-4 w-4" /> New PR
         </button>
       </div>
+
+      {/* Scope toggle — the company-wide queue vs. just what the logged-in user created
+          themselves. Admin-only: Purchasing/Warehouse's job here is processing everyone
+          else's requests, and Warehouse's queue is already server-scoped to their own. */}
+      {isAdmin && (
+        <div className="inline-flex rounded-md border p-0.5 bg-muted/40 w-fit">
+          {([['ALL', 'All Requests'], ['MINE', 'Requested by Me']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => { setScopeFilter(key); setFilterStatus('ALL'); setCardPage(1) }}
+              className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
+                scopeFilter === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+              }`}>
+              {label}
+              {key === 'MINE' && mineCount > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${scopeFilter === key ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                  {mineCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Filter tabs — horizontally scrollable so 6 tabs + count badges don't get
           cramped on a narrower tablet width */}
@@ -777,7 +811,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                {requests.length === 0 ? 'No PRs yet. Click "New PR" to get started.' : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`}
+                {emptyMessage}
               </td></tr>
             ) : filtered.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(r)}>

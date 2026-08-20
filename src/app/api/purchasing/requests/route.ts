@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -143,5 +144,6 @@ export async function POST(req: NextRequest) {
     ).catch(() => {})
   }
 
+  emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   return NextResponse.json(request, { status: 201 })
 }

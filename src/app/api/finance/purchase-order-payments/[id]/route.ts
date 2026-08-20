@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { notifyByRole, notifyIfPOFullyPaid } from '@/lib/notify-purchasing'
 
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
@@ -70,5 +71,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   notifyIfPOFullyPaid(db, existing.orderId).catch(console.error)
 
+  emitTenantEvent(session.user.tenantId, 'purchasing-finance')
   return NextResponse.json(updated)
 }
