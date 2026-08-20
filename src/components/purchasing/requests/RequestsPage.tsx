@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, Ship } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
@@ -41,7 +41,7 @@ interface Supplier { id: string; name: string; locations: SupplierLocation[]; co
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -49,6 +49,7 @@ interface PurchaseRequest {
   deliveryLocationId: string | null
   deliveryLocation: { id: string; name: string; type: string; managedBy: string } | null
   itemCount: number
+  itemNames: string[]
   totalBudget: number
   notes: string | null
   createdAt: string
@@ -66,6 +67,8 @@ interface PurchaseRequest {
   neededByDate: string | null
   isUrgent: boolean
   urgentReason: string | null
+  purpose: 'STOCK_INVENTORY' | 'TRIP'
+  tripBooking: { id: string; bookingCode: string; yacht: { name: string } | null } | null
   // The PO(s) this PR was converted into — lets the list badge show how far the request
   // actually got, down to exactly where a routed PO physically is right now (same text
   // as the PO's own list — see currentLocationLabel). The detail Timeline fetches each
@@ -78,6 +81,12 @@ interface PurchaseRequest {
     deliveryLocation: { name: string } | null
     currentLegLabel?: string | null
   }[]
+}
+interface TripOption {
+  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
+  destination: string | null; status: string
+  yacht: { id: string; name: string } | null
+  leadGuestName: string; guestNames: string[]
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -115,6 +124,13 @@ const FILTER_TABS = [
   { key: 'CANCELLED', label: 'Cancelled' },
 ]
 
+// Category names come from free-text data entry (some "CHAMPAGNE", some "Dairy") —
+// normalize to Title Case for display only, so the filter chips read consistently
+// regardless of how a category was originally typed in.
+function toTitleCase(s: string) {
+  return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+}
+
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -128,6 +144,97 @@ function UrgentBadge() {
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
       <AlertTriangle className="h-3 w-3" /> URGENT
     </span>
+  )
+}
+
+// Trip picker for the "Purpose: Trip" option — same shape/behavior as the PO page's own
+// trip picker (search by booking code/guest/destination, filter by yacht).
+function TripCombobox({ value, valueLabel, trips, onChange }: {
+  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [yachtFilter, setYachtFilter] = useState('')
+  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
+  const q = search.trim().toLowerCase()
+  const opts = trips.filter(t => {
+    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
+    if (!q) return true
+    return t.bookingCode.toLowerCase().includes(q)
+      || (t.destination ?? '').toLowerCase().includes(q)
+      || t.leadGuestName.toLowerCase().includes(q)
+      || t.guestNames.some(n => n.toLowerCase().includes(q))
+  }).slice(0, 30)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip...'}</span>
+        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-72 flex flex-col">
+            <div className="p-2 border-b shrink-0 space-y-1.5">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <select className="w-full h-8 border rounded px-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
+                <option value="">All yachts</option>
+                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No trips found</p>
+              )}
+              {opts.map(t => {
+                const label = `${t.bookingCode}${t.yacht ? ` — ${t.yacht.name}` : ''}`
+                return (
+                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-start gap-2 border-b last:border-0 transition-colors">
+                    <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{t.bookingCode}</span>
+                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
+                        </span>
+                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.yacht?.name ?? '—'} · {fmtDate(t.startDate)}–{fmtDate(t.endDate)}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Item names for a PR list row — a couple of names inline, "+N more" for the rest so a
+// PR with a long cart doesn't blow out the row height; full list on hover via title.
+function ItemNamesPreview({ names, max = 2, className = '' }: { names: string[]; max?: number; className?: string }) {
+  if (names.length === 0) return null
+  const shown = names.slice(0, max).join(', ')
+  const rest = names.length - max
+  return (
+    <p className={`truncate ${className}`} title={names.join(', ')}>
+      {shown}{rest > 0 && <span className="text-muted-foreground/70"> +{rest} more</span>}
+    </p>
   )
 }
 
@@ -179,6 +286,10 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   const CARD_PAGE_SIZE = 10
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
   const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
+  // Set while the "create" view is reused to edit an already-submitted DRAFT PR (see
+  // openEditRequest) — routes submit() to PATCH .../[id] instead of creating new PRs, and
+  // routes onBack to the detail view instead of the list.
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
   // Full PO detail (payments, transit legs, receipts) per linked PO id, fetched lazily so
   // the PR Timeline can render each PO's journey exactly like the PO's own Order Timeline.
@@ -191,6 +302,13 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [notes, setNotes] = useState('')
+  const [neededByDate, setNeededByDate] = useState('')
+  const [isUrgent, setIsUrgent] = useState(false)
+  const [urgentReason, setUrgentReason] = useState('')
+  const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
+  const [tripBookingId, setTripBookingId] = useState('')
+  const [tripBookingLabel, setTripBookingLabel] = useState('')
+  const [trips, setTrips] = useState<TripOption[]>([])
   const [cart, setCart] = useState<RequestLine[]>([])
 
   // Picking "Requested By" only applies to items added *after* that point (each
@@ -204,9 +322,13 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     setRequestedByEmployeeId(id)
     if (id) setCart(prev => prev.map(l => l.requestedByEmployeeId ? l : { ...l, requestedByEmployeeId: id, key: `${l.itemId}-${l.itemUnit}-${id}` }))
   }
+  function setTripBooking(id: string, label: string) {
+    setTripBookingId(id)
+    setTripBookingLabel(label)
+  }
   const [cartOpen, setCartOpen] = useState(false)
   const [catalogSearch, setCatalogSearch] = useState('')
-  const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('All')
+  const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('BEVERAGE')
   const [catalogCategory, setCatalogCategory] = useState('All')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -224,6 +346,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
   // Edit item (est. price / supplier) from the detail view — also used to view custom request detail
   const [editItemModal, setEditItemModal] = useState<RequestLine | null>(null)
+  const [rejectItemModal, setRejectItemModal] = useState<RequestLine | null>(null)
+  const [rejectItemReason, setRejectItemReason] = useState('')
+  const [rejectItemSaving, setRejectItemSaving] = useState(false)
   const [editItemCost, setEditItemCost] = useState('')
   const [editItemSupplierId, setEditItemSupplierId] = useState('')
   const [editItemIsStockItem, setEditItemIsStockItem] = useState(true)
@@ -282,18 +407,20 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rRes, iRes, sRes, lRes, eRes] = await Promise.all([
+    const [rRes, iRes, sRes, lRes, eRes, tRes] = await Promise.all([
       fetch('/api/purchasing/requests'),
       fetch('/api/purchasing/items'),
       fetch('/api/purchasing/suppliers'),
       fetch('/api/purchasing/locations'),
       fetch('/api/purchasing/employees'),
+      fetch('/api/purchasing/trips'),
     ])
     if (rRes.ok) setRequests(await rRes.json())
     if (iRes.ok) setItems((await iRes.json()).filter((i: PurchaseItem & { isActive: boolean }) => i.isActive))
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: Supplier & { isActive: boolean }) => s.isActive))
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive))
     if (eRes.ok) setEmployees(await eRes.json())
+    if (tRes.ok) setTrips(await tRes.json())
     setLoading(false)
   }, [])
 
@@ -350,9 +477,31 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     await fetchDetail(req.id)
   }
 
+  // Reuses the same catalog/cart UI as "New PR" to edit a still-DRAFT request — same
+  // form, same validation, so there's no separate/confusing edit layout to learn.
+  function openEditRequest() {
+    if (!selected || !detail) return
+    setDeliveryLocationId(detail.deliveryLocationId || '')
+    setRequestedByEmployeeId(detail.requestedByEmployee?.id || '')
+    setNotes(detail.notes || '')
+    setNeededByDate(detail.neededByDate ? detail.neededByDate.slice(0, 10) : '')
+    setIsUrgent(detail.isUrgent)
+    setUrgentReason(detail.urgentReason || '')
+    setPurpose(detail.purpose)
+    setTripBookingId(detail.tripBooking?.id || '')
+    setTripBookingLabel(detail.tripBooking ? `${detail.tripBooking.bookingCode}${detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}` : '')
+    setCart(detail.items.map(item => ({
+      ...item,
+      key: item.id,
+      supplierSearch: '', supplierOpen: false, search: '', open: false,
+    })))
+    setEditingRequestId(detail.id)
+    setView('create')
+  }
+
   async function convertToPO() {
     if (!selected || !detail) return
-    const missingSupplier = detail.items.filter(item => !fulfillment[item.id!] && !item.supplierId)
+    const missingSupplier = detail.items.filter(item => !item.verifyRejectedAt && !item.convertedAt && !fulfillment[item.id!] && !item.supplierId)
     if (missingSupplier.length > 0) {
       alert(`Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}`)
       return
@@ -432,6 +581,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     setEditItemSaving(false)
     if (!res.ok) { setEditItemError(data.error ?? 'Failed to save'); return false }
     setEditItemModal(m => m ? { ...m, estimatedCost: parseFloat(editItemCost) || 0, supplierId: editItemSupplierId || '', supplierName: supplier?.name || '' } : m)
+    if (data.promotedNew) {
+      toast.success(`Added "${editItemModal.itemName}" to the item master`, { description: `SKU ${data.promotedSku} — edit its category/pricing anytime under Non-Stock Items` })
+    }
     return true
   }
 
@@ -645,12 +797,54 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   async function submit() {
     setSaving(true)
     setSaveError('')
+    if (!deliveryLocationId) { setSaveError('Please select a delivery location'); setSaving(false); return }
     if (cart.length === 0) { setSaveError('Add at least one item to the request'); setSaving(false); return }
+    if (isUrgent && !urgentReason.trim()) { setSaveError('Please explain why this request is urgent'); setSaving(false); return }
+    if (purpose === 'TRIP' && !tripBookingId) { setSaveError('Please select which trip this request is for'); setSaving(false); return }
+
+    if (editingRequestId) {
+      const id = editingRequestId
+      const res = await fetch(`/api/purchasing/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          edit: true,
+          deliveryLocationId, requestedByEmployeeId: requestedByEmployeeId || undefined, notes,
+          neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
+          purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : undefined,
+          items: cart.map(l => ({
+            itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
+            unit: l.itemUnit || l.baseUnit || 'pcs', estimatedCost: l.estimatedCost || undefined,
+            supplierId: l.supplierId || undefined, supplierName: l.supplierName || undefined,
+            notes: l.notes, imageKeys: l.imageKeys,
+          })),
+        }),
+      })
+      const data = await res.json()
+      setSaving(false)
+      if (!res.ok) { setSaveError(data.error ?? 'An error occurred'); return }
+      setEditingRequestId(null)
+      setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
+      setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+      setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+      setCart([]); setCartOpen(false)
+      toast.success(`Purchase Request ${data.prNumber} updated`)
+      const listRes = await fetch('/api/purchasing/requests')
+      if (listRes.ok) {
+        const list = await listRes.json()
+        setRequests(list)
+        const fresh = list.find((r: PurchaseRequest) => r.id === id)
+        if (fresh) setSelected(fresh)
+      }
+      setView('detail')
+      await fetchDetail(id)
+      return
+    }
 
     // Group by requester — each distinct "Requested By" (including blank, meaning
     // "myself / general stock") becomes its own PR, all sharing the same delivery
-    // location and notes. Submitted one at a time (not Promise.all) since PR number
-    // generation isn't safe under concurrent writes.
+    // location, notes, needed-by date, and urgency. Submitted one at a time (not
+    // Promise.all) since PR number generation isn't safe under concurrent writes.
     const groups = new Map<string, RequestLine[]>()
     for (const line of cart) {
       const key = line.requestedByEmployeeId || ''
@@ -665,6 +859,8 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: empId || undefined, notes,
+          neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
+          purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : undefined,
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
             unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
@@ -684,9 +880,16 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
     setSaving(false)
     setView('list')
-    setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes(''); setCart([]); setCartOpen(false)
+    setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
+    setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+    setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+    setCart([]); setCartOpen(false)
     if (created.length > 1) {
-      alert(`${created.length} Purchase Requests created:\n${created.map(c => `${c.prNumber} — ${c.requesterName}`).join('\n')}`)
+      toast.success(`${created.length} Purchase Requests created`, {
+        description: created.map(c => `${c.prNumber} — ${c.requesterName}`).join(' · '),
+      })
+    } else {
+      toast.success(`Purchase Request ${created[0].prNumber} created`)
     }
     load()
   }
@@ -699,7 +902,37 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     })
     if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to update status'); return }
     setSelected(s => s?.id === id ? { ...s, status } : s)
+    // The item list / timeline / Decision column all key off `detail`, not `selected` —
+    // without this they'd stay stuck showing the pre-verify layout until the user left
+    // and reopened the request.
+    await fetchDetail(id)
     load()
+  }
+
+  // Accept/reject a single item before or while the PR is being verified — lets Purchasing
+  // fix which items actually go on to a PO instead of an all-or-nothing PR-level decision.
+  async function setItemVerifyDecision(item: RequestLine, rejected: boolean, reason?: string): Promise<boolean> {
+    if (!detail || !item.id) return false
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verifyRejected: rejected, verifyRejectionReason: reason ?? '' }),
+    })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to update item decision'); return false }
+    await fetchDetail(detail.id)
+    return true
+  }
+
+  function openRejectItemModal(item: RequestLine) {
+    setRejectItemModal(item)
+    setRejectItemReason('')
+  }
+
+  async function confirmRejectItem() {
+    if (!rejectItemModal) return
+    setRejectItemSaving(true)
+    const ok = await setItemVerifyDecision(rejectItemModal, true, rejectItemReason)
+    setRejectItemSaving(false)
+    if (ok) setRejectItemModal(null)
   }
 
   async function deleteReq(req: PurchaseRequest) {
@@ -815,11 +1048,12 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
               </td></tr>
             ) : filtered.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(r)}>
-                <td className="px-4 py-3 font-mono text-sm font-medium">
+                <td className="px-4 py-3 font-mono text-sm font-medium max-w-55">
                   <span className="flex items-center gap-1.5">
                     {r.prNumber}
                     {r.isUrgent && <UrgentBadge />}
                   </span>
+                  <ItemNamesPreview names={r.itemNames} className="font-sans font-normal text-[11px] text-muted-foreground mt-0.5" />
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.deliveryLocation ? (
@@ -915,6 +1149,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                       <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
                     </div>
                   </div>
+                  <ItemNamesPreview names={r.itemNames} max={3} className="text-xs text-muted-foreground" />
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="truncate min-w-0">
                       <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
@@ -969,6 +1204,9 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
         requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={updateRequestedByEmployeeId}
         notes={notes} setNotes={setNotes}
+        neededByDate={neededByDate} setNeededByDate={setNeededByDate}
+        isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+        purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
         cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
         addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
         catalogSearch={catalogSearch} setCatalogSearch={setCatalogSearch}
@@ -980,7 +1218,19 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         isDraggingCustomImage={isDraggingCustomImage} customImageDropProps={customImageDropProps}
         onCustomImageFiles={processCustomImages} removeCustomImage={removeCustomImage} addCustomToCart={addCustomToCart}
         saveError={saveError} saving={saving} submit={submit}
-        onBack={() => setView('list')}
+        editingPrNumber={editingRequestId ? selected?.prNumber : undefined}
+        onBack={() => {
+          if (editingRequestId) {
+            setEditingRequestId(null)
+            setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
+            setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+            setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+            setCart([]); setCartOpen(false)
+            setView('detail')
+          } else {
+            setView('list')
+          }
+        }}
       />
     )
   }
@@ -1025,6 +1275,10 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                       className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
                       Verify
                     </button>
+                    <button onClick={openEditRequest}
+                      className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                      Edit
+                    </button>
                     <button onClick={() => changeStatus(selected.id, 'REJECTED')}
                       className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                       Reject
@@ -1040,10 +1294,13 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
             {selected.status === 'ON_PROCESS' && !isWarehouse && (
               <>
                 {(() => {
-                  const missingSupplier = detail?.items.filter(item => !fulfillment[item.id!] && !item.supplierId) ?? []
+                  const settleable = detail?.items.filter(item => !item.verifyRejectedAt && !item.convertedAt) ?? []
+                  const missingSupplier = settleable.filter(item => !fulfillment[item.id!] && !item.supplierId)
+                  const nothingLeft = settleable.length === 0
+                  const disabled = nothingLeft || missingSupplier.length > 0
                   return (
-                    <button onClick={convertToPO} disabled={missingSupplier.length > 0}
-                      title={missingSupplier.length > 0 ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
+                    <button onClick={convertToPO} disabled={disabled}
+                      title={nothingLeft ? 'Every item is already converted or rejected' : missingSupplier.length > 0 ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
                       className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
                       <ShoppingCart className="h-4 w-4" /> Convert to PO
                     </button>
@@ -1132,6 +1389,14 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
               <div><p className="text-xs text-muted-foreground">Delivery Location</p><p className="font-medium">{detail.deliveryLocation?.name ?? '—'}</p></div>
               <div><p className="text-xs text-muted-foreground">Created By</p><p className="font-medium">{detail.createdBy?.name ?? '—'}</p></div>
               <div><p className="text-xs text-muted-foreground">Requested By</p><p className="font-medium">{detail.requestedByEmployee?.fullName ?? <span className="text-muted-foreground/60 italic font-normal">Same as created by</span>}</p></div>
+              <div>
+                <p className="text-xs text-muted-foreground">Purpose</p>
+                <p className="font-medium">
+                  {detail.purpose === 'TRIP'
+                    ? `Trip${detail.tripBooking ? ` — ${detail.tripBooking.bookingCode}${detail.tripBooking.yacht ? ` (${detail.tripBooking.yacht.name})` : ''}` : ''}`
+                    : 'Stock & Inventory'}
+                </p>
+              </div>
               {detail.neededByDate && (
                 <div>
                   <p className="text-xs text-muted-foreground">Needed By</p>
@@ -1174,7 +1439,14 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                     date: null, sub: [],
                   }]
                 }
-                return buildPoTimelineSteps(full, { includePrStep: false }).map(s => ({
+                const poSteps = buildPoTimelineSteps(full, { includePrStep: false })
+                // With more than one PO on the same PR (partial-convert passes), showing
+                // each PO's full history here duplicates what's already one click away on
+                // that PO's own detail page (via "Go to PONumber") — collapse each PO down
+                // to just its latest status (the most recent step that's actually done).
+                const doneSteps = poSteps.filter(s => s.done)
+                const visibleSteps = multiPo ? doneSteps.slice(-1) : poSteps
+                return visibleSteps.map(s => ({
                   ...s,
                   key: `${po.id}-${s.key}`,
                   label: multiPo ? `${s.label} — ${po.poNumber}` : s.label,
@@ -1189,6 +1461,22 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 date: fmtDateTime(detail.cancelledAt), sub: [detail.cancelledBy?.name ? `by ${detail.cancelledBy.name}` : null],
               }] : []),
             ]
+            const poNumberMap = new Map((detail.orders ?? []).map(po => [po.id, po.poNumber]))
+            // Group items that landed in the same PO together (in first-appearance order)
+            // so a partial-convert PR doesn't leave items from the same PO scattered across
+            // the list — items not yet converted (or converted via Transfer) stay solo.
+            const itemsWithIdx = detail.items.map((item, idx) => ({ item, idx }))
+            const firstIdxByKey = new Map<string, number>()
+            for (const { item, idx } of itemsWithIdx) {
+              const key = item.convertedPoId ?? `__solo_${idx}`
+              if (!firstIdxByKey.has(key)) firstIdxByKey.set(key, idx)
+            }
+            const sortedItems = [...itemsWithIdx].sort((a, b) => {
+              const keyA = a.item.convertedPoId ?? `__solo_${a.idx}`
+              const keyB = b.item.convertedPoId ?? `__solo_${b.idx}`
+              const rank = firstIdxByKey.get(keyA)! - firstIdxByKey.get(keyB)!
+              return rank !== 0 ? rank : a.idx - b.idx
+            }).map(x => x.item)
             return (
               <div className="grid grid-cols-[1fr_300px] gap-6 items-start">
                 <div className="rounded-lg border overflow-hidden min-w-0">
@@ -1200,14 +1488,16 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
+                  {detail.orders && detail.orders.length > 0 && <th className="text-left px-5 py-2.5 font-medium">PO</th>}
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
+                  {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium">Decision</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   <th className="w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {detail.items.map((item, i) => {
+                {sortedItems.map((item, i) => {
                   const stock = item.currentStock ?? null
                   const min = item.minStock ?? 0
                   const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
@@ -1215,10 +1505,14 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                   const editable = detail.status === 'ON_PROCESS' && !isWarehouse
                   const isCustom = !item.itemId
                   const chosenFromLocationId = fulfillment[item.id!] ?? null
+                  const isRejected = !!item.verifyRejectedAt
+                  const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
+                  const poNumber = item.convertedPoId ? poNumberMap.get(item.convertedPoId) : null
+                  const isNewPoGroup = i > 0 && item.convertedPoId && sortedItems[i - 1].convertedPoId !== item.convertedPoId
                   return (
                     <tr
-                      key={i}
-                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''}`}
+                      key={item.id ?? i}
+                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''} ${isRejected ? 'opacity-50' : ''} ${isNewPoGroup ? 'border-t-2 border-t-slate-200' : ''}`}
                       onClick={() => isCustom && openEditItem(item)}
                     >
                       <td className="px-5 py-3">
@@ -1241,7 +1535,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-medium">{item.itemName}</p>
+                            <p className={`font-medium ${isRejected ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
                             {isCustom && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
                             {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
                           </div>
@@ -1249,7 +1543,15 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                       </td>
                       <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
                         {detail.status !== 'ON_PROCESS' || isWarehouse ? (
-                          item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>
+                          <>
+                            {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
+                            {item.transferEligible && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
+                              <p className="text-[10px] text-blue-600 mt-0.5">
+                                Possible transfer from {item.warehouseStock[0].locationName}
+                                {item.warehouseStock.length > 1 ? ` +${item.warehouseStock.length - 1} more` : ''}
+                              </p>
+                            )}
+                          </>
                         ) : chosenFromLocationId ? (
                           <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
                         ) : (
@@ -1276,6 +1578,24 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                           </div>
                         )}
                       </td>
+                      {detail.orders && detail.orders.length > 0 && (
+                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
+                          {poNumber ? (
+                            onOpenPo ? (
+                              <button
+                                onClick={() => onOpenPo(item.convertedPoId!)}
+                                className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1 hover:bg-green-100 transition-colors whitespace-nowrap"
+                              >
+                                {poNumber}
+                              </button>
+                            ) : (
+                              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{poNumber}</span>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground/50 italic text-xs">—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-5 py-3 text-right">
                         <span>{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
                         {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor && (
@@ -1290,6 +1610,34 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                           : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
                         }
                       </td>
+                      {['DRAFT', 'ON_PROCESS'].includes(detail.status) && (
+                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
+                          {isRejected ? (
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap"
+                                title={item.verifyRejectionReason || undefined}
+                              >
+                                Rejected
+                              </span>
+                              {canDecide && (
+                                <button onClick={() => setItemVerifyDecision(item, false)} className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                                  Undo
+                                </button>
+                              )}
+                            </div>
+                          ) : canDecide ? (
+                            <button
+                              onClick={() => openRejectItemModal(item)}
+                              className="text-[10px] font-medium text-muted-foreground hover:text-red-600 border border-dashed border-border hover:border-red-300 rounded-full px-2.5 py-0.5 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          ) : (
+                            <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Accepted</span>
+                          )}
+                        </td>
+                      )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
                           {!item.transferEligible || !item.warehouseStock?.length ? (
@@ -1705,6 +2053,46 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         </div>
       )}
 
+      {/* ── Reject Item modal — optional reason for excluding one item at verify triage ── */}
+      {rejectItemModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b shrink-0">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-base">Reject Item</h3>
+                <p className="text-sm text-muted-foreground truncate">{rejectItemModal.itemName}</p>
+              </div>
+              <button onClick={() => setRejectItemModal(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Reason (optional)</label>
+              <textarea
+                value={rejectItemReason}
+                onChange={e => setRejectItemReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Not needed this month"
+                className="w-full text-sm border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t shrink-0">
+              <button onClick={() => setRejectItemModal(null)} disabled={rejectItemSaving} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">
+                Cancel
+              </button>
+              <button
+                onClick={confirmRejectItem}
+                disabled={rejectItemSaving}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium disabled:opacity-50"
+              >
+                {rejectItemSaving ? 'Rejecting...' : 'Reject Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Supplier picker modal (for Edit Item modal) ── */}
       {(supplierModal === 'editItem' || supplierModal === 'quotation') && (() => {
         const allCities = ['All', ...Array.from(new Set(suppliers.flatMap(s => (s.locations ?? []).map(l => l.city).filter(Boolean)))).sort()]
@@ -1866,6 +2254,8 @@ function CreateRequestView({
   deliveryLocationId, setDeliveryLocationId,
   requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
+  neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
   cart, cartOpen, setCartOpen,
   addToCart, changeCartQty, removeCartLine,
   catalogSearch, setCatalogSearch,
@@ -1877,12 +2267,19 @@ function CreateRequestView({
   isDraggingCustomImage, customImageDropProps,
   onCustomImageFiles, removeCustomImage, addCustomToCart,
   saveError, saving, submit,
+  editingPrNumber,
   onBack,
 }: {
   items: PurchaseItem[]; locations: StockLocation[]; employees: EmployeeOption[]
   deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
   requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
+  neededByDate: string; setNeededByDate: (v: string) => void
+  isUrgent: boolean; setIsUrgent: (v: boolean) => void
+  urgentReason: string; setUrgentReason: (v: string) => void
+  purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
+  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trips: TripOption[]
   cart: RequestLine[]; cartOpen: boolean; setCartOpen: (v: boolean) => void
   addToCart: (item: PurchaseItem, unit: string) => void
   changeCartQty: (key: string, delta: number) => void
@@ -1900,6 +2297,7 @@ function CreateRequestView({
   removeCustomImage: (index: number) => void
   addCustomToCart: () => void
   saveError: string; saving: boolean; submit: () => void
+  editingPrNumber?: string
   onBack: () => void
 }) {
   const categories = useMemo(() => {
@@ -1935,8 +2333,10 @@ function CreateRequestView({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-1">← Back to Purchase Requests</button>
-          <h2 className="text-2xl font-bold tracking-tight">Create Purchase Request</h2>
+          <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-1">
+            ← {editingPrNumber ? `Back to ${editingPrNumber}` : 'Back to Purchase Requests'}
+          </button>
+          <h2 className="text-2xl font-bold tracking-tight">{editingPrNumber ? `Edit ${editingPrNumber}` : 'Create Purchase Request'}</h2>
         </div>
         <button
           onClick={() => setCartOpen(true)}
@@ -1971,10 +2371,6 @@ function CreateRequestView({
 
           <div className="bg-white border rounded-xl shadow-sm p-3.5 space-y-3">
             <div className="inline-flex gap-1 bg-muted rounded-lg p-1 flex-wrap">
-              <button onClick={() => { setCatalogType('All'); setCatalogCategory('All') }}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${catalogType === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                All Items
-              </button>
               {ITEM_TYPES.map(t => (
                 <button key={t} onClick={() => { setCatalogType(t); setCatalogCategory('All') }}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${catalogType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -1988,7 +2384,7 @@ function CreateRequestView({
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                     catalogCategory === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground'
                   }`}>
-                  {c}
+                  {c === 'All' ? c : toTitleCase(c)}
                 </button>
               ))}
             </div>
@@ -2000,7 +2396,7 @@ function CreateRequestView({
               <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
               {pageItems.map(item => {
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
                 const requesterKey = requestedByEmployeeId || 'none'
@@ -2107,7 +2503,10 @@ function CreateRequestView({
               locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
               employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
               notes={notes} setNotes={setNotes}
-              submit={submit} saving={saving}
+              neededByDate={neededByDate} setNeededByDate={setNeededByDate}
+              isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+              purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+              submit={submit} saving={saving} editingPrNumber={editingPrNumber}
             />
           </div>
         </div>
@@ -2128,7 +2527,10 @@ function CreateRequestView({
                 locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
                 employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
                 notes={notes} setNotes={setNotes}
-                submit={submit} saving={saving}
+                neededByDate={neededByDate} setNeededByDate={setNeededByDate}
+                isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+                purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+                submit={submit} saving={saving} editingPrNumber={editingPrNumber}
                 embedded
               />
             </div>
@@ -2219,14 +2621,24 @@ function RequestCartPanel({
   locations, deliveryLocationId, setDeliveryLocationId,
   employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
+  neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
   submit, saving,
+  editingPrNumber,
   embedded = false,
 }: {
   cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
   locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
   employees: EmployeeOption[]; requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
+  neededByDate: string; setNeededByDate: (v: string) => void
+  isUrgent: boolean; setIsUrgent: (v: boolean) => void
+  urgentReason: string; setUrgentReason: (v: string) => void
+  purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
+  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trips: TripOption[]
   submit: () => void; saving: boolean
+  editingPrNumber?: string
   embedded?: boolean
 }) {
   return (
@@ -2241,7 +2653,7 @@ function RequestCartPanel({
       <div className="p-5 space-y-4 overflow-y-auto flex-1">
         {/* Delivery Location */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery Location</label>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery Location <span className="text-red-500">*</span></label>
           <select
             className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
             value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
@@ -2249,6 +2661,25 @@ function RequestCartPanel({
             <option value="">— Select location —</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
+        </div>
+
+        {/* Purpose — general restocking vs a specific upcoming trip. Trip requests link
+            to the actual Booking so Purchasing knows which departure to have ready for. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-red-500">*</span></label>
+          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
+            <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              Stock & Inventory
+            </button>
+            <button type="button" onClick={() => setPurpose('TRIP')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              Trip
+            </button>
+          </div>
+          {purpose === 'TRIP' && (
+            <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
+          )}
         </div>
 
         {/* Requested By — who this is actually for (e.g. a ship crew member), separate
@@ -2330,6 +2761,31 @@ function RequestCartPanel({
           )}
         </div>
 
+        {/* Needed by */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
+          <input
+            type="date"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
+          />
+        </div>
+
+        {/* Urgent */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4" />
+            <span className="text-red-600">This request is urgent</span>
+          </label>
+          {isUrgent && (
+            <textarea
+              className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-400"
+              rows={2} placeholder="Why is this urgent? (required)"
+              value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
+            />
+          )}
+        </div>
+
         {/* Notes */}
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
@@ -2350,7 +2806,7 @@ function RequestCartPanel({
               className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
             >
               {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
-              {saving ? 'Submitting…' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}
+              {saving ? 'Saving…' : editingPrNumber ? 'Save Changes' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}
             </button>
           )
         })()}

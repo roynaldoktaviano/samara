@@ -208,6 +208,34 @@ export default function InvoicePage() {
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
+  const namedGuestsWithCabin = guestsWithCabin.filter(g => g.customer?.name && !g.customer.name.toLowerCase().includes('tbd'))
+
+  // Cabin booking summary for the invoice, grouped by named guest — a "pending" pax (cabin
+  // reserved, no customer attached yet) isn't a real name to bill against, so it never gets
+  // its own "— · Room: X" line. Any cabin with no named occupant at all is simply folded
+  // into the first named guest's line instead, so every booked room still shows up exactly
+  // once without an anonymous row.
+  const cabinGroups: { name: string; cabins: string[] }[] = []
+  const claimedCabins = new Set<string>()
+  const unclaimedCabins: string[] = []
+  for (const g of guestsWithCabin) {
+    const cabinName = g.cabin?.name
+    if (!cabinName) continue
+    const name = g.customer?.name && !g.customer.name.toLowerCase().includes('tbd') ? g.customer.name : null
+    if (name) {
+      let group = cabinGroups.find(x => x.name === name)
+      if (!group) { group = { name, cabins: [] }; cabinGroups.push(group) }
+      if (!group.cabins.includes(cabinName)) group.cabins.push(cabinName)
+      claimedCabins.add(cabinName)
+    } else if (!unclaimedCabins.includes(cabinName)) {
+      unclaimedCabins.push(cabinName)
+    }
+  }
+  // A cabin might show up as both "claimed" (a named guest in it) and "unclaimed" (a
+  // pending guest also sharing it) — the named guest's own line already covers it.
+  const trulyUnclaimed = unclaimedCabins.filter(c => !claimedCabins.has(c))
+  if (cabinGroups.length === 0 && trulyUnclaimed.length > 0) cabinGroups.push({ name: b.customer.name, cabins: [] })
+  if (cabinGroups.length > 0 && trulyUnclaimed.length > 0) cabinGroups[0].cabins.push(...trulyUnclaimed)
 
   // TEMPORARY one-off Bill To override for booking SL1-ST-0144 — remove after this invoice is issued.
   const billToOverride = b.bookingCode === 'SL1-ST-0144'
@@ -391,12 +419,10 @@ export default function InvoicePage() {
                 {(billToOverride?.address ?? b.agent!.address) && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{billToOverride?.address ?? b.agent!.address}</div>}
                 {billToOverride?.taxId && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>Tax ID / GST No.: {billToOverride.taxId}</div>}
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
-                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{guestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
-                  {guestsWithCabin.length > 0 ? (
-                    guestsWithCabin.map((g, i) => (
-                      <div key={i} style={{ fontSize: 11, color: '#6b7280' }}>
-                        {(g.customer?.name ?? '').toLowerCase().includes('tbd') ? `Guest ${i + 1} (TBD)` : (g.customer?.name ?? '—')}
-                      </div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{namedGuestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
+                  {namedGuestsWithCabin.length > 0 ? (
+                    namedGuestsWithCabin.map((g, i) => (
+                      <div key={i} style={{ fontSize: 11, color: '#6b7280' }}>{g.customer!.name}</div>
                     ))
                   ) : (
                     <div style={{ fontSize: 11, color: '#6b7280' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
@@ -449,9 +475,10 @@ export default function InvoicePage() {
               <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{tripName} · {destination}</div>
               {hasCabins && (
                 <div style={{ marginTop: 4 }}>
-                  {guestsWithCabin.map((g, i) => (
-                    <div key={i} style={{ fontSize: 10, color: '#6b7280' }}>
-                      {(g.customer?.name ?? '').toLowerCase().includes('tbd') ? `Guest ${i + 1} (TBD)` : (g.customer?.name ?? '—')} · Room: {g.cabin?.name}
+                  {cabinGroups.map((grp, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 4, fontSize: 10, color: '#6b7280' }}>
+                      <span style={{ flexShrink: 0 }}>{grp.name} · Room:</span>
+                      <span>{grp.cabins.map((c, j) => <div key={j}>{c}</div>)}</span>
                     </div>
                   ))}
                 </div>

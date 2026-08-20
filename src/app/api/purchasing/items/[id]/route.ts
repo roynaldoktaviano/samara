@@ -25,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, isActive, imageKey, isSoldInPos } = body
+  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, isActive, imageKey, isSoldInPos, isStockTracked, currentLocationId } = body
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
     return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
   }
@@ -52,6 +52,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       reorderQty: Number(reorderQty) || 0,
       isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       isSoldInPos: isSoldInPos !== undefined ? Boolean(isSoldInPos) : undefined,
+      isStockTracked: isStockTracked !== undefined ? Boolean(isStockTracked) : undefined,
+      currentLocationId: currentLocationId !== undefined ? (currentLocationId || null) : undefined,
       imageKey: imageKey !== undefined ? (imageKey || null) : undefined,
       updatedAt: new Date(),
     },

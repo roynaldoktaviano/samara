@@ -115,6 +115,7 @@ model User {
   purchaseRequestItemQuotationsToApprove PurchaseRequestItem[]       @relation("PRItemQuotationApprover")
   purchaseRequestItemQuotationsApproved  PurchaseRequestItem[]       @relation("PRItemQuotationApprovedBy")
   purchaseRequestItemQuotationsRejected  PurchaseRequestItem[]       @relation("PRItemQuotationRejectedBy")
+  purchaseRequestItemsVerifyRejected     PurchaseRequestItem[]       @relation("PRItemVerifyRejectedBy")
   purchaseOrdersCreated                  PurchaseOrder[]
   goodsReceipts                          GoodsReceipt[]
   transfersDispatched                    StockTransfer[]             @relation("TransferDispatch")
@@ -776,6 +777,7 @@ model Booking {
   promotedWaitingLists          WaitingList[]        @relation("WaitingListPromotedBooking")
   cashierSales                  CashierSale[]
   purchaseOrders                PurchaseOrder[]
+  purchaseRequests              PurchaseRequest[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -1349,6 +1351,11 @@ enum PurchaseRequestStatus {
   CANCELLED
 }
 
+enum PurchaseRequestPurpose {
+  STOCK_INVENTORY
+  TRIP
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   ORDERED
@@ -1397,6 +1404,17 @@ model PurchaseItem {
   imageKey         String?
   isActive         Boolean  @default(true)
   isSoldInPos      Boolean  @default(true)
+  // false for items that are purchased but never held as inventory (services, one-off
+  // buys promoted from a PR/PO "Custom Request" line) — receiveGoods() still logs their
+  // receipt for history, but never pools them into a location's stock balance, and they
+  // never trigger min-stock/reorder logic. Default true keeps every existing catalog row
+  // (all of which are real stock items today) unaffected.
+  isStockTracked   Boolean  @default(true)
+  // Where a non-stock item currently physically sits — manually set (see "Change
+  // Location" in Items & Pricing), since these items are never pooled into StockLot
+  // balances and so have no other way to answer "where is it right now". Meaningless
+  // for stock-tracked items, which already have a real location breakdown via StockLot.
+  currentLocationId String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -1409,9 +1427,11 @@ model PurchaseItem {
   movements        StockMovement[]
   stockCountItems  StockCountItem[]
   cashierSaleItems CashierSaleItem[]
+  currentLocation  StockLocation? @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
 
   @@index([name])
   @@index([category])
+  @@index([currentLocationId])
 }
 
 model StockLocation {
@@ -1440,6 +1460,7 @@ model StockLocation {
   transitStops     PurchaseOrderTransitStop[]
   cashierSales     CashierSale[]
   employees        Employee[]
+  nonStockItemsHere PurchaseItem[] @relation("PurchaseItemCurrentLocation")
 
   @@index([type])
   @@index([yachtId])
@@ -1564,6 +1585,11 @@ model PurchaseRequest {
   deliveryLocationId    String?
   notes                 String?
   status                PurchaseRequestStatus @default(DRAFT)
+  // What this request is for — general restocking, or a specific upcoming trip. Trip
+  // requests link to the actual Booking so Purchasing knows which charter/departure the
+  // items need to be ready for.
+  purpose               PurchaseRequestPurpose @default(STOCK_INVENTORY)
+  tripBookingId         String?
   pdfKey                String?
   // Set by the requester on the public /request-order intake form — lets Purchasing
   // triage at a glance instead of discovering urgency buried in free-text notes.
@@ -1590,6 +1616,7 @@ model PurchaseRequest {
   requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
   approverEmployee    Employee?             @relation("PRApproverEmployee", fields: [approverEmployeeId], references: [id], onDelete: SetNull)
   deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  tripBooking         Booking?              @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
   approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   verifiedBy          User?                 @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
   convertedBy         User?                 @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
@@ -1611,6 +1638,7 @@ model PurchaseRequest {
   @@index([cancelledById])
   @@index([verifiedById])
   @@index([approvedById])
+  @@index([tripBookingId])
 }
 
 model Supplier {
@@ -1688,18 +1716,37 @@ model PurchaseRequestItem {
   // approval at different times — an item already converted is never re-processed, and a
   // PurchaseRequest only reaches CONVERTED once every item has this set.
   convertedAt DateTime?
+  // Which PO this item actually landed in when converted — a PR can convert in several
+  // passes / across several supplier groups, so this is the only way to know which of a
+  // PR's several POs a given item belongs to (used to group/label items in the PR item list).
+  // Null for items fulfilled via Transfer instead of a PO.
+  convertedPoId String?
+
+  // Per-item accept/reject decision made while triaging a submitted PR — lets Purchasing
+  // carry only some items forward (into ON_PROCESS / eventually a PO) instead of the
+  // whole PR being an all-or-nothing Verify/Reject. Unset (null) means the item is still
+  // accepted-by-default, same as before this field existed. Settable while the request is
+  // DRAFT (pre-verify triage) or ON_PROCESS (Purchasing changes their mind later), but
+  // never once convertedAt is set — see PATCH /api/purchasing/requests/[id]/items/[itemId].
+  verifyRejectedById    String?
+  verifyRejectedAt      DateTime?
+  verifyRejectionReason String?
 
   request              PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
   item                 PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
   supplier             Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  convertedPo          PurchaseOrder?      @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
   quotations           PurchaseQuotation[]
   quotationSubmittedBy User?               @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
   quotationApprover    User?               @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
   quotationApprovedBy  User?               @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
   quotationRejectedBy  User?               @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
+  verifyRejectedBy     User?               @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([quotationApproverId])
+  @@index([verifyRejectedById])
+  @@index([convertedPoId])
 }
 
 // Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the
@@ -1788,6 +1835,7 @@ model PurchaseOrder {
   transitStops        PurchaseOrderTransitStop[]
   transitTransfers    StockTransfer[]
   followUps           PurchaseFollowUp[]
+  convertedRequestItems PurchaseRequestItem[] @relation("PRItemConvertedPo")
 
   @@index([createdById])
   @@index([status])

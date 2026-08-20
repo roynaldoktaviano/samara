@@ -77,10 +77,11 @@ export async function receiveGoods(db: Db, params: {
   const itemIds = items.map(it => it.itemId).filter(Boolean) as string[]
   const purchaseItemsData = await db.purchaseItem.findMany({
     where: { id: { in: itemIds } },
-    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true },
+    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true, isStockTracked: true },
   })
   const conversionMap = new Map(purchaseItemsData.map(i => [i.id, i.conversionFactor]))
   const itemDataMap = new Map(purchaseItemsData.map(i => [i.id, i]))
+  const stockTrackedMap = new Map(purchaseItemsData.map(i => [i.id, i.isStockTracked]))
 
   const { gr, newStatus } = await db.$transaction(async (tx) => {
     const gr = await tx.goodsReceipt.create({
@@ -138,10 +139,14 @@ export async function receiveGoods(db: Db, params: {
         : purchaseUnitCost
 
       // Catalog items merge into one running-balance lot per item+location (stock
-      // is fungible). Non-catalog items don't merge — each receipt gets its own
-      // lot tagged with sourcePoId, so it stays traceable to exactly the PO/date/
-      // cost that brought it in (see the Item by Location non-stock item view).
-      if (it.itemId) {
+      // is fungible). Non-catalog items, and catalog items explicitly marked
+      // isStockTracked: false (a promoted "non-stock" master item — see
+      // /api/purchasing/requests/[id]/items/[itemId]), don't merge — each receipt
+      // gets its own lot tagged with sourcePoId, so it stays traceable to exactly
+      // the PO/date/cost that brought it in, without ever pooling into a location's
+      // stock balance or feeding min-stock/reorder logic.
+      const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
+      if (it.itemId && isStockTracked) {
         const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: effectiveLocationId } })
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
@@ -166,8 +171,9 @@ export async function receiveGoods(db: Db, params: {
       })
 
       // Everything below (discrepancy checks, standard cost) only applies to
-      // items linked to the master catalog.
-      if (!it.itemId) continue
+      // stock-tracked items linked to the master catalog — non-stock items don't
+      // carry a standardCost/min-stock concept to keep in sync.
+      if (!it.itemId || !isStockTracked) continue
 
       if (poItem) {
         // Auto-create Receiving Discrepancy exception if qty received ≠ qty remaining

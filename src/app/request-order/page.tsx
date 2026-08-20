@@ -1,23 +1,27 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, Suspense } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
-  Search, Plus, Minus, X, Trash2, ChevronsUpDown, Check, Camera,
-  Package, ShoppingCart, Send, CheckCircle2, AlertTriangle, ImagePlus,
+  Search, Plus, Minus, X, Trash2, ChevronsUpDown, ChevronLeft, ChevronRight, Check, Camera,
+  Package, ShoppingCart, Send, CheckCircle2, AlertTriangle, ImagePlus, Ship,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { cn } from '@/lib/utils'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
-const GOLD = '#bdac7e'
-const GOLD_DARK = '#a8956a'
-
 interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null }
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
 interface LocationLite { id: string; name: string; type: string }
+interface TripOption {
+  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
+  destination: string | null; status: string
+  yacht: { id: string; name: string } | null
+  leadGuestName: string; guestNames: string[]
+}
 interface CartLine {
   key: string
   itemId: string | null
@@ -30,8 +34,11 @@ interface CartLine {
   notes: string
 }
 
-function capitalize(s: string) {
-  return s.length ? s[0].toUpperCase() + s.slice(1) : s
+// Category names come from free-text data entry (some "CHAMPAGNE", some "Dairy") —
+// normalize to Title Case for display only, so the filter chips read consistently
+// regardless of how a category was originally typed in.
+function toTitleCase(s: string) {
+  return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function compressImage(file: File): Promise<string> {
@@ -72,7 +79,7 @@ function RequestOrderContent() {
   const [loading, setLoading] = useState(!!linkToken)
 
   const [search, setSearch] = useState('')
-  const [activeType, setActiveType] = useState<'All' | PurchaseItemType>('All')
+  const [activeType, setActiveType] = useState<'All' | PurchaseItemType>('BEVERAGE')
   const [activeCat, setActiveCat] = useState('All')
 
   const [cart, setCart] = useState<CartLine[]>([])
@@ -85,10 +92,14 @@ function RequestOrderContent() {
   const [neededByDate, setNeededByDate] = useState('')
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
+  const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
+  const [tripBookingId, setTripBookingId] = useState('')
+  const [tripBookingLabel, setTripBookingLabel] = useState('')
+  const [trips, setTrips] = useState<TripOption[]>([])
 
   const [customModal, setCustomModal] = useState(false)
   const [customForm, setCustomForm] = useState({ itemName: '', quantity: 1, unit: 'pcs', notes: '', images: [] as string[] })
-  const customFileRef = useRef<HTMLInputElement>(null)
+  const [customPhotoMenuOpen, setCustomPhotoMenuOpen] = useState(false)
   const [compressingCustomImage, setCompressingCustomImage] = useState(false)
   const { isDragging: isDraggingCustomImage, dropProps: customImageDropProps } = useFileDrop(
     files => processCustomImages(Array.from(files)), compressingCustomImage
@@ -106,12 +117,14 @@ function RequestOrderContent() {
       fetch(`/api/hr/request-orders/catalog${tenantQS}`),
       fetch(`/api/hr/request-orders/employees${tenantQS}`),
       fetch(`/api/hr/request-orders/locations${tenantQS}`),
-    ]).then(async ([cr, er, lr]) => {
+      fetch(`/api/hr/request-orders/trips${tenantQS}`),
+    ]).then(async ([cr, er, lr, tr]) => {
       if (!cr.ok || !er.ok || !lr.ok) { setFetchFailed(true); setLoading(false); return }
       const [c, e, l] = await Promise.all([cr.json(), er.json(), lr.json()])
       setCatalog(Array.isArray(c) ? c : [])
       setEmployees(Array.isArray(e) ? e : [])
       setLocations(Array.isArray(l) ? l : [])
+      if (tr.ok) setTrips(await tr.json())
       setLoading(false)
     })
   }, [tenantQS, linkToken])
@@ -126,6 +139,20 @@ function RequestOrderContent() {
     (activeCat === 'All' || i.category === activeCat) &&
     (!search || i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase()))
   ), [catalog, activeType, activeCat, search])
+
+  const PAGE_SIZE = 12
+  const [page, setPage] = useState(1)
+  // Jump back to page 1 whenever the filters change — adjusted during render (not
+  // an effect) per https://react.dev/learn/you-might-not-need-an-effect
+  const filterKey = `${activeType}|${activeCat}|${search}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   function addToCart(item: CatalogItem, unit: string) {
     const key = `${item.id}-${unit}`
@@ -144,18 +171,17 @@ function RequestOrderContent() {
     setCart(prev => prev.filter(l => l.key !== key))
   }
 
+  function setTripBooking(id: string, label: string) {
+    setTripBookingId(id)
+    setTripBookingLabel(label)
+  }
+
   async function processCustomImages(files: File[]) {
     if (!files.length) return
     setCompressingCustomImage(true)
     const compressed = await Promise.all(files.map(compressImage))
     setCustomForm(f => ({ ...f, images: [...f.images, ...compressed] }))
     setCompressingCustomImage(false)
-  }
-
-  async function handleCustomImages(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    e.target.value = ''
-    await processCustomImages(files)
   }
 
   function removeCustomImage(index: number) {
@@ -185,14 +211,17 @@ function RequestOrderContent() {
   async function submit() {
     setSubmitError('')
     if (!employeeId) { setSubmitError('Please select who is requesting'); return }
+    if (!locationId) { setSubmitError('Please select a delivery location'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
+    if (purpose === 'TRIP' && !tripBookingId) { setSubmitError('Please select which trip this request is for'); return }
     setSubmitting(true)
     const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
         neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
+        purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : null,
         items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
       }),
     })
@@ -205,6 +234,7 @@ function RequestOrderContent() {
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+    setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
     setSuccess(null); setCartOpen(false)
   }
 
@@ -235,8 +265,7 @@ function RequestOrderContent() {
           <p className="text-muted-foreground text-sm mt-2">
             Your request <span className="font-mono font-semibold text-foreground">{success.prNumber}</span> has been sent to the purchasing team for review.
           </p>
-          <button onClick={resetForm} className="mt-6 w-full py-2.5 rounded-lg text-white text-sm font-medium transition-colors" style={{ background: GOLD }}
-            onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)} onMouseLeave={e => (e.currentTarget.style.background = GOLD)}>
+          <button onClick={resetForm} className="mt-6 w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors">
             Make Another Request
           </button>
         </div>
@@ -248,27 +277,20 @@ function RequestOrderContent() {
     <div className="min-h-screen bg-[#fafaf8]">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Request Order</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Request Order</h1>
             <p className="text-muted-foreground text-xs mt-0.5">Request items for your vessel — no ERP login required</p>
           </div>
+          <button
+            onClick={() => setCartOpen(true)}
+            className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium bg-white hover:bg-muted transition-colors shrink-0"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
+          </button>
         </div>
       </div>
-
-      {/* ── Mobile floating cart button ── */}
-      <button
-        onClick={() => setCartOpen(true)}
-        className="lg:hidden fixed bottom-5 right-5 z-40 w-14 h-14 rounded-2xl shadow-lg flex items-center justify-center text-white transition-transform active:scale-95"
-        style={{ background: GOLD }}
-      >
-        <ShoppingCart className="h-6 w-6" />
-        {totalQty > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
-            {totalQty}
-          </span>
-        )}
-      </button>
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 p-4 sm:p-6">
         {/* ── Catalog ── */}
@@ -277,48 +299,42 @@ function RequestOrderContent() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <input
-                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                 placeholder="Search item name or SKU..."
                 value={search} onChange={e => setSearch(e.target.value)}
               />
             </div>
             <button
               onClick={() => setCustomModal(true)}
-              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border-2 border-dashed text-sm font-medium transition-colors shrink-0"
-              style={{ borderColor: GOLD, color: GOLD_DARK }}
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
             >
               <ImagePlus className="h-4 w-4" /> Custom Request
             </button>
           </div>
 
-          <div className="bg-white border rounded-lg p-3">
-            <div className="inline-flex gap-1 bg-muted rounded-md p-1 mb-2.5 flex-wrap">
-              <button onClick={() => { setActiveType('All'); setActiveCat('All') }}
-                className={cn('px-3 py-1.5 rounded text-xs font-semibold transition-colors', activeType === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground')}>
-                All Items
-              </button>
+          <div className="bg-white border rounded-xl shadow-sm p-3.5 space-y-3">
+            <div className="inline-flex gap-1 bg-muted rounded-lg p-1 flex-wrap">
               {ITEM_TYPES.map(t => (
                 <button key={t} onClick={() => { setActiveType(t); setActiveCat('All') }}
-                  className={cn('px-3 py-1.5 rounded text-xs font-semibold transition-colors', activeType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground')}>
+                  className={cn('px-3 py-1.5 rounded-md text-xs font-semibold transition-colors', activeType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
                   {ITEM_TYPE_LABELS[t]}
                 </button>
               ))}
             </div>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap pt-2.5 border-t">
               {categories.map(c => (
                 <button key={c} onClick={() => setActiveCat(c)}
                   className={cn('px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                    activeCat === c ? 'text-white border-transparent' : 'bg-white text-muted-foreground')}
-                  style={activeCat === c ? { background: GOLD } : undefined}>
-                  {c}
+                    activeCat === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground')}>
+                  {c === 'All' ? c : toTitleCase(c)}
                 </button>
               ))}
             </div>
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-              {[...Array(8)].map((_, i) => <div key={i} className="rounded-xl border bg-white h-52 animate-pulse" />)}
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+              {[...Array(12)].map((_, i) => <div key={i} className="rounded-xl border bg-white h-44 animate-pulse" />)}
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">
@@ -326,57 +342,55 @@ function RequestOrderContent() {
               <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-              {filtered.map(item => {
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+              {pageItems.map(item => {
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
                 const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
                 const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
                 return (
-                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col">
+                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
                       {item.imageKey ? <img src={item.imageKey} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
                     </div>
-                    <div className="p-3 flex flex-col flex-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: GOLD_DARK }}>{item.category}</span>
-                      <p className="text-sm font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                    <div className="p-2.5 flex flex-col flex-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
+                      <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
                       </p>
-                      <div className="mt-auto pt-2 space-y-1.5">
+                      <div className="mt-auto pt-2 space-y-1">
                         {baseLine ? (
                           <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeQty(baseLine.key, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Minus className="h-3.5 w-3.5" />
+                            <button onClick={() => changeQty(baseLine.key, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Minus className="h-3 w-3" />
                             </button>
-                            <span className="text-xs font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
-                            <button onClick={() => changeQty(baseLine.key, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Plus className="h-3.5 w-3.5" />
+                            <span className="text-[11px] font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
+                            <button onClick={() => changeQty(baseLine.key, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <Plus className="h-3 w-3" />
                             </button>
                           </div>
                         ) : (
                           <button onClick={() => addToCart(item, item.baseUnit)}
-                            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors" style={{ background: GOLD }}
-                            onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)} onMouseLeave={e => (e.currentTarget.style.background = GOLD)}>
-                            <Plus className="h-3.5 w-3.5" /> Add {capitalize(item.baseUnit)}
+                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
+                            <Plus className="h-3 w-3" /> Add {item.baseUnit}
                           </button>
                         )}
 
                         {hasPurchaseUnit && (
                           purchaseLine ? (
                             <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                              <button onClick={() => changeQty(purchaseLine.key, -1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Minus className="h-3.5 w-3.5" />
+                              <button onClick={() => changeQty(purchaseLine.key, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Minus className="h-3 w-3" />
                               </button>
-                              <span className="text-xs font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
-                              <button onClick={() => changeQty(purchaseLine.key, 1)} className="w-7 h-7 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Plus className="h-3.5 w-3.5" />
+                              <span className="text-[11px] font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
+                              <button onClick={() => changeQty(purchaseLine.key, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                                <Plus className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
                             <button onClick={() => addToCart(item, item.purchaseUnit!)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors"
-                              style={{ borderColor: GOLD, color: GOLD_DARK }}>
-                              <Plus className="h-3.5 w-3.5" /> Add {capitalize(item.purchaseUnit!)}
+                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
+                              <Plus className="h-3 w-3" /> Add {item.purchaseUnit}
                             </button>
                           )
                         )}
@@ -385,6 +399,41 @@ function RequestOrderContent() {
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-muted-foreground">
+                {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {Array.from({ length: pageCount }, (_, i) => i + 1)
+                  .filter(n => n === 1 || n === pageCount || Math.abs(n - currentPage) <= 1)
+                  .reduce<(number | 'ellipsis')[]>((acc, n) => {
+                    if (acc.length && n - (acc[acc.length - 1] as number) > 1) acc.push('ellipsis')
+                    acc.push(n)
+                    return acc
+                  }, [])
+                  .map((n, i) => n === 'ellipsis' ? (
+                    <span key={`e${i}`} className="w-8 text-center text-xs text-muted-foreground">…</span>
+                  ) : (
+                    <button key={n} onClick={() => setPage(n)}
+                      className={`h-8 w-8 rounded-md text-xs font-semibold transition-colors ${
+                        n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
+                      }`}>
+                      {n}
+                    </button>
+                  ))}
+                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -401,6 +450,7 @@ function RequestOrderContent() {
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent}
               urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+              purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
               submit={submit} submitting={submitting} submitError={submitError}
             />
           </div>
@@ -426,6 +476,7 @@ function RequestOrderContent() {
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent}
                 urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+                purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
               />
@@ -437,19 +488,19 @@ function RequestOrderContent() {
       {/* ── Custom Request Modal ── */}
       {customModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
               <div>
                 <h3 className="font-bold text-lg">Custom Request</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">For items not in the catalog — this won't create a new catalog item, it's just added to your request for purchasing to review</p>
               </div>
               <button onClick={() => setCustomModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
                   rows={3} placeholder="What do you need? Be as specific as possible..."
                   value={customForm.itemName} onChange={e => setCustomForm(f => ({ ...f, itemName: e.target.value }))} autoFocus
                 />
@@ -457,19 +508,19 @@ function RequestOrderContent() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
-                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
                     value={customForm.quantity} onChange={e => setCustomForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit</label>
-                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]" placeholder="pcs"
+                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" placeholder="pcs"
                     value={customForm.unit} onChange={e => setCustomForm(f => ({ ...f, unit: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
                   rows={2} placeholder="Optional additional detail..."
                   value={customForm.notes} onChange={e => setCustomForm(f => ({ ...f, notes: e.target.value }))}
                 />
@@ -485,26 +536,110 @@ function RequestOrderContent() {
                       </button>
                     </div>
                   ))}
-                  <button onClick={() => customFileRef.current?.click()} disabled={compressingCustomImage} {...customImageDropProps}
-                    className={`aspect-square flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
-                      isDraggingCustomImage ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-[#8a7040]' : 'text-muted-foreground hover:bg-muted/30'
-                    }`}>
-                    <Camera className="h-5 w-5" />
-                    <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
-                  </button>
+                  <div className="relative aspect-square">
+                    <button onClick={() => setCustomPhotoMenuOpen(o => !o)} disabled={compressingCustomImage} {...customImageDropProps}
+                      className={`w-full h-full flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
+                        isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+                      }`}>
+                      <Camera className="h-5 w-5" />
+                      <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
+                    </button>
+                    <PhotoSourceMenu open={customPhotoMenuOpen} onClose={() => setCustomPhotoMenuOpen(false)} onFiles={processCustomImages} multiple />
+                  </div>
                 </div>
-                <input ref={customFileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleCustomImages} />
               </div>
             </div>
-            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
+            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
-                className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors" style={{ background: GOLD }}>
+                className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">
                 Add to Request
               </button>
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+function fmtDate(s: string) {
+  return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// Trip picker for the "Purpose: Trip" option — same shape/behavior as the internal PR
+// page's trip picker (search by booking code/guest/destination, filter by yacht).
+function TripCombobox({ value, valueLabel, trips, onChange }: {
+  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [yachtFilter, setYachtFilter] = useState('')
+  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
+  const q = search.trim().toLowerCase()
+  const opts = trips.filter(t => {
+    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
+    if (!q) return true
+    return t.bookingCode.toLowerCase().includes(q)
+      || (t.destination ?? '').toLowerCase().includes(q)
+      || t.leadGuestName.toLowerCase().includes(q)
+      || t.guestNames.some(n => n.toLowerCase().includes(q))
+  }).slice(0, 30)
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip...'}</span>
+        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-72 flex flex-col">
+            <div className="p-2 border-b shrink-0 space-y-1.5">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <select className="w-full h-8 border rounded px-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
+                <option value="">All yachts</option>
+                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No trips found</p>
+              )}
+              {opts.map(t => {
+                const label = `${t.bookingCode}${t.yacht ? ` — ${t.yacht.name}` : ''}`
+                return (
+                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent/30 flex items-start gap-2 border-b last:border-0 transition-colors">
+                    <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{t.bookingCode}</span>
+                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
+                        </span>
+                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.yacht?.name ?? '—'} · {fmtDate(t.startDate)}–{fmtDate(t.endDate)}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
@@ -516,6 +651,7 @@ function RequestSidebar({
   locations, locationId, setLocationId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
   submit, submitting, submitError,
   embedded = false,
 }: {
@@ -527,14 +663,17 @@ function RequestSidebar({
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
+  purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
+  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trips: TripOption[]
   submit: () => void; submitting: boolean; submitError: string
   embedded?: boolean
 }) {
   return (
-    <div className={cn('bg-white rounded-xl border flex flex-col', !embedded && 'max-h-[calc(100vh-104px)]')}>
+    <div className={cn('bg-white rounded-xl border shadow-sm flex flex-col', !embedded && 'max-h-[calc(100vh-104px)]')}>
       {!embedded && (
-        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0">
-          <ShoppingCart className="h-4 w-4" style={{ color: GOLD_DARK }} />
+        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0 bg-amber-50/60 rounded-t-xl">
+          <ShoppingCart className="h-4 w-4 text-amber-700" />
           <h3 className="font-semibold text-sm">Your Request {cart.length > 0 && `(${cart.length})`}</h3>
         </div>
       )}
@@ -585,14 +724,32 @@ function RequestSidebar({
 
         {/* Vessel */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel / Location</label>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel / Location <span className="text-red-500">*</span></label>
           <select
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
             value={locationId} onChange={e => setLocationId(e.target.value)}
           >
             <option value="">Select vessel or location…</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
+        </div>
+
+        {/* Purpose */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-red-500">*</span></label>
+          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
+            <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
+              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              Stock & Inventory
+            </button>
+            <button type="button" onClick={() => setPurpose('TRIP')}
+              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              Trip
+            </button>
+          </div>
+          {purpose === 'TRIP' && (
+            <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
+          )}
         </div>
 
         {/* Items */}
@@ -640,7 +797,7 @@ function RequestSidebar({
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
           <input
             type="date"
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
             value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
           />
         </div>
@@ -664,7 +821,7 @@ function RequestSidebar({
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
           <textarea
-            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
             rows={2} placeholder="Anything else purchasing should know..."
             value={notes} onChange={e => setNotes(e.target.value)}
           />
@@ -674,12 +831,10 @@ function RequestSidebar({
       <div className="p-5 border-t shrink-0">
         <button
           onClick={submit} disabled={submitting || cart.length === 0}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg text-white text-sm font-semibold disabled:opacity-40 transition-colors"
-          style={{ background: GOLD }}
-          onMouseEnter={e => { if (!submitting && cart.length) e.currentTarget.style.background = GOLD_DARK }}
-          onMouseLeave={e => (e.currentTarget.style.background = GOLD)}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
         >
-          <Send className="h-4 w-4" /> {submitting ? 'Submitting…' : 'Submit Request'}
+          {submitting ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+          {submitting ? 'Submitting…' : 'Submit Request'}
         </button>
       </div>
     </div>

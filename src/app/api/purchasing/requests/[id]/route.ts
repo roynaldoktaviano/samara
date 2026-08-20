@@ -25,6 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           quotationApprover: { select: { id: true, name: true } },
           quotationApprovedBy: { select: { id: true, name: true } },
           quotationRejectedBy: { select: { id: true, name: true } },
+          verifyRejectedBy: { select: { id: true, name: true } },
         },
       },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
@@ -33,6 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       convertedBy: { select: { id: true, name: true } },
       rejectedBy: { select: { id: true, name: true } },
       cancelledBy: { select: { id: true, name: true } },
+      tripBooking: { select: { id: true, bookingCode: true, yacht: { select: { name: true } } } },
       // Lets the frontend show how far conversion got — the detail Timeline fetches each
       // PO's full detail separately (GET /api/purchasing/orders/[id]) for its complete
       // journey, so only enough is needed here to know which POs exist and their status.
@@ -118,18 +120,96 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { status, transferFulfillments } = body as {
-    status: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
+  const {
+    status, transferFulfillments, edit,
+    deliveryLocationId, requestedByEmployeeId, notes, neededByDate, isUrgent, urgentReason, items: editItems,
+    purpose, tripBookingId,
+  } = body as {
+    status?: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
     transferFulfillments?: { requestItemId: string; fromLocationId: string }[]
+    edit?: boolean
+    deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
+    neededByDate?: string; isUrgent?: boolean; urgentReason?: string
+    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[] }[]
+    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
   }
+
+  // Editing a still-DRAFT request — reuses the same validation as creating one (POST
+  // /api/purchasing/requests), since the frontend reuses the same form. Only allowed
+  // before Verify: once Purchasing has started triaging items (ON_PROCESS+), the item
+  // list is no longer a clean slate to overwrite.
+  if (edit) {
+    const current = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
+    if (!current) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    if (current.status !== 'DRAFT') {
+      return NextResponse.json({ error: 'Only a request that has not been verified yet can be edited' }, { status: 409 })
+    }
+    if (!deliveryLocationId) return NextResponse.json({ error: 'Please select a delivery location' }, { status: 400 })
+    if (!editItems || !Array.isArray(editItems) || editItems.length === 0) {
+      return NextResponse.json({ error: 'Add at least one item to the request' }, { status: 400 })
+    }
+    for (const it of editItems) {
+      if (!it.itemName?.trim()) return NextResponse.json({ error: 'Every item needs a name or description' }, { status: 400 })
+      if (!it.quantity || Number(it.quantity) <= 0) return NextResponse.json({ error: `Quantity for "${it.itemName}" must be greater than 0` }, { status: 400 })
+    }
+    if (isUrgent && !urgentReason?.trim()) {
+      return NextResponse.json({ error: 'Please explain why this request is urgent' }, { status: 400 })
+    }
+    if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
+      return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
+    }
+    if (purpose === 'TRIP' && !tripBookingId) {
+      return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
+    }
+    const loc = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { id: true } })
+    if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
+    if (purpose === 'TRIP' && tripBookingId) {
+      const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
+      if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
+    }
+
+    await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
+    const updated = await db.purchaseRequest.update({
+      where: { id },
+      data: {
+        deliveryLocationId,
+        requestedByEmployeeId: requestedByEmployeeId || null,
+        notes: notes?.trim() || null,
+        neededByDate: neededByDate ? new Date(neededByDate) : null,
+        isUrgent: !!isUrgent,
+        urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
+        purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
+        tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
+        updatedAt: new Date(),
+        items: {
+          create: editItems.map(it => ({
+            id: crypto.randomUUID(),
+            itemId: it.itemId || null,
+            itemName: it.itemName,
+            quantity: it.quantity,
+            unit: it.unit,
+            estimatedCost: it.estimatedCost ?? 0,
+            supplierId: it.supplierId || null,
+            supplierName: it.supplierName || null,
+            notes: it.notes || null,
+            imageKeys: it.imageKeys ?? [],
+          })),
+        },
+      },
+    })
+    emitTenantEvent(session.user.tenantId, 'purchasing-requests')
+    return NextResponse.json(updated)
+  }
+
   const valid = ['DRAFT', 'ON_PROCESS', 'CONVERTED', 'REJECTED', 'CANCELLED']
-  if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+  if (!status || !valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
   // Which items are actually ready to convert this round. An item blocks itself (not the
   // rest of the PR) when it needs quotation approval (band B+, no known-supplier history)
   // and hasn't gotten it yet — pending or rejected are treated the same here: not ready.
-  // Already-converted items (a prior partial-convert pass) are excluded too, so re-running
-  // convert as more items clear approval never re-processes or duplicates them.
+  // Already-converted items (a prior partial-convert pass) and items rejected at verify
+  // triage are excluded too — a verify-rejected item is a deliberate, permanent exclusion
+  // (never ready, never blocking), not a pending approval like the quotation gate below.
   let readyItemIds: Set<string> | null = null
   let blockedItemNames: string[] = []
   if (status === 'CONVERTED') {
@@ -141,11 +221,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const items = await db.purchaseRequestItem.findMany({
       where: { requestId: id },
-      select: { id: true, itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true, convertedAt: true },
+      select: { id: true, itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true, convertedAt: true, verifyRejectedAt: true },
     })
+    const settled = items.filter(i => i.convertedAt || i.verifyRejectedAt)
     const ready = new Set<string>()
     for (const item of items) {
-      if (item.convertedAt) continue // already converted in an earlier pass
+      if (item.convertedAt || item.verifyRejectedAt) continue // already converted, or rejected at triage — settled, never blocks
       if (item.quotationApprovedAt || !(await itemRequiresQuotationApproval(db, item))) {
         ready.add(item.id)
       } else {
@@ -154,8 +235,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (ready.size === 0) {
       return NextResponse.json({
-        error: items.every(i => i.convertedAt)
-          ? 'All items are already converted'
+        error: settled.length === items.length
+          ? 'All items are already converted or were rejected'
           : `No items are ready to convert yet — supplier selection still needs approval for: ${blockedItemNames.join(', ')}`,
       }, { status: 409 })
     }
@@ -257,10 +338,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         unitCost: it.estimatedCost,
       }))
 
+      let groupPoId: string
       if (existingDraft) {
         await db.purchaseOrder.update({ where: { id: existingDraft.id }, data: { items: { create: itemsCreate } } })
         createdPoNumbers.push(existingDraft.poNumber)
         createdPoIds.push(existingDraft.id)
+        groupPoId = existingDraft.id
       } else {
         const last = await db.purchaseOrder.findFirst({ where: { poNumber: { startsWith: prefix } }, orderBy: { poNumber: 'desc' }, select: { poNumber: true } })
         const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
@@ -290,7 +373,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         })
         createdPoNumbers.push(poNumber)
         createdPoIds.push(poId)
+        groupPoId = poId
       }
+      await db.purchaseRequestItem.updateMany({ where: { id: { in: groupItems.map(it => it.id) } }, data: { convertedPoId: groupPoId } })
       for (const it of groupItems) processedItemIds.add(it.id)
     }
   }

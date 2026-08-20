@@ -919,39 +919,42 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </button>
         )}
       </div>
-      {/* Grid on tablet/mobile (2 filters per row, tidy) — reverts to the desktop
-          flex-wrap row at lg where there's room for everything on one line. */}
-      <div className="grid grid-cols-2 gap-2 desktop:flex desktop:flex-wrap desktop:items-center">
-        <div className="relative w-full desktop:w-56">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+      {/* 4-up grid so the filter row stays compact — 2-up on narrow/mobile widths.
+          Search gets its own full-width row above, since it's typed into (not picked
+          from a fixed list) and reads oddly squeezed next to the dropdowns. */}
+      <div className="space-y-2.5 rounded-lg border bg-muted/20 px-3 py-2.5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
-            className="h-9 w-full border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
+            className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors"
             placeholder="Search item..."
             value={itemSearch}
             onChange={e => { setItemSearch(e.target.value); setPage(1); setCardPage(1) }}
           />
         </div>
-        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All suppliers</option>
           {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All destinations</option>
           {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
           <option value="">All requesters</option>
           {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input type="date" className="h-9 w-full desktop:w-auto border rounded-md px-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
+        <input type="date" className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
         {hasActiveFilters && (
           <button
             onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1); setCardPage(1) }}
-            className="col-span-2 desktop:col-span-1 text-left desktop:text-center text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            className="col-span-2 sm:col-span-3 text-right text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
           >
             Clear filters
           </button>
         )}
+        </div>
       </div>
       {/* Desktop table — full column set, only makes sense at lg+ width */}
       <div className="hidden desktop:block rounded-lg border overflow-hidden">
