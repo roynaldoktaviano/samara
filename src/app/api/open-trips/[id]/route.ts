@@ -57,7 +57,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       b.guests.forEach(g => {
         if (g.cabinId) {
           if (!occupancyMap[g.cabinId]) occupancyMap[g.cabinId] = { guests: [], bookingStatus: b.status, salesperson: sales, salespersonId: b.salespersonId ?? null, bookingId: b.id, bookingCode: b.bookingCode }
-          occupancyMap[g.cabinId].guests.push({ id: g.customer.id, bgId: g.id, name: g.customer.name })
+          // Placeholder pax (cabin reserved, name TBD) has no customer yet — still occupies the seat.
+          occupancyMap[g.cabinId].guests.push({ id: g.customer?.id ?? g.id, bgId: g.id, name: g.customer?.name ?? 'TBD' })
         }
       })
     })

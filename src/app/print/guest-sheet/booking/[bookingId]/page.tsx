@@ -106,6 +106,8 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
   const dateRange   = fmtRange(new Date(startDate), new Date(endDate))
   const sub         = `${dateRange}  ·  ${tripTitle}${yachtName ? `  ·  ${yachtName}` : ''}`
   const salesperson = b.salesperson || b.agent?.name || 'Direct'
+  // Placeholder pax (cabin reserved, name not filled in yet) has no customer details to print.
+  const namedGuests = booking.guests.filter((bg): bg is typeof bg & { customer: NonNullable<typeof bg.customer> } => !!bg.customer)
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, color: DARK, background: 'white' }}>
@@ -127,12 +129,12 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
       <div className="no-print" style={{ padding: '16px 32px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <p style={{ fontWeight: 700, fontSize: 14, color: DARK }}>{b.bookingCode} — All Guest Sheets</p>
-          <p style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{b.guests.length} guest{b.guests.length !== 1 ? 's' : ''} · {tripTitle}</p>
+          <p style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{namedGuests.length} guest{namedGuests.length !== 1 ? 's' : ''} · {tripTitle}</p>
         </div>
         <PrintButton label="Print / Save All as PDF" />
       </div>
 
-      {booking.guests.map((bg, idx) => {
+      {namedGuests.map((bg, idx) => {
         const c   = bg.customer
         const med  = (c as any).medicalData  as Record<string,string> | null
         const food = (c as any).foodData     as Record<string,string> | null
@@ -146,7 +148,7 @@ export default async function BulkGuestSheetPage({ params }: { params: Promise<{
           <div key={bg.id} className="page-sheet">
             {/* Page number indicator (screen only) */}
             <div className="no-print" style={{ padding: '8px 32px 0', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-              Guest {idx + 1} of {booking.guests.length}
+              Guest {idx + 1} of {namedGuests.length}
             </div>
 
             <Banner sub={sub} name={company.name} logo={company.logoUrl} />

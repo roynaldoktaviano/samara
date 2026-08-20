@@ -100,10 +100,11 @@ export default async function OpenTripBulkGuestSheetPage({ params }: { params: P
   const dateRange = fmtRange(new Date(trip.startDate), new Date(trip.endDate))
   const sub       = `${dateRange}  ·  ${tripTitle}${trip.yacht ? `  ·  ${trip.yacht.name}` : ''}`
 
-  // Flatten all guests across all bookings
+  // Flatten all guests across all bookings — placeholder pax (cabin reserved, name TBD)
+  // has no customer details to print, so it's skipped here.
   const allGuests = trip.bookings.flatMap(b =>
-    b.guests.map(bg => ({
-      bg,
+    b.guests.filter(bg => bg.customer).map(bg => ({
+      bg: bg as typeof bg & { customer: NonNullable<typeof bg.customer> },
       booking: b,
       salesperson: b.salesperson || b.agent?.name || 'Direct',
     }))

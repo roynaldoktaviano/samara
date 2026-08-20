@@ -108,13 +108,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     capacity,
   }
 
-  const guests = booking.guests.map((g: any) => ({
-    bookingGuestId: g.id,
-    isLead: g.isLead,
-    ...g.customer,
-  }))
+  // Placeholder pax (cabin reserved, name not filled in yet) have no customer to show/fill
+  // out in the guest-facing form — they're not sales's problem to expose to the guest.
+  const guests = booking.guests
+    .filter((g: any) => g.customer)
+    .map((g: any) => ({
+      bookingGuestId: g.id,
+      isLead: g.isLead,
+      ...g.customer,
+    }))
 
-  const leadGuest = booking.guests.find((g: any) => g.isLead) ?? booking.guests[0]
+  const leadGuest = booking.guests.find((g: any) => g.isLead && g.customer) ?? booking.guests.find((g: any) => g.customer)
   const travel = leadGuest ? {
     arrivalPickupTime:   leadGuest.arrivalPickupTime   ?? '',
     arrivalHotel:        leadGuest.arrivalHotel         ?? '',
@@ -126,9 +130,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
   // Medical/food/drinks are answered once for the whole booking (mirrors travel) — sourced from
   // the lead guest's record, which is where shared PUTs below write the answers to every guest.
-  const medical = leadGuest?.customer.medicalData ?? {}
-  const food    = leadGuest?.customer.foodData    ?? {}
-  const drinks  = leadGuest?.customer.drinksData  ?? {}
+  const medical = leadGuest?.customer?.medicalData ?? {}
+  const food    = leadGuest?.customer?.foodData    ?? {}
+  const drinks  = leadGuest?.customer?.drinksData  ?? {}
 
   return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, medical, food, drinks, expiresAt: booking.masterFormExpiresAt })
 }
@@ -180,8 +184,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
   // answer is written to every guest's record rather than tracked per person.
   if (section === 'medical' || section === 'food' || section === 'drinks') {
     const fieldMap: Record<string, string> = { medical: 'medicalData', food: 'foodData', drinks: 'drinksData' }
+    const namedGuestIds = booking.guests.map((g: any) => g.customerId).filter((id: string | null): id is string => !!id)
     await db.customer.updateMany({
-      where: { id: { in: booking.guests.map((g: any) => g.customerId) } },
+      where: { id: { in: namedGuestIds } },
       data: { [fieldMap[section]]: data },
     })
     return NextResponse.json({ ok: true })

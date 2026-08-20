@@ -160,7 +160,6 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [guests,    setGuests]  = useState<SelectedGuest[]>([])
   const [custSearch,setCSearch]       = useState('')
   const [custFocused,setCustFocused]  = useState(false)
-  const [placeholderSaving, setPlaceholderSaving] = useState(false)
   const [crewReq,    setCrewReq]    = useState(false)
   const [hasDiving,        setHasDiving]        = useState(false)
   const [hasSurfing,       setHasSurfing]       = useState(false)
@@ -286,13 +285,19 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setPhase('steps')
 
         if (b.guests?.length) {
-          setGuests(b.guests.map((g: any) => ({
-            customerId: g.customer?.id ?? g.customerId,
-            name:       g.customer?.name ?? '',
-            phone:      g.customer?.phone ?? '',
-            cabinId:    g.cabin?.id ?? g.cabinId ?? '',
-            isLead:     g.isLead ?? true,
-          })))
+          setGuests(b.guests.map((g: any) => {
+            const customerId = g.customer?.id ?? g.customerId
+            return {
+              // Defensive: a hold booking shouldn't carry placeholder pax, but never load one
+              // with a `null` customerId into wizard state — it must stay a synthetic string.
+              customerId: customerId ?? `placeholder:${g.id}`,
+              name:       g.customer?.name ?? '',
+              phone:      g.customer?.phone ?? '',
+              cabinId:    g.cabin?.id ?? g.cabinId ?? '',
+              isLead:     customerId ? (g.isLead ?? true) : false,
+              isPlaceholder: !customerId,
+            }
+          }))
           const holdCabOcc: Record<string, number> = {}
           b.guests.forEach((g: any) => {
             const cid = g.cabin?.id ?? g.cabinId
@@ -725,24 +730,37 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     } finally { setQuickSaving(false) }
   }
 
-  const addPlaceholderGuest = async () => {
+  // Placeholder pax: cabin reserved, no real guest yet — never creates a Customer record.
+  // Reuses the same synthetic-id trick as CRM leads (`lead:<id>` above) so every existing
+  // customerId-keyed helper (removeGuest, updateGuest, cabin drag/drop, pill rendering) keeps
+  // working unchanged. The server turns `placeholder:` ids into a bare BookingGuest row with
+  // customerId: null (see POST /api/bookings) — sales fills in the real guest later from the
+  // booking detail page.
+  const newPlaceholderGuest = (cabinId: string): SelectedGuest => ({
+    customerId: `placeholder:${crypto.randomUUID()}`, name: '', cabinId, isLead: false, isPlaceholder: true,
+  })
+
+  const addPlaceholderGuest = () => {
+    if (!guests.some(g => g.isLead)) return
+    setGuests(prev => [...prev, newPlaceholderGuest('')])
+  }
+
+  // Books a cabin directly from its card, without the manual "add placeholder → drag onto cabin"
+  // dance: the lead guest fills the cabin first if they aren't placed anywhere yet, then any
+  // remaining pax become placeholders pre-assigned to this cabin.
+  const addPaxToCabin = (cabinId: string, count: number) => {
     const leadGuest = guests.find(g => g.isLead)
-    if (!leadGuest) return
-    const leadName = leadGuest.name
-    const num = guests.filter(g => g.isPlaceholder).length + 1
-    const name = `${leadName} - TBD ${num}`
-    setPlaceholderSaving(true)
-    try {
-      const res = await fetch('/api/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, firstName: leadName, lastName: `TBD ${num}` }),
-      })
-      if (!res.ok) return
-      const created = await res.json() as CustomerOpt
-      setCustomers(prev => [created, ...prev])
-      setGuests(prev => [...prev, { customerId: created.id, name, cabinId: '', isLead: false, isPlaceholder: true }])
-    } finally { setPlaceholderSaving(false) }
+    if (!leadGuest || count <= 0) return
+    setGuests(prev => {
+      let remaining = count
+      let next = prev
+      if (!leadGuest.cabinId) {
+        next = next.map(g => g.customerId === leadGuest.customerId ? { ...g, cabinId } : g)
+        remaining -= 1
+      }
+      const additions = Array.from({ length: Math.max(0, remaining) }, () => newPlaceholderGuest(cabinId))
+      return [...next, ...additions]
+    })
   }
 
   /* service helpers */
@@ -837,6 +855,15 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       })()
       const resolvedNotes = [notes, extraNote].filter(Boolean).join('\n') || undefined
 
+      // Turns a wizard-local guest into the wire shape the server expects. Placeholders
+      // (synthetic `placeholder:` customerId, never a real Customer) send isPlaceholder
+      // instead of a customerId — see POST /api/bookings and PATCH /api/bookings/[id].
+      const guestPayload = (g: SelectedGuest) => g.isPlaceholder
+        ? { isPlaceholder: true, cabinId: g.cabinId || undefined, isLead: false }
+        : g.leadId
+        ? { leadId: g.leadId, cabinId: g.cabinId || undefined, isLead: g.isLead }
+        : { customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead }
+
       // ── Complete on-hold booking via PATCH ──
       if (completeBookingId) {
         const payload = {
@@ -853,7 +880,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           hasSurfing:      tripType === 'PRIVATE_CHARTER' ? hasSurfing : false,
           hasPhotoPackage: hasPhotoPackage,
 notes:         resolvedNotes,
-          guests: guests.map(g => ({ customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead })),
+          guests: guests.map(guestPayload),
           services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         }
         const res = await fetch(`/api/bookings/${completeBookingId}`, {
@@ -896,9 +923,7 @@ notes:         resolvedNotes,
         hasSurfing:      tripType === 'PRIVATE_CHARTER' ? hasSurfing : false,
         hasPhotoPackage: hasPhotoPackage,
         notes:           resolvedNotes,
-        guests: guests.map(g => g.leadId
-          ? { leadId: g.leadId, cabinId: g.cabinId || undefined, isLead: g.isLead }
-          : { customerId: g.customerId, cabinId: g.cabinId || undefined, isLead: g.isLead }),
+        guests: guests.map(guestPayload),
         services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
       }
@@ -1699,6 +1724,7 @@ notes:         resolvedNotes,
   ════════════════════════════════════════════ */
   const step2 = () => {
     const unassigned = guests.filter(g => !g.cabinId)
+    const hasLead = guests.some(g => g.isLead)
 
     const dndStart = (e: React.DragEvent, customerId: string) => {
       e.dataTransfer.setData('guestId', customerId)
@@ -1760,7 +1786,7 @@ notes:         resolvedNotes,
         {g.isInfant && <span className="text-[9px] font-bold text-rose-500 shrink-0 bg-rose-50 px-1 rounded">Infant</span>}
         {g.isChild && !g.isInfant && <span className="text-[9px] font-bold text-blue-600 shrink-0 bg-blue-50 px-1 rounded">Child</span>}
         {g.isPlaceholder && <span className="text-[9px] font-bold text-orange-600 shrink-0 bg-orange-50 px-1 rounded">TBD</span>}
-        <span className="truncate max-w-24">{g.name}</span>
+        <span className="truncate max-w-24">{g.isPlaceholder ? 'Pending guest' : g.name}</span>
         <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
           className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
           <X className="w-2.5 h-2.5" />
@@ -2073,13 +2099,11 @@ notes:         resolvedNotes,
               <div className="mt-1">
                 <button
                   type="button"
-                  disabled={placeholderSaving || !hasLead}
+                  disabled={!hasLead}
                   onMouseDown={e => { e.preventDefault(); addPlaceholderGuest() }}
                   className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-1 py-1 rounded transition-colors disabled:opacity-50 disabled:hover:text-muted-foreground"
                 >
-                  {placeholderSaving
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <Plus className="h-3 w-3" />}
+                  <Plus className="h-3 w-3" />
                   Add guest (name unknown)
                 </button>
                 {!hasLead && (
@@ -2254,7 +2278,7 @@ notes:         resolvedNotes,
                 <SelectValue placeholder="Select lead guest…" />
               </SelectTrigger>
               <SelectContent>
-                {guests.filter(g => !g.isChild).map(g => (
+                {guests.filter(g => !g.isChild && !g.isPlaceholder).map(g => (
                   <SelectItem key={g.customerId} value={g.customerId}>{g.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -2412,7 +2436,7 @@ notes:         resolvedNotes,
                           }}
                         />
                       </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
+                      <div className="flex flex-wrap gap-1 mt-1 items-center">
                         {isBlockedByOther && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
                             Reserved by {cabinSalesperson[c.id] || 'another booking'}
@@ -2420,7 +2444,27 @@ notes:         resolvedNotes,
                         )}
                         {!isBlockedByOther && cabinGuests.map(g => pill(g, true))}
                         {!isFull && !isBlockedByOther && cabinGuests.length === 0 && (
-                          <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
+                          hasLead ? (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); addPaxToCabin(c.id, 1) }}
+                              className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-border hover:border-muted-foreground/40 transition-colors disabled:opacity-50"
+                            >
+                              <Plus className="w-2.5 h-2.5" /> Book cabin
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/60 italic">drop here</span>
+                          )
+                        )}
+                        {!isFull && !isBlockedByOther && cabinGuests.length > 0 && hasLead && (
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); addPaxToCabin(c.id, 1) }}
+                            title="Add another pax to this cabin"
+                            className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-border hover:border-muted-foreground/40 transition-colors disabled:opacity-50"
+                          >
+                            <Plus className="w-2.5 h-2.5" /> Pax
+                          </button>
                         )}
                         {isFull && !isBlockedByOther && cabinGuests.length === 0 && (
                           <span className="text-[10px] text-muted-foreground/60 italic">infant only</span>

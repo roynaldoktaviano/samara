@@ -44,12 +44,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (action === 'close') {
-      const { payMethod } = body
+      const { payMethod, employeeId, employeeName, complimentaryReason } = body
       if (!payMethod) return NextResponse.json({ error: 'payMethod is required' }, { status: 400 })
+      if (payMethod === 'Complimentary' && (!employeeId || !complimentaryReason?.trim())) {
+        return NextResponse.json({ error: 'Complimentary requires a staff member and a reason' }, { status: 400 })
+      }
 
       const result = await withRetry(db, () => db.cashierSale.update({
         where: { id },
-        data: { status: 'closed', payMethod, closedAt: new Date() },
+        data: {
+          status: 'closed', payMethod, closedAt: new Date(),
+          ...(employeeId ? { employeeId, employeeName: employeeName || null } : {}),
+          ...(payMethod === 'Complimentary' ? { complimentaryReason: complimentaryReason || null } : {}),
+        },
         include: {
           items: { orderBy: { createdAt: 'asc' } },
           booking: { select: { bookingCode: true } },

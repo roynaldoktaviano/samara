@@ -20,7 +20,7 @@ import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, ChevronLeft, Clock, Users,
-  Link2, Copy, Check, ExternalLink, Crown, FileCheck,
+  Link2, Copy, Check, ExternalLink, Crown, FileCheck, UserPlus,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -73,8 +73,8 @@ interface BookingRecord {
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
   salespersonId?: string | null
   guests: Array<{
-    id: string; isLead: boolean; customerId: string
-    customer?: { name: string }; cabin?: { id: string; name: string }
+    id: string; isLead: boolean; customerId: string | null
+    customer?: { name: string } | null; cabin?: { id: string; name: string }
     arrivalPickupTime?: string | null; arrivalHotel?: string | null; arrivalFlight?: string | null
     departurePickupTime?: string | null; departureHotel?: string | null; departureFlight?: string | null
   }>
@@ -323,6 +323,15 @@ export default function Bookings() {
   const [addGuestNewPhone,    setAddGuestNewPhone]    = useState('')
   const [addGuestNewEmail,    setAddGuestNewEmail]    = useState('')
   const [addGuestCreating,    setAddGuestCreating]    = useState(false)
+  // "Pending guest" mode: reserve N cabin slots without picking/creating a Customer —
+  // mirrors the wizard's "Book cabin" button, just from an already-created booking.
+  const [addPendingMode,      setAddPendingMode]      = useState(false)
+  const [addPendingCount,     setAddPendingCount]     = useState(1)
+  // Set when the Add Guest modal is repurposed to attach a real customer to an existing
+  // placeholder BookingGuest row (cabin already reserved, name still TBD) instead of adding
+  // a brand-new guest to the booking.
+  const [fillGuestId,         setFillGuestId]         = useState<string | null>(null)
+  const [fillGuestSaving,     setFillGuestSaving]     = useState(false)
   const [deletingGuestId,     setDeletingGuestId]     = useState<string | null>(null)
   const [settingLeadId,       setSettingLeadId]       = useState<string | null>(null)
   /* reschedule inside edit dialog */
@@ -833,6 +842,16 @@ export default function Bookings() {
       await openDetail(fresh ?? detailBooking!)
     } catch (e) { console.error(e) }
     finally { setCabinSaving(null) }
+  }
+
+  const openFillGuestModal = async (bgId: string) => {
+    setFillGuestId(bgId)
+    setAddGuestSelected(new Set()); setAddGuestSearch(''); setAddGuestCabinId(''); setAddGuestOpen(true)
+    setAddPendingMode(false); setAddPendingCount(1)
+    setAddGuestLoading(true)
+    const data = await fetch('/api/customers?limit=200').then(r => r.json()).catch(() => ({ customers: [] }))
+    setAddGuestAll(data.customers ?? data ?? [])
+    setAddGuestLoading(false)
   }
 
   const handleGenerateGuestLink = async (customerId: string, bgId: string) => {
@@ -2370,8 +2389,10 @@ export default function Bookings() {
                 if (!t.departureHotel)    travelMissing.push('Departure hotel/airport')
 
                 const guestMissing: Record<string, string[]> = {}
-                const allLoaded = travelBooking.guests.every(g => travelCustomers[g.customerId])
+                // Placeholder guests (no customerId yet) have nothing to load or validate here.
+                const allLoaded = travelBooking.guests.every(g => !g.customerId || travelCustomers[g.customerId])
                 travelBooking.guests.forEach(g => {
+                  if (!g.customerId) return
                   const c = travelCustomers[g.customerId]
                   if (!c) return
                   const m: string[] = []
@@ -2477,21 +2498,21 @@ export default function Bookings() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
-                                  {allLoaded && (
+                                  {allLoaded && g.customerId && (
                                     <Button
                                       variant="ghost" size="sm"
                                       className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                                      onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id) }}
+                                      onClick={() => { setEditGuestId(g.customerId!); setEditGuestBgId(g.id) }}
                                     >
                                       <Pencil className="h-3 w-3" /> Edits
                                     </Button>
                                   )}
                                   <Button
                                     variant="ghost" size="sm"
-                                    disabled={!gOk || !allLoaded}
+                                    disabled={!g.customerId || !gOk || !allLoaded}
                                     className="h-7 px-2 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                                     onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                                    title={!gOk ? 'Complete guest data first' : undefined}
+                                    title={!g.customerId ? 'Guest details not filled in yet' : !gOk ? 'Complete guest data first' : undefined}
                                   >
                                     <FileText className="h-3 w-3 mr-1" /> Guest Sheet
                                   </Button>
@@ -2500,7 +2521,7 @@ export default function Bookings() {
                               {missing.length > 0 && (
                                 <p className="pb-1.5 ml-9 text-[10px] text-red-500">Missing: {missing.join(', ')}</p>
                               )}
-                              {!allLoaded && !travelCustomers[g.customerId] && (
+                              {!allLoaded && g.customerId && !travelCustomers[g.customerId] && (
                                 <p className="pb-1.5 ml-9 text-[10px] text-muted-foreground animate-pulse">Loading…</p>
                               )}
                             </div>
@@ -2912,6 +2933,7 @@ export default function Bookings() {
                             <Button variant="outline" size="sm"
                               onClick={async () => {
                                 setAddGuestSelected(new Set()); setAddGuestSearch(''); setAddGuestCabinId(''); setAddGuestOpen(true)
+                                setAddPendingMode(false); setAddPendingCount(1)
                                 setAddGuestLoading(true)
                                 const data = await fetch('/api/customers?limit=200').then(r => r.json()).catch(() => ({ customers: [] }))
                                 setAddGuestAll(data.customers ?? data ?? [])
@@ -2969,24 +2991,33 @@ export default function Bookings() {
                       const currentCabinId = g.cabin?.id ?? ''
 
                       return (
-                        <div key={g.id} className={`rounded-xl border p-3 space-y-2.5 ${g.isLead ? 'border-amber-200 bg-amber-50/30' : ''}`}>
+                        <div key={g.id} className={`rounded-xl border p-3 space-y-2.5 ${g.isLead ? 'border-amber-200 bg-amber-50/30' : !g.customerId ? 'border-dashed border-orange-200 bg-orange-50/20' : ''}`}>
                           {/* Guest header */}
                           <div className="flex items-center justify-between gap-2">
                             <button
                               className="group flex items-center gap-2 hover:bg-muted/50 rounded-lg px-1.5 py-1 -mx-1.5 -my-1 transition-colors text-left flex-1 min-w-0"
-                              onClick={() => { setEditGuestId(g.customerId); setEditGuestBgId(g.id); setEditGuestHasDiving(db_.hasDiving ?? false); setEditGuestHasSurfing(db_.hasSurfing ?? false) }}
+                              onClick={() => {
+                                if (!g.customerId) { openFillGuestModal(g.id); return }
+                                setEditGuestId(g.customerId); setEditGuestBgId(g.id)
+                                setEditGuestHasDiving(db_.hasDiving ?? false); setEditGuestHasSurfing(db_.hasSurfing ?? false)
+                              }}
                             >
-                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                                <User className="w-3.5 h-3.5 text-muted-foreground" />
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${g.customerId ? 'bg-muted' : 'bg-orange-100'}`}>
+                                <User className={`w-3.5 h-3.5 ${g.customerId ? 'text-muted-foreground' : 'text-orange-500'}`} />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold leading-tight truncate">{g.customer?.name ?? '—'}</p>
+                                <p className={`text-sm font-semibold leading-tight truncate ${g.customerId ? '' : 'text-orange-700'}`}>
+                                  {g.customerId ? (g.customer?.name ?? '—') : 'Pending guest'}
+                                </p>
                                 {g.isLead && <p className="text-[10px] text-amber-600 font-medium">Group Leader</p>}
+                                {!g.customerId && <p className="text-[10px] text-orange-500 font-medium">Cabin reserved — click to add guest</p>}
                               </div>
-                              <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
+                              {g.customerId
+                                ? <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
+                                : <UserPlus className="w-3.5 h-3.5 text-orange-400 shrink-0 mr-1" />}
                             </button>
                             <div className="flex items-center gap-0.5 shrink-0">
-                              {canManageBookings && !g.isLead && db_.status !== 'cancelled' && db_.guests.length > 1 && (
+                              {canManageBookings && !g.isLead && g.customerId && db_.status !== 'cancelled' && db_.guests.length > 1 && (
                                 <button
                                   onClick={() => handleSetLead(db_.id, g.id)}
                                   disabled={settingLeadId === g.id}
@@ -3085,7 +3116,12 @@ export default function Bookings() {
                           {/* Guest form link */}
                           {canManageBookings && db_.status !== 'cancelled' && (
                             <div className="border-t pt-2">
-                              {guestLinks[g.id] ? (
+                              {!g.customerId ? (
+                                <Button variant="outline" size="sm" onClick={() => openFillGuestModal(g.id)} className="h-7 text-xs gap-1.5 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 w-full">
+                                  <UserPlus className="h-3 w-3" />
+                                  Fill Guest Details
+                                </Button>
+                              ) : guestLinks[g.id] ? (
                                 <div className="flex items-center gap-1.5">
                                   <div className="flex-1 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 min-w-0">
                                     <Link2 className="h-3 w-3 text-emerald-600 shrink-0" />
@@ -3099,7 +3135,7 @@ export default function Bookings() {
                                   </a>
                                 </div>
                               ) : (
-                                <Button variant="outline" size="sm" onClick={() => handleGenerateGuestLink(g.customerId, g.id)} disabled={generatingGuestLink === g.id} className="h-7 text-xs gap-1.5 border-dashed w-full">
+                                <Button variant="outline" size="sm" onClick={() => handleGenerateGuestLink(g.customerId!, g.id)} disabled={generatingGuestLink === g.id} className="h-7 text-xs gap-1.5 border-dashed w-full">
                                   {generatingGuestLink === g.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
                                   Generate Guest Form Link
                                 </Button>
@@ -3423,23 +3459,41 @@ export default function Bookings() {
 
       {/* ════ Add Guest Dialog ════ */}
       <Dialog open={addGuestOpen} onOpenChange={v => {
-        if (!v) { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }
+        if (!v) { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail(''); setFillGuestId(null); setAddPendingMode(false); setAddPendingCount(1) }
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Users className="h-4 w-4" /> Add Guest
+              {fillGuestId ? <UserPlus className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              {fillGuestId ? 'Fill Guest Details' : 'Add Guest'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Named vs. pending toggle */}
+            {!fillGuestId && (
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAddPendingMode(false)}
+                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${!addPendingMode ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-foreground' : 'text-muted-foreground hover:bg-muted/40'}`}>
+                  Named Guest
+                </button>
+                <button type="button" onClick={() => { setAddPendingMode(true); setAddGuestSelected(new Set()) }}
+                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${addPendingMode ? 'border-orange-300 bg-orange-50 text-orange-700' : 'text-muted-foreground hover:bg-muted/40'}`}>
+                  Pending Guest <span className="opacity-70">(name unknown)</span>
+                </button>
+              </div>
+            )}
+
             {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search by name / phone / email…"
-                value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
-            </div>
+            {!addPendingMode && (
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9" placeholder="Search by name / phone / email…"
+                  value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
+              </div>
+            )}
 
             {/* Customer list */}
+            {!addPendingMode && (
             <div className="border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
               {addGuestLoading ? (
                 <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>
@@ -3459,6 +3513,8 @@ export default function Bookings() {
                     <button key={c.id} type="button"
                       className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
                       onClick={() => setAddGuestSelected(prev => {
+                        // Fill mode attaches exactly one customer to the placeholder slot.
+                        if (fillGuestId) return new Set([c.id])
                         const next = new Set(prev)
                         next.has(c.id) ? next.delete(c.id) : next.add(c.id)
                         return next
@@ -3475,13 +3531,14 @@ export default function Bookings() {
                 })
               })()}
             </div>
+            )}
 
-            {addGuestSelected.size > 0 && (
+            {!addPendingMode && addGuestSelected.size > 0 && (
               <p className="text-xs text-muted-foreground">{addGuestSelected.size} guest{addGuestSelected.size !== 1 ? 's' : ''} selected</p>
             )}
 
             {/* Inline create panel */}
-            {!addGuestNewMode ? (
+            {!addPendingMode && (!addGuestNewMode ? (
               <button
                 type="button"
                 onClick={() => { setAddGuestNewMode(true); setAddGuestNewName(addGuestSearch) }}
@@ -3529,7 +3586,7 @@ export default function Bookings() {
                     }
                     const newCustomer = await createRes.json()
                     setAddGuestAll(prev => [newCustomer, ...prev])
-                    setAddGuestSelected(prev => { const n = new Set(prev); n.add(newCustomer.id); return n })
+                    setAddGuestSelected(prev => fillGuestId ? new Set([newCustomer.id]) : (() => { const n = new Set(prev); n.add(newCustomer.id); return n })())
                     setAddGuestNewMode(false)
                     setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('')
                     setAddGuestCreating(false)
@@ -3541,10 +3598,10 @@ export default function Bookings() {
                   {addGuestCreating ? 'Creating…' : 'Add to list'}
                 </Button>
               </div>
-            )}
+            ))}
 
-            {/* Cabin picker for Open Trip */}
-            {detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (() => {
+            {/* Cabin picker for Open Trip — skipped in fill mode, the placeholder's cabin is already set */}
+            {!fillGuestId && detailBooking?.tripType === 'OPEN_TRIP' && detailCabins.length > 0 && (() => {
               const cabinLocked = ['partially_paid', 'fully_paid'].includes(detailBooking.status)
               const lockedCabin = detailBooking.guests?.find((g: any) => g.cabin)?.cabin
               if (cabinLocked && lockedCabin) {
@@ -3575,14 +3632,59 @@ export default function Bookings() {
                 </div>
               )
             })()}
+
+            {/* Pax count — pending mode only, no cabin required for Private Charter */}
+            {addPendingMode && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Number of pax <span className="text-red-500">*</span></Label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setAddPendingCount(n => Math.max(1, n - 1))}
+                    className="w-7 h-7 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">−</button>
+                  <span className="w-8 text-center text-sm font-semibold">{addPendingCount}</span>
+                  <button type="button" onClick={() => setAddPendingCount(n => n + 1)}
+                    className="w-7 h-7 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">+</button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Reserves the cabin without a name — fill in guest details later.</p>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} disabled={addGuestSaving}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail(''); setFillGuestId(null); setAddPendingMode(false); setAddPendingCount(1) }} disabled={addGuestSaving || fillGuestSaving}>Cancel</Button>
             <Button
-              disabled={addGuestSaving || addGuestSelected.size === 0 || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId && !['partially_paid', 'fully_paid'].includes(detailBooking?.status ?? '') && !detailBooking?.guests?.find((g: any) => g.cabin))}
+              disabled={fillGuestId
+                ? (fillGuestSaving || addGuestSelected.size === 0)
+                : addPendingMode
+                ? (addGuestSaving || addPendingCount < 1 || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId && !['partially_paid', 'fully_paid'].includes(detailBooking?.status ?? '') && !detailBooking?.guests?.find((g: any) => g.cabin)))
+                : (addGuestSaving || addGuestSelected.size === 0 || (detailBooking?.tripType === 'OPEN_TRIP' && !addGuestCabinId && !['partially_paid', 'fully_paid'].includes(detailBooking?.status ?? '') && !detailBooking?.guests?.find((g: any) => g.cabin)))}
               onClick={async () => {
                 if (!detailBooking) return
+
+                // Fill mode: attach the selected customer to the existing placeholder BookingGuest row.
+                if (fillGuestId) {
+                  setFillGuestSaving(true)
+                  const customerId = Array.from(addGuestSelected)[0]
+                  const res = await fetch(`/api/guests/${fillGuestId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerId }),
+                  })
+                  if (!res.ok) {
+                    const d = await res.json().catch(() => ({}))
+                    toast.error(d.error ?? 'Failed to save guest details')
+                    setFillGuestSaving(false)
+                    return
+                  }
+                  setAddGuestOpen(false)
+                  setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('')
+                  setFillGuestId(null)
+                  const fresh = await fetch(`/api/bookings/${detailBooking.id}`).then(r => r.json()).catch(() => null)
+                  if (fresh) setDetailBooking(fresh)
+                  fetchBookings()
+                  setFillGuestSaving(false)
+                  return
+                }
+
                 setAddGuestSaving(true)
 
                 const cabinLocked = detailBooking.tripType === 'OPEN_TRIP' && ['partially_paid', 'fully_paid'].includes(detailBooking.status)
@@ -3590,7 +3692,21 @@ export default function Bookings() {
                   ? (detailBooking.guests?.find((g: any) => g.cabin)?.cabin?.id ?? addGuestCabinId)
                   : addGuestCabinId
 
-                {
+                if (addPendingMode) {
+                  const errors: string[] = []
+                  for (let i = 0; i < addPendingCount; i++) {
+                    const res = await fetch(`/api/bookings/${detailBooking.id}/guests`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ isPlaceholder: true, cabinId: effectiveCabinId || undefined }),
+                    })
+                    if (!res.ok) {
+                      const d = await res.json().catch(() => ({}))
+                      errors.push(d.error ?? 'failed')
+                    }
+                  }
+                  if (errors.length) alert('Some pending guests could not be added:\n' + errors.join('\n'))
+                } else {
                   const ids = Array.from(addGuestSelected)
                   const errors: string[] = []
                   for (const customerId of ids) {
@@ -3610,6 +3726,7 @@ export default function Bookings() {
 
                 setAddGuestOpen(false)
                 setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('')
+                setAddPendingMode(false); setAddPendingCount(1)
                 const fresh = await fetch(`/api/bookings/${detailBooking.id}`).then(r => r.json()).catch(() => null)
                 if (fresh) {
                   setDetailBooking(fresh)
@@ -3622,9 +3739,15 @@ export default function Bookings() {
                 setAddGuestSaving(false)
               }}
               style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-              {addGuestSaving
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
-                : `Add ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest${addGuestSelected.size !== 1 ? 's' : ''}`}
+              {fillGuestId
+                ? (fillGuestSaving ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Saving…</> : 'Save Guest Details')
+                : addPendingMode
+                ? (addGuestSaving
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
+                  : `Add ${addPendingCount} Pending Guest${addPendingCount !== 1 ? 's' : ''}`)
+                : (addGuestSaving
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
+                  : `Add ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest${addGuestSelected.size !== 1 ? 's' : ''}`)}
             </Button>
           </DialogFooter>
         </DialogContent>

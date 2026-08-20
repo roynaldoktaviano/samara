@@ -13,6 +13,7 @@ interface TripGuest { id: string | null; name: string; bookingId: string }
 interface Trip { id: string; tripType: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; startDate: string; endDate: string; guests: TripGuest[] }
 interface MenuItem { id: string; name: string; type: 'FOOD' | 'BEVERAGE'; category: string; baseUnit: string; sellingPrice: number; imageKey: string | null; stock: number }
 interface Branding { logoUrl: string; name: string }
+interface StaffMember { id: string; fullName: string; department: string | null }
 
 const TYPE_LABELS: Record<'FOOD' | 'BEVERAGE', string> = { FOOD: 'Food', BEVERAGE: 'Beverage' }
 const TYPE_ICON: Record<'FOOD' | 'BEVERAGE', typeof Utensils> = { FOOD: Utensils, BEVERAGE: Wine }
@@ -21,9 +22,14 @@ interface SaleItem { id: string; itemId: string | null; name: string; unit: stri
 interface Sale {
   id: string; yachtId: string; locationId: string; bookingId: string | null; guestId: string | null
   guestName: string | null; status: 'open' | 'closed'; payMethod: string | null; total: number
+  employeeId: string | null; employeeName: string | null; complimentaryReason: string | null
   closedAt: string | null; createdAt: string; items: SaleItem[]
   booking: { bookingCode: string } | null
   guest: { customer: { email: string | null } } | null
+}
+
+function StaffTag() {
+  return <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 6, background: `${GOLD_DARK}18`, color: GOLD_DARK, flexShrink: 0 }}>STAFF</span>
 }
 
 const PAY_METHODS: { key: string; icon: typeof Banknote }[] = [
@@ -295,7 +301,10 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
           <div style={{ fontSize: 22, fontWeight: 700, color: GOLD_DARK, marginBottom: 4 }}>
             {complimentary ? 'Complimentary!' : 'Paid in full'}
           </div>
-          <div style={{ fontSize: 13, color: '#8a8378' }}>{vessel.name}{sale.guestName ? ` · ${sale.guestName}` : ''}</div>
+          <div style={{ fontSize: 13, color: '#8a8378', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            {vessel.name}{sale.guestName ? ` · ${sale.guestName}` : ''}
+            {sale.employeeId && <StaffTag />}
+          </div>
           {sale.booking && <div style={{ fontSize: 11.5, color: '#b3ab9c', marginTop: 2 }}>Recorded under charter {sale.booking.bookingCode}</div>}
         </div>
 
@@ -311,6 +320,7 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
             <span style={{ ...S.mono, color: GOLD_DARK }}>{fmt(sale.total)}</span>
           </div>
           <div style={{ fontSize: 12, color: '#8a8378', marginTop: 6 }}>Payment: {sale.payMethod}</div>
+          {complimentary && sale.complimentaryReason && <div style={{ fontSize: 12, color: '#8a8378', marginTop: 2 }}>Reason: {sale.complimentaryReason}</div>}
         </div>
 
         <div className="no-print" style={{ display: 'flex', gap: 8, marginBottom: emailOpen ? 12 : 0 }}>
@@ -340,11 +350,25 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
 }
 
 // ─── SETTLE TAB — single-payer, single-method close screen ────────────────────
-function SettleScreen({ sale, vessel, onBack, onConfirm, busy }: {
-  sale: Sale; vessel: Vessel; onBack: () => void; onConfirm: (payMethod: string) => void; busy: boolean
+function SettleScreen({ sale, vessel, staffList, onBack, onConfirm, busy }: {
+  sale: Sale; vessel: Vessel; staffList: StaffMember[]; onBack: () => void
+  onConfirm: (payMethod: string, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => void
+  busy: boolean
 }) {
   const [method, setMethod] = useState('Cash')
+  const [compStaffId, setCompStaffId] = useState('')
+  const [compReason, setCompReason] = useState('')
   const isCompact = useIsCompact()
+
+  const compReady = method !== 'Complimentary' || (!!compStaffId && !!compReason.trim())
+  const confirm = () => {
+    if (method === 'Complimentary') {
+      const staff = staffList.find(s => s.id === compStaffId)
+      onConfirm(method, { employeeId: compStaffId, employeeName: staff?.fullName ?? null, complimentaryReason: compReason.trim() })
+    } else {
+      onConfirm(method)
+    }
+  }
 
   return (
     <div style={{ ...S.page, minHeight: '100dvh', padding: isCompact ? 16 : 32 }}>
@@ -356,8 +380,9 @@ function SettleScreen({ sale, vessel, onBack, onConfirm, busy }: {
           {/* Left — method + confirm */}
           <div style={{ flex: '1 1 360px', minWidth: 300 }}>
             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 600 }}>Settle tab</div>
-            <div style={{ fontSize: 13, color: '#8a8378', marginTop: 4, marginBottom: 22 }}>
+            <div style={{ fontSize: 13, color: '#8a8378', marginTop: 4, marginBottom: 22, display: 'flex', alignItems: 'center', gap: 6 }}>
               {vessel.name}{sale.guestName ? ` · ${sale.guestName}` : ''} · opened {new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {sale.employeeId && <StaffTag />}
             </div>
 
             <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 700, letterSpacing: '0.08em', marginBottom: 10 }}>METHOD</div>
@@ -374,7 +399,17 @@ function SettleScreen({ sale, vessel, onBack, onConfirm, busy }: {
               ))}
             </div>
 
-            <button onClick={() => onConfirm(method)} disabled={busy} style={{ width: '100%', padding: 16, borderRadius: 12, fontSize: 16, ...S.goldBtn, opacity: busy ? 0.6 : 1 }}>
+            {method === 'Complimentary' && (
+              <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <select value={compStaffId} onChange={e => setCompStaffId(e.target.value)} style={S.input}>
+                  <option value="">Given by (staff)…</option>
+                  {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
+                </select>
+                <input value={compReason} onChange={e => setCompReason(e.target.value)} placeholder="Reason for complimentary…" style={S.input} />
+              </div>
+            )}
+
+            <button onClick={confirm} disabled={busy || !compReady} style={{ width: '100%', padding: 16, borderRadius: 12, fontSize: 16, ...S.goldBtn, opacity: (busy || !compReady) ? 0.6 : 1 }}>
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Take payment {fmt(sale.total)}
             </button>
           </div>
@@ -407,10 +442,10 @@ function SettleScreen({ sale, vessel, onBack, onConfirm, busy }: {
 }
 
 // ─── BILLS PAGE ("Open tabs") ──────────────────────────────────────────────────
-function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, settleBill, createBill }: {
+function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, setSection, settleBill, createBill }: {
   sales: Sale[]; reload: () => void; setActiveSaleId: (id: string | null) => void; vessel: Vessel; trip: Trip | null
-  setSection: (s: string) => void; settleBill: (sale: Sale) => void
-  createBill: (guest: TripGuest | null, walkInLabel: string) => Promise<boolean>
+  staffList: StaffMember[]; setSection: (s: string) => void; settleBill: (sale: Sale) => void
+  createBill: (guest: TripGuest | null, walkInLabel: string, employee?: StaffMember | null) => Promise<boolean>
 }) {
   const openBills   = sales.filter(b => b.status === 'open')
   const closedToday = sales.filter(b => b.status === 'closed' && b.closedAt && isToday(b.closedAt))
@@ -420,8 +455,10 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
   const unbilledTotal = openBills.reduce((s, b) => s + b.total, 0)
 
   const [newBillOpen, setNewBillOpen] = useState(false)
+  const [newBillType, setNewBillType] = useState<'guest' | 'staff'>('guest')
   const [newBillGuest, setNewBillGuest] = useState<TripGuest | null>(null)
   const [newBillWalkIn, setNewBillWalkIn] = useState('')
+  const [newBillStaff, setNewBillStaff] = useState<StaffMember | null>(null)
   const [creatingBill, setCreatingBill] = useState(false)
 
   const [billDetailId, setBillDetailId] = useState<string | null>(null)
@@ -429,17 +466,19 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
   const setBillDetail = (b: Sale | null) => setBillDetailId(b?.id ?? null)
 
   function closeNewBillModal() {
-    setNewBillOpen(false); setNewBillGuest(null); setNewBillWalkIn('')
+    setNewBillOpen(false); setNewBillGuest(null); setNewBillWalkIn(''); setNewBillType('guest'); setNewBillStaff(null)
   }
 
   async function handleCreateBill() {
     setCreatingBill(true)
-    const ok = await createBill(trip ? newBillGuest : null, newBillWalkIn)
+    const ok = newBillType === 'staff'
+      ? await createBill(null, '', newBillStaff)
+      : await createBill(trip ? newBillGuest : null, newBillWalkIn)
     setCreatingBill(false)
     if (ok) closeNewBillModal()
   }
 
-  const canCreate = trip ? !!newBillGuest : !!newBillWalkIn.trim()
+  const canCreate = newBillType === 'staff' ? !!newBillStaff : (trip ? !!newBillGuest : !!newBillWalkIn.trim())
   const isCompact = useIsCompact()
 
   return (
@@ -462,7 +501,10 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 10 }}>
               {openBills.map(b => (
                 <button key={b.id} onClick={() => setBillDetail(b)} style={{ ...S.card, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6, width: '100%', cursor: 'pointer', textAlign: 'left', fontFamily: "'DM Sans', sans-serif" }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestName ?? 'Guest'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestName ?? 'Guest'}</div>
+                    {b.employeeId && <StaffTag />}
+                  </div>
                   <div style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK }}>{fmt(b.total)}</div>
                   <div style={{ fontSize: 11.5, color: '#8a8378' }}>{b.items.length} item{b.items.length !== 1 ? 's' : ''} · opened {new Date(b.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
                 </button>
@@ -482,7 +524,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
                 {closedBills.map(b => (
                   <div key={b.id} style={{ ...S.card, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: '#7a7468' }}>{b.guestName ?? 'Guest'}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: '#7a7468', display: 'flex', alignItems: 'center', gap: 6 }}>{b.guestName ?? 'Guest'}{b.employeeId && <StaffTag />}</div>
                       <div style={{ fontSize: 11, color: '#b3ab9c', marginTop: 2 }}>{b.payMethod}</div>
                     </div>
                     <div style={{ ...S.mono, fontWeight: 700, fontSize: 15, color: '#8a8378' }}>{fmt(b.total)}</div>
@@ -526,22 +568,50 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,37,47,0.45)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, padding: 24, fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 40px rgba(26,37,47,0.2)' }}>
             <div style={{ fontWeight: 700, fontSize: 17, color: INK, marginBottom: 4 }}>New tab</div>
-            <div style={{ fontSize: 13, color: '#8a8378', marginBottom: 18 }}>Pick a guest to open a new tab</div>
+            <div style={{ fontSize: 13, color: '#8a8378', marginBottom: 18 }}>Pick a guest or staff to open a new tab</div>
+
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+              {(['guest', 'staff'] as const).map(t => (
+                <button key={t} onClick={() => setNewBillType(t)} style={{
+                  flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer', textTransform: 'capitalize',
+                  border: newBillType === t ? `2px solid ${GOLD_DARK}` : '1px solid #ece6d8',
+                  background: newBillType === t ? `${GOLD_DARK}11` : '#fff', color: newBillType === t ? GOLD_DARK : '#8a8378',
+                  fontWeight: 700, fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+                }}>{t}</button>
+              ))}
+            </div>
 
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>GUEST {trip ? '(from trip)' : ''}</div>
-              {trip ? (
-                <select
-                  value={newBillGuest?.id ?? newBillGuest?.bookingId ?? ''}
-                  onChange={e => setNewBillGuest(trip.guests.find(g => (g.id ?? g.bookingId) === e.target.value) ?? null)}
-                  style={S.input}
-                  autoFocus
-                >
-                  <option value="">Select guest…</option>
-                  {trip.guests.map(g => <option key={g.id ?? g.bookingId} value={g.id ?? g.bookingId}>{g.name}</option>)}
-                </select>
+              {newBillType === 'staff' ? (
+                <>
+                  <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>STAFF</div>
+                  <select
+                    value={newBillStaff?.id ?? ''}
+                    onChange={e => setNewBillStaff(staffList.find(s => s.id === e.target.value) ?? null)}
+                    style={S.input}
+                    autoFocus
+                  >
+                    <option value="">Select staff…</option>
+                    {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
+                  </select>
+                </>
               ) : (
-                <input value={newBillWalkIn} onChange={e => setNewBillWalkIn(e.target.value)} placeholder="Guest / table name…" style={S.input} autoFocus />
+                <>
+                  <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>GUEST {trip ? '(from trip)' : ''}</div>
+                  {trip ? (
+                    <select
+                      value={newBillGuest?.id ?? newBillGuest?.bookingId ?? ''}
+                      onChange={e => setNewBillGuest(trip.guests.find(g => (g.id ?? g.bookingId) === e.target.value) ?? null)}
+                      style={S.input}
+                      autoFocus
+                    >
+                      <option value="">Select guest…</option>
+                      {trip.guests.map(g => <option key={g.id ?? g.bookingId} value={g.id ?? g.bookingId}>{g.name}</option>)}
+                    </select>
+                  ) : (
+                    <input value={newBillWalkIn} onChange={e => setNewBillWalkIn(e.target.value)} placeholder="Guest / table name…" style={S.input} autoFocus />
+                  )}
+                </>
               )}
             </div>
 
@@ -562,7 +632,10 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, setSection, s
             <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid #f1ede2', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 17, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{billDetail.guestName ?? 'Guest'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 17, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{billDetail.guestName ?? 'Guest'}</div>
+                    {billDetail.employeeId && <StaffTag />}
+                  </div>
                   <div style={{ fontSize: 12, color: '#8a8378', marginTop: 3 }}>{new Set(billDetail.items.map(i => i.round)).size} round(s) · opened {new Date(billDetail.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <button onClick={() => setBillDetail(null)} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer', flexShrink: 0 }}><X size={20} /></button>
@@ -609,10 +682,15 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   const [activeCat, setActiveCat] = useState('All')
   const [search, setSearch]       = useState('')
   const [cart, setCart]           = useState<CartLine[]>([])
+  const [buyerType, setBuyerType] = useState<'guest' | 'staff'>('guest')
   const [selectedGuest, setSelectedGuest] = useState<TripGuest | null>(null)
   const [walkInName, setWalkInName] = useState('')
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null)
   const [payMethod, setPayMethod] = useState('Cash')
+  const [compStaff, setCompStaff] = useState<StaffMember | null>(null)
+  const [compReason, setCompReason] = useState('')
   const [sales, setSales]         = useState<Sale[]>([])
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [activeSaleId, setActiveSaleId] = useState<string | null>(null)
   const [settleSaleId, setSettleSaleId] = useState<string | null>(null)
   const [receipt, setReceipt]     = useState<Sale | null>(null)
@@ -629,7 +707,11 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
     fetch(`/api/cashier/sales?yachtId=${vessel.id}`).then(r => r.json()).then(d => setSales(Array.isArray(d) ? d : []))
   }, [vessel.id])
 
-  useEffect(() => { loadMenu(); loadSales() }, [loadMenu, loadSales])
+  const loadStaff = useCallback(() => {
+    fetch(`/api/cashier/staff?yachtId=${vessel.id}`).then(r => r.json()).then(d => setStaffList(Array.isArray(d) ? d : []))
+  }, [vessel.id])
+
+  useEffect(() => { loadMenu(); loadSales(); loadStaff() }, [loadMenu, loadSales, loadStaff])
 
   const types = useMemo(() => ['All', ...Array.from(new Set(menuItems.map(i => i.type)))] as ('All' | 'FOOD' | 'BEVERAGE')[], [menuItems])
   const categories = useMemo(() =>
@@ -662,9 +744,20 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
     prev.map(c => c.itemId === itemId ? { ...c, qty: c.qty + d } : c).filter(c => c.qty > 0)
   )
 
-  const clearCart = () => { setCart([]); setSelectedGuest(null); setWalkInName(''); setPayMethod('Cash') }
+  const clearCart = () => {
+    setCart([]); setBuyerType('guest'); setSelectedGuest(null); setWalkInName(''); setSelectedStaff(null)
+    setPayMethod('Cash'); setCompStaff(null); setCompReason('')
+  }
 
   const guestLabel = (g: TripGuest | null) => g ? g.name : (walkInName.trim() || null)
+
+  // Buyer fields for a new sale/tab: either a guest (from trip or walk-in text) or a staff member buying for themselves.
+  const buyerFields = () => buyerType === 'staff'
+    ? { guestId: null as string | null, bookingId: null as string | null, guestName: selectedStaff?.fullName ?? null, employeeId: selectedStaff?.id ?? null, employeeName: selectedStaff?.fullName ?? null }
+    : { guestId: selectedGuest?.id ?? null, bookingId: selectedGuest?.bookingId ?? null, guestName: guestLabel(selectedGuest), employeeId: null as string | null, employeeName: null as string | null }
+
+  // Complimentary always needs a responsible staff member + reason — either the buyer themselves (if buying as staff) or a separately picked staff.
+  const compReady = payMethod !== 'Complimentary' || !!(buyerType === 'staff' ? selectedStaff : compStaff) && !!compReason.trim()
 
   const addToBill = async () => {
     if (!cart.length || !activeSaleId) return
@@ -678,12 +771,12 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
     } finally { setBusy(false) }
   }
 
-  const closeSale = async (sale: Sale, pm: string) => {
+  const closeSale = async (sale: Sale, pm: string, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => {
     setBusy(true)
     try {
       const res = await fetch(`/api/cashier/sales/${sale.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'close', payMethod: pm }),
+        body: JSON.stringify({ action: 'close', payMethod: pm, ...extra }),
       })
       if (res.ok) {
         const updated = await res.json()
@@ -697,34 +790,31 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   }
 
   const openNewBill = async () => {
-    const guest = selectedGuest
-    if (!trip && !walkInName.trim()) return
+    if (buyerType === 'staff' ? !selectedStaff : (!trip && !walkInName.trim())) return
     setBusy(true)
     try {
       const res = await fetch('/api/cashier/sales', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          yachtId: vessel.id, locationId: vessel.locationId,
-          bookingId: guest?.bookingId ?? null, guestId: guest?.id ?? null,
-          guestName: guestLabel(guest),
-        }),
+        body: JSON.stringify({ yachtId: vessel.id, locationId: vessel.locationId, ...buyerFields() }),
       })
       if (res.ok) {
         const sale = await res.json()
-        setSelectedGuest(null); setWalkInName('')
+        setSelectedGuest(null); setWalkInName(''); setSelectedStaff(null)
         setActiveSaleId(sale.id)
         loadSales()
       }
     } finally { setBusy(false) }
   }
 
-  const createBillFor = async (guest: TripGuest | null, walkInLabel: string) => {
+  const createBillFor = async (guest: TripGuest | null, walkInLabel: string, employee?: StaffMember | null) => {
     const res = await fetch('/api/cashier/sales', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         yachtId: vessel.id, locationId: vessel.locationId,
-        bookingId: guest?.bookingId ?? null, guestId: guest?.id ?? null,
-        guestName: guest ? guest.name : (walkInLabel.trim() || null),
+        bookingId: employee ? null : (guest?.bookingId ?? null),
+        guestId: employee ? null : (guest?.id ?? null),
+        guestName: employee ? employee.fullName : (guest ? guest.name : (walkInLabel.trim() || null)),
+        employeeId: employee?.id ?? null, employeeName: employee?.fullName ?? null,
       }),
     })
     if (res.ok) loadSales()
@@ -732,16 +822,18 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   }
 
   const recordDirectSale = async () => {
-    if (!cart.length) return
-    const guest = selectedGuest
+    if (!cart.length || !compReady) return
     setBusy(true)
     try {
+      const buyer = buyerFields()
+      const compFields = payMethod === 'Complimentary'
+        ? { employeeId: buyer.employeeId ?? compStaff?.id ?? null, employeeName: buyer.employeeName ?? compStaff?.fullName ?? null, complimentaryReason: compReason.trim() || null }
+        : {}
       const res = await fetch('/api/cashier/sales', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           yachtId: vessel.id, locationId: vessel.locationId,
-          bookingId: guest?.bookingId ?? null, guestId: guest?.id ?? null,
-          guestName: guestLabel(guest), items: cart, payMethod, closeImmediately: true,
+          ...buyer, ...compFields, items: cart, payMethod, closeImmediately: true,
         }),
       })
       if (res.ok) {
@@ -755,7 +847,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   }
 
   if (receipt) return <ReceiptView sale={receipt} vessel={vessel} onDone={() => setReceipt(null)} />
-  if (settleSale) return <SettleScreen sale={settleSale} vessel={vessel} onBack={() => setSettleSaleId(null)} onConfirm={pm => closeSale(settleSale, pm)} busy={busy} />
+  if (settleSale) return <SettleScreen sale={settleSale} vessel={vessel} staffList={staffList} onBack={() => setSettleSaleId(null)} onConfirm={(pm, extra) => closeSale(settleSale, pm, extra)} busy={busy} />
 
   return (
     <div style={{ ...S.page, height: '100dvh', display: 'flex', flexDirection: isCompact ? 'column' : 'row', overflow: 'hidden' }}>
@@ -824,7 +916,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
           <div style={{ overflowY: 'auto', padding: 20, paddingBottom: isCompact ? 84 : 20, borderRight: isCompact ? 'none' : '1px solid #ece6d8' }}>
             {activeSale && (
               <div style={{ background: `${ac}12`, border: `1px solid ${ac}33`, borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: ac, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'} · {fmt(activeSale.total)}</span>
+                <span style={{ fontSize: 13, color: ac, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'}{activeSale.employeeId && <StaffTag />} · {fmt(activeSale.total)}</span>
                 <button onClick={() => setActiveSaleId(null)} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><X size={13} /> Exit</button>
               </div>
             )}
@@ -924,23 +1016,49 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
             )}
             <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column', overflowY: isCompact ? 'auto' : 'visible' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: INK, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {activeSale ? <span style={{ color: ac, display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'}</span> : <><ShoppingCart size={14} /> Order</>}
+                {activeSale ? <span style={{ color: ac, display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'}{activeSale.employeeId && <StaffTag />}</span> : <><ShoppingCart size={14} /> Order</>}
               </div>
 
               {!activeSale && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>GUEST {trip ? '(from trip)' : ''}</div>
-                  {trip ? (
-                    <select
-                      value={selectedGuest?.id ?? selectedGuest?.bookingId ?? ''}
-                      onChange={e => setSelectedGuest(trip.guests.find(g => (g.id ?? g.bookingId) === e.target.value) ?? null)}
-                      style={S.input}
-                    >
-                      <option value="">Select guest…</option>
-                      {trip.guests.map(g => <option key={g.id ?? g.bookingId} value={g.id ?? g.bookingId}>{g.name}</option>)}
-                    </select>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    {(['guest', 'staff'] as const).map(t => (
+                      <button key={t} onClick={() => { setBuyerType(t); if (t === 'staff') { setSelectedGuest(null); setWalkInName('') } else setSelectedStaff(null) }} style={{
+                        flex: 1, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', textTransform: 'capitalize',
+                        border: buyerType === t ? `2px solid ${ac}` : '1px solid #ece6d8',
+                        background: buyerType === t ? `${ac}11` : '#fafaf8', color: buyerType === t ? ac : '#8a8378',
+                        fontWeight: 700, fontSize: 12.5, fontFamily: "'DM Sans', sans-serif",
+                      }}>{t}</button>
+                    ))}
+                  </div>
+                  {buyerType === 'staff' ? (
+                    <>
+                      <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>STAFF</div>
+                      <select
+                        value={selectedStaff?.id ?? ''}
+                        onChange={e => setSelectedStaff(staffList.find(s => s.id === e.target.value) ?? null)}
+                        style={S.input}
+                      >
+                        <option value="">Select staff…</option>
+                        {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
+                      </select>
+                    </>
                   ) : (
-                    <input value={walkInName} onChange={e => setWalkInName(e.target.value)} placeholder="Guest / table name…" style={S.input} />
+                    <>
+                      <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>GUEST {trip ? '(from trip)' : ''}</div>
+                      {trip ? (
+                        <select
+                          value={selectedGuest?.id ?? selectedGuest?.bookingId ?? ''}
+                          onChange={e => setSelectedGuest(trip.guests.find(g => (g.id ?? g.bookingId) === e.target.value) ?? null)}
+                          style={S.input}
+                        >
+                          <option value="">Select guest…</option>
+                          {trip.guests.map(g => <option key={g.id ?? g.bookingId} value={g.id ?? g.bookingId}>{g.name}</option>)}
+                        </select>
+                      ) : (
+                        <input value={walkInName} onChange={e => setWalkInName(e.target.value)} placeholder="Guest / table name…" style={S.input} />
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -994,6 +1112,17 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
                       </button>
                     ))}
                   </div>
+                  {payMethod === 'Complimentary' && (
+                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {buyerType !== 'staff' && (
+                        <select value={compStaff?.id ?? ''} onChange={e => setCompStaff(staffList.find(s => s.id === e.target.value) ?? null)} style={S.input}>
+                          <option value="">Given by (staff)…</option>
+                          {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
+                        </select>
+                      )}
+                      <input value={compReason} onChange={e => setCompReason(e.target.value)} placeholder="Reason for complimentary…" style={S.input} />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1009,11 +1138,11 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
                 ) : (
                   <>
                     {cart.length > 0 && (
-                      <button onClick={recordDirectSale} disabled={busy || !(selectedGuest || walkInName.trim() || !trip)} style={{ ...S.goldBtn, width: '100%', padding: 14, borderRadius: 10, fontSize: 15 }}>
+                      <button onClick={recordDirectSale} disabled={busy || !compReady || (buyerType === 'staff' ? !selectedStaff : !(selectedGuest || walkInName.trim() || !trip))} style={{ ...S.goldBtn, width: '100%', padding: 14, borderRadius: 10, fontSize: 15 }}>
                         {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Charge {fmt(cartTotal)}
                       </button>
                     )}
-                    <button onClick={openNewBill} disabled={busy || (!selectedGuest && !walkInName.trim())} style={{ ...S.btnGhost, width: '100%', justifyContent: 'center', padding: 13, borderRadius: 10, fontSize: 13, border: `1px solid ${ac}`, color: ac }}>
+                    <button onClick={openNewBill} disabled={busy || (buyerType === 'staff' ? !selectedStaff : (!selectedGuest && !walkInName.trim()))} style={{ ...S.btnGhost, width: '100%', justifyContent: 'center', padding: 13, borderRadius: 10, fontSize: 13, border: `1px solid ${ac}`, color: ac }}>
                       <ClipboardList size={14} /> Open as Tab
                     </button>
                     {cart.length > 0 && <button onClick={clearCart} style={{ ...S.btnGhost, width: '100%', justifyContent: 'center', fontSize: 12, color: '#dc6868', border: '1px solid #f3c9c9' }}>Clear</button>}
@@ -1034,7 +1163,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
               boxShadow: '0 8px 24px rgba(168,149,106,0.4)',
             }}>
               <span style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {activeSale ? <><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'}</> : <><ShoppingCart size={14} /> Cart</>}
+                {activeSale ? <><ClipboardList size={14} /> {activeSale.guestName ?? 'Guest'}{activeSale.employeeId && <StaffTag />}</> : <><ShoppingCart size={14} /> Cart</>}
                 {cart.length > 0 && ` · ${cart.reduce((s, i) => s + i.qty, 0)} items`}
               </span>
               <span style={{ ...S.mono, fontWeight: 800 }}>
@@ -1047,7 +1176,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
 
       {/* ── MAIN: Bills page ── */}
       {section === 'bills' && (
-        <BillsPage sales={sales} reload={loadSales} setActiveSaleId={setActiveSaleId} vessel={vessel} trip={trip} setSection={setSection} settleBill={b => setSettleSaleId(b.id)} createBill={createBillFor} />
+        <BillsPage sales={sales} reload={loadSales} setActiveSaleId={setActiveSaleId} vessel={vessel} trip={trip} staffList={staffList} setSection={setSection} settleBill={b => setSettleSaleId(b.id)} createBill={createBillFor} />
       )}
     </div>
   )

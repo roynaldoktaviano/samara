@@ -83,7 +83,7 @@ function bookingRows(booking: {
   salesperson: string | null
   salespersonUser: { name: string | null } | null
   customer: { name: string }
-  guests: { customer: { name: string }; cabin: { name: string } | null; isLead: boolean }[]
+  guests: { customer: { name: string } | null; cabin: { name: string } | null; isLead: boolean }[]
   totalPrice: number
   discount: number
   services: { price: number; quantity: number }[]
@@ -91,11 +91,12 @@ function bookingRows(booking: {
 }) {
   const agentName = booking.source === 'AGENT' && booking.agent?.name ? booking.agent.name : 'Direct'
   const salespersonName = booking.salespersonUser?.name ?? booking.salesperson ?? '—'
-  const leadName = booking.guests.find(g => g.isLead)?.customer.name ?? booking.customer.name
+  const leadName = booking.guests.find(g => g.isLead)?.customer?.name ?? booking.customer.name
 
   const guestRows = booking.guests.length > 0
     ? booking.guests.map(g => ({
-        guestName: isTbd(g.customer.name) ? leadName : g.customer.name,
+        // No customer yet (placeholder pax) or the old fake "Name - TBD N" convention — both read as the lead's name.
+        guestName: isTbd(g.customer?.name) ? leadName : (g.customer?.name ?? leadName),
         cabin: g.cabin?.name ?? '—',
       }))
     : [{ guestName: booking.customer.name, cabin: '—' }]

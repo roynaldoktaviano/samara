@@ -11,9 +11,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = await params
-    const { customerId, cabinId } = await request.json()
+    const { customerId, cabinId, isPlaceholder } = await request.json()
 
-    if (!customerId) return NextResponse.json({ error: 'customerId required' }, { status: 400 })
+    if (!isPlaceholder && !customerId) return NextResponse.json({ error: 'customerId required' }, { status: 400 })
 
     const booking = await db.booking.findUnique({
       where: { id },
@@ -48,13 +48,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // ── Duplicate check ──
-    const already = booking.guests.find(g => g.customerId === customerId)
-    if (already) return NextResponse.json({ error: 'Guest is already in this booking' }, { status: 400 })
+    // ── Duplicate check — only meaningful for a named guest ──
+    if (!isPlaceholder) {
+      const already = booking.guests.find(g => g.customerId === customerId)
+      if (already) return NextResponse.json({ error: 'Guest is already in this booking' }, { status: 400 })
+    }
 
-    // ── Create guest ──
+    // ── Create guest — a placeholder reserves the cabin with no customer yet ──
     await db.bookingGuest.create({
-      data: { bookingId: id, customerId, cabinId: cabinId || null, isLead: false },
+      data: { bookingId: id, customerId: isPlaceholder ? null : customerId, cabinId: cabinId || null, isLead: false },
     })
 
     await db.booking.update({

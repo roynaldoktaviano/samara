@@ -29,8 +29,8 @@ export async function GET() {
 
   return NextResponse.json(bookings.map(b => {
     const lead = b.guests.find(g => g.isLead)
-    const leadGuestName = lead?.customer.name ?? b.customer.name
-    const guestNames = b.guests.map(g => g.customer.name).filter(n => n && n !== leadGuestName)
+    const leadGuestName = lead?.customer?.name ?? b.customer.name
+    const guestNames = b.guests.map(g => g.customer?.name).filter((n): n is string => !!n && n !== leadGuestName)
     return {
       id: b.id,
       bookingCode: b.bookingCode,

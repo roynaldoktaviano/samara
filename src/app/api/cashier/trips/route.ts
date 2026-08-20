@@ -48,9 +48,9 @@ export async function GET(request: NextRequest) {
   const trips = [
     ...openTrips.map(t => {
       const guests: { id: string | null; name: string; bookingId: string }[] = t.bookings.flatMap(b => {
-        const leadName = b.guests.find(g => g.isLead)?.customer.name ?? b.customer.name
+        const leadName = b.guests.find(g => g.isLead)?.customer?.name ?? b.customer.name
         return b.guests.length > 0
-          ? b.guests.map(g => ({ id: g.id as string | null, name: isTbd(g.customer.name) ? leadName : g.customer.name, bookingId: b.id }))
+          ? b.guests.map(g => ({ id: g.id as string | null, name: isTbd(g.customer?.name) ? leadName : (g.customer?.name ?? leadName), bookingId: b.id }))
           : [{ id: null as string | null, name: b.customer.name, bookingId: b.id }]
       })
       return {
@@ -59,9 +59,9 @@ export async function GET(request: NextRequest) {
       }
     }),
     ...charterBookings.map(b => {
-      const leadName = b.guests.find(g => g.isLead)?.customer.name ?? b.customer.name
+      const leadName = b.guests.find(g => g.isLead)?.customer?.name ?? b.customer.name
       const guests: { id: string | null; name: string; bookingId: string }[] = b.guests.length > 0
-        ? b.guests.map(g => ({ id: g.id as string | null, name: isTbd(g.customer.name) ? leadName : g.customer.name, bookingId: b.id }))
+        ? b.guests.map(g => ({ id: g.id as string | null, name: isTbd(g.customer?.name) ? leadName : (g.customer?.name ?? leadName), bookingId: b.id }))
         : [{ id: null as string | null, name: b.customer.name, bookingId: b.id }]
       return {
         id: b.id, tripType: 'PRIVATE_CHARTER' as const, label: b.destination ?? b.bookingCode,

@@ -35,8 +35,11 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
 
   const body = await request.json()
-  const { yachtId, locationId, bookingId, guestId, guestName, items, payMethod, closeImmediately, openedBy } = body
+  const { yachtId, locationId, bookingId, guestId, guestName, employeeId, employeeName, complimentaryReason, items, payMethod, closeImmediately, openedBy } = body
   if (!yachtId || !locationId) return NextResponse.json({ error: 'yachtId and locationId are required' }, { status: 400 })
+  if (closeImmediately && payMethod === 'Complimentary' && (!employeeId || !String(complimentaryReason || '').trim())) {
+    return NextResponse.json({ error: 'Complimentary requires a staff member and a reason' }, { status: 400 })
+  }
 
   try {
     const result = await withRetry(db, () => db.$transaction(async (tx) => {
@@ -44,6 +47,8 @@ export async function POST(request: NextRequest) {
         data: {
           id: crypto.randomUUID(), yachtId, locationId,
           bookingId: bookingId || null, guestId: guestId || null, guestName: guestName || null,
+          employeeId: employeeId || null, employeeName: employeeName || null,
+          complimentaryReason: complimentaryReason || null,
           openedBy: openedBy || null,
           status: closeImmediately ? 'closed' : 'open',
           payMethod: closeImmediately ? (payMethod || null) : null,

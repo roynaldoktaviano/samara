@@ -200,10 +200,13 @@ export async function POST(request: NextRequest) {
     // handler) — a failed booking must never leave a Lead silently converted with no
     // booking behind it.
     const convertedLeads: { leadId: string; customerId: string }[] = []
-    const resolvedGuests: { customerId: string; cabinId?: string; isLead?: boolean }[] = []
+    const resolvedGuests: { customerId: string | null; cabinId?: string; isLead?: boolean }[] = []
     if (!isOnHold) {
-      for (const g of guests as { customerId?: string; leadId?: string; cabinId?: string; isLead?: boolean }[]) {
+      for (const g of guests as { customerId?: string; leadId?: string; cabinId?: string; isLead?: boolean; isPlaceholder?: boolean }[]) {
         if (g.customerId) { resolvedGuests.push({ customerId: g.customerId, cabinId: g.cabinId, isLead: g.isLead }); continue }
+        // A placeholder pax: cabin is reserved, name is not known yet — sales fills it in
+        // later via PATCH /api/guests/[id]. Never eligible to be the booking's lead guest.
+        if (g.isPlaceholder) { resolvedGuests.push({ customerId: null, cabinId: g.cabinId, isLead: false }); continue }
         if (!g.leadId) {
           return NextResponse.json({ error: 'Each guest needs either a customerId or a leadId' }, { status: 400 })
         }
@@ -239,9 +242,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const lead  = isOnHold ? null : (resolvedGuests.find(g => g.isLead) ?? resolvedGuests[0])
+    // Fall back to the first *named* guest, never a placeholder — a placeholder has no
+    // customerId to hang the booking's own customerId/lead off of.
+    const lead  = isOnHold ? null : (resolvedGuests.find(g => g.isLead && g.customerId) ?? resolvedGuests.find(g => g.customerId))
     if (!isOnHold && !lead) {
-      return NextResponse.json({ error: 'At least one guest is required' }, { status: 400 })
+      return NextResponse.json({ error: 'At least one named guest is required' }, { status: 400 })
     }
     const paid  = isFinite(parseFloat(depositPaid)) ? Math.max(0, parseFloat(depositPaid)) : 0
     const total = isFinite(parseFloat(totalPrice))  ? Math.max(0, parseFloat(totalPrice))  : 0
@@ -347,8 +352,8 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      // Guarded above: !isOnHold implies lead is non-null here.
-      leadCustomerId = lead!.customerId
+      // Guarded above: !isOnHold implies lead is non-null and named (has a customerId) here.
+      leadCustomerId = lead!.customerId!
     }
 
     const booking = await db.booking.create({

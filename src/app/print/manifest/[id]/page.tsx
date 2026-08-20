@@ -43,9 +43,10 @@ export default async function ManifestPage({ params }: { params: Promise<{ id: s
       booking.guests.forEach(g => {
         passengers.push({
           no: no++,
-          name: g.customer.name,
-          phone: g.customer.phone ?? '—',
-          email: g.customer.email ?? '—',
+          // No customer yet — cabin is reserved but the name hasn't been filled in by sales.
+          name: g.customer?.name ?? 'TBD',
+          phone: g.customer?.phone ?? '—',
+          email: g.customer?.email ?? '—',
           cabin: g.cabin?.name ?? '—',
           bookingCode: booking.bookingCode,
           isLead: g.isLead,

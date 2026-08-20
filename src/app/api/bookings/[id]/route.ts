@@ -224,18 +224,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       const paid  = parseFloat(depositPaid) || 0
       const total = parseFloat(totalPrice)  || 0
-      const lead  = guests.find((g: { isLead?: boolean }) => g.isLead) ?? guests[0]
+      // Never let a placeholder (no customerId — cabin reserved, name TBD) become the lead.
+      const lead  = guests.find((g: { isLead?: boolean; customerId?: string }) => g.isLead && g.customerId)
+        ?? guests.find((g: { customerId?: string }) => g.customerId)
+      if (!lead) return NextResponse.json({ error: 'At least one named guest is required' }, { status: 400 })
 
       await db.$transaction([
         // Remove the placeholder hold guest
         db.bookingGuest.deleteMany({ where: { bookingId: id } }),
         // Create real guests
         db.bookingGuest.createMany({
-          data: guests.map((g: { customerId: string; cabinId?: string; isLead?: boolean }) => ({
+          data: guests.map((g: { customerId?: string; cabinId?: string; isLead?: boolean; isPlaceholder?: boolean }) => ({
             bookingId:  id,
-            customerId: g.customerId,
+            customerId: g.customerId || null,
             cabinId:    g.cabinId || null,
-            isLead:     g.isLead ?? false,
+            isLead:     g.isPlaceholder ? false : (g.isLead ?? false),
           })),
         }),
         // Update booking — WHERE includes status: on_hold to prevent double-completion race

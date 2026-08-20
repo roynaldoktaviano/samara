@@ -91,6 +91,7 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
   })
 
   if (!bg) notFound()
+  if (!bg.customer) notFound() // placeholder guest — no customer details to print yet
 
   const c  = bg.customer
   const b  = bg.booking

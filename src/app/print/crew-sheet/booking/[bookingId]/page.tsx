@@ -40,7 +40,7 @@ export async function generateMetadata({ params }: { params: Promise<{ bookingId
   const { bookingId } = await params
   const { booking } = await getBooking(bookingId)
   if (!booking) return {}
-  const lead = booking.guests.find(g => g.isLead)?.customer.name ?? booking.guests[0]?.customer.name ?? 'Guest'
+  const lead = booking.guests.find(g => g.isLead)?.customer?.name ?? booking.guests.find(g => g.customer)?.customer?.name ?? 'Guest'
   const dateSlug = fmtRange(new Date(booking.startDate), new Date(booking.endDate)).replace(/–/g, '-').replace(/\s+/g, '')
   return { title: `CrewGuestSheet_${slug(booking.yacht?.name ?? '')}_${dateSlug}_${slug(lead)}` }
 }
@@ -123,7 +123,9 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
   }
 
   const salesperson = booking.salesperson || booking.agent?.name || 'Direct'
-  const guests: GuestRow[] = booking.guests.map((g, i) => ({
+  // Placeholder pax (cabin reserved, name not filled in yet) has nothing to print here —
+  // it isn't a real passenger until sales attaches a customer.
+  const guests: GuestRow[] = booking.guests.filter((g): g is typeof g & { customer: NonNullable<typeof g.customer> } => !!g.customer).map((g, i) => ({
     no: i + 1,
     bgId: g.id,
     name: g.customer.name,
