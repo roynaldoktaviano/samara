@@ -1186,14 +1186,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <label className="text-sm font-medium">Delivery Location</label>
                 <div className="relative">
                   <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <select className={`${inp} pl-8`} value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}>
-                    <option value="">— Pilih lokasi —</option>
+                  <select className={`${inp.replace('px-3', 'pl-8 pr-3')}`} value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}>
+                    <option value="">— Select location —</option>
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 {deliveryLocationId && (() => {
                   const loc = locations.find(l => l.id === deliveryLocationId)
-                  return loc ? <p className="text-xs text-muted-foreground mt-1">Diterima oleh tim <span className="font-medium">{loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'}</span></p> : null
+                  return loc ? <p className="text-xs text-muted-foreground mt-1">Received by <span className="font-medium">{loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'}</span> team</p> : null
                 })()}
               </div>
               <div className="space-y-1.5">
@@ -1943,13 +1943,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
                       value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
                     >
-                      <option value="">— Pilih lokasi —</option>
+                      <option value="">— Select location —</option>
                       {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                   </div>
                   {deliveryLocationId && (() => {
                     const loc = locations.find(l => l.id === deliveryLocationId)
-                    return loc ? <p className="text-xs text-muted-foreground mt-1">Diterima oleh tim <span className="font-medium">{loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'}</span></p> : null
+                    return loc ? <p className="text-xs text-muted-foreground mt-1">Received by <span className="font-medium">{loc.managedBy === 'PURCHASING' ? 'Purchasing' : 'Warehouse'}</span> team</p> : null
                   })()}
                 </div>
 

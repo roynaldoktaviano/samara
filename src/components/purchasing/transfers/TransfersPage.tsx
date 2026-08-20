@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight } from 'lucide-react'
+import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 
@@ -25,6 +25,7 @@ interface StockPickerRow {
   poNumber?: string | null
 }
 interface TeamUser { id: string; name: string; role: string }
+interface EmployeeOption { id: string; fullName: string }
 interface TransferItem { id: string; itemId: string | null; itemName: string; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null; unitCost?: number; requestedValue?: number; dispatchedValue?: number; receivedValue?: number }
 interface StockTransfer {
   id: string; transferNumber: string; status: string; notes: string | null
@@ -43,6 +44,10 @@ interface StockTransfer {
   purchaseOrderId?: string | null
   legSequence?: number | null
   purchaseOrder?: { id: string; poNumber: string } | null
+  // Set when this transfer was auto-created from a PR conversion (warehouse stock
+  // fulfillment) — lets warehouse see who to follow up with about receipt confirmation.
+  purchaseRequestId?: string | null
+  purchaseRequest?: { id: string; prNumber: string; requestedByName: string | null } | null
 }
 interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null }
 
@@ -100,6 +105,53 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
   )
 }
 
+// Searchable "Received by" picker — matches actual employee records instead of a
+// free-typed name, same pattern as EmployeePicker on the crew-receive page.
+function EmployeeCombobox({ employees, value, onChange }: {
+  employees: EmployeeOption[]; value: string; onChange: (name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? employees.filter(e => e.fullName.toLowerCase().includes(q)) : employees
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full border rounded-md px-3 py-2 text-sm text-left flex items-center justify-between gap-2 bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] transition">
+        <span className={`truncate flex items-center gap-2 ${value ? '' : 'text-muted-foreground'}`}>
+          <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {value || 'Select name...'}
+        </span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-md shadow-xl z-50 max-h-64 flex flex-col overflow-hidden">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
+                  placeholder="Search name..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matching name</p>}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onChange(e.fullName); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-0 transition-colors">
+                  {e.fullName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function TransfersPage() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,6 +160,7 @@ export default function TransfersPage() {
   const CARD_PAGE_SIZE = 10
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [detail, setDetail] = useState<TransferDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -158,14 +211,16 @@ export default function TransfersPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [tRes, lRes, uRes] = await Promise.all([
+    const [tRes, lRes, uRes, eRes] = await Promise.all([
       fetch('/api/purchasing/transfers'),
       fetch('/api/purchasing/locations'),
       fetch('/api/purchasing/team'),
+      fetch('/api/purchasing/employees'),
     ])
     if (tRes.ok) setTransfers(await tRes.json())
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation & { isActive?: boolean }) => l.isActive !== false))
     if (uRes.ok) setTeamUsers(await uRes.json())
+    if (eRes.ok) setEmployees(await eRes.json())
     setLoading(false)
   }, [])
 
@@ -250,7 +305,9 @@ export default function TransfersPage() {
       const initQty = hasPU ? cap / cf : cap
       return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: cap, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: hasPU }
     }))
-    setDispatchPhoto(''); setExpectedReceiverName(''); setDispatchError(''); setDispatchModal(true)
+    setDispatchPhoto('')
+    setExpectedReceiverName(detail.purchaseRequest?.requestedByName ?? '')
+    setDispatchError(''); setDispatchModal(true)
   }
 
   function openReceive() {
@@ -715,9 +772,15 @@ export default function TransfersPage() {
                   {detail.legSequence ? ` — leg ${detail.legSequence}` : ''}
                 </p>
               )}
+              {detail.purchaseRequest && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Requested by <span className="font-medium text-foreground">{detail.purchaseRequest.requestedByName ?? '—'}</span>
+                  {' '}({detail.purchaseRequest.prNumber})
+                </p>
+              )}
               {!!detail.totalValue && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  {detail.status === 'DISPATCHED' ? 'Nilai barang in transit: ' : detail.status === 'RECEIVED' ? 'Nilai barang diterima: ' : 'Nilai barang: '}
+                  {detail.status === 'DISPATCHED' ? 'Transfer value: ' : detail.status === 'RECEIVED' ? 'Nilai barang diterima: ' : 'Nilai barang: '}
                   <span className="font-semibold text-foreground">{fmtMoney(detail.totalValue)}</span>
                 </p>
               )}
@@ -1006,13 +1069,13 @@ export default function TransfersPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Received By</label>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    disabled={!receiverNameEditing}
-                    className={`flex-1 border rounded-md px-3 py-2 text-sm outline-none transition ${receiverNameEditing ? 'focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]' : 'bg-muted/30 text-muted-foreground cursor-default'}`}
-                    value={receiverName}
-                    onChange={e => setReceiverName(e.target.value)}
-                  />
+                  {receiverNameEditing ? (
+                    <div className="flex-1"><EmployeeCombobox employees={employees} value={receiverName} onChange={setReceiverName} /></div>
+                  ) : (
+                    <div className="flex-1 border rounded-md px-3 py-2 text-sm bg-muted/30 text-muted-foreground cursor-default truncate">
+                      {receiverName || '—'}
+                    </div>
+                  )}
                   {receiverNameEditing ? (
                     <div className="flex gap-1.5 shrink-0">
                       <button onClick={() => { setReceiverNameOriginal(receiverName); setReceiverNameEditing(false) }}

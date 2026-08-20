@@ -7,6 +7,7 @@ import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseCanViewOrder } from '@/lib/purchasing/warehouseScope'
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const TRANSIT_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -364,6 +365,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       id,
     ).catch(console.error)
   }
+
+  // Any status change out of (or into) DRAFT moves the "still draft" count, so refresh
+  // the sidebar badge live rather than waiting for the next poll.
+  if (status !== undefined) emitTenantEvent(session.user.tenantId, 'purchasing-orders')
 
   return NextResponse.json(order)
 }

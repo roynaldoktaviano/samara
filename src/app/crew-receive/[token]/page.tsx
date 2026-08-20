@@ -2,17 +2,67 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { Camera, CheckCircle2, Loader2 } from 'lucide-react'
+import { Camera, CheckCircle2, Loader2, Search, ChevronDown, User } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 
 interface TransferItem { itemId: string | null; itemName: string; dispatchedQty: number }
+interface EmployeeOption { id: string; fullName: string }
 interface TransferData {
   id: string; transferNumber: string; status: string
   receivedByName: string | null; receivedAt: string | null
   fromLocation: { name: string }; toLocation: { name: string }
   items: TransferItem[]
+  employees: EmployeeOption[]
+}
+
+// Searchable "Received by" picker — a plain <select> doesn't let crew filter a long
+// employee list by typing, so this is a lightweight combobox instead (same pattern as
+// TripCombobox in RequestsPage.tsx, restyled to match this page's mobile-first look).
+function EmployeePicker({ employees, value, onChange }: {
+  employees: EmployeeOption[]; value: string; onChange: (name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = q ? employees.filter(e => e.fullName.toLowerCase().includes(q)) : employees
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full border rounded-xl px-3 py-2.5 text-sm text-left flex items-center justify-between gap-2 bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
+        <span className={`truncate flex items-center gap-2 ${value ? 'text-gray-900' : 'text-gray-400'}`}>
+          <User className="h-4 w-4 shrink-0 text-gray-400" />
+          {value || 'Select your name...'}
+        </span>
+        <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-xl shadow-xl z-50 max-h-64 flex flex-col overflow-hidden">
+            <div className="p-2 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                <input autoFocus className="w-full h-9 border rounded-lg px-2.5 pl-8 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Search name..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto">
+              {opts.length === 0 && <p className="px-3 py-3 text-sm text-gray-400">No matching name</p>}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onChange(e.fullName); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 border-b last:border-0 transition-colors">
+                  {e.fullName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 // No-login page ship crew open via a per-shipment link (sent outside the ERP, e.g. WhatsApp)
@@ -61,15 +111,15 @@ export default function CrewReceivePage() {
   }
 
   async function submit() {
-    if (!receiverName.trim()) { setSubmitError('Nama penerima wajib diisi'); return }
-    if (!photo) { setSubmitError('Foto wajib diupload'); return }
+    if (!receiverName.trim()) { setSubmitError('Please select your name'); return }
+    if (!photo) { setSubmitError('Photo is required'); return }
     setSubmitting(true); setSubmitError('')
     const res = await fetch(`/api/crew-receive/${token}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ receivedByName: receiverName.trim(), receivePhotoKey: photo }),
     })
     const data = await res.json()
-    if (!res.ok) { setSubmitError(data.error ?? 'Gagal menyimpan'); setSubmitting(false); return }
+    if (!res.ok) { setSubmitError(data.error ?? 'Failed to save'); setSubmitting(false); return }
     setSubmitting(false); setDone(true)
   }
 
@@ -78,7 +128,7 @@ export default function CrewReceivePage() {
       <div className="flex flex-col items-center gap-4 text-gray-400">
         <img src={LOGO} alt="Samara" className="w-14 h-14 opacity-60 animate-pulse" />
         <Loader2 className="h-6 w-6 animate-spin" />
-        <p className="text-sm">Memuat...</p>
+        <p className="text-sm">Loading...</p>
       </div>
     </div>
   )
@@ -88,12 +138,12 @@ export default function CrewReceivePage() {
       <div className="text-center max-w-sm">
         <img src={LOGO} alt="Samara" className="w-16 h-16 mx-auto mb-4 opacity-70" />
         <h1 className="text-xl font-bold text-gray-800 mb-2">
-          {error === 'This link has expired' ? 'Link Sudah Kadaluarsa' : 'Link Tidak Valid'}
+          {error === 'This link has expired' ? 'Link Expired' : 'Invalid Link'}
         </h1>
         <p className="text-gray-500 text-sm">
           {error === 'This link has expired'
-            ? 'Link ini sudah kadaluarsa. Hubungi tim purchasing untuk link baru.'
-            : 'Link ini tidak valid. Periksa kembali link yang dikirim, atau hubungi tim purchasing.'}
+            ? 'This link has expired. Contact the purchasing team for a new one.'
+            : 'This link is invalid. Please check the link you were sent, or contact the purchasing team.'}
         </p>
       </div>
     </div>
@@ -105,12 +155,12 @@ export default function CrewReceivePage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="text-center max-w-sm">
         <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />
-        <h1 className="text-xl font-bold text-gray-800 mb-2">Sudah Dikonfirmasi</h1>
+        <h1 className="text-xl font-bold text-gray-800 mb-2">Confirmed</h1>
         <p className="text-gray-600 text-sm">
-          {transfer.transferNumber} diterima oleh{' '}
+          {transfer.transferNumber} received by{' '}
           <span className="font-medium">{done ? receiverName.trim() : transfer.receivedByName}</span>
           {!done && transfer.receivedAt && (
-            <> pada {new Date(transfer.receivedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</>
+            <> on {new Date(transfer.receivedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</>
           )}
         </p>
       </div>
@@ -122,7 +172,7 @@ export default function CrewReceivePage() {
       <div className="max-w-md mx-auto px-4 pt-8">
         <div className="text-center mb-6">
           <img src={LOGO} alt="Samara" className="w-12 h-12 mx-auto mb-2 opacity-80" />
-          <h1 className="text-lg font-bold text-gray-900">Konfirmasi Penerimaan Barang</h1>
+          <h1 className="text-lg font-bold text-gray-900">Confirm Delivery Receipt</h1>
           <p className="text-sm text-gray-500 mt-1">{transfer.transferNumber}</p>
         </div>
 
@@ -146,13 +196,8 @@ export default function CrewReceivePage() {
           {submitError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{submitError}</div>}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-gray-900">Diterima oleh</label>
-            <input
-              className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Nama kamu"
-              value={receiverName}
-              onChange={e => setReceiverName(e.target.value)}
-            />
+            <label className="text-sm font-semibold text-gray-900">Received by</label>
+            <EmployeePicker employees={transfer.employees} value={receiverName} onChange={setReceiverName} />
           </div>
 
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
@@ -160,10 +205,10 @@ export default function CrewReceivePage() {
 
           {photo ? (
             <div className="space-y-2">
-              <img src={photo} alt="Bukti penerimaan" className="w-full rounded-xl object-cover max-h-64 border" />
+              <img src={photo} alt="Proof of receipt" className="w-full rounded-xl object-cover max-h-64 border" />
               <button onClick={() => { setPhoto(null); fileInputRef.current?.click() }}
                 className="w-full py-2 text-sm text-gray-500 border rounded-lg hover:bg-gray-50 transition-colors">
-                Ganti foto
+                Change photo
               </button>
             </div>
           ) : (
@@ -175,8 +220,8 @@ export default function CrewReceivePage() {
                 <Camera className="h-6 w-6 text-green-600" />
               </div>
               <div className="text-center">
-                <p className="font-medium text-sm">{isDragging ? 'Lepas untuk upload' : 'Ambil atau upload foto'}</p>
-                <p className="text-xs mt-0.5">Foto barang saat diterima</p>
+                <p className="font-medium text-sm">{isDragging ? 'Drop to upload' : 'Take or upload photo'}</p>
+                <p className="text-xs mt-0.5">Photo of the items on receipt</p>
               </div>
             </button>
           )}
@@ -184,7 +229,7 @@ export default function CrewReceivePage() {
 
         <button onClick={submit} disabled={submitting}
           className="w-full py-3.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:opacity-40 transition-colors">
-          {submitting ? 'Menyimpan...' : 'Konfirmasi Diterima'}
+          {submitting ? 'Saving...' : 'Confirm Receipt'}
         </button>
       </div>
     </div>

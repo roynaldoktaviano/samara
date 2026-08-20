@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApproval'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
@@ -299,6 +300,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const createdPoNumbers: string[] = []
   const createdPoIds: string[] = []
+  // Subset of createdPoNumbers that are brand-new DRAFT POs (not items appended to an
+  // existing draft) — used below to notify Purchasing only about drafts that actually
+  // need attention for the first time.
+  const newDraftPos: { id: string; poNumber: string }[] = []
   const createdTransferNumbers: string[] = []
   // Items actually swept into a PO or Transfer this pass — stamped convertedAt at the end
   // so a later partial-convert pass never re-processes them.
@@ -373,6 +378,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         })
         createdPoNumbers.push(poNumber)
         createdPoIds.push(poId)
+        newDraftPos.push({ id: poId, poNumber })
         groupPoId = poId
       }
       await db.purchaseRequestItem.updateMany({ where: { id: { in: groupItems.map(it => it.id) } }, data: { convertedPoId: groupPoId } })
@@ -432,6 +438,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (processedItemIds.size > 0) {
     await db.purchaseRequestItem.updateMany({ where: { id: { in: [...processedItemIds] } }, data: { convertedAt: new Date() } })
+  }
+
+  // Alert the warehouse the moment a Transfer lands in their queue — they're the one who
+  // has to dispatch it next and won't otherwise know a PR conversion just created it.
+  if (createdTransferNumbers.length > 0) {
+    await notifyByRoleForRequest(db, ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'], 'TRANSFER_PENDING_DISPATCH',
+      'Transfer Baru Menunggu Dikirim',
+      `${createdTransferNumbers.join(', ')} dibuat dari ${request.prNumber} — siap dikirim ke lokasi tujuan.`,
+      id,
+    )
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+  }
+
+  // Alert Purchasing that a new draft PO is sitting there needing supplier/pricing
+  // details filled in before it can be confirmed — otherwise it can go unnoticed until
+  // someone happens to open the Purchase Orders list.
+  if (newDraftPos.length > 0) {
+    for (const po of newDraftPos) {
+      await notifyByRole(db, ALLOWED, 'PO_DRAFT_CREATED',
+        'Draft PO Menunggu Dilengkapi',
+        `${po.poNumber} dibuat dari ${request.prNumber} — lengkapi supplier & harga sebelum dikonfirmasi.`,
+        po.id,
+      )
+    }
+    emitTenantEvent(session.user.tenantId, 'purchasing-orders')
   }
 
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')

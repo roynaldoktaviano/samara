@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -24,12 +25,20 @@ export async function GET() {
     include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })
   const locIds = [...new Set([...transfers.map(t => t.fromLocationId), ...transfers.map(t => t.toLocationId)])]
-  const [locations, purchaseOrders] = await Promise.all([
+  const [locations, purchaseOrders, purchaseRequests] = await Promise.all([
     db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } }),
     db.purchaseOrder.findMany({ where: { id: { in: transfers.map(t => t.purchaseOrderId).filter((x): x is string => !!x) } }, select: { id: true, poNumber: true } }),
+    db.purchaseRequest.findMany({
+      where: { id: { in: transfers.map(t => t.purchaseRequestId).filter((x): x is string => !!x) } },
+      select: { id: true, prNumber: true, requestedBy: { select: { name: true } }, requestedByEmployee: { select: { fullName: true } } },
+    }),
   ])
   const locMap = new Map(locations.map(l => [l.id, l]))
   const poMap = new Map(purchaseOrders.map(o => [o.id, o]))
+  const prMap = new Map(purchaseRequests.map(r => [r.id, {
+    id: r.id, prNumber: r.prNumber,
+    requestedByName: r.requestedByEmployee?.fullName ?? r.requestedBy?.name ?? null,
+  }]))
   return NextResponse.json(transfers.map(t => {
     const first = t.items[0]?.itemName ?? null
     const extra = t.items.length > 1 ? t.items.length - 1 : 0
@@ -47,6 +56,7 @@ export async function GET() {
       fromLocation: locMap.get(t.fromLocationId) ?? null,
       toLocation: locMap.get(t.toLocationId) ?? null,
       purchaseOrder: t.purchaseOrderId ? (poMap.get(t.purchaseOrderId) ?? null) : null,
+      purchaseRequest: t.purchaseRequestId ? (prMap.get(t.purchaseRequestId) ?? null) : null,
     }
   }))
 }
@@ -101,5 +111,6 @@ export async function POST(req: NextRequest) {
     },
     include: { items: true },
   })
+  emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
   return NextResponse.json(transfer, { status: 201 })
 }

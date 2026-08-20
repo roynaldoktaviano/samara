@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { receiveTransferLeg } from '@/lib/purchasing/transferActions'
 
 import { roleMatches } from '@/lib/role-utils'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -34,6 +35,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       receivedBy: { select: { id: true, name: true } },
       expectedReceivedBy: { select: { id: true, name: true } },
       purchaseOrder: { select: { id: true, poNumber: true } },
+      purchaseRequest: {
+        select: {
+          id: true, prNumber: true,
+          requestedBy: { select: { name: true } },
+          requestedByEmployee: { select: { fullName: true } },
+        },
+      },
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -71,6 +79,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     toLocation: toLoc,
     totalValue,
     items,
+    purchaseRequest: transfer.purchaseRequest && {
+      id: transfer.purchaseRequest.id,
+      prNumber: transfer.purchaseRequest.prNumber,
+      // Prefer the actual requester (e.g. a ship crew member) over whoever's ERP
+      // account created the PR — same fallback Purchasing's own PR detail page uses.
+      requestedByName: transfer.purchaseRequest.requestedByEmployee?.fullName ?? transfer.purchaseRequest.requestedBy?.name ?? null,
+    },
   })
 }
 
@@ -89,6 +104,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'cancel') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Hanya transfer PENDING yang bisa dibatalkan' }, { status: 409 })
     await db.stockTransfer.update({ where: { id }, data: { status: 'CANCELLED', updatedAt: new Date() } })
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
     return NextResponse.json({ ok: true })
   }
 
@@ -159,6 +175,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         },
       })
     })
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
     return NextResponse.json({ ok: true })
   }
 

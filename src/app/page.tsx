@@ -416,6 +416,8 @@ export default function Home() {
 
   const [pendingRefunds, setPendingRefunds] = useState(0)
   const [pendingRequestOrders, setPendingRequestOrders] = useState(0)
+  const [pendingTransfers, setPendingTransfers] = useState(0)
+  const [pendingDraftPOs, setPendingDraftPOs] = useState(0)
   const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
@@ -444,6 +446,34 @@ export default function Home() {
         const data = await res.json()
         setPendingRequestOrders(Array.isArray(data)
           ? data.filter((r: { status: string }) => r.status === 'DRAFT').length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
+  const fetchPendingTransfers = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      const res = await fetch('/api/purchasing/transfers')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingTransfers(Array.isArray(data)
+          ? data.filter((t: { status: string }) => t.status === 'PENDING').length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
+  const fetchPendingDraftPOs = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      const res = await fetch('/api/purchasing/orders')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingDraftPOs(Array.isArray(data)
+          ? data.filter((o: { status: string }) => o.status === 'DRAFT').length
           : 0)
       }
     } catch { /* silent */ }
@@ -533,13 +563,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -548,6 +578,8 @@ export default function Home() {
     if (!session) return
     const topicHandlers: Record<string, () => void> = {
       'purchasing-requests': fetchPendingRequestOrders,
+      'purchasing-transfers': fetchPendingTransfers,
+      'purchasing-orders': fetchPendingDraftPOs,
       'my-approvals': fetchPendingMyApprovals,
       'payments': () => { fetchPendingPayments(); fetchPendingRefunds() },
       'purchasing-finance': fetchPendingPurchasingFinance,
@@ -556,7 +588,7 @@ export default function Home() {
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -871,6 +903,8 @@ export default function Home() {
                   (item.id === 'payments' && isFinance && (pendingPayments + pendingRefunds) > 0) ||
                   (item.id === 'bookings' && !isFinance && (invoiceReadyCount + pendingRefunds) > 0) ||
                   (item.id === 'purchasing-requests' && pendingRequestOrders > 0) ||
+                  (item.id === 'purchasing-transfers' && pendingTransfers > 0) ||
+                  (item.id === 'purchasing-orders' && pendingDraftPOs > 0) ||
                   (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
@@ -882,6 +916,8 @@ export default function Home() {
                   item.id === 'payments' && isFinance ? pendingPayments + pendingRefunds :
                   item.id === 'bookings' && !isFinance ? invoiceReadyCount + pendingRefunds :
                   item.id === 'purchasing-requests' ? pendingRequestOrders :
+                  item.id === 'purchasing-transfers' ? pendingTransfers :
+                  item.id === 'purchasing-orders' ? pendingDraftPOs :
                   item.id === 'my-approvals' ? pendingMyApprovals :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :

@@ -24,11 +24,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   const { token } = await params
   const found = await resolveTenantByLookup(client => findTransfer(client, token))
   if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
-  const { record: transfer } = found
+  const { db, record: transfer } = found
   if (transfer.receiveTokenExpiresAt && new Date(transfer.receiveTokenExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
-  return NextResponse.json(transfer)
+  // For the "Received by" picker — crew pick themselves from the employee list instead
+  // of free-typing a name, so it matches real records exactly.
+  const employees = await db.employee.findMany({
+    where: { isActive: true },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: 'asc' },
+  })
+  return NextResponse.json({ ...transfer, employees })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -39,14 +46,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
   if (transfer.receiveTokenExpiresAt && new Date(transfer.receiveTokenExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
-  if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Sudah diterima sebelumnya' }, { status: 409 })
+  if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Already received' }, { status: 409 })
 
   const full = await db.stockTransfer.findUnique({ where: { id: transfer.id }, select: { dispatchedById: true } })
-  if (!full?.dispatchedById) return NextResponse.json({ error: 'Transfer ini belum punya catatan dispatch yang valid' }, { status: 400 })
+  if (!full?.dispatchedById) return NextResponse.json({ error: 'This transfer has no valid dispatch record' }, { status: 400 })
 
   const body = await req.json()
   const { receivePhotoKey, receivedByName } = body as { receivePhotoKey?: string; receivedByName?: string }
-  if (!receivedByName?.trim()) return NextResponse.json({ error: 'Nama penerima wajib diisi' }, { status: 400 })
+  if (!receivedByName?.trim()) return NextResponse.json({ error: 'Receiver name is required' }, { status: 400 })
 
   const result = await receiveTransferLeg(db, transfer.id, {
     items: transfer.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, receivedQty: i.dispatchedQty })),
