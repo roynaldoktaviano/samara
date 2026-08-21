@@ -2313,6 +2313,15 @@ notes:         resolvedNotes,
             {guests.length > 0 && unassigned.length === 0 && (
               <p className="text-[10px] text-muted-foreground italic mt-1">All assigned ✓</p>
             )}
+            <button
+              type="button"
+              disabled={!hasLead}
+              onClick={() => addPlaceholderGuest()}
+              title="Add a pax without assigning a cabin"
+              className="mt-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-border hover:border-muted-foreground/40 transition-colors disabled:opacity-50 self-start"
+            >
+              <Plus className="w-2.5 h-2.5" /> Add Pax
+            </button>
           </div>
 
           {/* Cabin grid */}
