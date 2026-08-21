@@ -24,6 +24,7 @@ export async function GET() {
             items: { select: { id: true, quantity: true, estimatedCost: true } },
             deliveryLocation: { select: { id: true, name: true } },
             requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true, department: true } },
+            requestedBy: { select: { id: true, name: true } },
           },
         })
       : Promise.resolve([]),
@@ -43,6 +44,11 @@ export async function GET() {
       ...r,
       itemCount: r.items.length,
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
+      // requestedByEmployee is null for internal Purchasing/Admin self-requests where
+      // nobody was picked in the "Requested By" dropdown — fall back to the ERP login
+      // that submitted it so the approver never sees a blank requester.
+      requestedByEmployee: r.requestedByEmployee ?? (r.requestedBy ? { id: r.requestedBy.id, fullName: r.requestedBy.name ?? 'Unknown', employeeNumber: '', department: null } : null),
+      requestedBy: undefined,
       items: undefined,
     })),
     quotationApprovals: quotationItems,

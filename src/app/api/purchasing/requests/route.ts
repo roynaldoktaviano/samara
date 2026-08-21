@@ -36,8 +36,11 @@ export async function GET() {
   const requests = await db.purchaseRequest.findMany({
     where: {
       // PRs still awaiting the requester's manager haven't been approved yet — Purchasing
-      // shouldn't see them until the approval endpoint flips them to DRAFT.
-      status: { not: 'PENDING_APPROVAL' },
+      // shouldn't see them in the general queue until the approval endpoint flips them to
+      // DRAFT. But whoever submitted it should still see it here (not just vanish from
+      // their own view) so they know it's sitting with their manager — the manager check
+      // itself lives in the approval endpoint's identity check, not here.
+      OR: [{ status: { not: 'PENDING_APPROVAL' } }, { requestedById: session.user.id }],
       ...(isWarehouse ? { requestedById: session.user.id } : {}),
     },
     orderBy: { createdAt: 'desc' },

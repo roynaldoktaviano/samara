@@ -90,10 +90,10 @@ interface TripOption {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
+  PENDING_APPROVAL: 'bg-purple-100 text-purple-700', DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
   REJECTED: 'bg-red-100 text-red-700', CANCELLED: 'bg-muted text-muted-foreground',
 }
 // Mirrors OrdersPage's own STATUS_LABEL/STATUS_COLOR so a PO's status reads the same
@@ -852,7 +852,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
       groups.get(key)!.push(line)
     }
 
-    const created: { prNumber: string; requesterName: string }[] = []
+    const created: { prNumber: string; requesterName: string; id: string; pendingApproval: boolean }[] = []
     for (const [empId, lines] of groups) {
       const res = await fetch('/api/purchasing/requests', {
         method: 'POST',
@@ -875,11 +875,10 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
         return
       }
       const requesterName = empId ? (employees.find(e => e.id === empId)?.fullName ?? 'Unknown') : 'Myself / general stock'
-      created.push({ prNumber: data.prNumber, requesterName })
+      created.push({ prNumber: data.prNumber, requesterName, id: data.id, pendingApproval: data.status === 'PENDING_APPROVAL' })
     }
 
     setSaving(false)
-    setView('list')
     setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
     setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
@@ -888,10 +887,18 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
       toast.success(`${created.length} Purchase Requests created`, {
         description: created.map(c => `${c.prNumber} — ${c.requesterName}`).join(' · '),
       })
+      setView('list')
+      load()
     } else {
-      toast.success(`Purchase Request ${created[0].prNumber} created`)
+      // Awaiting-manager-approval PRs are deliberately hidden from this list until
+      // approved, so dumping the user back on 'list' here would make their brand-new
+      // submission look like it vanished — jump straight to its detail instead.
+      toast.success(`Purchase Request ${created[0].prNumber} created`, {
+        description: created[0].pendingApproval ? 'Waiting for manager approval before Purchasing can process it.' : undefined,
+      })
+      await openDetail({ id: created[0].id, prNumber: created[0].prNumber, status: created[0].pendingApproval ? 'PENDING_APPROVAL' : 'DRAFT' } as PurchaseRequest)
+      load()
     }
-    load()
   }
 
   async function changeStatus(id: string, status: string) {
