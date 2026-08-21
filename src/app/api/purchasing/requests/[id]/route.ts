@@ -14,8 +14,8 @@ const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const role = (session.user as { role?: string })?.role ?? ''
   const db = await getDb(session)
   const request = await db.purchaseRequest.findUnique({
     where: { id },
@@ -46,9 +46,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
-  if (role === 'WAREHOUSE' && request.requestedById !== session.user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!roleMatches(role, VIEW_ALLOWED)) {
+    // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
+    if (role === 'WAREHOUSE') {
+      if (request.requestedById !== session.user.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    } else {
+      // Not on the Purchasing team and not Warehouse — still let the PR's assigned
+      // approver (any role, e.g. a department manager) open it to review before approving.
+      const employee = await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true } })
+      if (!employee || request.approverEmployeeId !== employee.id) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+    }
   }
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]

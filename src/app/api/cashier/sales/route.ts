@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
-import { applyItemsToSale, type CashierCartItem } from '@/lib/cashier'
+import { applyItemsToSale, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -35,10 +35,21 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
 
   const body = await request.json()
-  const { yachtId, locationId, bookingId, guestId, guestName, employeeId, employeeName, complimentaryReason, items, payMethod, closeImmediately, openedBy } = body
+  const { yachtId, locationId, bookingId, guestId, guestName, employeeId, employeeName, complimentaryReason, items, payMethod, closeImmediately, openedBy, discountId } = body
   if (!yachtId || !locationId) return NextResponse.json({ error: 'yachtId and locationId are required' }, { status: 400 })
   if (closeImmediately && payMethod === 'Complimentary' && (!employeeId || !String(complimentaryReason || '').trim())) {
     return NextResponse.json({ error: 'Complimentary requires a staff member and a reason' }, { status: 400 })
+  }
+
+  // Resolved before the transaction so an invalid discount comes back as a 400, not a
+  // generic 500 from an aborted transaction — the item subtotal it needs is knowable
+  // upfront from the incoming cart, same trust boundary the existing item prices already sit on.
+  let discountFields = { discountId: null as string | null, discountName: null as string | null, discountAmount: 0 }
+  if (closeImmediately && discountId) {
+    const subtotal = Array.isArray(items) ? (items as CashierCartItem[]).reduce((s, it) => s + Number(it.qty) * Number(it.price), 0) : 0
+    const resolved = await resolveDiscount(db, discountId, yachtId, subtotal)
+    if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 })
+    discountFields = { discountId: resolved.discountId, discountName: resolved.discountName, discountAmount: resolved.discountAmount }
   }
 
   try {
@@ -54,6 +65,7 @@ export async function POST(request: NextRequest) {
           payMethod: closeImmediately ? (payMethod || null) : null,
           closedAt: closeImmediately ? new Date() : null,
           updatedAt: new Date(),
+          ...discountFields,
         },
       })
 

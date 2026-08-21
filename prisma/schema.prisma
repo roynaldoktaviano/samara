@@ -519,6 +519,9 @@ model Yacht {
   mediaFolders       MediaFolder[]
   promos             Promo[]
   agentClawbackRates AgentClawbackRate[]
+  posMenuItems       PosMenuItem[]
+  posPackages        PosPackage[]
+  posDiscounts       PosDiscount[]
 }
 
 enum MediaFileType {
@@ -1428,6 +1431,8 @@ model PurchaseItem {
   stockCountItems  StockCountItem[]
   cashierSaleItems CashierSaleItem[]
   currentLocation  StockLocation? @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  posMenuItems     PosMenuItem[]
+  posPackageItems  PosPackageItem[]
 
   @@index([name])
   @@index([category])
@@ -1483,6 +1488,12 @@ model CashierSale {
   status              String    @default("open") // open | closed
   payMethod           String?
   total               Float     @default(0)
+  // Discount applied at settle time — total (above) stays the raw item subtotal, unchanged
+  // meaning, so every existing read of it stays correct. The amount actually charged is
+  // total - discountAmount, computed wherever it's displayed.
+  discountId          String?
+  discountName        String?
+  discountAmount      Float     @default(0)
   openedBy            String?
   closedAt            DateTime?
   createdAt           DateTime  @default(now())
@@ -1493,6 +1504,7 @@ model CashierSale {
   booking  Booking?          @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   guest    BookingGuest?     @relation(fields: [guestId], references: [id], onDelete: SetNull)
   employee Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  discount PosDiscount?      @relation(fields: [discountId], references: [id], onDelete: SetNull)
   items    CashierSaleItem[]
 
   @@index([yachtId])
@@ -1506,6 +1518,10 @@ model CashierSaleItem {
   id        String   @id @default(cuid())
   saleId    String
   itemId    String?
+  // Set instead of itemId when this line is a package sale — a package isn't a single
+  // PurchaseItem, so it never triggers stock movement (see applyItemsToSale, which already
+  // skips stock logic whenever itemId is null).
+  packageId String?
   name      String
   unit      String
   price     Float
@@ -1513,11 +1529,109 @@ model CashierSaleItem {
   round     Int      @default(1)
   createdAt DateTime @default(now())
 
-  sale CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  item PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  sale    CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item    PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  package PosPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
 
   @@index([saleId])
   @@index([itemId])
+  @@index([packageId])
+}
+
+// ─── POS (Point of Sale) ────────────────────────────────────────────────────
+// Back-office configuration for the Cashier tablet app (src/app/cashier): what's
+// on the menu, at what price, per yacht or Global (all yachts), plus packages and
+// discounts sellable/applicable from that same app. A yacht-specific PosMenuItem /
+// PosPackage / PosDiscount (yachtId set) overrides a Global one (yachtId null) for
+// the same item — enforced in the API, not a DB constraint, since Postgres treats
+// multiple NULLs in a unique index as distinct rather than colliding.
+
+model PosCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menuItems PosMenuItem[]
+  packages  PosPackage[]
+}
+
+model PosMenuItem {
+  id         String   @id @default(cuid())
+  itemId     String
+  categoryId String
+  yachtId    String?
+  price      Float
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  item     PurchaseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  category PosCategory  @relation(fields: [categoryId], references: [id])
+  yacht    Yacht?       @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([yachtId])
+  @@index([categoryId])
+}
+
+model PosPackage {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  categoryId  String
+  yachtId     String?
+  price       Float
+  imageKey    String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  PosCategory       @relation(fields: [categoryId], references: [id])
+  yacht     Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  items     PosPackageItem[]
+  saleItems CashierSaleItem[]
+
+  @@index([yachtId])
+  @@index([categoryId])
+}
+
+// Informational "what's included" for a package — never deducts stock, mirroring
+// the Cashier app today, which doesn't deduct stock for plain item sales either
+// (applyItemsToSale only logs a StockMovement/InventoryException, see src/lib/cashier.ts).
+model PosPackageItem {
+  id        String @id @default(cuid())
+  packageId String
+  itemId    String
+  qty       Float  @default(1)
+
+  package PosPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  item    PurchaseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([packageId])
+  @@index([itemId])
+}
+
+model PosDiscount {
+  id        String    @id @default(cuid())
+  name      String
+  type      String // PERCENT | FIXED
+  value     Float
+  yachtId   String?
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  yacht        Yacht?        @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  cashierSales CashierSale[]
+
+  @@index([yachtId])
 }
 
 model StockLot {

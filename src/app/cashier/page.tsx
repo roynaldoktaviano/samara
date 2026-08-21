@@ -3,30 +3,36 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Anchor, Search, Plus, Minus, X, Check, Printer, Mail, Send, CreditCard,
-  Banknote, Gift, Utensils, Wine, ClipboardList, ShoppingCart,
-  ArrowLeft, Delete, Loader2,
+  Banknote, Gift, Utensils, ClipboardList, ShoppingCart,
+  ArrowLeft, Delete, Loader2, ChevronDown,
 } from 'lucide-react'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface Vessel { id: string; name: string; image: string | null; locationId: string | null }
 interface TripGuest { id: string | null; name: string; bookingId: string }
 interface Trip { id: string; tripType: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; startDate: string; endDate: string; guests: TripGuest[] }
-interface MenuItem { id: string; name: string; type: 'FOOD' | 'BEVERAGE'; category: string; baseUnit: string; sellingPrice: number; imageKey: string | null; stock: number }
+interface PosCategoryLite { id: string; name: string }
+interface MenuItem { kind: 'item'; id: string; name: string; categoryId: string; categoryName: string; unit: string; price: number; imageKey: string | null; stock: number }
+interface PackageEntry { kind: 'package'; id: string; name: string; categoryId: string; categoryName: string; price: number; imageKey: string | null; description: string | null; components: { name: string; qty: number }[] }
+type CatalogEntry = MenuItem | PackageEntry
+interface DiscountEntry { id: string; name: string; type: 'PERCENT' | 'FIXED'; value: number }
 interface Branding { logoUrl: string; name: string }
 interface StaffMember { id: string; fullName: string; department: string | null }
 
-const TYPE_LABELS: Record<'FOOD' | 'BEVERAGE', string> = { FOOD: 'Food', BEVERAGE: 'Beverage' }
-const TYPE_ICON: Record<'FOOD' | 'BEVERAGE', typeof Utensils> = { FOOD: Utensils, BEVERAGE: Wine }
-interface CartLine { itemId: string | null; name: string; price: number; qty: number; unit: string }
-interface SaleItem { id: string; itemId: string | null; name: string; unit: string; price: number; qty: number; round: number }
+interface CartLine { kind: 'item' | 'package'; itemId: string | null; packageId: string | null; name: string; price: number; qty: number; unit: string }
+interface SaleItem { id: string; itemId: string | null; packageId: string | null; name: string; unit: string; price: number; qty: number; round: number }
 interface Sale {
   id: string; yachtId: string; locationId: string; bookingId: string | null; guestId: string | null
   guestName: string | null; status: 'open' | 'closed'; payMethod: string | null; total: number
+  discountId: string | null; discountName: string | null; discountAmount: number
   employeeId: string | null; employeeName: string | null; complimentaryReason: string | null
   closedAt: string | null; createdAt: string; items: SaleItem[]
   booking: { bookingCode: string } | null
   guest: { customer: { email: string | null } } | null
 }
+
+/** The amount actually charged after discount — sale.total stays the raw item subtotal. */
+const chargedTotal = (sale: Pick<Sale, 'total' | 'discountAmount'>) => sale.total - (sale.discountAmount || 0)
 
 function StaffTag() {
   return <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 6, background: `${GOLD_DARK}18`, color: GOLD_DARK, flexShrink: 0 }}>STAFF</span>
@@ -71,6 +77,48 @@ const fmtDateRange = (s: string, e: string) => {
   return `${sd.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${ed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
 }
 const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString()
+
+/** Searchable staff picker — staffList is already scoped to the open vessel's crew (see /api/cashier/staff). */
+function StaffSelect({ staffList, value, onChange, placeholder }: {
+  staffList: StaffMember[]; value: string; onChange: (id: string) => void; placeholder: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const selected = staffList.find(s => s.id === value) ?? null
+  const filtered = staffList.filter(s =>
+    !query || s.fullName.toLowerCase().includes(query.toLowerCase()) || s.department?.toLowerCase().includes(query.toLowerCase())
+  )
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{ ...S.input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left' }}>
+        <span style={{ color: selected ? INK : '#b3ab9c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected ? `${selected.fullName}${selected.department ? ` · ${selected.department}` : ''}` : placeholder}
+        </span>
+        <ChevronDown size={14} color="#b3ab9c" style={{ flexShrink: 0, marginLeft: 6 }} />
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => { setOpen(false); setQuery('') }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: '#fff', border: '1px solid #ece6d8', borderRadius: 10, boxShadow: '0 8px 24px rgba(26,37,47,0.15)', zIndex: 50, maxHeight: 240, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: 8, borderBottom: '1px solid #ece6d8', flexShrink: 0 }}>
+              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search staff…" style={{ ...S.input, height: 32, padding: '6px 10px', fontSize: 13 }} />
+            </div>
+            <div style={{ overflowY: 'auto' }}>
+              {filtered.length === 0 ? (
+                <div style={{ padding: '14px 12px', fontSize: 12, color: '#b3ab9c', textAlign: 'center' }}>No staff found</div>
+              ) : filtered.map(s => (
+                <button key={s.id} type="button" onClick={() => { onChange(s.id); setOpen(false); setQuery('') }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', fontSize: 13, background: value === s.id ? '#faf6ec' : 'transparent', border: 'none', cursor: 'pointer', color: INK, fontFamily: "'DM Sans', sans-serif" }}>
+                  {s.fullName}{s.department && <span style={{ color: '#8a8378' }}> · {s.department}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 const FONTS = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600&display=swap" rel="stylesheet" />
 const PRINT_STYLE = <style>{'@media print { .no-print { display: none !important } body { background: #fff !important } }'}</style>
@@ -315,9 +363,19 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
               <span style={{ ...S.mono, color: '#7a7468' }}>{fmt(item.price * item.qty)}</span>
             </div>
           ))}
+          {sale.discountAmount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', fontSize: 13, color: '#8a8378' }}>
+              <span>Subtotal</span><span style={{ ...S.mono }}>{fmt(sale.total)}</span>
+            </div>
+          )}
+          {sale.discountAmount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0', fontSize: 13, color: '#1f9d5c' }}>
+              <span>Discount{sale.discountName ? ` (${sale.discountName})` : ''}</span><span style={{ ...S.mono }}>−{fmt(sale.discountAmount)}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontWeight: 800, fontSize: 20 }}>
             <span style={{ color: '#7a7468' }}>SETTLED</span>
-            <span style={{ ...S.mono, color: GOLD_DARK }}>{fmt(sale.total)}</span>
+            <span style={{ ...S.mono, color: GOLD_DARK }}>{fmt(chargedTotal(sale))}</span>
           </div>
           <div style={{ fontSize: 12, color: '#8a8378', marginTop: 6 }}>Payment: {sale.payMethod}</div>
           {complimentary && sale.complimentaryReason && <div style={{ fontSize: 12, color: '#8a8378', marginTop: 2 }}>Reason: {sale.complimentaryReason}</div>}
@@ -350,23 +408,30 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
 }
 
 // ─── SETTLE TAB — single-payer, single-method close screen ────────────────────
-function SettleScreen({ sale, vessel, staffList, onBack, onConfirm, busy }: {
-  sale: Sale; vessel: Vessel; staffList: StaffMember[]; onBack: () => void
-  onConfirm: (payMethod: string, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => void
+function SettleScreen({ sale, vessel, staffList, discounts, onBack, onConfirm, busy }: {
+  sale: Sale; vessel: Vessel; staffList: StaffMember[]; discounts: DiscountEntry[]; onBack: () => void
+  onConfirm: (payMethod: string, discountId: string | null, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => void
   busy: boolean
 }) {
   const [method, setMethod] = useState('Cash')
   const [compStaffId, setCompStaffId] = useState('')
   const [compReason, setCompReason] = useState('')
+  const [discountId, setDiscountId] = useState('')
   const isCompact = useIsCompact()
+
+  const selectedDiscount = discounts.find(d => d.id === discountId) ?? null
+  const discountPreview = selectedDiscount
+    ? Math.max(0, Math.min(selectedDiscount.type === 'PERCENT' ? sale.total * (selectedDiscount.value / 100) : selectedDiscount.value, sale.total))
+    : 0
+  const dueTotal = sale.total - discountPreview
 
   const compReady = method !== 'Complimentary' || (!!compStaffId && !!compReason.trim())
   const confirm = () => {
     if (method === 'Complimentary') {
       const staff = staffList.find(s => s.id === compStaffId)
-      onConfirm(method, { employeeId: compStaffId, employeeName: staff?.fullName ?? null, complimentaryReason: compReason.trim() })
+      onConfirm(method, discountId || null, { employeeId: compStaffId, employeeName: staff?.fullName ?? null, complimentaryReason: compReason.trim() })
     } else {
-      onConfirm(method)
+      onConfirm(method, discountId || null)
     }
   }
 
@@ -401,16 +466,19 @@ function SettleScreen({ sale, vessel, staffList, onBack, onConfirm, busy }: {
 
             {method === 'Complimentary' && (
               <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <select value={compStaffId} onChange={e => setCompStaffId(e.target.value)} style={S.input}>
-                  <option value="">Given by (staff)…</option>
-                  {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
-                </select>
+                <StaffSelect staffList={staffList} value={compStaffId} onChange={setCompStaffId} placeholder="Given by (staff)…" />
                 <input value={compReason} onChange={e => setCompReason(e.target.value)} placeholder="Reason for complimentary…" style={S.input} />
               </div>
             )}
 
+            <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 700, letterSpacing: '0.08em', marginBottom: 10 }}>DISCOUNT</div>
+            <select value={discountId} onChange={e => setDiscountId(e.target.value)} style={{ ...S.input, marginBottom: 26 }}>
+              <option value="">No discount</option>
+              {discounts.map(d => <option key={d.id} value={d.id}>{d.name} ({d.type === 'PERCENT' ? `${d.value}%` : fmt(d.value)})</option>)}
+            </select>
+
             <button onClick={confirm} disabled={busy || !compReady} style={{ width: '100%', padding: 16, borderRadius: 12, fontSize: 16, ...S.goldBtn, opacity: (busy || !compReady) ? 0.6 : 1 }}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Take payment {fmt(sale.total)}
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Take payment {fmt(dueTotal)}
             </button>
           </div>
 
@@ -429,9 +497,14 @@ function SettleScreen({ sale, vessel, staffList, onBack, onConfirm, busy }: {
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 6px', fontSize: 13, color: '#8a8378' }}>
                 <span>Subtotal</span><span style={{ ...S.mono }}>{fmt(sale.total)}</span>
               </div>
+              {discountPreview > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 0 6px', fontSize: 13, color: '#1f9d5c' }}>
+                  <span>Discount ({selectedDiscount?.name})</span><span style={{ ...S.mono }}>−{fmt(discountPreview)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: '1px solid #f1ede2', marginTop: 4 }}>
                 <span style={{ fontWeight: 700, fontSize: 14, color: '#7a7468' }}>TOTAL DUE</span>
-                <span style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK }}>{fmt(sale.total)}</span>
+                <span style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK }}>{fmt(dueTotal)}</span>
               </div>
             </div>
           </div>
@@ -451,7 +524,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
   const closedToday = sales.filter(b => b.status === 'closed' && b.closedAt && isToday(b.closedAt))
   const closedBills = closedToday.slice(0, 10)
 
-  const billedToday   = closedToday.reduce((s, b) => s + b.total, 0)
+  const billedToday   = closedToday.reduce((s, b) => s + chargedTotal(b), 0)
   const unbilledTotal = openBills.reduce((s, b) => s + b.total, 0)
 
   const [newBillOpen, setNewBillOpen] = useState(false)
@@ -527,7 +600,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
                       <div style={{ fontWeight: 600, fontSize: 14, color: '#7a7468', display: 'flex', alignItems: 'center', gap: 6 }}>{b.guestName ?? 'Guest'}{b.employeeId && <StaffTag />}</div>
                       <div style={{ fontSize: 11, color: '#b3ab9c', marginTop: 2 }}>{b.payMethod}</div>
                     </div>
-                    <div style={{ ...S.mono, fontWeight: 700, fontSize: 15, color: '#8a8378' }}>{fmt(b.total)}</div>
+                    <div style={{ ...S.mono, fontWeight: 700, fontSize: 15, color: '#8a8378' }}>{fmt(chargedTotal(b))}</div>
                   </div>
                 ))}
               </div>
@@ -554,7 +627,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
                 {closedToday.slice(0, 3).map(b => (
                   <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 4px', fontSize: 13, borderBottom: '1px solid #f1ede2' }}>
                     <span style={{ color: '#7a7468' }}>{b.guestName ?? 'Guest'}</span>
-                    <span style={{ ...S.mono, color: '#8a8378' }}>{fmt(b.total)}</span>
+                    <span style={{ ...S.mono, color: '#8a8378' }}>{fmt(chargedTotal(b))}</span>
                   </div>
                 ))}
               </div>
@@ -585,15 +658,8 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
               {newBillType === 'staff' ? (
                 <>
                   <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>STAFF</div>
-                  <select
-                    value={newBillStaff?.id ?? ''}
-                    onChange={e => setNewBillStaff(staffList.find(s => s.id === e.target.value) ?? null)}
-                    style={S.input}
-                    autoFocus
-                  >
-                    <option value="">Select staff…</option>
-                    {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
-                  </select>
+                  <StaffSelect staffList={staffList} value={newBillStaff?.id ?? ''}
+                    onChange={id => setNewBillStaff(staffList.find(s => s.id === id) ?? null)} placeholder="Select staff…" />
                 </>
               ) : (
                 <>
@@ -678,7 +744,6 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   const isCompact = useIsCompact()
   const [cartOpen, setCartOpen]   = useState(false)
   const [section, setSection]     = useState('sales')
-  const [activeType, setActiveType] = useState<'All' | 'FOOD' | 'BEVERAGE'>('All')
   const [activeCat, setActiveCat] = useState('All')
   const [search, setSearch]       = useState('')
   const [cart, setCart]           = useState<CartLine[]>([])
@@ -695,12 +760,20 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   const [settleSaleId, setSettleSaleId] = useState<string | null>(null)
   const [receipt, setReceipt]     = useState<Sale | null>(null)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [packages, setPackages]   = useState<PackageEntry[]>([])
+  const [posCategories, setPosCategories] = useState<PosCategoryLite[]>([])
+  const [discounts, setDiscounts] = useState<DiscountEntry[]>([])
   const [busy, setBusy]           = useState(false)
 
   const ac = GOLD_DARK
 
   const loadMenu = useCallback(() => {
-    fetch(`/api/cashier/menu?yachtId=${vessel.id}`).then(r => r.json()).then(d => setMenuItems(Array.isArray(d.items) ? d.items : []))
+    fetch(`/api/cashier/menu?yachtId=${vessel.id}`).then(r => r.json()).then(d => {
+      setMenuItems(Array.isArray(d.items) ? d.items : [])
+      setPackages(Array.isArray(d.packages) ? d.packages : [])
+      setPosCategories(Array.isArray(d.categories) ? d.categories : [])
+      setDiscounts(Array.isArray(d.discounts) ? d.discounts : [])
+    })
   }, [vessel.id])
 
   const loadSales = useCallback(() => {
@@ -713,10 +786,10 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
 
   useEffect(() => { loadMenu(); loadSales(); loadStaff() }, [loadMenu, loadSales, loadStaff])
 
-  const types = useMemo(() => ['All', ...Array.from(new Set(menuItems.map(i => i.type)))] as ('All' | 'FOOD' | 'BEVERAGE')[], [menuItems])
-  const categories = useMemo(() =>
-    ['All', ...Array.from(new Set(menuItems.filter(i => activeType === 'All' || i.type === activeType).map(i => i.category)))],
-    [menuItems, activeType])
+  const catalog = useMemo<CatalogEntry[]>(() => [...menuItems, ...packages], [menuItems, packages])
+  const categoryTabs = useMemo(() =>
+    posCategories.filter(c => catalog.some(x => x.categoryId === c.id)),
+    [posCategories, catalog])
   const cartTotal   = cart.reduce((s, i) => s + i.price * i.qty, 0)
   const activeSale  = sales.find(s => s.id === activeSaleId) ?? null
   const settleSale  = sales.find(s => s.id === settleSaleId) ?? null
@@ -728,20 +801,24 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   ]
 
   const filtered = useMemo(() =>
-    menuItems.filter(i =>
-      (activeType === 'All' || i.type === activeType) &&
-      (activeCat === 'All' || i.category === activeCat) &&
-      (!search || i.name.toLowerCase().includes(search.toLowerCase()))
-    ), [menuItems, activeType, activeCat, search])
+    catalog.filter(x =>
+      (activeCat === 'All' || x.categoryId === activeCat) &&
+      (!search || x.name.toLowerCase().includes(search.toLowerCase()))
+    ), [catalog, activeCat, search])
 
-  const addToCart = (item: MenuItem) => setCart(prev => {
-    const ex = prev.find(c => c.itemId === item.id)
-    if (ex) return prev.map(c => c.itemId === item.id ? { ...c, qty: c.qty + 1 } : c)
-    return [...prev, { itemId: item.id, name: item.name, price: item.sellingPrice, qty: 1, unit: item.baseUnit }]
+  const cartKey = (c: Pick<CartLine, 'kind' | 'itemId' | 'packageId'>) => `${c.kind}:${c.kind === 'package' ? c.packageId : c.itemId}`
+
+  const addToCart = (entry: CatalogEntry) => setCart(prev => {
+    const key = entry.kind === 'package' ? `package:${entry.id}` : `item:${entry.id}`
+    const ex = prev.find(c => cartKey(c) === key)
+    if (ex) return prev.map(c => cartKey(c) === key ? { ...c, qty: c.qty + 1 } : c)
+    return entry.kind === 'package'
+      ? [...prev, { kind: 'package', itemId: null, packageId: entry.id, name: entry.name, price: entry.price, qty: 1, unit: 'pkg' }]
+      : [...prev, { kind: 'item', itemId: entry.id, packageId: null, name: entry.name, price: entry.price, qty: 1, unit: entry.unit }]
   })
 
-  const chgQty = (itemId: string, d: number) => setCart(prev =>
-    prev.map(c => c.itemId === itemId ? { ...c, qty: c.qty + d } : c).filter(c => c.qty > 0)
+  const chgQty = (target: Pick<CartLine, 'kind' | 'itemId' | 'packageId'>, d: number) => setCart(prev =>
+    prev.map(c => cartKey(c) === cartKey(target) ? { ...c, qty: c.qty + d } : c).filter(c => c.qty > 0)
   )
 
   const clearCart = () => {
@@ -771,12 +848,12 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
     } finally { setBusy(false) }
   }
 
-  const closeSale = async (sale: Sale, pm: string, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => {
+  const closeSale = async (sale: Sale, pm: string, discountId: string | null, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => {
     setBusy(true)
     try {
       const res = await fetch(`/api/cashier/sales/${sale.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'close', payMethod: pm, ...extra }),
+        body: JSON.stringify({ action: 'close', payMethod: pm, discountId, ...extra }),
       })
       if (res.ok) {
         const updated = await res.json()
@@ -847,7 +924,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   }
 
   if (receipt) return <ReceiptView sale={receipt} vessel={vessel} onDone={() => setReceipt(null)} />
-  if (settleSale) return <SettleScreen sale={settleSale} vessel={vessel} staffList={staffList} onBack={() => setSettleSaleId(null)} onConfirm={(pm, extra) => closeSale(settleSale, pm, extra)} busy={busy} />
+  if (settleSale) return <SettleScreen sale={settleSale} vessel={vessel} staffList={staffList} discounts={discounts} onBack={() => setSettleSaleId(null)} onConfirm={(pm, discountId, extra) => closeSale(settleSale, pm, discountId, extra)} busy={busy} />
 
   return (
     <div style={{ ...S.page, height: '100dvh', display: 'flex', flexDirection: isCompact ? 'column' : 'row', overflow: 'hidden' }}>
@@ -927,31 +1004,14 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
             </div>
 
             <div style={{ background: '#fff', border: '1px solid #ece6d8', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
-              {types.length > 2 && (
-                <>
-                  <div style={{ display: 'inline-flex', gap: 4, background: '#f6f3ea', borderRadius: 9, padding: 4 }}>
-                    {types.map(t => {
-                      const sel = activeType === t
-                      const Icon = t === 'All' ? null : TYPE_ICON[t]
-                      return (
-                        <button key={t} onClick={() => { setActiveType(t); setActiveCat('All') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 7, cursor: 'pointer', border: 'none', fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", background: sel ? '#fff' : 'transparent', color: sel ? INK : '#8a8378', boxShadow: sel ? '0 1px 3px rgba(26,37,47,0.1)' : 'none', transition: 'all .15s' }}>
-                          {Icon && <Icon size={13} />} {t === 'All' ? 'All Items' : TYPE_LABELS[t]}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div style={{ height: 1, background: '#f1ede2', margin: '10px 0' }} />
-                </>
-              )}
-
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {categories.map(cat => {
-                  const sel = activeCat === cat
-                  const inType = menuItems.filter(i => activeType === 'All' || i.type === activeType)
-                  const count = cat === 'All' ? inType.length : inType.filter(i => i.category === cat).length
+                {(['All', ...categoryTabs.map(c => c.id)] as const).map(catId => {
+                  const sel = activeCat === catId
+                  const label = catId === 'All' ? 'All Items' : (categoryTabs.find(c => c.id === catId)?.name ?? '')
+                  const count = catId === 'All' ? catalog.length : catalog.filter(x => x.categoryId === catId).length
                   return (
-                    <button key={cat} onClick={() => setActiveCat(cat)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px 7px 14px', borderRadius: 20, cursor: 'pointer', border: sel ? 'none' : '1px solid #ece6d8', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", background: sel ? ac : '#fff', color: sel ? '#fff' : '#5f594e', boxShadow: sel ? `0 2px 6px ${ac}44` : 'none', transition: 'all .15s' }}>
-                      {cat}
+                    <button key={catId} onClick={() => setActiveCat(catId)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px 7px 14px', borderRadius: 20, cursor: 'pointer', border: sel ? 'none' : '1px solid #ece6d8', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", background: sel ? ac : '#fff', color: sel ? '#fff' : '#5f594e', boxShadow: sel ? `0 2px 6px ${ac}44` : 'none', transition: 'all .15s' }}>
+                      {label}
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: sel ? 'rgba(255,255,255,0.25)' : '#f1ede2', color: sel ? '#fff' : '#8a8378' }}>{count}</span>
                     </button>
                   )
@@ -961,30 +1021,33 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
               {filtered.map(item => {
-                const inCart = cart.find(c => c.itemId === item.id)
-                const outOfStock = item.stock <= 0
-                const atStockLimit = !!inCart && inCart.qty >= item.stock
-                const TypeIcon = TYPE_ICON[item.type]
+                const inCart = cart.find(c => cartKey(c) === (item.kind === 'package' ? `package:${item.id}` : `item:${item.id}`))
+                const outOfStock = item.kind === 'item' && item.stock <= 0
+                const atStockLimit = item.kind === 'item' && !!inCart && inCart.qty >= item.stock
+                const Icon = item.kind === 'package' ? Gift : Utensils
                 return (
-                  <div key={item.id} style={{ background: '#fff', border: inCart ? `1.5px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 14, padding: 12, display: 'flex', gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
+                  <div key={cartKey({ kind: item.kind, itemId: item.kind === 'item' ? item.id : null, packageId: item.kind === 'package' ? item.id : null })} style={{ background: '#fff', border: inCart ? `1.5px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 14, padding: 12, display: 'flex', gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
                     <div style={{ width: 76, height: 76, borderRadius: 10, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {item.imageKey ? <img src={item.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <TypeIcon size={22} color="#cfc8b8" />}
+                      {item.imageKey ? <img src={item.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon size={22} color="#cfc8b8" />}
                     </div>
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13.5, color: INK, lineHeight: 1.3 }}>{item.name}</div>
-                        <div style={{ ...S.mono, fontSize: 13, fontWeight: 800, color: ac, whiteSpace: 'nowrap', flexShrink: 0 }}>{fmt(item.sellingPrice)}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, color: INK, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {item.name}
+                          {item.kind === 'package' && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 6, background: `${GOLD_DARK}18`, color: GOLD_DARK, flexShrink: 0 }}>PACKAGE</span>}
+                        </div>
+                        <div style={{ ...S.mono, fontSize: 13, fontWeight: 800, color: ac, whiteSpace: 'nowrap', flexShrink: 0 }}>{fmt(item.price)}</div>
                       </div>
                       <div style={{ fontSize: 11, color: outOfStock ? '#dc6868' : '#8a8378', marginTop: 3 }}>
-                        {item.category} · {outOfStock ? 'Out of stock' : `${item.stock} ${item.baseUnit} left`}
+                        {item.categoryName} · {item.kind === 'package' ? `${item.components.length} item${item.components.length !== 1 ? 's' : ''} included` : (outOfStock ? 'Out of stock' : `${item.stock} ${item.unit} left`)}
                       </div>
 
                       {inCart ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#fafaf8', border: '1px solid #ece6d8', borderRadius: 20, padding: 3 }}>
-                            <button onClick={() => chgQty(item.id, -1)} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: '#dc6868', cursor: 'pointer', boxShadow: '0 0 0 1px #ece6d8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={12} /></button>
+                            <button onClick={() => chgQty(inCart, -1)} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: '#dc6868', cursor: 'pointer', boxShadow: '0 0 0 1px #ece6d8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={12} /></button>
                             <span style={{ ...S.mono, fontWeight: 700, fontSize: 13, minWidth: 16, textAlign: 'center' }}>{inCart.qty}</span>
-                            <button onClick={() => !atStockLimit && chgQty(item.id, +1)} disabled={atStockLimit} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: atStockLimit ? '#cfc8b8' : '#1f9d5c', cursor: atStockLimit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 1px #ece6d8' }}><Plus size={12} /></button>
+                            <button onClick={() => !atStockLimit && chgQty(inCart, +1)} disabled={atStockLimit} style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#fff', color: atStockLimit ? '#cfc8b8' : '#1f9d5c', cursor: atStockLimit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 1px #ece6d8' }}><Plus size={12} /></button>
                           </div>
                           <div style={{ flex: 1, textAlign: 'center', padding: '7px 4px', borderRadius: 20, background: GOLD, color: '#fff', fontSize: 11.5, fontWeight: 700 }}>
                             Added
@@ -1034,14 +1097,8 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
                   {buyerType === 'staff' ? (
                     <>
                       <div style={{ fontSize: 11, color: '#8a8378', fontWeight: 600, marginBottom: 6 }}>STAFF</div>
-                      <select
-                        value={selectedStaff?.id ?? ''}
-                        onChange={e => setSelectedStaff(staffList.find(s => s.id === e.target.value) ?? null)}
-                        style={S.input}
-                      >
-                        <option value="">Select staff…</option>
-                        {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
-                      </select>
+                      <StaffSelect staffList={staffList} value={selectedStaff?.id ?? ''}
+                        onChange={id => setSelectedStaff(staffList.find(s => s.id === id) ?? null)} placeholder="Select staff…" />
                     </>
                   ) : (
                     <>
@@ -1071,21 +1128,21 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
               ) : (
                 <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 14 }}>
                   {cart.map(item => {
-                    const mi = menuItems.find(m => m.id === item.itemId)
-                    const atLimit = item.qty >= (mi?.stock ?? Infinity)
+                    const mi = item.kind === 'item' ? menuItems.find(m => m.id === item.itemId) : undefined
+                    const atLimit = item.kind === 'item' && item.qty >= (mi?.stock ?? Infinity)
                     return (
-                    <div key={item.itemId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #ece6d8' }}>
+                    <div key={cartKey(item)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #ece6d8' }}>
                       <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {mi?.imageKey ? <img src={mi.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={15} color="#cfc8b8" />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}{item.kind === 'package' && <span style={{ marginLeft: 5, fontSize: 9, fontWeight: 800, color: GOLD_DARK }}>PKG</span>}</div>
                         <div style={{ ...S.mono, fontSize: 11, color: ac }}>{fmt(item.qty * item.price)}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                        <button onClick={() => item.itemId && chgQty(item.itemId, -1)} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: '#dc6868', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={13} /></button>
+                        <button onClick={() => chgQty(item, -1)} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: '#dc6868', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={13} /></button>
                         <span style={{ ...S.mono, fontWeight: 700, fontSize: 14, minWidth: 18, textAlign: 'center' }}>{item.qty}</span>
-                        <button onClick={() => !atLimit && item.itemId && chgQty(item.itemId, +1)} disabled={atLimit} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: atLimit ? '#cfc8b8' : '#1f9d5c', cursor: atLimit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={13} /></button>
+                        <button onClick={() => !atLimit && chgQty(item, +1)} disabled={atLimit} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #ece6d8', background: '#fafaf8', color: atLimit ? '#cfc8b8' : '#1f9d5c', cursor: atLimit ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={13} /></button>
                       </div>
                     </div>
                     )
@@ -1115,10 +1172,8 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
                   {payMethod === 'Complimentary' && (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {buyerType !== 'staff' && (
-                        <select value={compStaff?.id ?? ''} onChange={e => setCompStaff(staffList.find(s => s.id === e.target.value) ?? null)} style={S.input}>
-                          <option value="">Given by (staff)…</option>
-                          {staffList.map(s => <option key={s.id} value={s.id}>{s.fullName}{s.department ? ` · ${s.department}` : ''}</option>)}
-                        </select>
+                        <StaffSelect staffList={staffList} value={compStaff?.id ?? ''}
+                          onChange={id => setCompStaff(staffList.find(s => s.id === id) ?? null)} placeholder="Given by (staff)…" />
                       )}
                       <input value={compReason} onChange={e => setCompReason(e.target.value)} placeholder="Reason for complimentary…" style={S.input} />
                     </div>

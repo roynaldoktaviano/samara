@@ -19,6 +19,22 @@ interface ApprovalRequest {
   requestedByEmployee: { id: string; fullName: string; employeeNumber: string; department: string | null } | null
 }
 
+interface RequestDetailItem {
+  id: string
+  itemName: string
+  quantity: number
+  unit: string
+  estimatedCost: number
+  supplierName: string | null
+  notes: string | null
+}
+
+interface RequestDetail extends ApprovalRequest {
+  purpose: 'STOCK_INVENTORY' | 'TRIP'
+  tripBooking: { id: string; bookingCode: string; yacht: { name: string } | null } | null
+  items: RequestDetailItem[]
+}
+
 interface QuotationApprovalItem {
   id: string
   requestId: string
@@ -52,6 +68,9 @@ export default function MyApprovalsPage() {
   const [loading, setLoading] = useState(true)
   const [actingId, setActingId] = useState<string | null>(null)
   const [rejectModal, setRejectModal] = useState<ApprovalRequest | null>(null)
+  const [detailModal, setDetailModal] = useState<ApprovalRequest | null>(null)
+  const [detail, setDetail] = useState<RequestDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [quoteRejectModal, setQuoteRejectModal] = useState<QuotationApprovalItem | null>(null)
   const [quoteRejectReason, setQuoteRejectReason] = useState('')
   // Which quotation the approver has picked for each pending item — this is the approver's
@@ -72,6 +91,15 @@ export default function MyApprovalsPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function openDetail(r: ApprovalRequest) {
+    setDetailModal(r)
+    setDetail(null)
+    setDetailLoading(true)
+    const res = await fetch(`/api/purchasing/requests/${r.id}`)
+    if (res.ok) setDetail(await res.json())
+    setDetailLoading(false)
+  }
+
   async function act(id: string, action: 'approve' | 'reject') {
     setActingId(id)
     const res = await fetch(`/api/purchasing/requests/${id}/approval`, {
@@ -83,6 +111,7 @@ export default function MyApprovalsPage() {
     setActingId(null)
     if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
     setRejectModal(null)
+    if (detailModal?.id === id) { setDetailModal(null); setDetail(null) }
     setRequests(prev => prev.filter(r => r.id !== id))
   }
 
@@ -135,7 +164,7 @@ export default function MyApprovalsPage() {
                 No PRs waiting for your approval.
               </td></tr>
             ) : requests.map(r => (
-              <tr key={r.id} className="hover:bg-muted/30">
+              <tr key={r.id} onClick={() => openDetail(r)} className="hover:bg-muted/30 cursor-pointer">
                 <td className="px-4 py-3 font-mono text-sm font-medium">
                   <span className="flex items-center gap-1.5">
                     {r.prNumber}
@@ -159,13 +188,13 @@ export default function MyApprovalsPage() {
                   <div className="flex items-center justify-end gap-2">
                     <button
                       disabled={actingId === r.id}
-                      onClick={() => act(r.id, 'approve')}
+                      onClick={e => { e.stopPropagation(); act(r.id, 'approve') }}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors whitespace-nowrap">
                       <CheckCircle2 className="h-3 w-3" /> Approve
                     </button>
                     <button
                       disabled={actingId === r.id}
-                      onClick={() => setRejectModal(r)}
+                      onClick={e => { e.stopPropagation(); setRejectModal(r) }}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors whitespace-nowrap">
                       <XCircle className="h-3 w-3" /> Reject
                     </button>
@@ -312,6 +341,127 @@ export default function MyApprovalsPage() {
                 onClick={() => act(rejectModal.id, 'reject')}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b flex items-start justify-between shrink-0">
+              <div>
+                <h3 className="font-semibold text-base flex items-center gap-1.5">
+                  {detailModal.prNumber}
+                  {detailModal.isUrgent && <UrgentBadge />}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {detailModal.requestedByEmployee ? `${detailModal.requestedByEmployee.fullName}${detailModal.requestedByEmployee.department ? ` · ${detailModal.requestedByEmployee.department}` : ''}` : '—'}
+                  {' · '}{fmtDate(detailModal.createdAt)}
+                </p>
+              </div>
+              <button onClick={() => { setDetailModal(null); setDetail(null) }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4 overflow-y-auto">
+              {detailLoading || !detail ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => <div key={i} className="h-4 w-full rounded bg-muted animate-pulse" />)}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Destination</p>
+                      <p className="mt-0.5 flex items-center gap-1">
+                        {detail.deliveryLocation ? <><MapPin className="h-3 w-3 shrink-0 text-muted-foreground" />{detail.deliveryLocation.name}</> : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Needed By</p>
+                      <p className="mt-0.5">{detail.neededByDate ? fmtDate(detail.neededByDate) : '—'}</p>
+                    </div>
+                    {detail.purpose === 'TRIP' && detail.tripBooking && (
+                      <div className="col-span-2">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Trip</p>
+                        <p className="mt-0.5">{detail.tripBooking.bookingCode}{detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {detail.isUrgent && detail.urgentReason && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wide">Why urgent</p>
+                      <p className="text-sm text-red-700 mt-0.5">{detail.urgentReason}</p>
+                    </div>
+                  )}
+
+                  {detail.notes && (
+                    <div>
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Notes</p>
+                      <p className="text-sm mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Items ({detail.items.length})</p>
+                    <div className="rounded-lg border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 text-xs text-muted-foreground">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium">Item</th>
+                            <th className="text-right px-3 py-2 font-medium">Qty</th>
+                            <th className="text-right px-3 py-2 font-medium">Est. Cost</th>
+                            <th className="text-left px-3 py-2 font-medium">Supplier</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {detail.items.map(item => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-2">
+                                <p>{item.itemName}</p>
+                                {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
+                              </td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{item.quantity} {item.unit}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                {item.estimatedCost > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(item.estimatedCost)}` : <span className="text-muted-foreground/40">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">{item.supplierName ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        {detail.totalBudget > 0 && (
+                          <tfoot>
+                            <tr className="border-t bg-muted/30 font-medium">
+                              <td className="px-3 py-2" colSpan={2}>Total</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">Rp {new Intl.NumberFormat('id-ID').format(detail.totalBudget)}</td>
+                              <td />
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t flex justify-end gap-2 shrink-0">
+              <button onClick={() => { setDetailModal(null); setDetail(null) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Close</button>
+              <button
+                disabled={actingId === detailModal.id}
+                onClick={() => { setRejectModal(detailModal); setDetailModal(null) }}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </button>
+              <button
+                disabled={actingId === detailModal.id}
+                onClick={() => act(detailModal.id, 'approve')}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Approve
               </button>
             </div>
           </div>

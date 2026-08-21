@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -53,6 +53,11 @@ import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
 import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
+import PosCategoriesPage from '@/components/pos/categories/PosCategoriesPage'
+import PosMenuPage from '@/components/pos/menu/PosMenuPage'
+import PosPackagesPage from '@/components/pos/packages/PosPackagesPage'
+import PosDiscountsPage from '@/components/pos/discounts/PosDiscountsPage'
+import PosBillingHistoryPage from '@/components/pos/billing/PosBillingHistoryPage'
 import EmployeesPage from '@/components/hr/EmployeesPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
@@ -93,7 +98,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings'
+type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
 
 type NavItem = {
   id: View
@@ -114,6 +119,7 @@ const NAV_GROUPS = [
   { key: 'marketing',  label: 'Marketing', icon: Send },
   { key: 'management', label: 'Management', icon: Shield },
   { key: 'purchasing', label: 'Purchasing & Inventory', icon: ShoppingCart },
+  { key: 'pos',        label: 'Point of Sale', icon: Receipt },
   { key: 'hr',         label: 'People & HR', icon: IdCard },
 ]
 
@@ -177,6 +183,11 @@ const navigationItems: NavItem[] = [
   { id: 'purchasing-exceptions',   label: 'Exceptions',        icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-withdrawals',  label: 'Withdrawal Report', icon: TrendingDown, roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-reports',      label: 'Reports',           icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'pos-categories', label: 'Categories',      icon: Tag,         roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
+  { id: 'pos-menu',       label: 'Menu & Pricing',  icon: Receipt,     roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
+  { id: 'pos-packages',   label: 'Packages',        icon: PackagePlus, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
+  { id: 'pos-discounts',  label: 'Discounts',       icon: Percent,     roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
+  { id: 'pos-billing',    label: 'Billing History', icon: ClipboardList, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
   { id: 'hr-employees',  label: 'Employees',      icon: IdCard,     roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
 ]
 
@@ -802,6 +813,11 @@ export default function Home() {
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
       case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />
       case 'purchasing-reports':      return <PurchasingReportsPage />
+      case 'pos-categories': return <PosCategoriesPage />
+      case 'pos-menu':       return <PosMenuPage />
+      case 'pos-packages':   return <PosPackagesPage />
+      case 'pos-discounts':  return <PosDiscountsPage />
+      case 'pos-billing':    return <PosBillingHistoryPage />
       case 'hr-employees':  return <EmployeesPage />
       case 'settings':      return (
         <div className="space-y-6">

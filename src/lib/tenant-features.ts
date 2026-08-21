@@ -1,10 +1,11 @@
-export type TenantFeatureKey = 'sharingCabin' | 'agentContract' | 'purchasing' | 'marketing'
+export type TenantFeatureKey = 'sharingCabin' | 'agentContract' | 'purchasing' | 'marketing' | 'pos'
 
 export interface TenantFeatures {
   sharingCabin?: boolean
   agentContract?: boolean
   purchasing?: boolean
   marketing?: boolean
+  pos?: boolean
 }
 
 export const TENANT_FEATURE_DEFINITIONS: {
@@ -31,6 +32,11 @@ export const TENANT_FEATURE_DEFINITIONS: {
     key: 'marketing',
     label: 'Email Marketing',
     description: 'Email campaign builder and Resend-powered sending to guests and agents',
+  },
+  {
+    key: 'pos',
+    label: 'Point of Sale',
+    description: 'POS categories, per-yacht menu & pricing, packages, discounts, and trip billing history',
   },
 ]
 

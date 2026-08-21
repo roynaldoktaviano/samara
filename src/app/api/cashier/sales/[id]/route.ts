@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
-import { applyItemsToSale, type CashierCartItem } from '@/lib/cashier'
+import { applyItemsToSale, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -44,16 +44,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (action === 'close') {
-      const { payMethod, employeeId, employeeName, complimentaryReason } = body
+      const { payMethod, employeeId, employeeName, complimentaryReason, discountId } = body
       if (!payMethod) return NextResponse.json({ error: 'payMethod is required' }, { status: 400 })
       if (payMethod === 'Complimentary' && (!employeeId || !complimentaryReason?.trim())) {
         return NextResponse.json({ error: 'Complimentary requires a staff member and a reason' }, { status: 400 })
+      }
+
+      let discountFields = { discountId: null as string | null, discountName: null as string | null, discountAmount: 0 }
+      if (discountId) {
+        const resolved = await resolveDiscount(db, discountId, sale.yachtId, sale.total)
+        if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 })
+        discountFields = { discountId: resolved.discountId, discountName: resolved.discountName, discountAmount: resolved.discountAmount }
       }
 
       const result = await withRetry(db, () => db.cashierSale.update({
         where: { id },
         data: {
           status: 'closed', payMethod, closedAt: new Date(),
+          ...discountFields,
           ...(employeeId ? { employeeId, employeeName: employeeName || null } : {}),
           ...(payMethod === 'Complimentary' ? { complimentaryReason: complimentaryReason || null } : {}),
         },
