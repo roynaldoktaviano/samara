@@ -7,6 +7,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { sendPushToUser } from '@/lib/push'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -137,6 +138,20 @@ export async function POST(req: NextRequest) {
     if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
   }
 
+  // Route to the requester's manager for approval, same as the public /request-order
+  // intake — every PR needs its requester's manager to sign off regardless of who's
+  // creating it (including Purchasing/Admin creating their own request), unless the org
+  // chart genuinely has no usable manager on file. The requester is whoever this PR is
+  // for: the explicit requestedByEmployeeId when Purchasing is filing on someone else's
+  // behalf, otherwise the logged-in user's own Employee profile.
+  const requesterEmployee = requestedByEmployeeId
+    ? await db.employee.findUnique({ where: { id: requestedByEmployeeId }, select: { id: true, fullName: true, managerId: true } })
+    : await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true, fullName: true, managerId: true } })
+  const manager = requesterEmployee?.managerId
+    ? await db.employee.findUnique({ where: { id: requesterEmployee.managerId }, select: { id: true, userId: true } })
+    : null
+  const approverEmployeeId = manager?.userId ? manager.id : null
+
   const prNumber = await generatePrNumber(db)
   const request = await db.purchaseRequest.create({
     data: {
@@ -144,6 +159,7 @@ export async function POST(req: NextRequest) {
       prNumber,
       requestedById: session.user.id,
       requestedByEmployeeId: requestedByEmployeeId || null,
+      approverEmployeeId,
       deliveryLocationId: deliveryLocationId || null,
       notes: notes?.trim() || null,
       neededByDate: neededByDate ? new Date(neededByDate) : null,
@@ -151,7 +167,7 @@ export async function POST(req: NextRequest) {
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
-      status: 'DRAFT',
+      status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
       updatedAt: new Date(),
       items: {
         create: items.map((it) => ({
@@ -171,9 +187,27 @@ export async function POST(req: NextRequest) {
     include: { items: true },
   })
 
-  // Notify Purchasing so a new PR doesn't sit unseen — skip when Purchasing/Admin
-  // themselves created it, since they don't need to be told about their own action.
-  if (!roleMatches(role, PURCHASING_ROLES)) {
+  if (approverEmployeeId && manager?.userId) {
+    // Awaiting manager sign-off — Purchasing hears about this request only after it's
+    // approved (see [id]/approval/route.ts), not now.
+    db.notification.create({
+      data: {
+        userId: manager.userId,
+        type: isUrgent ? 'PR_APPROVAL_URGENT' : 'PR_APPROVAL_NEEDED',
+        title: isUrgent ? '🔴 Urgent request needs your approval' : 'Request needs your approval',
+        body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+        requestId: request.id,
+      },
+    }).catch(() => {})
+    sendPushToUser(db, manager.userId, {
+      title: isUrgent ? '🔴 Urgent request needs your approval' : 'Request needs your approval',
+      body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.`,
+      url: '/',
+    }).catch(() => {})
+  } else if (!roleMatches(role, PURCHASING_ROLES)) {
+    // No usable manager on file — fall back to notifying Purchasing directly, same as
+    // before, so the request doesn't sit unseen. Skip when Purchasing/Admin themselves
+    // created it, since they don't need to be told about their own action.
     notifyByRoleForRequest(
       db, PURCHASING_ROLES, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
       `${prNumber} was submitted with ${request.items.length} item${request.items.length !== 1 ? 's' : ''} and is waiting for review.`,
