@@ -131,6 +131,13 @@ const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfB
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
 
+function parseDuplicateNote(note: string | null): { originalName: string; date: string; salesperson: string } | null {
+  if (!note) return null
+  const match = note.match(/duplikat dari agent "([^"]+)" \(dibuat ([\d-]+), salesperson ([^)]+)\)/i)
+  if (!match) return null
+  return { originalName: match[1], date: match[2], salesperson: match[3] }
+}
+
 export default function Agents() {
   const { data: session } = useSession()
   const userRole  = (session?.user as { role?: string })?.role ?? ''
@@ -155,6 +162,17 @@ export default function Agents() {
   const [saving,       setSaving]       = useState(false)
   const [saveError,    setSaveError]    = useState('')
   const [fileError,    setFileError]    = useState('')
+
+  const similarAgents = useMemo(() => {
+    const typed = form.name.trim().toLowerCase()
+    if (typed.length < 3) return []
+    return agents.filter(a => {
+      if (editing && a.id === editing.id) return false
+      const existing = a.name.trim().toLowerCase()
+      if (existing.length < 3) return false
+      return existing.includes(typed) || typed.includes(existing)
+    })
+  }, [form.name, agents, editing])
 
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
@@ -905,14 +923,17 @@ export default function Agents() {
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden md:table-cell">Salesperson</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center">Commission</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center hidden md:table-cell">Bookings</th>
+                    <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs hidden lg:table-cell">Created</th>
                     <th className="pb-3 pr-3 font-medium text-muted-foreground text-xs text-center">Status</th>
                     {canManage && <th className="pb-3 font-medium text-muted-foreground text-xs text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {paginated.map(a => (
+                  {paginated.map(a => {
+                    const duplicateInfo = !a.isActive ? parseDuplicateNote(a.note) : null
+                    return (
                     <React.Fragment key={a.id}>
-                    <tr className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => handleToggleExpand(a.id)}>
+                    <tr className={`hover:bg-muted/30 transition-colors cursor-pointer ${duplicateInfo ? 'opacity-60 bg-red-50/50' : ''}`} onClick={() => handleToggleExpand(a.id)}>
 
                       {/* Expand chevron */}
                       <td className="py-2.5 pr-1 w-6">
@@ -935,6 +956,12 @@ export default function Agents() {
                           <div>
                             <div className="font-semibold text-sm leading-tight">{a.name}</div>
                             {a.country && <div className="text-[11px] text-muted-foreground lg:hidden">{a.country}</div>}
+                            {duplicateInfo && (
+                              <div className="flex items-center gap-1 text-[11px] text-red-600 font-medium mt-0.5">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                Duplikat — sudah dibuat lebih dulu oleh {duplicateInfo.salesperson} pada {new Date(duplicateInfo.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -1107,6 +1134,11 @@ export default function Agents() {
                         {a._count.bookings}
                       </td>
 
+                      {/* Created date — hidden on small/medium screens */}
+                      <td className="py-2.5 pr-3 text-xs text-muted-foreground hidden lg:table-cell whitespace-nowrap">
+                        {new Date(a.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+
                       {/* Status badge — currentCondition */}
                       <td className="py-2.5 pr-3 text-center">
                         {(() => {
@@ -1183,7 +1215,7 @@ export default function Agents() {
                     {expandedId === a.id && (
                       <tr key={`${a.id}-contacts`} className="bg-muted/20">
                         <td />
-                        <td colSpan={(isAdmin ? 9 : (canCalendar || canManage) ? 8 : 7) + (canPortal ? 1 : 0)} className="py-3 pr-4">
+                        <td colSpan={(isAdmin ? 10 : (canCalendar || canManage) ? 9 : 8) + (canPortal ? 1 : 0)} className="py-3 pr-4">
                           <div className="pl-12 pr-2">
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1303,7 +1335,7 @@ export default function Agents() {
                       </tr>
                     )}
                     </React.Fragment>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -1403,6 +1435,18 @@ export default function Agents() {
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   />
                 </div>
+                {similarAgents.length > 0 && (
+                  <div className="flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      {similarAgents.map(a => (
+                        <div key={a.id}>
+                          Agent ini mirip seperti <span className="font-semibold">{a.name}</span> milik {a.salesperson?.name || 'tanpa salesperson'}, biar tidak double
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Commission */}
