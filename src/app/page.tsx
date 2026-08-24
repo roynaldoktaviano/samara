@@ -237,6 +237,7 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PO_RECEIVED:            CheckCircle2,
   PO_PARTIALLY_RECEIVED:  CheckCircle2,
   REQUEST_ORDER_SUBMITTED: ClipboardList,
+  PR_VERIFY_REMINDER:     Clock,
   PO_PAYMENT_REQUESTED:   Wallet,
   PO_PAYMENT_PAID:        CheckCircle2,
   PO_PAID_BY_PURCHASING: CheckCircle2,
@@ -253,6 +254,7 @@ const NOTIF_COLOR: Record<string, string> = {
   DEPOSIT_DUE_H1:    'text-orange-500',
   DEPOSIT_DUE_H0:    'text-red-600',
   REQUEST_ORDER_SUBMITTED: 'text-blue-600',
+  PR_VERIFY_REMINDER: 'text-red-600',
   PO_PAYMENT_REQUESTED: 'text-amber-600',
   PO_PAYMENT_PAID: 'text-green-600',
   PO_PAID_BY_PURCHASING: 'text-green-600',
@@ -411,6 +413,7 @@ export default function Home() {
           else if (n.type === 'PAYMENT_REJECTED')      toast.error(n.title,   { description: n.body })
           else if (n.type === 'DEPOSIT_DUE_H0')        toast.error(n.title,   { description: n.body })
           else if (n.type === 'DEPOSIT_DUE_H1')        toast.warning(n.title, { description: n.body })
+          else if (n.type === 'PR_VERIFY_REMINDER')    toast.warning(n.title, { description: n.body })
           else                                          toast.info(n.title,    { description: n.body })
         })
       }
