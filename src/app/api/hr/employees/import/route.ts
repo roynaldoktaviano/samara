@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   const [entities, locations, roles] = await Promise.all([
     db.legalEntity.findMany(),
-    db.stockLocation.findMany(),
+    db.employeeWorkLocation.findMany(),
     db.employeeRole.findMany(),
   ])
   const findByName = <T extends { id: string; name?: string; title?: string }>(list: T[], value: string) => {

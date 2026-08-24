@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
 
 type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR'
+type PurchasingDivision = 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
 
 interface UserRecord {
   id: string
@@ -20,8 +21,14 @@ interface UserRecord {
   email: string
   role: Role
   createdAt: string
+  purchasingDivision: PurchasingDivision | null
   employeeProfile: { id: string; fullName: string; employeeNumber: string } | null
 }
+
+const DIVISIONS: { value: PurchasingDivision; label: string }[] = [
+  { value: 'BOAT_OPERATION',   label: 'Boat Operation' },
+  { value: 'BUILDING_MATERIAL', label: 'Building Material' },
+]
 
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string }
 
@@ -174,6 +181,7 @@ export default function UsersPage() {
   const [formPassword, setFormPassword] = useState('')
   const [formRole, setFormRole] = useState<Role>('SALES')
   const [formEmployeeId, setFormEmployeeId] = useState('')
+  const [formPurchasingDivision, setFormPurchasingDivision] = useState<PurchasingDivision | ''>('')
   const [showPw, setShowPw] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -202,6 +210,7 @@ export default function UsersPage() {
   const openAdd = () => {
     setEditUser(null)
     setFormName(''); setFormEmail(''); setFormPassword(''); setFormRole('SALES'); setFormEmployeeId('')
+    setFormPurchasingDivision('')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -210,6 +219,7 @@ export default function UsersPage() {
     setEditUser(u)
     setFormName(u.name ?? ''); setFormEmail(u.email); setFormPassword(''); setFormRole(u.role)
     setFormEmployeeId(u.employeeProfile?.id ?? '')
+    setFormPurchasingDivision(u.purchasingDivision ?? '')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -219,7 +229,7 @@ export default function UsersPage() {
     setSaving(true)
     try {
       if (editUser) {
-        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole, employeeId: formEmployeeId }
+        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision }
         if (formPassword) body.password = formPassword
         const res = await fetch(`/api/users/${editUser.id}`, {
           method: 'PUT',
@@ -231,7 +241,7 @@ export default function UsersPage() {
         const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole, employeeId: formEmployeeId }),
+          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision }),
         })
         if (!res.ok) { const d = await res.json(); setFormError(d.error ?? 'Failed'); return }
       }
@@ -362,6 +372,11 @@ export default function UsersPage() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${meta.color}`}>
                           {meta.label}
                         </span>
+                        {u.purchasingDivision && (
+                          <p className="text-[10px] text-muted-foreground mt-1">
+                            {DIVISIONS.find(d => d.value === u.purchasingDivision)?.label}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -472,6 +487,24 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {formRole === 'PURCHASING' && (
+              <div className="space-y-1.5">
+                <Label>Purchasing Division</Label>
+                <Select value={formPurchasingDivision || 'NONE'} onValueChange={v => setFormPurchasingDivision(v === 'NONE' ? '' : v as PurchasingDivision)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">— Not assigned (sees every request) —</SelectItem>
+                    {DIVISIONS.map(d => (
+                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">Requests submitted for this division only notify and show up for this person (plus Admin/Super Admin).</p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Link to Employee</Label>

@@ -99,6 +99,11 @@ model User {
   name                                   String?
   password                               String
   role                                   Role                        @default(SALES)
+  // For PURCHASING-role users only: which division's PRs they're responsible for (see
+  // PurchaseRequestDivision). Null means unassigned — an unassigned Purchasing user sees
+  // and gets notified about every PR regardless of division, same as before this field
+  // existed, so this stays fully backward-compatible until an admin actually sets it.
+  purchasingDivision                     PurchaseRequestDivision?
   createdAt                              DateTime                    @default(now())
   updatedAt                              DateTime                    @updatedAt
   bookings                               Booking[]                   @relation("SalespersonBookings")
@@ -107,6 +112,11 @@ model User {
   stockMovements                         StockMovement[]
   purchaseRequests                       PurchaseRequest[]           @relation("PRRequestedBy")
   purchaseRequestsApproved               PurchaseRequest[]           @relation("PRApprovedBy")
+  leaveRequestsSubmitted                 LeaveRequest[]              @relation("LeaveRequestedBy")
+  leaveRequestsDecided                   LeaveRequest[]              @relation("LeaveDecidedBy")
+  probationReviewsRequested              ProbationReview[]           @relation("ProbationRequestedBy")
+  probationReviewsHrDecided              ProbationReview[]           @relation("ProbationHrDecided")
+  probationReviewsManagementDecided      ProbationReview[]           @relation("ProbationManagementDecided")
   purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
@@ -1221,12 +1231,14 @@ model Notification {
   bookingId       String?
   orderId         String?
   requestId       String?
+  legalDocumentId String?
   isRead          Boolean          @default(false)
   createdAt       DateTime         @default(now())
   payment         Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   booking         Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   purchaseOrder   PurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
   purchaseRequest PurchaseRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  legalDocument   LegalDocument?   @relation(fields: [legalDocumentId], references: [id], onDelete: SetNull)
 
   // Lets the deposit-reminder generator (src/app/api/notifications/reminders/route.ts)
   // safely re-run every few minutes without re-creating the same reminder — its
@@ -1239,6 +1251,7 @@ model Notification {
   @@index([bookingId])
   @@index([orderId])
   @@index([requestId])
+  @@index([legalDocumentId])
 }
 
 model WaitingList {
@@ -1354,6 +1367,16 @@ enum PurchaseRequestStatus {
   CANCELLED
 }
 
+// Which Purchasing staffer's queue a PR belongs to (distinct from Purpose above, which
+// is about what the request is FOR, not who handles it). Set from the public Request
+// Order form's "What is this for?" picker; internally-created PRs stay unset (null),
+// which every Purchasing user can still see — see purchasingDivision on User for the
+// per-staffer assignment side of this, and notify-purchasing.ts for how it's routed.
+enum PurchaseRequestDivision {
+  BOAT_OPERATION
+  BUILDING_MATERIAL
+}
+
 enum PurchaseRequestPurpose {
   STOCK_INVENTORY
   TRIP
@@ -1464,7 +1487,6 @@ model StockLocation {
   purchaseOrders   PurchaseOrder[]            @relation("PODelivery")
   transitStops     PurchaseOrderTransitStop[]
   cashierSales     CashierSale[]
-  employees        Employee[]
   nonStockItemsHere PurchaseItem[] @relation("PurchaseItemCurrentLocation")
 
   @@index([type])
@@ -1705,6 +1727,10 @@ model PurchaseRequest {
   purpose               PurchaseRequestPurpose @default(STOCK_INVENTORY)
   tripBookingId         String?
   pdfKey                String?
+  // Which Purchasing staffer's queue this belongs to — see PurchaseRequestDivision.
+  // Set on the public /request-order form; null for internally-created PRs, which stay
+  // visible to every Purchasing user regardless of their own assigned division.
+  division              PurchaseRequestDivision?
   // Set by the requester on the public /request-order intake form — lets Purchasing
   // triage at a glance instead of discovering urgency buried in free-text notes.
   neededByDate          DateTime?
@@ -1753,6 +1779,7 @@ model PurchaseRequest {
   @@index([verifiedById])
   @@index([approvedById])
   @@index([tripBookingId])
+  @@index([division])
 }
 
 model Supplier {
@@ -2386,6 +2413,66 @@ model LegalEntity {
   createdAt DateTime @default(now())
 
   employees Employee[]
+  documents LegalDocument[]
+}
+
+// One row per tracked legal/compliance document for a company (NIB, licenses, vessel
+// papers, …), grouped into free-text `section`s ("Company Legal", "Boat / Vessel
+// Documents", …) purely for display. `period` is descriptive only (shown as typed —
+// "3 Months", "Permanent", …); `expiryDate` is the one field renewal reminders actually
+// key off, since not every document's real expiry cleanly follows establishDate + period
+// (insurance/trademark renewals, for instance, often don't).
+model LegalDocument {
+  id            String       @id @default(cuid())
+  legalEntityId String
+  legalEntity   LegalEntity  @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  section       String?
+  name          String
+  category      String?
+  period        String?
+  subDetail     String?
+  fileKey       String?
+  establishDate DateTime?
+  expiryDate    DateTime?
+  issuer        String?
+  vendor        String?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  notifications Notification[]
+
+  @@index([legalEntityId])
+  @@index([expiryDate])
+}
+
+// Which brand/operation an employee's work is attributed to (Samara 1, Samara 2,
+// Mischief, Otium, BayView Hotel, Resort, …) — distinct from LegalEntity (who
+// legally employs them) and from EmployeeWorkLocation (where they're based).
+// A charter crew member's legal entity, work location, and business unit can all
+// differ from one another, so each is tracked separately rather than derived.
+model BusinessUnit {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  employees Employee[]
+}
+
+// HR's own "where is this person based" taxonomy (Bali / Bajo / Kapal / Hotel) —
+// deliberately separate from StockLocation, which models warehouse/vessel storage
+// areas (down to sub-locations like a vessel's Bar or Galley) for the purchasing
+// module. Reusing StockLocation for HR would surface irrelevant storage-only rows
+// (e.g. "Waste / Quarantine") as if they were places an employee could work.
+model EmployeeWorkLocation {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  employees Employee[]
+  roles     EmployeeRole[]
 }
 
 model EmployeeRole {
@@ -2394,9 +2481,40 @@ model EmployeeRole {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  employees Employee[]
+  // Optional — which work location this role is scoped to (e.g. "Bartender" specific
+  // to a vessel). Null means the role applies generically across locations.
+  locationId String?
+  location   EmployeeWorkLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  employees         Employee[]
+  candidates        Candidate[]
+  compensationBands CompensationBand[]
 
   @@index([title])
+  @@index([locationId])
+}
+
+enum CompensationLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// One row per (role, level) — the approved salary range a role/skill-tier combination
+// should pay. Employee.level marks which tier an individual sits at; comparing their
+// actual basicSalary against this band's min/max is how "position vs. approved range"
+// gets computed (done in the UI/API, not stored).
+model CompensationBand {
+  id        String            @id @default(cuid())
+  roleId    String
+  role      EmployeeRole      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  level     CompensationLevel
+  minSalary Float
+  maxSalary Float
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([roleId, level])
 }
 
 model Employee {
@@ -2406,8 +2524,20 @@ model Employee {
   department       String?
   gender           String?
   employmentStatus String? // e.g. Permanent | Contract | Probation | Intern
+  // Skill/experience tier within their EmployeeRole — the compensation band (see
+  // CompensationBand) this employee's actual basicSalary gets compared against.
+  level            CompensationLevel?
   leaveBalance     Int?
+  // Which entitlement policy this person's leaveBalance accrues under — kept as free
+  // text (like employmentStatus/department) rather than a numeric "days" column since
+  // real policies mix units (e.g. crew get a lump "2 bulan" block, not a daily count).
+  leaveEntitlementPolicy String?
   joinDate         DateTime?
+  // Only meaningful for fixed-term employment (Probation/Internship/Freelance/PKWT) —
+  // Permanent (PKWTT) staff typically leave contractEndDate null. Powers "contracts
+  // expiring soon" reporting once that's built.
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
   phone            String?
   address          String?
   birthDate        DateTime?
@@ -2461,8 +2591,11 @@ model Employee {
   legalEntityId String?
   legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
 
+  businessUnitId String?
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+
   locationId String?
-  location   StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  location   EmployeeWorkLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
   roleId String?
   role   EmployeeRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
@@ -2485,12 +2618,125 @@ model Employee {
   purchaseOrdersRequested   PurchaseOrder[]
   goodsReceipts             GoodsReceipt[]
   cashierSales              CashierSale[]
+  leaveRequests             LeaveRequest[]
+  probationReviews          ProbationReview[]
 
   @@index([legalEntityId])
+  @@index([businessUnitId])
   @@index([locationId])
   @@index([roleId])
   @@index([fullName])
   @@index([managerId])
+}
+
+enum ProbationStage {
+  REQUESTED            // manager (or HR on their behalf) submitted the review
+  HR_REVIEW            // sitting with HR
+  MANAGEMENT_APPROVAL  // HR passed it, sitting with Management
+  APPROVED             // fully approved — hiring confirmed, HR now works the checklist below
+  REJECTED             // stopped at either HR or Management review
+}
+
+// Requested by Manager → reviewed by HR → approved by Management → Hiring. Once
+// APPROVED, HR works through contractProcessedAt/pklProcessedAt/bpjs*RegisteredAt as a
+// checklist (PKL = Perjanjian Kerja Laut, the seafarer's employment agreement — only
+// meaningful for crew, but harmless to leave unchecked for office staff).
+model ProbationReview {
+  id         String         @id @default(cuid())
+  employeeId String
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  stage      ProbationStage @default(REQUESTED)
+
+  requestedById String
+  requestedBy   User     @relation("ProbationRequestedBy", fields: [requestedById], references: [id])
+  requestedAt   DateTime @default(now())
+  requestNote   String?
+
+  hrDecidedById String?
+  hrDecidedBy   User?     @relation("ProbationHrDecided", fields: [hrDecidedById], references: [id], onDelete: SetNull)
+  hrDecidedAt   DateTime?
+  hrApproved    Boolean?
+  hrNote        String?
+
+  managementDecidedById String?
+  managementDecidedBy   User?     @relation("ProbationManagementDecided", fields: [managementDecidedById], references: [id], onDelete: SetNull)
+  managementDecidedAt   DateTime?
+  managementApproved    Boolean?
+  managementNote        String?
+
+  contractProcessedAt DateTime?
+  pklProcessedAt      DateTime?
+  bpjsTkRegisteredAt  DateTime?
+  bpjsKesRegisteredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([stage])
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Single-step approval, same routing idea as PurchaseRequest: goes to the employee's
+// manager (via Employee.managerId) if that manager has an ERP login, otherwise falls
+// back to notifying HR/Admin directly so it never sits unseen. Approving debits
+// Employee.leaveBalance by `days` (not enforced as a hard floor — HR can still approve
+// into a negative balance, e.g. advance leave, but sees the resulting balance).
+model LeaveRequest {
+  id         String             @id @default(cuid())
+  employeeId String
+  employee   Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  startDate  DateTime
+  endDate    DateTime
+  days       Int
+  reason     String?
+  status     LeaveRequestStatus @default(PENDING)
+
+  requestedById String
+  requestedBy   User     @relation("LeaveRequestedBy", fields: [requestedById], references: [id])
+  requestedAt   DateTime @default(now())
+
+  decidedById  String?
+  decidedBy    User?     @relation("LeaveDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+enum CandidateStatus {
+  NEW
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+// Talent pool — a lightweight recruitment pipeline, not a full ATS. HIRED/REJECTED are
+// terminal states excluded from the "active pipeline" count shown on HR Overview.
+model Candidate {
+  id            String          @id @default(cuid())
+  fullName      String
+  appliedRoleId String?
+  appliedRole   EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
+  phone         String?
+  email         String?
+  source        String?
+  resumeFiles   String[]        @default([])
+  notes         String?
+  status        CandidateStatus @default(NEW)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status])
+  @@index([appliedRoleId])
 }
 
 // ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────

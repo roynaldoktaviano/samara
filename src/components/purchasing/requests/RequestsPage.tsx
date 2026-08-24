@@ -13,6 +13,7 @@ import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps, type PoTimelineDetail } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -38,7 +39,7 @@ function compressImage(file: File): Promise<string> {
 interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; imageKey: string | null; avgPrice: number; isActive: boolean }
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null; _count?: { orders: number } }
-interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean }
+interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean; parentId: string | null }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
 interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null }
@@ -68,6 +69,7 @@ interface PurchaseRequest {
   isUrgent: boolean
   urgentReason: string | null
   purpose: 'STOCK_INVENTORY' | 'TRIP'
+  division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null
   tripBooking: { id: string; bookingCode: string; yacht: { name: string } | null } | null
   // The PO(s) this PR was converted into — lets the list badge show how far the request
   // actually got, down to exactly where a routed PO physically is right now (same text
@@ -143,6 +145,17 @@ function UrgentBadge() {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
       <AlertTriangle className="h-3 w-3" /> URGENT
+    </span>
+  )
+}
+
+const DIVISION_LABEL: Record<string, string> = { BOAT_OPERATION: 'Boat Operation', BUILDING_MATERIAL: 'Building Material' }
+
+function DivisionBadge({ division }: { division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null }) {
+  if (!division) return null
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
+      {DIVISION_LABEL[division]}
     </span>
   )
 }
@@ -280,6 +293,12 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
   // Admin/Purchasing see the whole company's queue by default — this scopes it down to
   // just the PRs the logged-in user themselves created, same distinction as "My Approvals".
   const [scopeFilter, setScopeFilter] = useState<'ALL' | 'MINE'>('ALL')
+  // A Purchasing user assigned a division (see User.purchasingDivision) defaults to just
+  // their own division's queue, but can switch to the full list any time — division
+  // never actually restricts access, it only picks what's shown first. Everyone else
+  // (myDivision null) never sees this toggle and always gets the full list.
+  const [myDivision, setMyDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null>(null)
+  const [divisionScope, setDivisionScope] = useState<'MINE' | 'ALL'>('MINE')
   // Tablet/mobile card layout (< lg) paginates independently of the desktop table,
   // which just renders the full filtered list — see OrdersPage.tsx for the same pattern.
   const [cardPage, setCardPage] = useState(1)
@@ -407,13 +426,14 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rRes, iRes, sRes, lRes, eRes, tRes] = await Promise.all([
+    const [rRes, iRes, sRes, lRes, eRes, tRes, dRes] = await Promise.all([
       fetch('/api/purchasing/requests'),
       fetch('/api/purchasing/items'),
       fetch('/api/purchasing/suppliers'),
       fetch('/api/purchasing/locations'),
       fetch('/api/purchasing/employees'),
       fetch('/api/purchasing/trips'),
+      fetch('/api/purchasing/my-division'),
     ])
     if (rRes.ok) setRequests(await rRes.json())
     if (iRes.ok) setItems((await iRes.json()).filter((i: PurchaseItem & { isActive: boolean }) => i.isActive))
@@ -421,6 +441,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive))
     if (eRes.ok) setEmployees(await eRes.json())
     if (tRes.ok) setTrips(await tRes.json())
+    if (dRes.ok) setMyDivision((await dRes.json()).purchasingDivision)
     setLoading(false)
   }, [])
 
@@ -951,13 +972,20 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
 
   // ── List view ──
   if (view === 'list') {
-    const scopedRequests = scopeFilter === 'MINE' ? requests.filter(r => r.createdBy?.id === session?.user?.id) : requests
+    // Division default — narrows to the assigned division (+ uncategorized PRs) unless
+    // the user has flipped to "All Requests". Purely client-side: the server always
+    // returns the full list, so switching this never re-fetches.
+    const divisionScoped = (myDivision && divisionScope === 'MINE')
+      ? requests.filter(r => r.division === myDivision || r.division === null)
+      : requests
+    const myDivisionCount = myDivision ? requests.filter(r => r.division === myDivision || r.division === null).length : 0
+    const scopedRequests = scopeFilter === 'MINE' ? divisionScoped.filter(r => r.createdBy?.id === session?.user?.id) : divisionScoped
     const filtered = filterStatus === 'ALL' ? scopedRequests : scopedRequests.filter(r => r.status === filterStatus)
     const counts = FILTER_TABS.reduce<Record<string, number>>((acc, t) => {
       acc[t.key] = t.key === 'ALL' ? scopedRequests.length : scopedRequests.filter(r => r.status === t.key).length
       return acc
     }, {})
-    const mineCount = requests.filter(r => r.createdBy?.id === session?.user?.id).length
+    const mineCount = divisionScoped.filter(r => r.createdBy?.id === session?.user?.id).length
     const emptyMessage = requests.length === 0
       ? 'No PRs yet. Click "New PR" to get started.'
       : scopeFilter === 'MINE' && scopedRequests.length === 0
@@ -977,6 +1005,27 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
           <Plus className="h-4 w-4" /> New PR
         </button>
       </div>
+
+      {/* Division toggle — only shown to a Purchasing user with an assigned division.
+          Defaults to their own division (+ uncategorized PRs); "All Requests" always
+          stays one click away, it's a default view not an access restriction. */}
+      {myDivision && (
+        <div className="inline-flex rounded-md border p-0.5 bg-muted/40 w-fit">
+          {([['MINE', DIVISION_LABEL[myDivision]], ['ALL', 'All Requests']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => { setDivisionScope(key); setFilterStatus('ALL'); setCardPage(1) }}
+              className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
+                divisionScope === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+              }`}>
+              {label}
+              {key === 'MINE' && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${divisionScope === key ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                  {myDivisionCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Scope toggle — the company-wide queue vs. just what the logged-in user created
           themselves. Admin-only: Purchasing/Warehouse's job here is processing everyone
@@ -1059,6 +1108,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                   <span className="flex items-center gap-1.5">
                     {r.prNumber}
                     {r.isUrgent && <UrgentBadge />}
+                    <DivisionBadge division={r.division} />
                   </span>
                   <ItemNamesPreview names={r.itemNames} className="font-sans font-normal text-[11px] text-muted-foreground mt-0.5" />
                 </td>
@@ -1144,6 +1194,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
                     <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
                       {r.prNumber}
                       {r.isUrgent && <UrgentBadge />}
+                      <DivisionBadge division={r.division} />
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {least ? (
@@ -1257,6 +1308,7 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
             <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               {selected.prNumber}
               {selected.isUrgent && <UrgentBadge />}
+              <DivisionBadge division={selected.division} />
             </h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               {fmtDate(selected.createdAt)} · created by {selected.createdBy?.name ?? '—'}
@@ -2666,7 +2718,7 @@ function RequestCartPanel({
             value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
           >
             <option value="">— Select location —</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {renderLocationOptions(locations, { topLevelOnly: true })}
           </select>
         </div>
 

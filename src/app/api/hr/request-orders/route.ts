@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '@prisma/client'
 import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
-import { sendPushToUser, sendPushToUsers } from '@/lib/push'
+import { sendPushToUser } from '@/lib/push'
+import { notifyPurchasingForRequest } from '@/lib/notify-purchasing'
 
 // Public, unauthenticated: internal employees (who may not have an ERP login) submit
 // requests here. Each submission becomes a PurchaseRequest routed to the requester's
@@ -51,10 +52,11 @@ export async function POST(req: NextRequest) {
   const { db } = resolved
 
   const body = await req.json()
-  const { employeeId, locationId, notes, items, neededByDate, isUrgent, urgentReason, purpose, tripBookingId } = body as {
+  const { employeeId, locationId, notes, items, neededByDate, isUrgent, urgentReason, purpose, tripBookingId, division } = body as {
     employeeId?: string; locationId?: string; notes?: string; items?: RequestItemInput[]
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
     purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
+    division?: 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
   }
 
   if (!employeeId) return NextResponse.json({ error: 'Please select who is requesting' }, { status: 400 })
@@ -74,6 +76,9 @@ export async function POST(req: NextRequest) {
   }
   if (purpose === 'TRIP' && !tripBookingId) {
     return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
+  }
+  if (!division || !['BOAT_OPERATION', 'BUILDING_MATERIAL'].includes(division)) {
+    return NextResponse.json({ error: 'Please select what this request is for' }, { status: 400 })
   }
 
   const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, isActive: true, fullName: true, managerId: true } })
@@ -114,6 +119,7 @@ export async function POST(req: NextRequest) {
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
+      division,
       status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
       updatedAt: new Date(),
       items: {
@@ -155,26 +161,13 @@ export async function POST(req: NextRequest) {
     const skipReason = !employee.managerId
       ? ' (no manager on file for this employee — skipped manager approval)'
       : ' (assigned manager has no ERP login yet — skipped manager approval)'
-    const purchasingUsers = await db.user.findMany({
-      where: { role: { in: ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] } },
-      select: { id: true },
-    })
-    if (purchasingUsers.length) {
-      await db.notification.createMany({
-        data: purchasingUsers.map(u => ({
-          userId: u.id,
-          type: isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
-          title: isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
-          body: `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
-          requestId: request.id,
-        })),
-      }).catch(() => {})
-      await sendPushToUsers(db, purchasingUsers.map(u => u.id), {
-        title: isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
-        body: `${employee.fullName} — ${prNumber} is waiting for review.`,
-        url: '/',
-      })
-    }
+    await notifyPurchasingForRequest(
+      db, division,
+      isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
+      isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
+      `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+      request.id,
+    )
   }
 
   return NextResponse.json(request, { status: 201 })

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Warehouse, Ship, Eye, AlertTriangle, Package, MapPin, Truck, Layers, SlidersHorizontal, User, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Warehouse, Ship, Eye, AlertTriangle, Package, MapPin, Truck, Layers, SlidersHorizontal, User, ChevronRight, CornerDownRight } from 'lucide-react'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 interface Yacht { id: string; name: string }
 interface StockLocation {
@@ -145,6 +146,30 @@ export default function LocationsPage() {
     return true
   })
 
+  // Groups the (possibly filtered) list so a location's children render immediately
+  // under it, indented — instead of interleaved alphabetically with everything else
+  // (e.g. 4 unrelated rows all just named "Bar"). A child whose parent got filtered
+  // out of view still renders, just at depth 0 with no indentation — its parent name
+  // stays visible via the small label under its own name either way.
+  const idSet = new Set(filtered.map(l => l.id))
+  const byParent = new Map<string, StockLocation[]>()
+  const topLevel: StockLocation[] = []
+  filtered.forEach(l => {
+    if (l.parentId && idSet.has(l.parentId)) {
+      const arr = byParent.get(l.parentId) ?? []
+      arr.push(l)
+      byParent.set(l.parentId, arr)
+    } else {
+      topLevel.push(l)
+    }
+  })
+  const byName = (a: StockLocation, b: StockLocation) => a.name.localeCompare(b.name)
+  const groupedRows: { loc: StockLocation; depth: number }[] = []
+  topLevel.sort(byName).forEach(t => {
+    groupedRows.push({ loc: t, depth: 0 })
+    ;(byParent.get(t.id) ?? []).sort(byName).forEach(c => groupedRows.push({ loc: c, depth: 1 }))
+  })
+
   const typeCounts = ['WAREHOUSE', 'VESSEL', 'TRANSIT', 'SITE', 'ADJUSTMENT'].reduce<Record<string, number>>((acc, t) => {
     acc[t] = locations.filter(l => l.type === t).length
     return acc
@@ -199,7 +224,6 @@ export default function LocationsPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Nama Lokasi</th>
                 <th className="text-left px-4 py-3 font-medium">Tipe</th>
-                <th className="text-left px-4 py-3 font-medium">Parent</th>
                 <th className="text-left px-4 py-3 font-medium">Vessel</th>
                 <th className="text-left px-4 py-3 font-medium">PIC / Manager</th>
                 <th className="text-left px-4 py-3 font-medium">Storage Class</th>
@@ -208,20 +232,36 @@ export default function LocationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
+              {groupedRows.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                   <MapPin className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   Tidak ada lokasi ditemukan.
                 </td></tr>
-              ) : filtered.map(loc => (
-                <tr key={loc.id} className={`hover:bg-muted/30 transition-colors ${!loc.isActive ? 'opacity-50' : ''}`}>
-                  <td className="px-4 py-3 font-medium">{loc.name}</td>
+              ) : groupedRows.map(({ loc, depth }) => (
+                <tr key={loc.id} className={`hover:bg-muted/30 transition-colors ${!loc.isActive ? 'opacity-50' : ''} ${depth > 0 ? 'bg-muted/10' : ''}`}>
+                  <td className="px-4 py-3 font-medium">
+                    {depth > 0 ? (
+                      <span className="flex items-center gap-1.5 pl-5 font-normal text-muted-foreground">
+                        <CornerDownRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                        {loc.name}
+                      </span>
+                    ) : (
+                      <>
+                        {loc.name}
+                        {/* Parent exists but got filtered out of the current view (e.g. a
+                            different type filter) — keep its context visible instead of
+                            silently losing it now that there's no separate Parent column. */}
+                        {loc.parent && (
+                          <span className="block text-[10px] font-normal text-muted-foreground mt-0.5">in {loc.parent.name}</span>
+                        )}
+                      </>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLOR[loc.type] ?? 'bg-gray-100 text-gray-600'}`}>
                       {TYPE_LABEL[loc.type] ?? loc.type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{loc.parent?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {loc.yacht ? (
                       <button onClick={() => openInventory(loc.yacht!)}
@@ -412,9 +452,10 @@ export default function LocationsPage() {
                       className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all appearance-none"
                       value={form.parentId} onChange={e => setForm(f => ({ ...f, parentId: e.target.value }))}>
                       <option value="">— Tidak ada —</option>
-                      {locations.filter(l => l.id !== editing?.id).map(l => (
-                        <option key={l.id} value={l.id}>{l.name} · {TYPE_LABEL[l.type] ?? l.type}</option>
-                      ))}
+                      {renderLocationOptions(locations, {
+                        excludeIds: editing ? new Set([editing.id]) : undefined,
+                        renderLabel: l => `${l.name} · ${TYPE_LABEL[l.type] ?? l.type}`,
+                      })}
                     </select>
                   </div>
                 </div>

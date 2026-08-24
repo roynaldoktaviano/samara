@@ -5,6 +5,7 @@ import { Plus, Search, Pencil, Trash2, ToggleLeft, ToggleRight, X, Download, Upl
 import { sortByMethod, computeStockValue, methodLabel, type ValuationMethod } from '@/lib/valuation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 type PurchaseItemType = string
 
@@ -22,7 +23,7 @@ function getTypeIcon(code: string): LucideIcon {
 
 interface ItemCategory { name: string; skuPrefix: string; isActive: boolean }
 interface ItemTypeConfig { code: string; label: string; isActive: boolean; categories: ItemCategory[] }
-interface LocationLite { id: string; name: string; type: string; isActive: boolean }
+interface LocationLite { id: string; name: string; type: string; isActive: boolean; parentId: string | null }
 
 interface PurchaseItem {
   id: string
@@ -937,7 +938,7 @@ export default function ItemsPage() {
                 value={changeLocationValue} onChange={e => setChangeLocationValue(e.target.value)}
               >
                 <option value="">— Unknown —</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {renderLocationOptions(locations)}
               </select>
             </div>
             <div className="flex gap-3 justify-end mt-5">
