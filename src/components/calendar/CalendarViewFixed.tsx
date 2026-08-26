@@ -324,13 +324,16 @@ function MonthGrid({
                   const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0)
                   const isPast     = day > 0 && new Date(dateStr) <= todayMidnight
                   const inRange    = day > 0 && isInFilterRange(dateStr)
-                  // Block clicking on dates already occupied by this yacht's trips
+                  // Block clicking on dates already occupied by this yacht's trips, or by an
+                  // internal event (docking/crossing/overhaul on this yacht, or any
+                  // company-wide event) — a yacht that's docked/crossing/overhaul can't be booked.
                   // Use allBookings/allOpenTrips (unfiltered by type) so red bg shows regardless of type filter
                   const occupancyBookings  = allBookings  ?? bookings
                   const occupancyOpenTrips = allOpenTrips ?? openTrips
                   const isOccupied = day > 0 && !isPast && !!yachtFilter && (
                     occupancyBookings.some(b => dateStr >= b.startDate && dateStr <= b.endDate) ||
-                    occupancyOpenTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate)
+                    occupancyOpenTrips.some(t => dateStr >= t.startDate && dateStr <= t.endDate) ||
+                    internalEvents.some(e => dateStr >= e.startDate && dateStr <= e.endDate)
                   )
                   return (
                     <div
@@ -1359,6 +1362,17 @@ export default function CalendarView() {
         )
       if (occupied) {
         toast.error(`${yachtFilter} already has a booking on this date.`)
+        return
+      }
+
+      // Also block dates covered by an internal event — docked/crossing/overhaul
+      // yachts, or any company-wide event, can't be booked.
+      const blockedByEvent = internalEvents.find(e =>
+        (!e.yachtId || e.yachtName === yachtFilter) &&
+        dateStr >= e.startDate && dateStr <= e.endDate
+      )
+      if (blockedByEvent) {
+        toast.error(`${yachtFilter} has ${INTERNAL_EVENT_LABEL[blockedByEvent.type]} (${blockedByEvent.title}) on this date.`)
         return
       }
     }

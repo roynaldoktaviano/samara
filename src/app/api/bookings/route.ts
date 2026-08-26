@@ -278,6 +278,29 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // Check PC vs internal events (docking/crossing/overhaul, or any company-wide
+      // event) on this yacht — a docked/crossing/overhauling yacht can't be booked.
+      // Inclusive bounds: unlike a booking's checkout day, an event's endDate is a full
+      // day it's unavailable, not a half-day handover.
+      const conflictingEvent = await db.internalEvent.findFirst({
+        where: {
+          OR: [{ yachtId }, { yachtId: null }],
+          startDate: { lte: end },
+          endDate:   { gte: start },
+        },
+        select: { type: true, title: true, startDate: true, endDate: true },
+      })
+      if (conflictingEvent) {
+        const typeLabel = { DOCKING: 'Docking', CROSSING: 'Crossing', OVERHAUL: 'Overhaul', COMPANY_NEED: 'Company Need' }[conflictingEvent.type] ?? conflictingEvent.type
+        return NextResponse.json(
+          {
+            error: `Yacht is unavailable on these dates — ${typeLabel}: ${conflictingEvent.title}`,
+            conflict: true,
+          },
+          { status: 409 }
+        )
+      }
+
       // Check PC vs open trips on same yacht
       if (tripType === 'PRIVATE_CHARTER') {
         const conflictingOpenTrips = await db.openTrip.findMany({

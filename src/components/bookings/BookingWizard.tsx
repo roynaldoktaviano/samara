@@ -468,18 +468,30 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     const overlaps = (a: string, b: string) => new Date(a).getTime() < e && new Date(b).getTime() > s
 
     setConflictChecking(true)
-    // Check existing bookings for this yacht (hard block)
-    fetch(`/api/bookings?yachtId=${yachtId}`)
-      .then(r => r.json())
-      .then((data: any[]) => {
-        if (!Array.isArray(data)) { setYachtConflict(null); return }
-        const bookingConflict = data.find(b =>
-          b.status !== 'cancelled' &&
-          b.tripType !== 'OPEN_TRIP' &&
-          overlaps(b.startDate, b.endDate)
-        )
+    // Check existing bookings for this yacht, and internal events (docking/crossing/
+    // overhaul/company-wide) on it — both are hard blocks, unlike an open trip below.
+    Promise.all([
+      fetch(`/api/bookings?yachtId=${yachtId}`).then(r => r.json()).catch(() => null),
+      fetch('/api/internal-events').then(r => r.json()).catch(() => null),
+    ])
+      .then(([bookingsData, eventsData]) => {
+        const bookingConflict = Array.isArray(bookingsData)
+          ? bookingsData.find((b: any) =>
+              b.status !== 'cancelled' &&
+              b.tripType !== 'OPEN_TRIP' &&
+              overlaps(b.startDate, b.endDate)
+            )
+          : null
         if (bookingConflict) {
           setYachtConflict({ name: bookingConflict.bookingCode, start: bookingConflict.startDate, end: bookingConflict.endDate, isOpenTrip: false })
+          return
+        }
+        const eventConflict = Array.isArray(eventsData)
+          ? eventsData.find((ev: any) => (!ev.yachtId || ev.yachtId === yachtId) && overlaps(ev.startDate, ev.endDate))
+          : null
+        if (eventConflict) {
+          const typeLabel = { DOCKING: 'Docking', CROSSING: 'Crossing', OVERHAUL: 'Overhaul', COMPANY_NEED: 'Company Need' }[eventConflict.type as string] ?? eventConflict.type
+          setYachtConflict({ name: `${typeLabel}: ${eventConflict.title}`, start: eventConflict.startDate, end: eventConflict.endDate, isOpenTrip: false })
           return
         }
         // Check open trips — soft warning only (overrideable)
@@ -511,16 +523,18 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       .filter(t => (t._count?.bookings ?? 0) === 0)
       .map(t => ({ from: new Date(t.startDate), to: new Date(t.endDate) }))
     setOpenTripFreeRanges(otFree)
-    fetch(`/api/bookings?yachtId=${yachtId}`)
-      .then(r => r.json())
-      .then((data: any[]) => {
-        if (!Array.isArray(data)) { setBlockedRanges(otBooked); return }
-        const bkRanges = data
-          .filter(b => b.status !== 'cancelled')
-          .map(b => ({ from: new Date(b.startDate), to: new Date(b.endDate) }))
-        setBlockedRanges([...otBooked, ...bkRanges])
-      })
-      .catch(() => setBlockedRanges(otBooked))
+    Promise.all([
+      fetch(`/api/bookings?yachtId=${yachtId}`).then(r => r.json()).catch(() => null),
+      fetch('/api/internal-events').then(r => r.json()).catch(() => null),
+    ]).then(([bookingsData, eventsData]) => {
+      const bkRanges = Array.isArray(bookingsData)
+        ? bookingsData.filter((b: any) => b.status !== 'cancelled').map((b: any) => ({ from: new Date(b.startDate), to: new Date(b.endDate) }))
+        : []
+      const evRanges = Array.isArray(eventsData)
+        ? eventsData.filter((ev: any) => !ev.yachtId || ev.yachtId === yachtId).map((ev: any) => ({ from: new Date(ev.startDate), to: new Date(ev.endDate) }))
+        : []
+      setBlockedRanges([...otBooked, ...bkRanges, ...evRanges])
+    })
   }, [yachtId, tripType, openTrips])
 
   /* auto base price — computed in USD then converted to selected currency */
