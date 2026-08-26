@@ -17,7 +17,7 @@ export async function PUT(
   }
 
   const { id } = await params
-  const { name, email, role, password, employeeId } = await req.json()
+  const { name, email, role, password, employeeId, purchasingDivision } = await req.json()
 
   if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
@@ -25,12 +25,16 @@ export async function PUT(
   if (password && password.length < 8) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
   }
+  if (purchasingDivision && !['BOAT_OPERATION', 'BUILDING_MATERIAL'].includes(purchasingDivision)) {
+    return NextResponse.json({ error: 'Invalid purchasing division' }, { status: 400 })
+  }
 
   const data: Record<string, unknown> = {}
   if (name     !== undefined) data.name     = name || null
   if (email    !== undefined) data.email    = email.toLowerCase().trim()
   if (role     !== undefined) data.role     = role
   if (password)               data.password = await bcrypt.hash(password, 12)
+  if (purchasingDivision !== undefined) data.purchasingDivision = purchasingDivision || null
 
   try {
     const db = await getDb(session)
@@ -49,7 +53,7 @@ export async function PUT(
       where: { id },
       data,
       select: {
-        id: true, name: true, email: true, role: true, createdAt: true,
+        id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true,
         employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },
       },
     })

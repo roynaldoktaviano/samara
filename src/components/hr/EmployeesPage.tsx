@@ -6,13 +6,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MultiFilePicker } from '@/components/ui/file-preview'
 
 interface LegalEntity { id: string; name: string; code: string | null }
+interface BusinessUnit { id: string; name: string }
 interface EmployeeRole { id: string; title: string }
-interface Location { id: string; name: string; type: string }
+interface Location { id: string; name: string }
 interface AppUser { id: string; name: string | null; email: string; role: string }
 interface Employee {
   id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
   resignedAt: string | null; resignStatus: string | null; resignReason: string | null
-  gender: string | null; employmentStatus: string | null; leaveBalance: number | null; joinDate: string | null
+  gender: string | null; employmentStatus: string | null; level: 'HIGH' | 'MEDIUM' | 'LOW' | null; leaveBalance: number | null; leaveEntitlementPolicy: string | null
+  joinDate: string | null; contractStartDate: string | null; contractEndDate: string | null
   phone: string | null; address: string | null; birthDate: string | null
   nikPassport: string | null; nationality: string | null; religion: string | null; placeOfBirth: string | null
   motherName: string | null; personalEmail: string | null; maritalStatus: string | null; addressCurrent: string | null
@@ -22,13 +24,14 @@ interface Employee {
   bpjsKesehatanNumber: string | null; bpjsTkNumber: string | null
   basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null
   seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]
-  legalEntity: LegalEntity | null; location: Location | null; role: EmployeeRole | null
+  legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
 }
 
 const BLANK = {
-  fullName: '', employeeNumber: '', legalEntityId: '', locationId: '', department: '', roleId: '', gender: '', employmentStatus: '', leaveBalance: '', joinDate: '', managerId: '', userId: '', phone: '', address: '', birthDate: '',
+  fullName: '', employeeNumber: '', legalEntityId: '', businessUnitId: '', locationId: '', department: '', roleId: '', level: '', gender: '', employmentStatus: '', leaveBalance: '', leaveEntitlementPolicy: '',
+  joinDate: '', contractStartDate: '', contractEndDate: '', managerId: '', userId: '', phone: '', address: '', birthDate: '',
   nikPassport: '', nationality: '', religion: '', placeOfBirth: '', motherName: '', personalEmail: '', maritalStatus: '', addressCurrent: '',
   emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '',
   npwp: '', kkNumber: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bpjsKesehatanNumber: '', bpjsTkNumber: '',
@@ -40,6 +43,7 @@ const GENDERS = ['Male', 'Female']
 const EMPLOYMENT_STATUSES = ['Probation', 'Internship', 'Freelance', 'Contract (PKWT)', 'Permanent (PKWTT)']
 const DEPARTMENTS = ['Management', 'Finance', 'Human Resources', 'Sales', 'Marketing', 'Kitchen', 'Bar', 'Housekeeping', 'Engineering', 'Deckhand']
 const MARITAL_STATUSES = ['TK', 'K0', 'K1', 'K2', 'K3']
+const LEAVE_ENTITLEMENT_POLICIES = ['12 hari', '20 hari', '2 bulan']
 
 /** Ensures an existing value not in the preset list still shows up as an option, so editing an old record doesn't silently blank it out. */
 function withCurrent(list: string[], current: string): string[] {
@@ -193,13 +197,16 @@ function UserCombobox({ value, options, onChange }: {
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([])
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([])
   const [roles, setRoles] = useState<EmployeeRole[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
+  const [viewMode, setViewMode] = useState<'table' | 'location'>('table')
   const [entityFilter, setEntityFilter] = useState('All')
+  const [businessUnitFilter, setBusinessUnitFilter] = useState('All')
   const [locationFilter, setLocationFilter] = useState('All')
   const [roleFilter, setRoleFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All')
@@ -224,19 +231,21 @@ export default function EmployeesPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [empRes, entRes, roleRes, locRes, userRes] = await Promise.all([
+    const [empRes, entRes, buRes, roleRes, locRes, userRes] = await Promise.all([
       fetch('/api/hr/employees'),
       fetch('/api/hr/legal-entities'),
+      fetch('/api/hr/business-units'),
       fetch('/api/hr/roles'),
-      fetch('/api/purchasing/locations'),
+      fetch('/api/hr/work-locations'),
       // Admin/Super Admin only — HR editors won't be able to link login accounts,
       // the picker below just stays empty for them rather than failing the page load.
       fetch('/api/users'),
     ])
     if (empRes.ok) setEmployees(await empRes.json())
     if (entRes.ok) setLegalEntities(await entRes.json())
+    if (buRes.ok) setBusinessUnits(await buRes.json())
     if (roleRes.ok) setRoles(await roleRes.json())
-    if (locRes.ok) setLocations((await locRes.json()).filter((l: Location & { isActive?: boolean }) => l.isActive !== false))
+    if (locRes.ok) setLocations(await locRes.json())
     if (userRes.ok) setUsers(await userRes.json())
     setLoading(false)
   }, [])
@@ -247,11 +256,14 @@ export default function EmployeesPage() {
   function openEdit(emp: Employee) {
     setForm({
       fullName: emp.fullName, employeeNumber: emp.employeeNumber,
-      legalEntityId: emp.legalEntity?.id ?? '', locationId: emp.location?.id ?? '',
+      legalEntityId: emp.legalEntity?.id ?? '', businessUnitId: emp.businessUnit?.id ?? '', locationId: emp.location?.id ?? '',
       department: emp.department ?? '', roleId: emp.role?.id ?? '',
-      gender: emp.gender ?? '', employmentStatus: emp.employmentStatus ?? '',
+      gender: emp.gender ?? '', employmentStatus: emp.employmentStatus ?? '', level: emp.level ?? '',
       leaveBalance: emp.leaveBalance != null ? String(emp.leaveBalance) : '',
+      leaveEntitlementPolicy: emp.leaveEntitlementPolicy ?? '',
       joinDate: emp.joinDate ? emp.joinDate.slice(0, 10) : '',
+      contractStartDate: emp.contractStartDate ? emp.contractStartDate.slice(0, 10) : '',
+      contractEndDate: emp.contractEndDate ? emp.contractEndDate.slice(0, 10) : '',
       managerId: emp.managerId ?? '',
       userId: emp.userId ?? '',
       phone: emp.phone ?? '',
@@ -327,7 +339,7 @@ export default function EmployeesPage() {
   }
 
   function downloadTemplate() {
-    const sample = ['EMP-0001', 'Made Ari', 'Bartender / Service', 'PT Samara Wisata Bahari', '12', 'Male', 'Samara I', 'F&B', 'Permanent', '2020-01-15', '', 'Active']
+    const sample = ['EMP-0001', 'Made Ari', 'Bartender / Service', 'PT Samara Wisata Bahari', '12', 'Male', 'Kapal', 'F&B', 'Permanent', '2020-01-15', '', 'Active']
     downloadFile(buildCSV([CSV_HEADERS, sample]), 'template-employees.csv')
   }
 
@@ -350,20 +362,39 @@ export default function EmployeesPage() {
   const filtered = employees.filter(e => {
     const matchSearch = !search || e.fullName.toLowerCase().includes(search.toLowerCase()) || e.employeeNumber.toLowerCase().includes(search.toLowerCase())
     const matchEntity = entityFilter === 'All' || e.legalEntity?.id === entityFilter
+    const matchBusinessUnit = businessUnitFilter === 'All' || e.businessUnit?.id === businessUnitFilter
     const matchLocation = locationFilter === 'All' || e.location?.id === locationFilter
     const matchRole = roleFilter === 'All' || e.role?.id === roleFilter
     const matchStatus = statusFilter === 'All' || (statusFilter === 'Active' ? e.isActive : !e.isActive)
-    return matchSearch && matchEntity && matchLocation && matchRole && matchStatus
+    return matchSearch && matchEntity && matchBusinessUnit && matchLocation && matchRole && matchStatus
   })
 
-  const hasActiveFilters = search || entityFilter !== 'All' || locationFilter !== 'All' || roleFilter !== 'All' || statusFilter !== 'All'
-  function resetFilters() { setSearch(''); setEntityFilter('All'); setLocationFilter('All'); setRoleFilter('All'); setStatusFilter('All') }
+  const hasActiveFilters = search || entityFilter !== 'All' || businessUnitFilter !== 'All' || locationFilter !== 'All' || roleFilter !== 'All' || statusFilter !== 'All'
+  function resetFilters() { setSearch(''); setEntityFilter('All'); setBusinessUnitFilter('All'); setLocationFilter('All'); setRoleFilter('All'); setStatusFilter('All') }
 
-  useEffect(() => { setPage(0) }, [search, entityFilter, locationFilter, roleFilter, statusFilter])
+  useEffect(() => { setPage(0) }, [search, entityFilter, businessUnitFilter, locationFilter, roleFilter, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
   const paginated = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+
+  // "By Location" view — same `filtered` set as the table (search/filters still apply),
+  // just clustered under each work location so it's obvious at a glance who's based
+  // where (office vs. which specific vessel) instead of scanning one long flat list.
+  const locationGroups = (() => {
+    const map = new Map<string, Employee[]>()
+    filtered.forEach(e => {
+      const key = e.location?.name ?? 'Unassigned'
+      const arr = map.get(key) ?? []
+      arr.push(e)
+      map.set(key, arr)
+    })
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === 'Unassigned') return 1
+      if (b === 'Unassigned') return -1
+      return a.localeCompare(b)
+    })
+  })()
 
   return (
     <div className="space-y-6">
@@ -401,6 +432,18 @@ export default function EmployeesPage() {
         </div>
       </div>
 
+      {/* ── View toggle ── */}
+      <div className="inline-flex rounded-md border p-0.5 bg-muted/40 w-fit">
+        {([['table', 'Table'], ['location', 'By Location']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setViewMode(key)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors ${
+              viewMode === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Filters ── */}
       <div className="flex flex-wrap items-center gap-2.5 rounded-lg border bg-muted/20 px-3 py-2.5">
         <div className="relative flex-1 min-w-45 max-w-xs">
@@ -418,6 +461,14 @@ export default function EmployeesPage() {
         >
           <option value="All">All Legal Entities</option>
           {legalEntities.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
+        </select>
+
+        <select
+          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+          value={businessUnitFilter} onChange={e => setBusinessUnitFilter(e.target.value)}
+        >
+          <option value="All">All Business Units</option>
+          {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
         </select>
 
         <select
@@ -456,6 +507,47 @@ export default function EmployeesPage() {
         <div className="rounded-lg border overflow-hidden animate-pulse">
           <div className="h-10 bg-muted/50 border-b" />
           {[...Array(4)].map((_, i) => <div key={i} className="px-5 py-4 border-t flex gap-4"><div className="h-4 w-40 rounded bg-muted" /><div className="h-4 w-20 rounded bg-muted" /></div>)}
+        </div>
+      ) : viewMode === 'location' ? (
+        <div className="space-y-3">
+          {locationGroups.length === 0 ? (
+            <div className="rounded-xl border py-12 text-center text-muted-foreground text-sm">
+              <IdCard className="h-8 w-8 mx-auto mb-2 opacity-20" />
+              {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
+            </div>
+          ) : locationGroups.map(([locName, emps]) => (
+            <div key={locName} className="rounded-xl border overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 bg-muted/20 border-b">
+                <p className="font-semibold text-sm">{locName}</p>
+                <span className="text-xs text-muted-foreground">{emps.length} employee{emps.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="divide-y">
+                {emps.map(emp => (
+                  <div key={emp.id} onClick={() => openEdit(emp)}
+                    className={`flex items-center justify-between px-5 py-3 cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm flex items-center gap-1.5 truncate">
+                        {emp.fullName}
+                        {emp.userId && (
+                          <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="text-xs text-muted-foreground">{emp.role?.title ?? '—'}</span>
+                      <span className="text-xs text-muted-foreground">{emp.department ?? '—'}</span>
+                      <button onClick={e => { e.stopPropagation(); toggleActive(emp) }} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
+                        {emp.isActive
+                          ? <ToggleRight className="h-5 w-5 text-green-600" />
+                          : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
@@ -530,7 +622,7 @@ export default function EmployeesPage() {
       )}
 
       {/* Pagination */}
-      {!loading && filtered.length > 0 && (
+      {!loading && viewMode === 'table' && filtered.length > 0 && (
         <div className="flex items-center justify-between pt-1 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="text-xs">Rows per page</span>
@@ -667,6 +759,17 @@ export default function EmployeesPage() {
                   </div>
 
                   <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Business Unit</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.businessUnitId} onChange={e => setForm(f => ({ ...f, businessUnitId: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</label>
                     <select
                       className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
@@ -697,6 +800,20 @@ export default function EmployeesPage() {
                       <option value="">—</option>
                       {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
                     </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Level</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      <option value="HIGH">High</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="LOW">Low</option>
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">Skill tier within the role — compared against the approved salary range on Roles &amp; Compensation.</p>
                   </div>
 
                   <div className="space-y-1.5">
@@ -738,6 +855,36 @@ export default function EmployeesPage() {
                       placeholder="e.g. 12"
                       value={form.leaveBalance} onChange={e => setForm(f => ({ ...f, leaveBalance: e.target.value }))}
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Start</label>
+                    <input
+                      type="date"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.contractStartDate} onChange={e => setForm(f => ({ ...f, contractStartDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract End</label>
+                    <input
+                      type="date"
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      placeholder="Leave blank for permanent staff"
+                      value={form.contractEndDate} onChange={e => setForm(f => ({ ...f, contractEndDate: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Entitlement</label>
+                    <select
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.leaveEntitlementPolicy} onChange={e => setForm(f => ({ ...f, leaveEntitlementPolicy: e.target.value }))}
+                    >
+                      <option value="">—</option>
+                      {withCurrent(LEAVE_ENTITLEMENT_POLICIES, form.leaveEntitlementPolicy).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
                   </div>
 
                   <div className="col-span-2 space-y-1.5">

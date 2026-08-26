@@ -20,7 +20,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const {
-    fullName, employeeNumber, legalEntityId, locationId, department, roleId, isActive, resignedAt, resignStatus, resignReason, gender, employmentStatus, leaveBalance, joinDate, managerId, userId, phone, address, birthDate,
+    fullName, employeeNumber, legalEntityId, businessUnitId, locationId, department, roleId, level, isActive, resignedAt, resignStatus, resignReason, gender, employmentStatus, leaveBalance, leaveEntitlementPolicy, joinDate, contractStartDate, contractEndDate, managerId, userId, phone, address, birthDate,
     nikPassport, nationality, religion, placeOfBirth, motherName, personalEmail, maritalStatus, addressCurrent,
     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
@@ -45,12 +45,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(employeeNumber !== undefined && { employeeNumber: employeeNumber.trim() }),
         ...(department !== undefined && { department: department?.trim() || null }),
         ...(legalEntityId !== undefined && { legalEntityId: legalEntityId || null }),
+        ...(businessUnitId !== undefined && { businessUnitId: businessUnitId || null }),
         ...(locationId !== undefined && { locationId: locationId || null }),
         ...(roleId !== undefined && { roleId: roleId || null }),
+        ...(level !== undefined && { level: level || null }),
         ...(gender !== undefined && { gender: gender?.trim() || null }),
         ...(employmentStatus !== undefined && { employmentStatus: employmentStatus?.trim() || null }),
         ...(leaveBalance !== undefined && { leaveBalance: leaveBalance !== '' ? parseInt(leaveBalance) : null }),
+        ...(leaveEntitlementPolicy !== undefined && { leaveEntitlementPolicy: leaveEntitlementPolicy?.trim() || null }),
         ...(joinDate !== undefined && { joinDate: joinDate ? new Date(joinDate) : null }),
+        ...(contractStartDate !== undefined && { contractStartDate: contractStartDate ? new Date(contractStartDate) : null }),
+        ...(contractEndDate !== undefined && { contractEndDate: contractEndDate ? new Date(contractEndDate) : null }),
         ...(managerId !== undefined && { managerId: managerId || null }),
         ...(userId !== undefined && { userId: userId || null }),
         ...(phone !== undefined && { phone: phone?.trim() || null }),
@@ -93,7 +98,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
       include: {
         legalEntity: true,
-        location: { select: { id: true, name: true, type: true } },
+        businessUnit: true,
+        location: { select: { id: true, name: true } },
         role: true,
         manager: { select: { id: true, fullName: true } },
         user: { select: { id: true, name: true, email: true } },

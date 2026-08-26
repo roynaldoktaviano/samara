@@ -12,10 +12,11 @@ import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { cn } from '@/lib/utils'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null }
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
-interface LocationLite { id: string; name: string; type: string }
+interface LocationLite { id: string; name: string; type: string; parentId: string | null }
 interface TripOption {
   id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
   destination: string | null; status: string
@@ -93,6 +94,7 @@ function RequestOrderContent() {
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
   const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
+  const [division, setDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''>('')
   const [tripBookingId, setTripBookingId] = useState('')
   const [tripBookingLabel, setTripBookingLabel] = useState('')
   const [trips, setTrips] = useState<TripOption[]>([])
@@ -215,6 +217,7 @@ function RequestOrderContent() {
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
     if (purpose === 'TRIP' && !tripBookingId) { setSubmitError('Please select which trip this request is for'); return }
+    if (!division) { setSubmitError('Please select what this request is for'); return }
     setSubmitting(true)
     const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -222,6 +225,7 @@ function RequestOrderContent() {
         employeeId, locationId: locationId || null, notes,
         neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
         purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : null,
+        division,
         items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
       }),
     })
@@ -234,7 +238,7 @@ function RequestOrderContent() {
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-    setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+    setPurpose('STOCK_INVENTORY'); setDivision(''); setTripBookingId(''); setTripBookingLabel('')
     setSuccess(null); setCartOpen(false)
   }
 
@@ -450,7 +454,7 @@ function RequestOrderContent() {
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent}
               urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-              purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+              purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
               submit={submit} submitting={submitting} submitError={submitError}
             />
           </div>
@@ -476,7 +480,7 @@ function RequestOrderContent() {
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent}
                 urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-                purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+                purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
               />
@@ -651,7 +655,7 @@ function RequestSidebar({
   locations, locationId, setLocationId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
-  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
+  purpose, setPurpose, division, setDivision, tripBookingId, tripBookingLabel, setTripBooking, trips,
   submit, submitting, submitError,
   embedded = false,
 }: {
@@ -664,6 +668,7 @@ function RequestSidebar({
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
+  division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''; setDivision: (v: 'BOAT_OPERATION' | 'BUILDING_MATERIAL') => void
   tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
   trips: TripOption[]
   submit: () => void; submitting: boolean; submitError: string
@@ -730,7 +735,7 @@ function RequestSidebar({
             value={locationId} onChange={e => setLocationId(e.target.value)}
           >
             <option value="">Select vessel or location…</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {renderLocationOptions(locations, { topLevelOnly: true })}
           </select>
         </div>
 
@@ -750,6 +755,21 @@ function RequestSidebar({
           {purpose === 'TRIP' && (
             <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
           )}
+        </div>
+
+        {/* Division — routes this request to the right Purchasing person */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">What is this for? <span className="text-red-500">*</span></label>
+          <div className={cn('inline-flex gap-1 bg-muted rounded-lg p-1 w-full', !division && submitError && 'ring-1 ring-red-400')}>
+            <button type="button" onClick={() => setDivision('BOAT_OPERATION')}
+              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', division === 'BOAT_OPERATION' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              Boat Operation
+            </button>
+            <button type="button" onClick={() => setDivision('BUILDING_MATERIAL')}
+              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', division === 'BUILDING_MATERIAL' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              Building Material
+            </button>
+          </div>
         </div>
 
         {/* Items */}

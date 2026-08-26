@@ -59,6 +59,12 @@ import PosPackagesPage from '@/components/pos/packages/PosPackagesPage'
 import PosDiscountsPage from '@/components/pos/discounts/PosDiscountsPage'
 import PosBillingHistoryPage from '@/components/pos/billing/PosBillingHistoryPage'
 import EmployeesPage from '@/components/hr/EmployeesPage'
+import HROverview from '@/components/hr/HROverview'
+import LeaveRequestsPage from '@/components/hr/LeaveRequestsPage'
+import TalentPoolPage from '@/components/hr/TalentPoolPage'
+import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
+import CompensationPage from '@/components/hr/CompensationPage'
+import ProbationReviewsPage from '@/components/hr/ProbationReviewsPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import Banks from '@/components/banks/Banks'
@@ -98,7 +104,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-employees' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
+type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-probation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
 
 type NavItem = {
   id: View
@@ -188,7 +194,13 @@ const navigationItems: NavItem[] = [
   { id: 'pos-packages',   label: 'Packages',        icon: PackagePlus, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
   { id: 'pos-discounts',  label: 'Discounts',       icon: Percent,     roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
   { id: 'pos-billing',    label: 'Billing History', icon: ClipboardList, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
+  { id: 'hr-overview',   label: 'Overview',       icon: LayoutDashboard, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],        group: 'hr'         },
   { id: 'hr-employees',  label: 'Employees',      icon: IdCard,     roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
+  { id: 'hr-leave-requests', label: 'Leave Requests', icon: Calendar, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],           group: 'hr'         },
+  { id: 'hr-candidates', label: 'Talent Pool',    icon: UserPlus,   roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
+  { id: 'hr-entities-assignments', label: 'Entities & Assignments', icon: Building2, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'   },
+  { id: 'hr-compensation', label: 'Roles & Compensation', icon: Wallet, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],         group: 'hr'         },
+  { id: 'hr-probation',  label: 'Probation Reviews', icon: ClipboardList, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],       group: 'hr'         },
 ]
 
 const roleBadgeColor: Record<string, string> = {
@@ -237,6 +249,8 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PO_RECEIVED:            CheckCircle2,
   PO_PARTIALLY_RECEIVED:  CheckCircle2,
   REQUEST_ORDER_SUBMITTED: ClipboardList,
+  PR_VERIFY_REMINDER:     Clock,
+  LEGAL_DOC_EXPIRING:     Building2,
   PO_PAYMENT_REQUESTED:   Wallet,
   PO_PAYMENT_PAID:        CheckCircle2,
   PO_PAID_BY_PURCHASING: CheckCircle2,
@@ -253,6 +267,8 @@ const NOTIF_COLOR: Record<string, string> = {
   DEPOSIT_DUE_H1:    'text-orange-500',
   DEPOSIT_DUE_H0:    'text-red-600',
   REQUEST_ORDER_SUBMITTED: 'text-blue-600',
+  LEGAL_DOC_EXPIRING: 'text-red-600',
+  PR_VERIFY_REMINDER: 'text-red-600',
   PO_PAYMENT_REQUESTED: 'text-amber-600',
   PO_PAYMENT_PAID: 'text-green-600',
   PO_PAID_BY_PURCHASING: 'text-green-600',
@@ -411,6 +427,7 @@ export default function Home() {
           else if (n.type === 'PAYMENT_REJECTED')      toast.error(n.title,   { description: n.body })
           else if (n.type === 'DEPOSIT_DUE_H0')        toast.error(n.title,   { description: n.body })
           else if (n.type === 'DEPOSIT_DUE_H1')        toast.warning(n.title, { description: n.body })
+          else if (n.type === 'PR_VERIFY_REMINDER')    toast.warning(n.title, { description: n.body })
           else                                          toast.info(n.title,    { description: n.body })
         })
       }
@@ -691,6 +708,8 @@ export default function Home() {
       setCurrentView('finance-delivery-fee-payments')
     } else if (n.type === 'DF_REIMBURSEMENT_REQUESTED' && isFinance) {
       setCurrentView('finance-delivery-fee-reimbursements')
+    } else if (n.type === 'LEGAL_DOC_EXPIRING') {
+      setCurrentView('hr-entities-assignments')
     } else if (n.requestId || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
     } else if (n.orderId || n.type.startsWith('PO_') || n.type.startsWith('DF_')) {
@@ -818,7 +837,13 @@ export default function Home() {
       case 'pos-packages':   return <PosPackagesPage />
       case 'pos-discounts':  return <PosDiscountsPage />
       case 'pos-billing':    return <PosBillingHistoryPage />
+      case 'hr-overview':   return <HROverview onNavigate={setCurrentView} />
       case 'hr-employees':  return <EmployeesPage />
+      case 'hr-leave-requests': return <LeaveRequestsPage />
+      case 'hr-candidates': return <TalentPoolPage />
+      case 'hr-entities-assignments': return <EntitiesAssignmentsPage />
+      case 'hr-compensation': return <CompensationPage />
+      case 'hr-probation':  return <ProbationReviewsPage />
       case 'settings':      return (
         <div className="space-y-6">
           <div>

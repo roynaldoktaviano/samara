@@ -29,7 +29,8 @@ export async function GET() {
     orderBy: { fullName: 'asc' },
     include: {
       legalEntity: true,
-      location: { select: { id: true, name: true, type: true } },
+      businessUnit: true,
+      location: { select: { id: true, name: true } },
       role: true,
       manager: { select: { id: true, fullName: true } },
       user: { select: { id: true, name: true, email: true } },
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const {
-    fullName, employeeNumber, legalEntityId, locationId, department, roleId, gender, employmentStatus, leaveBalance, joinDate, managerId, userId, phone, address, birthDate,
+    fullName, employeeNumber, legalEntityId, businessUnitId, locationId, department, roleId, level, gender, employmentStatus, leaveBalance, leaveEntitlementPolicy, joinDate, contractStartDate, contractEndDate, managerId, userId, phone, address, birthDate,
     nikPassport, nationality, religion, placeOfBirth, motherName, personalEmail, maritalStatus, addressCurrent,
     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
@@ -65,12 +66,17 @@ export async function POST(req: NextRequest) {
         fullName: fullName.trim(),
         department: department?.trim() || null,
         legalEntityId: legalEntityId || null,
+        businessUnitId: businessUnitId || null,
         locationId: locationId || null,
         roleId: roleId || null,
+        level: level || null,
         gender: gender?.trim() || null,
         employmentStatus: employmentStatus?.trim() || null,
         leaveBalance: leaveBalance !== undefined && leaveBalance !== '' ? parseInt(leaveBalance) : null,
+        leaveEntitlementPolicy: leaveEntitlementPolicy?.trim() || null,
         joinDate: joinDate ? new Date(joinDate) : null,
+        contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
+        contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
         managerId: managerId || null,
         userId: userId || null,
         phone: phone?.trim() || null,
@@ -107,7 +113,8 @@ export async function POST(req: NextRequest) {
       },
       include: {
         legalEntity: true,
-        location: { select: { id: true, name: true, type: true } },
+        businessUnit: true,
+        location: { select: { id: true, name: true } },
         role: true,
         manager: { select: { id: true, fullName: true } },
         user: { select: { id: true, name: true, email: true } },

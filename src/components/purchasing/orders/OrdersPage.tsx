@@ -10,6 +10,7 @@ import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 
 interface PaymentRequest {
@@ -23,7 +24,7 @@ interface Reimbursement {
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
 }
-interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null }
+interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null; parentId?: string | null }
 interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
 interface TransitStop { locationId: string; sequence: number; location: { id: string; name: string; type: string } }
 interface TransitLegItem { id: string; itemId: string | null; itemName: string; requestedQty: number; dispatchedQty: number; receivedQty: number }
@@ -65,7 +66,7 @@ interface EscalationTarget { id: string; name: string | null }
 interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
-interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean }
+interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedByName?: string | null
@@ -1188,7 +1189,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                   <select className={`${inp.replace('px-3', 'pl-8 pr-3')}`} value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}>
                     <option value="">— Select location —</option>
-                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {renderLocationOptions(locations, { topLevelOnly: true })}
                   </select>
                 </div>
                 {deliveryLocationId && (() => {
@@ -1260,7 +1261,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <select className={inp} value=""
                   onChange={e => { const v = e.target.value; if (v) setTransitStopIds(ids => [...ids, v]) }}>
                   <option value="">+ Add transit stop…</option>
-                  {locations.filter(l => l.id !== deliveryLocationId && !transitStopIds.includes(l.id)).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {renderLocationOptions(locations, { excludeIds: new Set([deliveryLocationId, ...transitStopIds]), topLevelOnly: true })}
                 </select>
               )}
             </div>
@@ -1944,7 +1945,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
                     >
                       <option value="">— Select location —</option>
-                      {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      {renderLocationOptions(locations, { topLevelOnly: true })}
                     </select>
                   </div>
                   {deliveryLocationId && (() => {
@@ -1984,7 +1985,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white" value=""
                     onChange={e => { const v = e.target.value; if (v) setTransitStopIds(ids => [...ids, v]) }}>
                     <option value="">+ Add transit stop…</option>
-                    {locations.filter(l => l.id !== deliveryLocationId && !transitStopIds.includes(l.id)).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    {renderLocationOptions(locations, { excludeIds: new Set([deliveryLocationId, ...transitStopIds]), topLevelOnly: true })}
                   </select>
                 </div>
 

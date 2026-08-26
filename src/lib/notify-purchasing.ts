@@ -5,6 +5,8 @@ import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
+export const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+
 export async function notifyByRole(
   db: Db,
   roles: string[],
@@ -68,6 +70,36 @@ export async function notifyByRoleForRequest(
   })
 
   sendPushToUsers(db, users.map(u => u.id), { title, body }).catch(console.error)
+}
+
+// Routes a PR-stage notification to whichever Purchasing staffer is assigned that PR's
+// division (User.purchasingDivision) instead of broadcasting to the whole team. Falls
+// back to notifyByRoleForRequest (everyone in Purchasing/Admin) when the PR has no
+// division set, or nobody's been assigned to that division yet — this is what keeps a
+// newly-added division (no account created for it yet) from silently dropping requests.
+export async function notifyPurchasingForRequest(
+  db: Db,
+  division: string | null,
+  type: string,
+  title: string,
+  body: string,
+  requestId: string,
+) {
+  if (division) {
+    const assigned = await db.user.findMany({
+      where: { purchasingDivision: division as never },
+      select: { id: true },
+    })
+    if (assigned.length) {
+      await db.notification.createMany({
+        data: assigned.map(u => ({ id: crypto.randomUUID(), userId: u.id, type, title, body, requestId })),
+        skipDuplicates: true,
+      })
+      sendPushToUsers(db, assigned.map(u => u.id), { title, body }).catch(console.error)
+      return
+    }
+  }
+  await notifyByRoleForRequest(db, PURCHASING_ROLES, type, title, body, requestId)
 }
 
 // Called after any single installment (Request Payment / Debit Paid / Reimburse) is

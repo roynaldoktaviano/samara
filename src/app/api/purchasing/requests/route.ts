@@ -33,6 +33,11 @@ export async function GET() {
   // Warehouse only requests items for warehouse stock (or forwards a ship's request) —
   // they should only ever see their own submissions, not Purchasing's full queue.
   const isWarehouse = role === 'WAREHOUSE'
+
+  // Every Purchasing/Admin user can still see every PR here — division (see
+  // User.purchasingDivision / PurchaseRequest.division) is only a client-side DEFAULT
+  // filter (RequestsPage.tsx), not a server-side restriction. The full list is always
+  // available; a division-assigned user just starts on a narrower view of it.
   const requests = await db.purchaseRequest.findMany({
     where: {
       // PRs still awaiting the requester's manager haven't been approved yet — Purchasing

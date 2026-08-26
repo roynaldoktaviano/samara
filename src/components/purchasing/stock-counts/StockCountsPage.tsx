@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, Fragment } from 'react'
 import { Plus, X, ChevronRight, CheckCircle2, ClipboardList, AlertTriangle, Trash2, CheckCheck, Camera } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
-interface Location { id: string; name: string; type: string }
+interface Location { id: string; name: string; type: string; parentId: string | null }
 interface CountItem {
   id: string; itemName: string; systemQty: number; countedQty: number; reason: string | null
   item: { id: string; sku: string; name: string; baseUnit: string; standardCost: number } | null
@@ -479,7 +480,7 @@ export default function StockCountsPage() {
                 <select
                   className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
                   value={createLocationId} onChange={e => setCreateLocationId(e.target.value)}>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  {renderLocationOptions(locations, { renderLabel: l => `${l.name} (${l.type})` })}
                 </select>
               </div>
               <div className="space-y-1.5">

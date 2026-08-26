@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
-interface StockLocation { id: string; name: string; type: string }
+interface StockLocation { id: string; name: string; type: string; parentId: string | null }
 // Normalized picker row — flattens /api/purchasing/stock's discriminated
 // {kind:'stock', item:{...}} / {kind:'non-stock', itemName, sourcePoId, ...}
 // response into one shape the picker can key/filter/render uniformly. A
@@ -556,7 +557,7 @@ export default function TransfersPage() {
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">From <span className="text-destructive">*</span></label>
                 <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={fromLoc} onChange={e => { setFromLoc(e.target.value); loadWarehouseStock(e.target.value) }}>
                   <option value="">Pilih lokasi asal...</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {renderLocationOptions(locations)}
                 </select>
               </div>
               <div className="flex items-center gap-2">
@@ -570,7 +571,7 @@ export default function TransfersPage() {
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To <span className="text-destructive">*</span></label>
                 <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => setToLoc(e.target.value)}>
                   <option value="">Pilih lokasi tujuan...</option>
-                  {locations.filter(l => l.id !== fromLoc).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {renderLocationOptions(locations, { excludeIds: new Set([fromLoc]) })}
                 </select>
               </div>
             </div>
