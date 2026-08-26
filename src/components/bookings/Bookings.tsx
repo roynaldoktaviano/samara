@@ -195,7 +195,7 @@ function FilterDropdown({ value, onValueChange, placeholder, active, activeClass
 }
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
-export default function Bookings() {
+export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const { data: session } = useSession()
   const userRole          = (session?.user as { role?: string })?.role ?? ''
   const canManageBookings = roleMatches(userRole, ['ADMIN', 'SALES'])
@@ -825,6 +825,18 @@ export default function Bookings() {
       finally { setDetailCabinsLoading(false) }
     }
   }
+
+  // Deep-link from a notification click — openDetail reads straight off the full row
+  // (b.tripType, b.openTrip, ...), so find the real row in the already-loaded list rather
+  // than opening a bare {id} stub. The list here loads unfiltered on mount, same as the
+  // existing "refresh this one booking" pattern below (saveCabin re-finds by id too).
+  useEffect(() => {
+    if (!deepLinkId || bookings.length === 0) return
+    const found = bookings.find(b => b.id === deepLinkId)
+    if (found) openDetail(found)
+    onDeepLinkHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, bookings])
 
   const saveCabin = async (bgId: string, cabinId: string) => {
     setCabinSaving(bgId)

@@ -7,6 +7,20 @@ import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
+// Only fields needed to resolve a LEGAL_DOC_EXPIRING notification's legalDocumentId back
+// to whichever parent (legal entity or yacht) its detail lives under — there's no
+// per-document modal to open.
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = await getDb(session)
+  const doc = await db.legalDocument.findUnique({ where: { id }, select: { id: true, legalEntityId: true, yachtId: true } })
+  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json(doc)
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)

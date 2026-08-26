@@ -14,6 +14,7 @@ import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps, type PoTimelineDetail } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { RupiahInput } from '@/components/ui/rupiah-input'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -251,32 +252,11 @@ function ItemNamesPreview({ names, max = 2, className = '' }: { names: string[];
   )
 }
 
-// Rupiah-formatted price input — `value`/`onChange` carry a plain digit string (no
-// thousand separators) so existing parseFloat(...)/Number(...) callers keep working
-// unchanged; only the display is formatted with a "Rp" prefix and "." separators.
-// Blank (not "0") shows the placeholder — nothing pre-filled to type over.
-function RupiahInput({ value, onChange, placeholder = '0', className = '', autoFocus, disabled, title }: {
-  value: string; onChange: (digits: string) => void; placeholder?: string; className?: string; autoFocus?: boolean; disabled?: boolean; title?: string
-}) {
-  return (
-    <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">Rp</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        disabled={disabled}
-        title={title}
-        value={value ? new Intl.NumberFormat('id-ID').format(Number(value)) : ''}
-        onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
-        className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted/40 ${className}`}
-      />
-    </div>
-  )
-}
-
-export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) => void } = {}) {
+export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }: {
+  onOpenPo?: (poId: string) => void
+  deepLinkId?: string | null
+  onDeepLinkHandled?: () => void
+} = {}) {
   const { data: session } = useSession()
   const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   // "Requested by Me" only makes sense for Admin — Purchasing/Warehouse's whole job here
@@ -497,6 +477,24 @@ export default function RequestsPage({ onOpenPo }: { onOpenPo?: (poId: string) =
     setPoFullDetails({})
     await fetchDetail(req.id)
   }
+
+  // Deep-link from a notification click — unlike openDetail (which can show a stub row
+  // immediately since it always already has the real row from the loaded list), here we
+  // only have a bare id, and the header above reads straight off `selected` (prNumber,
+  // status, createdAt, ...), so fetch full detail first and only then select it — avoids
+  // a flash of blank/"Invalid Date" header content.
+  useEffect(() => {
+    if (!deepLinkId) return
+    let cancelled = false
+    ;(async () => {
+      setApproveSummary(null); setFulfillment({}); setPoFullDetails({})
+      const data = await fetchDetail(deepLinkId)
+      if (!cancelled && data) { setSelected(data); setView('detail') }
+      onDeepLinkHandled?.()
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId])
 
   // Reuses the same catalog/cart UI as "New PR" to edit a still-DRAFT request — same
   // form, same validation, so there's no separate/confusing edit layout to learn.

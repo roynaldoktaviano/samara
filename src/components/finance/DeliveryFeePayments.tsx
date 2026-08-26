@@ -53,12 +53,24 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
   )
 }
 
-export default function DeliveryFeePayments() {
+export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const [requests, setRequests] = useState<PaymentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID'>('PENDING')
   const [selected, setSelected] = useState<PaymentRequest | null>(null)
   const [viewPhoto, setViewPhoto] = useState<string | null>(null)
+
+  // Deep-link from a notification click — the notification only carries the underlying
+  // PO's id (or the DeliveryFee's own id, as a fallback), not this request's own id, so
+  // resolve it server-side (?orderId=).
+  useEffect(() => {
+    if (!deepLinkId) return
+    fetch(`/api/finance/delivery-fee-payments?orderId=${deepLinkId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: PaymentRequest[]) => { if (rows[0]) setSelected(rows[0]) })
+      .finally(() => onDeepLinkHandled?.())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId])
 
   // pay modal
   const [payModal, setPayModal] = useState(false)

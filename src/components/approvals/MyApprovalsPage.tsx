@@ -206,6 +206,7 @@ export default function MyApprovalsPage() {
         </table></div>
       </div>
 
+
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Supplier Selections</h3>
       {quotationItems.length === 0 ? (
         <div className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
@@ -346,6 +347,7 @@ export default function MyApprovalsPage() {
           </div>
         </div>
       )}
+
 
       {detailModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">

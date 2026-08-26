@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus } from 'lucide-react'
+import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -65,6 +65,11 @@ import TalentPoolPage from '@/components/hr/TalentPoolPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
 import ProbationReviewsPage from '@/components/hr/ProbationReviewsPage'
+import PayrollPage from '@/components/hr/PayrollPage'
+import AttendanceRecapPage from '@/components/hr/AttendanceRecapPage'
+import NationalHolidaysPage from '@/components/hr/NationalHolidaysPage'
+import EmployeeLoansPage from '@/components/hr/EmployeeLoansPage'
+import BoatDocumentsPage from '@/components/hr/BoatDocumentsPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import Banks from '@/components/banks/Banks'
@@ -104,7 +109,7 @@ function FinanceTabView() {
   )
 }
 
-type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-probation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
+type View = 'dashboard' | 'my-approvals' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-probation' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-loans' | 'hr-boat-documents' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
 
 type NavItem = {
   id: View
@@ -201,6 +206,11 @@ const navigationItems: NavItem[] = [
   { id: 'hr-entities-assignments', label: 'Entities & Assignments', icon: Building2, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'   },
   { id: 'hr-compensation', label: 'Roles & Compensation', icon: Wallet, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],         group: 'hr'         },
   { id: 'hr-probation',  label: 'Probation Reviews', icon: ClipboardList, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],       group: 'hr'         },
+  { id: 'hr-payroll',    label: 'Payroll', icon: Banknote, roles: ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'],           group: 'hr'         },
+  { id: 'hr-attendance', label: 'Attendance Recap', icon: CalendarCheck, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],        group: 'hr'         },
+  { id: 'hr-national-holidays', label: 'National Holidays', icon: CalendarOff, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'         },
+  { id: 'hr-loans', label: 'Employee Loans & Cash Bon', icon: HandCoins, roles: ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'], group: 'hr'    },
+  { id: 'hr-boat-documents', label: 'Boat Documents', icon: Anchor, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],                 group: 'hr'    },
 ]
 
 const roleBadgeColor: Record<string, string> = {
@@ -233,6 +243,7 @@ interface Notification {
   bookingId: string | null
   orderId: string | null
   requestId: string | null
+  legalDocumentId: string | null
   createdAt: string
 }
 
@@ -382,6 +393,10 @@ export default function Home() {
   // detail view on the Purchase Orders page — there's no URL routing between
   // top-level views in this app, so this is the plain state-lifting equivalent.
   const [pendingPoId, setPendingPoId] = useState<string | null>(null)
+  // Generic version of the same idea, for every other notification-click deep link:
+  // holds which view the id belongs to (so a page only consumes it when it's actually
+  // the one being navigated to) and the record id itself.
+  const [deepLink, setDeepLink] = useState<{ view: View; id: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [profileOpen, setProfileOpen]   = useState(false)
@@ -697,27 +712,48 @@ export default function Home() {
     }
   }
 
-  const handleNotifClick = (n: Notification) => {
+  const handleNotifClick = async (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
     if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')
+      if (n.orderId) setDeepLink({ view: 'finance-po-payments', id: n.orderId })
     } else if (n.type === 'PO_REIMBURSEMENT_REQUESTED' && isFinance) {
       setCurrentView('finance-po-reimbursements')
+      if (n.orderId) setDeepLink({ view: 'finance-po-reimbursements', id: n.orderId })
     } else if ((n.type === 'DF_PAYMENT_REQUESTED' || n.type === 'DF_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-delivery-fee-payments')
+      if (n.orderId) setDeepLink({ view: 'finance-delivery-fee-payments', id: n.orderId })
     } else if (n.type === 'DF_REIMBURSEMENT_REQUESTED' && isFinance) {
       setCurrentView('finance-delivery-fee-reimbursements')
+      if (n.orderId) setDeepLink({ view: 'finance-delivery-fee-reimbursements', id: n.orderId })
     } else if (n.type === 'LEGAL_DOC_EXPIRING') {
-      setCurrentView('hr-entities-assignments')
+      const docId = n.legalDocumentId
+      const doc = docId ? await fetch(`/api/hr/legal-documents/${docId}`).then(r => r.ok ? r.json() : null).catch(() => null) : null
+      if (doc?.yachtId) {
+        // 'hr-boat-documents', not 'yachts' — HR (who also gets this notification) has no
+        // access to the Yachts fleet-management menu, only its own Boat Documents entry point.
+        setCurrentView('hr-boat-documents')
+        setDeepLink({ view: 'hr-boat-documents', id: docId! })
+      } else {
+        setCurrentView('hr-entities-assignments')
+        if (docId) setDeepLink({ view: 'hr-entities-assignments', id: docId })
+      }
     } else if (n.requestId || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
+      if (n.requestId) setDeepLink({ view: 'purchasing-requests', id: n.requestId })
     } else if (n.orderId || n.type.startsWith('PO_') || n.type.startsWith('DF_')) {
+      if (n.orderId) setPendingPoId(n.orderId)
       setCurrentView('purchasing-orders')
     } else if (n.paymentId && isFinance) {
       setCurrentView('payments')
+      setDeepLink({ view: 'payments', id: n.paymentId })
     } else if (n.bookingId || n.paymentId || n.type.startsWith('DEPOSIT_DUE')) {
       setCurrentView('bookings')
+      // Bookings only knows how to open itself by its own id — a paymentId with no
+      // bookingId attached (e.g. a payment notification a non-Finance role still sees)
+      // just lands on the list, same as before this feature existed.
+      if (n.bookingId) setDeepLink({ view: 'bookings', id: n.bookingId })
     }
   }
 
@@ -779,7 +815,7 @@ export default function Home() {
       case 'dashboard':    return <Dashboard />
       case 'yachts':       return <Yachts />
       case 'destinations': return <Destinations />
-      case 'bookings':     return <Bookings />
+      case 'bookings':     return <Bookings deepLinkId={deepLink?.view === 'bookings' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'customers':    return <Customers />
       case 'leads':        return <Leads />
       case 'calendar':     return <CalendarView />
@@ -789,15 +825,15 @@ export default function Home() {
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />
       case 'users':        return <UsersPage />
-      case 'payments':     return <Payments />
+      case 'payments':     return <Payments deepLinkId={deepLink?.view === 'payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'trip-sheet':   return <TripSheet />
       case 'agents':       return <Agents />
       case 'agent-leads':  return <AgentLeadsPage />
       case 'banks':         return <Banks />
-      case 'finance-po-payments': return <PurchaseOrderPayments />
-      case 'finance-po-reimbursements': return <POReimbursements />
-      case 'finance-delivery-fee-payments': return <DeliveryFeePayments />
-      case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements />
+      case 'finance-po-payments': return <PurchaseOrderPayments deepLinkId={deepLink?.view === 'finance-po-payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'finance-po-reimbursements': return <POReimbursements deepLinkId={deepLink?.view === 'finance-po-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'finance-delivery-fee-payments': return <DeliveryFeePayments deepLinkId={deepLink?.view === 'finance-delivery-fee-payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements deepLinkId={deepLink?.view === 'finance-delivery-fee-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-agent-clawback': return <AgentClawbacks />
       case 'vouchers':      return <Vouchers />
       case 'marketing-dashboard': return <MarketingComingSoon title="Command Center" desc="A rollup of every campaign's performance, spend, ROAS, and tasks that need attention." icon={LayoutDashboard} />
@@ -820,7 +856,7 @@ export default function Home() {
       case 'sales-stats':    return <SalesStats />
       case 'leads-stats':    return <LeadsStats />
       case 'purchasing-overview':   return <PurchasingOverview />
-      case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
+      case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} deepLinkId={deepLink?.view === 'purchasing-requests' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
@@ -841,9 +877,14 @@ export default function Home() {
       case 'hr-employees':  return <EmployeesPage />
       case 'hr-leave-requests': return <LeaveRequestsPage />
       case 'hr-candidates': return <TalentPoolPage />
-      case 'hr-entities-assignments': return <EntitiesAssignmentsPage />
+      case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />
       case 'hr-probation':  return <ProbationReviewsPage />
+      case 'hr-payroll':    return <PayrollPage />
+      case 'hr-attendance': return <AttendanceRecapPage />
+      case 'hr-national-holidays': return <NationalHolidaysPage />
+      case 'hr-loans': return <EmployeeLoansPage />
+      case 'hr-boat-documents': return <BoatDocumentsPage deepLinkId={deepLink?.view === 'hr-boat-documents' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'settings':      return (
         <div className="space-y-6">
           <div>

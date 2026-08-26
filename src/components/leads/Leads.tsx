@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle } from 'lucide-react'
+import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2 } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
@@ -91,6 +91,9 @@ const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
 export default function Leads() {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
+  const role = (session?.user as { role?: string })?.role ?? ''
+  const canExportGoogleAds = ['ADMIN', 'MARKETING', 'SUPER_ADMIN'].includes(role)
+  const [exportingGoogleAds, setExportingGoogleAds] = useState(false)
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [totalLeads, setTotalLeads] = useState(0)
@@ -246,6 +249,24 @@ export default function Leads() {
     }
   }
 
+  /* ── Google Ads lead export ── */
+  // Leads who clicked a Google Ads ad (have a gclid on their own inquiry) — same rule as
+  // the Guest export (api/customers/google-ads-export). Lead-only, no Customer lookup.
+  const handleExportGoogleAds = async () => {
+    setExportingGoogleAds(true)
+    try {
+      const res = await fetch('/api/leads/google-ads-export')
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `leads-google-ads-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally { setExportingGoogleAds(false) }
+  }
+
   return (
     <div className="space-y-6">
       {!detailOpen && <>
@@ -264,6 +285,12 @@ export default function Leads() {
           <Button variant="outline" onClick={() => setFailuresOpen(true)}>
             <AlertTriangle className="mr-2 h-4 w-4" /> Gagal Masuk
           </Button>
+          {canExportGoogleAds && (
+            <Button variant="outline" disabled={exportingGoogleAds} onClick={handleExportGoogleAds} title="Leads who clicked a Google Ads ad (have a Google Click ID)">
+              {exportingGoogleAds ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Google Ads CSV
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Download className="mr-2 h-4 w-4" /> Import from Freshsales
           </Button>

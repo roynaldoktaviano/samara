@@ -152,6 +152,18 @@ model User {
   promosCreated                          Promo[]
   employeeProfile                        Employee?
   pushSubscriptions                      PushSubscription[]
+  payrollPeriodsCreated                  PayrollPeriod[]             @relation("PayrollCreatedBy")
+  payrollPeriodsSubmitted                PayrollPeriod[]             @relation("PayrollSubmittedBy")
+  payrollPeriodsApproved                 PayrollPeriod[]             @relation("PayrollApprovedBy")
+  payrollPeriodsRejected                 PayrollPeriod[]             @relation("PayrollRejectedBy")
+  payrollPeriodsPaid                     PayrollPeriod[]             @relation("PayrollPaidBy")
+  payrollSettingsUpdated                 PayrollSettings[]           @relation("PayrollSettingsUpdatedBy")
+  attendanceRecordsSet                   AttendanceRecord[]          @relation("AttendanceSetBy")
+  nationalHolidaysCreated                NationalHoliday[]
+  loanRequestsMade                       LoanRequest[]               @relation("LoanRequestedBy")
+  loanHrDecisions                        LoanRequest[]               @relation("LoanHrDecidedBy")
+  loanFinanceDecisions                   LoanRequest[]               @relation("LoanFinanceDecidedBy")
+  loanSpecialDecisions                   LoanRequest[]               @relation("LoanSpecialDecidedBy")
 }
 
 model Customer {
@@ -532,6 +544,7 @@ model Yacht {
   posMenuItems       PosMenuItem[]
   posPackages        PosPackage[]
   posDiscounts       PosDiscount[]
+  documents          LegalDocument[]
 }
 
 enum MediaFileType {
@@ -2416,16 +2429,21 @@ model LegalEntity {
   documents LegalDocument[]
 }
 
-// One row per tracked legal/compliance document for a company (NIB, licenses, vessel
-// papers, …), grouped into free-text `section`s ("Company Legal", "Boat / Vessel
-// Documents", …) purely for display. `period` is descriptive only (shown as typed —
-// "3 Months", "Permanent", …); `expiryDate` is the one field renewal reminders actually
-// key off, since not every document's real expiry cleanly follows establishDate + period
-// (insurance/trademark renewals, for instance, often don't).
+// One row per tracked legal/compliance document, grouped into free-text `section`s
+// ("Company Legal", "Boat / Vessel Documents", …) purely for display. Owned by exactly
+// one of `legalEntity` (company-level: NIB, licenses, …) or `yacht` (per-vessel papers:
+// Certificate of Registry, Safety Equipment Certificate, …) — never both, never neither;
+// enforced in the API, not the DB, same as every other exactly-one-parent shape in this
+// schema. `period` is descriptive only (shown as typed — "3 Months", "Permanent", …);
+// `expiryDate` is the one field renewal reminders actually key off, since not every
+// document's real expiry cleanly follows establishDate + period (insurance/trademark
+// renewals, for instance, often don't).
 model LegalDocument {
   id            String       @id @default(cuid())
-  legalEntityId String
-  legalEntity   LegalEntity  @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  yachtId       String?
+  yacht         Yacht?       @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   section       String?
   name          String
   category      String?
@@ -2443,6 +2461,7 @@ model LegalDocument {
   notifications Notification[]
 
   @@index([legalEntityId])
+  @@index([yachtId])
   @@index([expiryDate])
 }
 
@@ -2573,6 +2592,10 @@ model Employee {
   allowance   Float?
   uangLayar   Float?
   uangMakan   Float?
+  // Free-form monthly benefit amount HR sets directly — shows on the payslip as a
+  // non-cash "Benefit" earning line (see src/lib/payroll.ts). Not derived from BPJS
+  // rates; HR decides what it represents and how much.
+  benefit     Float?
 
   // Documents — each stored as data-URL strings, same pattern as PurchaseQuotation.fileKey
   seamanBookFiles     String[] @default([]) // Buku Pelaut
@@ -2620,6 +2643,10 @@ model Employee {
   cashierSales              CashierSale[]
   leaveRequests             LeaveRequest[]
   probationReviews          ProbationReview[]
+  payslipEntries            PayslipEntry[]
+  attendanceRecords         AttendanceRecord[]
+  loanRequests              LoanRequest[]
+  loanInstallments          LoanInstallment[]
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -2676,6 +2703,146 @@ model ProbationReview {
   @@index([stage])
 }
 
+enum PayrollPeriodStatus {
+  OPEN        // HR/Finance generating & editing entries
+  SUBMITTED   // sent for Head-of-Finance approval
+  APPROVED    // approved, ready to execute
+  REJECTED    // sent back — reopen to OPEN before resubmitting
+  PAID        // Finance executed payroll (bank transfer done)
+}
+
+// Cutoff on the 20th → HR/Finance fill PayslipEntry rows while OPEN → submit →
+// Head-of-Finance (FINANCE_DIRECTOR/ADMIN/SUPER_ADMIN) approves/rejects → Finance
+// executes payroll around the 25th and marks PAID. Actor+timestamp triplets follow
+// ProbationReview's convention above.
+model PayrollPeriod {
+  id     String              @id @default(cuid())
+  year   Int
+  month  Int // 1-12
+  status PayrollPeriodStatus @default(OPEN)
+
+  cutoffDate DateTime? // the 20th
+  payDate    DateTime? // the 25th
+  notes      String?
+
+  createdById   String?
+  createdBy     User?     @relation("PayrollCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  submittedById String?
+  submittedBy   User?     @relation("PayrollSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedBy    User?     @relation("PayrollApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime?
+  approvalNote  String?
+  rejectedById  String?
+  rejectedBy    User?     @relation("PayrollRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  rejectedAt    DateTime?
+  rejectionNote String?
+  paidById String?
+  paidBy   User?     @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paidAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries PayslipEntry[]
+
+  @@unique([year, month])
+  @@index([status])
+}
+
+// One row per employee per period. Every figure is a SNAPSHOT (copied at generate time,
+// then editable) so a historical payslip never drifts if the Employee record changes later.
+model PayslipEntry {
+  id              String        @id @default(cuid())
+  payrollPeriodId String
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  // Restrict, not Cascade: this is a financial record and must survive employee deletion.
+  // Resigned employees are handled via Employee.isActive/resignedAt, not row deletion.
+
+  employeeNumberSnap    String
+  fullNameSnap          String
+  positionSnap          String?
+  companyNameSnap       String?
+  npwpSnap              String?
+  nikSnap               String?
+  bankNameSnap          String?
+  bankAccountNumberSnap String?
+  bankAccountNameSnap   String?
+  leaveBalanceSnap      Int?
+  joinDateSnap          DateTime? // ← Employee.joinDate — payslip shows join date + tenure as of this period
+  workLocationSnap      String?   // ← Employee.location.name
+
+  // Earnings
+  basicSalary       Float @default(0)
+  functionAllowance Float @default(0) // ← Employee.allowance
+  mealAllowance     Float @default(0) // ← Employee.uangMakan
+  uangLayar         Float @default(0) // ← Employee.uangLayar
+  commission        Float @default(0) // manual only, varies per period
+  thr               Float @default(0) // manual only, varies per period
+  benefitBpjsAndTax Float @default(0) // = sum of employer-paid BPJS below
+
+  bpjsJkkCompany       Float @default(0)
+  bpjsJkmCompany       Float @default(0)
+  bpjsJhtCompany       Float @default(0)
+  bpjsJpCompany        Float @default(0)
+  bpjsKesehatanCompany Float @default(0)
+
+  // Deductions
+  bpjsJhtEmployee       Float @default(0)
+  bpjsJpEmployee        Float @default(0)
+  bpjsKesehatanEmployee Float @default(0)
+  pph21                 Float @default(0)
+  // Manual amount, prefilled from the linked LoanInstallment (if any) when this entry is
+  // generated — see LoanInstallment.payslipEntryId and periods/[id]/route.ts.
+  loanDeduction         Float @default(0)
+  loanInstallment       LoanInstallment?
+
+  grossEarnings    Float   @default(0)
+  totalDeductions  Float   @default(0)
+  takeHomePay      Float   @default(0)
+  isManuallyEdited Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+}
+
+// Singleton row (id="default") of editable BPJS rates/caps + a simplified PPh21
+// bracket/PTKP table. Consumed by src/lib/payroll.ts as auto-suggestion inputs only —
+// every computed figure stays overridable on PayslipEntry.
+model PayrollSettings {
+  id String @id @default("default")
+
+  jkkRate         Float @default(0.0024)
+  jkmRate         Float @default(0.003)
+  jhtCompanyRate  Float @default(0.037)
+  jhtEmployeeRate Float @default(0.02)
+  jpCompanyRate   Float @default(0.02)
+  jpEmployeeRate  Float @default(0.01)
+  jpSalaryCap     Float @default(10547400)
+
+  bpjsKesehatanCompanyRate  Float @default(0.04)
+  bpjsKesehatanEmployeeRate Float @default(0.01)
+  bpjsKesehatanSalaryCap    Float @default(12000000)
+
+  // [{ upTo: number|null, rate: number }], last bracket's upTo=null (no ceiling)
+  pph21Brackets Json @default("[{\"upTo\":60000000,\"rate\":0.05},{\"upTo\":250000000,\"rate\":0.15},{\"upTo\":500000000,\"rate\":0.25},{\"upTo\":5000000000,\"rate\":0.3},{\"upTo\":null,\"rate\":0.35}]")
+  // Keyed by Employee.maritalStatus (TK|K0|K1|K2|K3)
+  ptkpAmounts   Json @default("{\"TK\":54000000,\"K0\":58500000,\"K1\":63000000,\"K2\":67500000,\"K3\":72000000}")
+  positionCostDeductionRate       Float @default(0.05) // biaya jabatan
+  positionCostDeductionCapMonthly Float @default(500000)
+
+  updatedById String?
+  updatedBy   User?    @relation("PayrollSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
+}
+
 enum LeaveRequestStatus {
   PENDING
   APPROVED
@@ -2706,8 +2873,161 @@ model LeaveRequest {
   decidedAt    DateTime?
   decisionNote String?
 
+  attendanceRecords AttendanceRecord[]
+
   @@index([employeeId])
   @@index([status])
+}
+
+enum AttendanceStatus {
+  HADIR // present
+  IZIN  // permission / excused absence
+  SAKIT // sick
+  CUTI  // approved leave — auto-set when a LeaveRequest is approved (see LeaveRequest.attendanceRecords)
+  ALPHA // unauthorized absence
+  LIBUR // scheduled day off (e.g. a public holiday falling on a weekday)
+}
+
+// A row only exists for a day HR (or an approved Leave Request) explicitly set — any
+// (employee, date) with no row is implicitly HADIR. Work week is Mon–Fri (confirmed by
+// the business); Sat/Sun are never stored here and never affect Payroll's meal-allowance
+// calculation (see src/lib/payroll.ts's countWeekdaysInMonth).
+model AttendanceRecord {
+  id         String           @id @default(cuid())
+  employeeId String
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime         // the calendar day, stored at midnight — no meaningful time component
+  status     AttendanceStatus
+  note       String?
+
+  // Set when this row exists because a Leave Request was approved, rather than a direct
+  // HR edit — lets the grid show provenance.
+  leaveRequestId String?
+  leaveRequest   LeaveRequest? @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
+
+  setById String?
+  setBy   User?    @relation("AttendanceSetBy", fields: [setById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+}
+
+// A single shared calendar of dates — not one row per employee. Attendance Recap treats
+// any date found here the same way it already treats a Saturday/Sunday: LIBUR by default
+// for everyone, excluded from Payroll's Meal Allowance working-days baseline, but still
+// individually overridable per employee (e.g. someone who actually worked that day) via
+// a normal AttendanceRecord row, which always takes precedence.
+model NationalHoliday {
+  id   String   @id @default(cuid())
+  date DateTime @unique // the calendar day, stored at midnight
+  name String
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
+enum LoanRequestStatus {
+  PENDING_HR
+  PENDING_FINANCE
+  PENDING_SPECIAL
+  APPROVED
+  REJECTED
+}
+
+enum LoanInstallmentStatus {
+  PENDING
+  PAID
+}
+
+// HR → Finance → Special Approval, sequential — rejecting at any stage ends it. No
+// Supervisor stage (dropped per the user — every loan starts at HR regardless of the
+// employee's manager). "Special Approval" is role-gated (ADMIN/SUPER_ADMIN) same as
+// Payroll's "Head of Finance" — no dedicated senior/owner role exists in this app.
+model LoanRequest {
+  id         String            @id @default(cuid())
+  employeeId String
+  employee   Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  amount     Float
+  termMonths Int
+  reason     String?
+  status     LoanRequestStatus @default(PENDING_HR)
+
+  requestedById String
+  requestedBy   User     @relation("LoanRequestedBy", fields: [requestedById], references: [id])
+  requestedAt   DateTime @default(now())
+
+  // First payroll period (year/month) the schedule should start deducting from — set
+  // once Special Approval finalizes it, used to generate the LoanInstallment rows below.
+  firstDeductionYear  Int?
+  firstDeductionMonth Int?
+
+  hrDecidedById String?
+  hrDecidedBy   User?     @relation("LoanHrDecidedBy", fields: [hrDecidedById], references: [id], onDelete: SetNull)
+  hrDecidedAt   DateTime?
+  hrApproved    Boolean?
+  hrNote        String?
+
+  financeDecidedById String?
+  financeDecidedBy   User?     @relation("LoanFinanceDecidedBy", fields: [financeDecidedById], references: [id], onDelete: SetNull)
+  financeDecidedAt   DateTime?
+  financeApproved    Boolean?
+  financeNote        String?
+
+  specialDecidedById String?
+  specialDecidedBy   User?     @relation("LoanSpecialDecidedBy", fields: [specialDecidedById], references: [id], onDelete: SetNull)
+  specialDecidedAt   DateTime?
+  specialApproved    Boolean?
+  specialNote        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  installments LoanInstallment[]
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+// Generated once (termMonths rows) the moment Special Approval approves. "Outstanding
+// balance" and "due this payroll run" are always computed from these rows, never stored.
+model LoanInstallment {
+  id            String                @id @default(cuid())
+  loanRequestId String
+  loanRequest   LoanRequest           @relation(fields: [loanRequestId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  installmentNumber Int
+  dueYear           Int
+  dueMonth          Int
+  amount            Float
+  status            LoanInstallmentStatus @default(PENDING)
+
+  // Tentatively set when a PayrollPeriod's "Generate Entries" pulls this installment into
+  // someone's loanDeduction; only flips this row to PAID once that period is actually
+  // marked Paid. @unique because each installment backs at most one payslip entry — only
+  // the single next-due installment per employee per period is auto-pulled; clearing an
+  // arrears backlog is a manual "Mark Paid" via the installment's own PATCH route.
+  payslipEntryId String?       @unique
+  payslipEntry   PayslipEntry? @relation(fields: [payslipEntryId], references: [id], onDelete: SetNull)
+  paidAt         DateTime?
+  paidAmount     Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([loanRequestId, installmentNumber])
+  @@index([employeeId])
+  @@index([loanRequestId])
 }
 
 enum CandidateStatus {

@@ -120,7 +120,7 @@ function netOfCommission(booking: {
   return (trip - trip * commPct / 100) + svcTotal
 }
 
-export default function Payments() {
+export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const { data: session } = useSession()
   const userRole = session?.user?.role ?? ''
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
@@ -448,6 +448,17 @@ export default function Payments() {
       }
     }
   }
+
+  // Deep-link from a notification click — openDetail reads straight off the full row
+  // (p.booking.source, p.amount, ...), so find the real row in the already-loaded list
+  // rather than opening a bare {id} stub.
+  useEffect(() => {
+    if (!deepLinkId || payments.length === 0) return
+    const found = payments.find(p => p.id === deepLinkId)
+    if (found) openDetail(found)
+    onDeepLinkHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, payments])
 
   const tripLabel = (p: Payment) =>
     p.booking.openTrip?.title ?? p.booking.destination ?? p.booking.yacht?.name ?? '—'

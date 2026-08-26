@@ -4,13 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { roleMatches } from '@/lib/role-utils'
-
-async function requireAdmin() {
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') return null
-  return session
-}
+import { sendPushToUsers } from '@/lib/push'
+import { isDuplicateAgent } from '@/lib/agent-duplicate'
 
 async function requireManage() {
   const session = await getServerSession(authOptions)
@@ -75,6 +70,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: `Agent dengan nama "${name.trim()}" sudah ada` }, { status: 409 })
     }
 
+    const before = await db.agent.findUnique({ where: { id }, select: { isActive: true, note: true } })
+
     const agent = await db.agent.update({
       where: { id },
       data: {
@@ -107,6 +104,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       detail: `Update agent: ${name}`,
     }, db).catch(() => {})
 
+    // Notify the assigned salesperson the moment their agent gets flagged as a
+    // duplicate (isActive turned false + note written in the "duplikat dari agent ..."
+    // format) — only on the transition, so re-saving an already-flagged row doesn't spam.
+    const wasDuplicate = before ? isDuplicateAgent(before) : false
+    const isDuplicateNow = isDuplicateAgent(agent)
+    if (!wasDuplicate && isDuplicateNow && agent.salespersonId) {
+      const title = 'Agent ditandai duplikat'
+      const notifBody = `${agent.name} yang kamu input ditandai sebagai duplikat dari agent yang sudah ada. Silakan cek dan hapus jika memang sama.`
+      await db.notification.create({
+        data: { userId: agent.salespersonId, type: 'AGENT_DUPLICATE_FLAGGED', title, body: notifBody },
+      }).catch(() => {})
+      sendPushToUsers(db, [agent.salespersonId], { title, body: notifBody }).catch(() => {})
+    }
+
     return NextResponse.json(agent)
   } catch (error) {
     console.error('Error updating agent:', error)
@@ -115,27 +126,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await requireAdmin()
-  if (!session) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const session = await getServerSession(authOptions)
+  const role = (session?.user as { role?: string })?.role ?? ''
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   try {
     const { id } = await params
-    const existing = await db.agent.findUnique({ where: { id }, select: { name: true } })
-    await db.agent.update({ where: { id }, data: { isActive: false } })
+    const existing = await db.agent.findUnique({ where: { id }, select: { name: true, isActive: true, note: true, salespersonId: true } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN'
+    if (!isAdmin && existing.salespersonId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Only a confirmed duplicate-flagged agent can be permanently removed here — this
+    // route is not a general-purpose hard delete, just the cleanup step for mistaken
+    // duplicate entries. Anything else should keep going through PATCH { isActive: false }.
+    if (!isDuplicateAgent(existing)) {
+      return NextResponse.json({ error: 'Only agents flagged as duplicates can be deleted here — deactivate instead' }, { status: 400 })
+    }
+
+    await db.agent.delete({ where: { id } })
 
     logActivity({
       userId:   session.user.id,
       userName: session.user.name ?? session.user.email ?? 'Unknown',
-      userRole: (session.user as { role?: string }).role ?? '',
+      userRole: role,
       action: 'DELETE', entity: 'Agent', entityId: id,
-      detail: `Nonaktifkan agent: ${existing?.name ?? id}`,
+      detail: `Delete duplicate agent: ${existing.name}`,
     }, db).catch(() => {})
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Error deactivating agent:', error)
-    return NextResponse.json({ error: 'Failed to deactivate agent' }, { status: 500 })
+    console.error('Error deleting agent:', error)
+    return NextResponse.json({ error: 'Failed to delete agent' }, { status: 500 })
   }
 }

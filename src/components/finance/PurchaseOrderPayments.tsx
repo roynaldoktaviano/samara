@@ -65,12 +65,24 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
   )
 }
 
-export default function PurchaseOrderPayments() {
+export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const [requests, setRequests] = useState<PaymentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID'>('PENDING')
   const [selected, setSelected] = useState<PaymentRequest | null>(null)
   const [viewPhoto, setViewPhoto] = useState<string | null>(null)
+
+  // Deep-link from a notification click — the notification only carries the PO's id, not
+  // this specific payment request's own id, so resolve it server-side (?orderId=) rather
+  // than assuming the right row is already in the loaded/filtered `requests` list.
+  useEffect(() => {
+    if (!deepLinkId) return
+    fetch(`/api/finance/purchase-order-payments?orderId=${deepLinkId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: PaymentRequest[]) => { if (rows[0]) setSelected(rows[0]) })
+      .finally(() => onDeepLinkHandled?.())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId])
 
   // pay modal
   const [payModal, setPayModal] = useState(false)

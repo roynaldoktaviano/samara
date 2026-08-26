@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
+import { RupiahInput } from '@/components/ui/rupiah-input'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface BusinessUnit { id: string; name: string }
@@ -22,7 +23,7 @@ interface Employee {
   npwp: string | null; kkNumber: string | null
   bankName: string | null; bankAccountNumber: string | null; bankAccountName: string | null
   bpjsKesehatanNumber: string | null; bpjsTkNumber: string | null
-  basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null
+  basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null; benefit: number | null
   seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]
   legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
@@ -35,7 +36,7 @@ const BLANK = {
   nikPassport: '', nationality: '', religion: '', placeOfBirth: '', motherName: '', personalEmail: '', maritalStatus: '', addressCurrent: '',
   emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '',
   npwp: '', kkNumber: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bpjsKesehatanNumber: '', bpjsTkNumber: '',
-  basicSalary: '', allowance: '', uangLayar: '', uangMakan: '',
+  basicSalary: '', allowance: '', uangLayar: '', uangMakan: '', benefit: '',
   seamanBookFiles: [] as string[], bstFiles: [] as string[], medicalCheckupFiles: [] as string[], ijazahFiles: [] as string[], certificateFiles: [] as string[],
 }
 
@@ -280,6 +281,7 @@ export default function EmployeesPage() {
       allowance: emp.allowance != null ? String(emp.allowance) : '',
       uangLayar: emp.uangLayar != null ? String(emp.uangLayar) : '',
       uangMakan: emp.uangMakan != null ? String(emp.uangMakan) : '',
+      benefit: emp.benefit != null ? String(emp.benefit) : '',
       seamanBookFiles: emp.seamanBookFiles ?? [], bstFiles: emp.bstFiles ?? [], medicalCheckupFiles: emp.medicalCheckupFiles ?? [],
       ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [],
     })
@@ -1122,39 +1124,25 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
-                    <input
-                      type="number"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Rp"
-                      value={form.basicSalary} onChange={e => setForm(f => ({ ...f, basicSalary: e.target.value }))}
-                    />
+                    <RupiahInput value={form.basicSalary} onChange={digits => setForm(f => ({ ...f, basicSalary: digits }))} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</label>
-                    <input
-                      type="number"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Rp"
-                      value={form.allowance} onChange={e => setForm(f => ({ ...f, allowance: e.target.value }))}
-                    />
+                    <RupiahInput value={form.allowance} onChange={digits => setForm(f => ({ ...f, allowance: digits }))} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar</label>
-                    <input
-                      type="number"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Rp"
-                      value={form.uangLayar} onChange={e => setForm(f => ({ ...f, uangLayar: e.target.value }))}
-                    />
+                    <RupiahInput value={form.uangLayar} onChange={digits => setForm(f => ({ ...f, uangLayar: digits }))} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan</label>
-                    <input
-                      type="number"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Rp"
-                      value={form.uangMakan} onChange={e => setForm(f => ({ ...f, uangMakan: e.target.value }))}
-                    />
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan (per day)</label>
+                    <RupiahInput value={form.uangMakan} onChange={digits => setForm(f => ({ ...f, uangMakan: digits }))} />
+                    <p className="text-[11px] text-muted-foreground">Daily rate — Payroll multiplies this by days actually present (from Attendance Recap) each period.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Benefit</label>
+                    <RupiahInput value={form.benefit} onChange={digits => setForm(f => ({ ...f, benefit: digits }))} />
+                    <p className="text-[11px] text-muted-foreground">Custom monthly amount — shows as a non-cash &quot;Benefit&quot; line on the payslip, doesn&apos;t add to take-home pay.</p>
                   </div>
                 </div>
                 )}

@@ -23,7 +23,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw } from 'lucide-react'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X } from 'lucide-react'
+import LegalDocumentsPanel from '@/components/hr/LegalDocumentsPanel'
 
 interface PricingTier { nights: number; price: number }
 // destinationId: null = fallback rate applying regardless of destination (the original
@@ -105,6 +106,7 @@ export default function Yachts() {
   const [submitting,   setSubmitting]   = useState(false)
   const [formStep,     setFormStep]     = useState(1)
   const [error,        setError]        = useState('')
+  const [docsTarget,   setDocsTarget]   = useState<YachtRecord | null>(null)
 
   /* form state */
   const [name,        setName]    = useState('')
@@ -759,6 +761,24 @@ export default function Yachts() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Documents Panel ── */}
+      {/* Plain overlay, not the shadcn Dialog used above — DialogContent centers itself with a
+          CSS transform, which becomes a containing block for LegalDocumentsPanel's own
+          `fixed inset-0` Add/Edit modal and breaks its full-viewport positioning. */}
+      {docsTarget && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={() => setDocsTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-bold">{docsTarget.name} — Documents</h3>
+              <button onClick={() => setDocsTarget(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <LegalDocumentsPanel owner={{ id: docsTarget.id, name: docsTarget.name, kind: 'yacht' }} />
+          </div>
+        </div>
+      )}
+
       {/* ── Fleet table ── */}
       <Card>
         <CardHeader>
@@ -839,6 +859,13 @@ export default function Yachts() {
                             </Button>
                             {canEdit && (
                               <>
+                                <Button
+                                  variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Documents"
+                                  onClick={() => setDocsTarget(y)}
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </Button>
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                   onClick={() => openEdit(y)}

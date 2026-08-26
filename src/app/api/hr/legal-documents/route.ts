@@ -13,8 +13,9 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const legalEntityId = req.nextUrl.searchParams.get('legalEntityId')
+  const yachtId = req.nextUrl.searchParams.get('yachtId')
   const documents = await db.legalDocument.findMany({
-    where: legalEntityId ? { legalEntityId } : undefined,
+    where: legalEntityId ? { legalEntityId } : yachtId ? { yachtId } : undefined,
     orderBy: [{ section: 'asc' }, { name: 'asc' }],
   })
   return NextResponse.json(documents)
@@ -26,20 +27,27 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const {
-    legalEntityId, section, name, category, period, subDetail, fileKey,
+    legalEntityId, yachtId, section, name, category, period, subDetail, fileKey,
     establishDate, expiryDate, issuer, vendor, notes,
   } = await req.json()
 
-  if (!legalEntityId) return NextResponse.json({ error: 'legalEntityId is required' }, { status: 400 })
+  if (!legalEntityId && !yachtId) return NextResponse.json({ error: 'legalEntityId or yachtId is required' }, { status: 400 })
+  if (legalEntityId && yachtId) return NextResponse.json({ error: 'A document belongs to either a legal entity or a yacht, not both' }, { status: 400 })
   if (!name?.trim()) return NextResponse.json({ error: 'Document name is required' }, { status: 400 })
 
-  const entity = await db.legalEntity.findUnique({ where: { id: legalEntityId }, select: { id: true } })
-  if (!entity) return NextResponse.json({ error: 'Legal entity not found' }, { status: 404 })
+  if (legalEntityId) {
+    const entity = await db.legalEntity.findUnique({ where: { id: legalEntityId }, select: { id: true } })
+    if (!entity) return NextResponse.json({ error: 'Legal entity not found' }, { status: 404 })
+  } else {
+    const yacht = await db.yacht.findUnique({ where: { id: yachtId }, select: { id: true } })
+    if (!yacht) return NextResponse.json({ error: 'Yacht not found' }, { status: 404 })
+  }
 
   const created = await db.legalDocument.create({
     data: {
       id: crypto.randomUUID(),
-      legalEntityId,
+      legalEntityId: legalEntityId || null,
+      yachtId: yachtId || null,
       section: section?.trim() || null,
       name: name.trim(),
       category: category?.trim() || null,

@@ -10,7 +10,7 @@ interface Row { entity: string; cols: Cell[] }
 interface EntityLite { id: string; name: string }
 interface MatrixData { entityRows: string[]; locationCols: string[]; matrix: Row[]; totalEmployees: number; entities: EntityLite[] }
 
-export default function EntitiesAssignmentsPage() {
+export default function EntitiesAssignmentsPage({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const [data, setData] = useState<MatrixData | null>(null)
   const [loading, setLoading] = useState(true)
   const [drill, setDrill] = useState<{ entity: string; cell: Cell } | null>(null)
@@ -22,6 +22,20 @@ export default function EntitiesAssignmentsPage() {
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
+
+  // Deep-link from a LEGAL_DOC_EXPIRING notification — there's no per-document modal
+  // anywhere in the app, so the best landing spot is that document's entity panel.
+  useEffect(() => {
+    if (!deepLinkId || !data) return
+    fetch(`/api/hr/legal-documents/${deepLinkId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(doc => {
+        const entity = doc?.legalEntityId && data.entities.find(e => e.id === doc.legalEntityId)
+        if (entity) setViewEntity(entity)
+      })
+      .finally(() => onDeepLinkHandled?.())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId, data])
 
   if (loading) return (
     <div className="space-y-6">
@@ -42,7 +56,7 @@ export default function EntitiesAssignmentsPage() {
   const { locationCols, matrix, totalEmployees, entities } = data
 
   if (viewEntity) {
-    return <LegalDocumentsPanel entity={viewEntity} onBack={() => setViewEntity(null)} />
+    return <LegalDocumentsPanel owner={{ ...viewEntity, kind: 'legalEntity' }} onBack={() => setViewEntity(null)} backLabel="Entities & Assignments" />
   }
 
   return (

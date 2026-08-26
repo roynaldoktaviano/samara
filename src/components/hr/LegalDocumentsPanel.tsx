@@ -5,12 +5,14 @@ import { ArrowLeft, Plus, X, Pencil, Trash2, Paperclip, Upload, AlertTriangle, F
 import { readUploadFile } from '@/lib/fileUpload'
 
 interface LegalDocument {
-  id: string; legalEntityId: string
+  id: string; legalEntityId: string | null; yachtId: string | null
   section: string | null; name: string; category: string | null; period: string | null; subDetail: string | null
   fileKey: string | null
   establishDate: string | null; expiryDate: string | null
   issuer: string | null; vendor: string | null; notes: string | null
 }
+
+interface DocsOwner { id: string; name: string; kind: 'legalEntity' | 'yacht' }
 
 const PERIOD_OPTIONS = ['Weekly', 'Monthly', '3 Months', '6 Months', 'Yearly', '3 Years', '5 Years', '10 Years', 'Permanent']
 const SUB_DETAIL_OPTIONS = ['Mandatory', 'Optional']
@@ -36,7 +38,7 @@ function expiryStatus(expiryDate: string | null): { label: string; color: string
   return { label: `Valid until ${fmtDate(expiryDate)}`, color: 'bg-green-50 text-green-700' }
 }
 
-export default function LegalDocumentsPanel({ entity, onBack }: { entity: { id: string; name: string }; onBack: () => void }) {
+export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owner: DocsOwner; onBack?: () => void; backLabel?: string }) {
   const [documents, setDocuments] = useState<LegalDocument[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -47,12 +49,14 @@ export default function LegalDocumentsPanel({ entity, onBack }: { entity: { id: 
   const [uploading, setUploading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<LegalDocument | null>(null)
 
+  const ownerParam = owner.kind === 'yacht' ? 'yachtId' : 'legalEntityId'
+
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await fetch(`/api/hr/legal-documents?legalEntityId=${entity.id}`)
+    const res = await fetch(`/api/hr/legal-documents?${ownerParam}=${owner.id}`)
     if (res.ok) setDocuments(await res.json())
     setLoading(false)
-  }, [entity.id])
+  }, [owner.id, ownerParam])
 
   useEffect(() => { load() }, [load])
 
@@ -87,7 +91,7 @@ export default function LegalDocumentsPanel({ entity, onBack }: { entity: { id: 
     const url = modal?.doc ? `/api/hr/legal-documents/${modal.doc.id}` : '/api/hr/legal-documents'
     const res = await fetch(url, {
       method: modal?.doc ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, legalEntityId: entity.id }),
+      body: JSON.stringify({ ...form, [ownerParam]: owner.id }),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error ?? 'An error occurred'); setSaving(false); return }
@@ -114,10 +118,12 @@ export default function LegalDocumentsPanel({ entity, onBack }: { entity: { id: 
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-[#bdac7e] transition-colors mb-2">
-            <ArrowLeft className="w-3.5 h-3.5" /> Entities & Assignments
-          </button>
-          <h2 className="text-2xl font-bold tracking-tight">{entity.name}</h2>
+          {onBack && (
+            <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-[#bdac7e] transition-colors mb-2">
+              <ArrowLeft className="w-3.5 h-3.5" /> {backLabel ?? 'Back'}
+            </button>
+          )}
+          {onBack && <h2 className="text-2xl font-bold tracking-tight">{owner.name}</h2>}
           <p className="text-muted-foreground text-sm mt-1">Legal & compliance documents — {documents.length} tracked</p>
         </div>
         <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
@@ -130,7 +136,7 @@ export default function LegalDocumentsPanel({ entity, onBack }: { entity: { id: 
       ) : documents.length === 0 ? (
         <div className="rounded-xl border py-12 text-center text-muted-foreground text-sm">
           <FileText className="h-8 w-8 mx-auto mb-2 opacity-20" />
-          No documents tracked yet for {entity.name}.
+          No documents tracked yet for {owner.name}.
         </div>
       ) : (
         <div className="space-y-4">

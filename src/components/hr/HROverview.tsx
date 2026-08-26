@@ -1,17 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Users, FileWarning, Wallet, ClipboardList, Landmark, Sparkles, Building2, MapPin, AlertTriangle } from 'lucide-react'
+import { Users, FileWarning, Wallet, ClipboardList, Landmark, Sparkles, Building2, MapPin, AlertTriangle, FileText } from 'lucide-react'
 
 interface ContractRow {
   id: string; fullName: string; employeeNumber: string; role: string | null
   contractEndDate: string; daysLeft: number
+}
+interface DocumentRow {
+  id: string; name: string; ownerName: string; ownerType: 'Company' | 'Yacht'
+  expiryDate: string; daysLeft: number
 }
 interface HROverviewData {
   activeEmployees: number
   contractsExpiring: ContractRow[]
   contractsExpiringCount: number
   anyContractDatesSet: boolean
+  documentsExpiring: DocumentRow[]
+  documentsExpiringCount: number
   monthlyEmployerCost: number
   pendingLeaveCount: number
   estimatedExitExposure: number
@@ -27,6 +33,8 @@ const fmtMoney = (n: number) => {
   return 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+// Mirrors DOC_WARNING_DAYS in /api/hr/overview/route.ts — display-only, doesn't affect the query.
+const DOC_WARNING_DAYS = 30
 
 function KPICard({ label, value, note, icon: Icon, tone = 'default', onClick }: {
   label: string; value: string; note: string
@@ -117,7 +125,8 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
   )
 
   const {
-    activeEmployees, contractsExpiring, contractsExpiringCount, anyContractDatesSet, monthlyEmployerCost,
+    activeEmployees, contractsExpiring, contractsExpiringCount, anyContractDatesSet,
+    documentsExpiring, documentsExpiringCount, monthlyEmployerCost,
     pendingLeaveCount, estimatedExitExposure, anySalaryDataSet, talentPoolCount,
     headcountByLocation, headcountByLegalEntity,
   } = data
@@ -169,6 +178,13 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
           icon={Sparkles}
           onClick={onNavigate ? () => onNavigate('hr-candidates') : undefined}
         />
+        <KPICard
+          label="Documents Expiring"
+          value={String(documentsExpiringCount)}
+          note={`Company & yacht documents, within ${DOC_WARNING_DAYS} days`}
+          icon={FileText}
+          tone={documentsExpiringCount > 0 ? 'amber' : 'default'}
+        />
       </div>
 
       {/* Headcount breakdowns */}
@@ -207,6 +223,45 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
                   <td className="px-5 py-3 text-muted-foreground">{c.role ?? '—'}</td>
                   <td className="px-5 py-3 text-muted-foreground">{fmtDate(c.contractEndDate)}</td>
                   <td className={`px-5 py-3 text-right font-semibold ${c.daysLeft <= 30 ? 'text-red-600' : 'text-amber-600'}`}>{c.daysLeft}d</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        )}
+      </div>
+
+      {/* Documents expiring soon */}
+      <div className="rounded-xl border overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b bg-muted/20">
+          <FileText className="h-4 w-4 text-amber-500" />
+          <h3 className="font-semibold text-sm">Documents Expiring Soon (≤{DOC_WARNING_DAYS} days)</h3>
+        </div>
+        {documentsExpiring.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-10">
+            No company or yacht documents expiring in the next {DOC_WARNING_DAYS} days.
+          </p>
+        ) : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead className="bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th className="text-left px-5 py-2.5 font-medium">Document</th>
+                <th className="text-left px-5 py-2.5 font-medium">Owner</th>
+                <th className="text-left px-5 py-2.5 font-medium">Expiry Date</th>
+                <th className="text-right px-5 py-2.5 font-medium">Days Left</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {documentsExpiring.map(d => (
+                <tr key={d.id} className="hover:bg-muted/20">
+                  <td className="px-5 py-3 font-medium">{d.name}</td>
+                  <td className="px-5 py-3 text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${d.ownerType === 'Yacht' ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'}`}>{d.ownerType}</span>
+                      {d.ownerName}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-muted-foreground">{fmtDate(d.expiryDate)}</td>
+                  <td className={`px-5 py-3 text-right font-semibold ${d.daysLeft <= 7 ? 'text-red-600' : 'text-amber-600'}`}>{d.daysLeft < 0 ? `${Math.abs(d.daysLeft)}d overdue` : `${d.daysLeft}d`}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -8,13 +8,18 @@ import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
+  // Optional ?orderId= — lets a notification click (which only carries the PO's id, not
+  // this specific payment request's own id) resolve straight to the relevant request(s).
+  const orderId = new URL(request.url).searchParams.get('orderId')
+
   const requests = await db.pOPaymentRequest.findMany({
+    where: orderId ? { orderId } : undefined,
     orderBy: { createdAt: 'desc' },
     include: {
       order: {

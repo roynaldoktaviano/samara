@@ -27,6 +27,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { roleMatches } from '@/lib/role-utils'
+import { parseDuplicateNote } from '@/lib/agent-duplicate'
 
 function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -131,13 +132,6 @@ const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfB
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
 
-function parseDuplicateNote(note: string | null): { originalName: string; date: string; salesperson: string } | null {
-  if (!note) return null
-  const match = note.match(/duplikat dari agent "([^"]+)" \(dibuat ([\d-]+), salesperson ([^)]+)\)/i)
-  if (!match) return null
-  return { originalName: match[1], date: match[2], salesperson: match[3] }
-}
-
 export default function Agents() {
   const { data: session } = useSession()
   const userRole  = (session?.user as { role?: string })?.role ?? ''
@@ -176,6 +170,8 @@ export default function Agents() {
 
   const [confirmAgent, setConfirmAgent] = useState<AgentRecord | null>(null)
   const [toggling,     setToggling]     = useState(false)
+  const [deleteAgent,  setDeleteAgent]  = useState<AgentRecord | null>(null)
+  const [deleting,     setDeleting]     = useState(false)
 
   // contacts (sheet)
   const [contacts,       setContacts]       = useState<AgentContact[]>([])
@@ -674,6 +670,16 @@ export default function Agents() {
     finally { setToggling(false) }
   }
 
+  const handleDeleteAgent = async () => {
+    if (!deleteAgent) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/agents/${deleteAgent.id}`, { method: 'DELETE' })
+      if (res.ok) { await fetchAgents(); setDeleteAgent(null) }
+    } catch (e) { console.error(e) }
+    finally { setDeleting(false) }
+  }
+
   const AGENT_CSV_HEADER = [
     'name', 'salesperson', 'country', 'address', 'email', 'whatsapp', 'website', 'instagram',
     'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'contract', 'isActive', 'note',
@@ -738,6 +744,14 @@ export default function Agents() {
     if (filterCountry     && a.country              !== filterCountry)     return false
     if (filterSalesperson && a.salesperson?.id       !== filterSalesperson) return false
     return true
+  }).sort((a, b) => {
+    // Duplicate-flagged rows float to the top (of the whole list, and — since the sort
+    // runs after the salesperson/"mine" filters above — of that salesperson's own view
+    // too) so they can't get missed further down the table. Stable sort keeps the
+    // existing name order within each group.
+    const dupA = !a.isActive && parseDuplicateNote(a.note) ? 1 : 0
+    const dupB = !b.isActive && parseDuplicateNote(b.note) ? 1 : 0
+    return dupB - dupA
   })
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -954,7 +968,14 @@ export default function Agents() {
                             {a.name.charAt(0)}
                           </div>
                           <div>
-                            <div className="font-semibold text-sm leading-tight">{a.name}</div>
+                            <div className="font-semibold text-sm leading-tight flex items-center gap-1.5">
+                              {a.name}
+                              {duplicateInfo && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 leading-4 bg-red-50 text-red-600 border-red-200">
+                                  Duplicate
+                                </Badge>
+                              )}
+                            </div>
                             {a.country && <div className="text-[11px] text-muted-foreground lg:hidden">{a.country}</div>}
                             {duplicateInfo && (
                               <div className="flex items-center gap-1 text-[11px] text-red-600 font-medium mt-0.5">
@@ -1165,7 +1186,7 @@ export default function Agents() {
                       {canManage && (
                         <td className="py-2.5 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 justify-end">
-                            {canActOnAgent(a) && canGenerateContract && (
+                            {canActOnAgent(a) && canGenerateContract && !duplicateInfo && (
                               a.contract === 'Yes' && a.contractFileName ? (
                                 <button
                                   className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
@@ -1185,7 +1206,7 @@ export default function Agents() {
                                 </button>
                               )
                             )}
-                            {canActOnAgent(a) && (
+                            {canActOnAgent(a) && !duplicateInfo && (
                               <button
                                 className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
                                 onClick={() => openEdit(a)}
@@ -1195,16 +1216,26 @@ export default function Agents() {
                               </button>
                             )}
                             {canActOnAgent(a) && (
-                              <button
-                                className={`p-1.5 rounded transition-colors ${a.isActive
-                                  ? 'hover:bg-red-50 text-red-500'
-                                  : 'hover:bg-emerald-50 text-emerald-600'
-                                }`}
-                                onClick={() => setConfirmAgent(a)}
-                                title={a.isActive ? 'Deactivate agent' : 'Activate agent'}
-                              >
-                                {a.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
-                              </button>
+                              duplicateInfo ? (
+                                <button
+                                  className="p-1.5 rounded hover:bg-red-50 text-red-600 transition-colors"
+                                  onClick={() => setDeleteAgent(a)}
+                                  title="Delete duplicate agent"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  className={`p-1.5 rounded transition-colors ${a.isActive
+                                    ? 'hover:bg-red-50 text-red-500'
+                                    : 'hover:bg-emerald-50 text-emerald-600'
+                                  }`}
+                                  onClick={() => setConfirmAgent(a)}
+                                  title={a.isActive ? 'Deactivate agent' : 'Activate agent'}
+                                >
+                                  {a.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
+                                </button>
+                              )
                             )}
                           </div>
                         </td>
@@ -2039,6 +2070,29 @@ export default function Agents() {
             >
               {toggling && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {confirmAgent?.isActive ? 'Yes, Deactivate' : 'Yes, Activate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Confirm permanent delete (duplicate agents only) ── */}
+      <AlertDialog open={!!deleteAgent} onOpenChange={v => !v && setDeleteAgent(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Duplicate Agent?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteAgent?.name} will be permanently deleted — this cannot be undone. Only do this for confirmed duplicate entries.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={handleDeleteAgent}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Yes, Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -109,7 +109,7 @@ export async function POST() {
     docWarningCutoff.setDate(docWarningCutoff.getDate() + DOC_WARNING_DAYS)
     const expiringDocs = await db.legalDocument.findMany({
       where: { expiryDate: { not: null, lte: docWarningCutoff } },
-      select: { id: true, name: true, expiryDate: true, legalEntity: { select: { name: true } } },
+      select: { id: true, name: true, expiryDate: true, legalEntity: { select: { name: true } }, yacht: { select: { name: true } } },
     })
 
     let docGenerated = 0
@@ -126,12 +126,13 @@ export async function POST() {
         const hrUsers = await db.user.findMany({ where: { role: { in: HR_ROLES as never[] } }, select: { id: true } })
         const docRecords = dueDocs.flatMap(d => {
           const daysLeft = Math.ceil((d.expiryDate!.getTime() - today.getTime()) / 86400000)
+          const ownerName = d.legalEntity?.name ?? d.yacht?.name ?? 'Unknown'
           const title = daysLeft < 0
             ? `🔴 Dokumen sudah kedaluwarsa: ${d.name}`
             : daysLeft === 0
               ? `🔴 Dokumen kedaluwarsa hari ini: ${d.name}`
               : `Dokumen akan kedaluwarsa (${daysLeft} hari): ${d.name}`
-          const body = `${d.name} — ${d.legalEntity.name}. ${daysLeft < 0 ? `Sudah lewat ${Math.abs(daysLeft)} hari dari tanggal berlaku.` : `Berlaku sampai ${d.expiryDate!.toISOString().slice(0, 10)}.`} Segera diperbarui.`
+          const body = `${d.name} — ${ownerName}. ${daysLeft < 0 ? `Sudah lewat ${Math.abs(daysLeft)} hari dari tanggal berlaku.` : `Berlaku sampai ${d.expiryDate!.toISOString().slice(0, 10)}.`} Segera diperbarui.`
           return hrUsers.map(u => ({ userId: u.id, type: 'LEGAL_DOC_EXPIRING', title, body, legalDocumentId: d.id }))
         })
         await db.notification.createMany({ data: docRecords })
