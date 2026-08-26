@@ -70,6 +70,13 @@ enum YachtStatus {
   maintenance
 }
 
+enum InternalEventType {
+  DOCKING
+  CROSSING
+  OVERHAUL
+  COMPANY_NEED
+}
+
 enum VoucherType {
   PERCENTAGE
   FIXED
@@ -164,6 +171,7 @@ model User {
   loanHrDecisions                        LoanRequest[]               @relation("LoanHrDecidedBy")
   loanFinanceDecisions                   LoanRequest[]               @relation("LoanFinanceDecidedBy")
   loanSpecialDecisions                   LoanRequest[]               @relation("LoanSpecialDecidedBy")
+  internalEventsCreated                  InternalEvent[]
 }
 
 model Customer {
@@ -545,6 +553,7 @@ model Yacht {
   posPackages        PosPackage[]
   posDiscounts       PosDiscount[]
   documents          LegalDocument[]
+  internalEvents     InternalEvent[]
 }
 
 enum MediaFileType {
@@ -886,6 +895,29 @@ model Maintenance {
 
   @@index([yachtId])
   @@index([status, scheduledDate])
+}
+
+// Non-booking calendar entries — docking, crossing (relocation), overhaul/refit, and
+// company-wide needs (photoshoot, all-crew annual leave, …) — rendered as colored bars
+// on the same calendar as Booking/OpenTrip. yachtId is optional: null means a
+// company-wide event shown regardless of which yacht tab is selected, matching how a
+// crew-wide leave block isn't tied to any one vessel.
+model InternalEvent {
+  id          String            @id @default(cuid())
+  type        InternalEventType
+  title       String
+  notes       String?
+  startDate   DateTime
+  endDate     DateTime
+  yachtId     String?
+  yacht       Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([yachtId])
+  @@index([startDate, endDate])
 }
 
 model Expense {

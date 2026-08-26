@@ -10,17 +10,13 @@ const MISCHIEF_LOGO_URL = 'https://mischiefvoyage.com/wp-content/uploads/2023/11
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
-type DayStatus = 'booked' | 'past' | 'available'
+// null = available — rendered as a plain, uncolored day (no pill, nothing to key off
+// visually) since this page only ever has booked-date data to distinguish from "not booked".
+type DayStatus = 'booked' | 'past' | null
 
-const STATUS_DOT: Record<DayStatus, string> = {
-  booked: 'bg-red-500',
-  past: 'bg-slate-300',
-  available: 'bg-emerald-500',
-}
-const STATUS_CELL: Record<DayStatus, string> = {
+const STATUS_CELL: Record<'booked' | 'past', string> = {
   booked: 'bg-red-500 text-white',
   past: 'bg-slate-200 text-slate-500',
-  available: 'bg-emerald-500 text-white',
 }
 
 function buildWeeks(year: number, month: number) {
@@ -42,55 +38,85 @@ function dateStr(year: number, month: number, day: number) {
 function dayStatus(ds: string, bookedDates: Set<string>, todayStr: string): DayStatus {
   if (bookedDates.has(ds)) return 'booked'
   if (ds < todayStr) return 'past'
-  return 'available'
+  return null
 }
 
-/* ── Mini month grid — used in the year overview, click the title to drill in ── */
+/* ── Week rows with same-status days merged into one continuous pill (booking ranges
+   read as a single bar, not a chain of separate dots) — shared by the year overview's
+   mini months and the single-month drill-in, just at two different sizes. ── */
+function WeekRows({ year, month, weeks, bookedDates, todayStr, size }: {
+  year: number; month: number; weeks: number[][]; bookedDates: Set<string>; todayStr: string; size: 'mini' | 'full'
+}) {
+  const mini = size === 'mini'
+  return (
+    <div className={mini ? 'flex flex-col gap-0.5' : 'p-2 flex flex-col gap-1'}>
+      {weeks.map((week, wi) => (
+        <div key={wi} className={`grid grid-cols-7 ${mini ? 'h-4' : 'h-10'}`}>
+          {week.map((day, col) => {
+            if (day === 0) return <div key={col} />
+            const ds = dateStr(year, month, day)
+            const status = dayStatus(ds, bookedDates, todayStr)
+            const prevDay = week[col - 1]
+            const nextDay = week[col + 1]
+            const prevSame = col > 0 && prevDay > 0 && dayStatus(dateStr(year, month, prevDay), bookedDates, todayStr) === status
+            const nextSame = col < 6 && nextDay > 0 && dayStatus(dateStr(year, month, nextDay), bookedDates, todayStr) === status
+            const isToday = ds === todayStr
+            return (
+              <div
+                key={col}
+                className={[
+                  'flex items-center justify-center font-semibold',
+                  mini ? 'text-[9px]' : 'text-sm',
+                  status ? STATUS_CELL[status] : 'text-slate-700',
+                  status && !prevSame ? 'rounded-l-full' : '',
+                  status && !nextSame ? 'rounded-r-full' : '',
+                  isToday ? (mini ? 'ring-1 ring-[#bdac7e]' : 'ring-2 ring-inset ring-[#bdac7e]') : '',
+                ].join(' ')}
+              >
+                {day}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── Mini month grid — used in the year overview, click anywhere on it to drill in ── */
 function MiniMonth({ year, month, bookedDates, todayStr, onSelect }: {
   year: number; month: number; bookedDates: Set<string>; todayStr: string
   onSelect: (month: number) => void
 }) {
   const weeks = useMemo(() => buildWeeks(year, month), [year, month])
   return (
-    <div className="bg-white rounded-xl border shadow-sm p-2.5">
-      <button onClick={() => onSelect(month)} className="w-full text-center text-xs font-bold text-slate-700 mb-1.5 hover:text-[#bdac7e] transition-colors">
-        {MONTH_FULL[month]}
-      </button>
-      <div className="grid grid-cols-7 gap-y-0.5">
+    <button
+      type="button"
+      onClick={() => onSelect(month)}
+      className="w-full text-left bg-white rounded-xl border shadow-sm p-2.5 hover:border-[#bdac7e] transition-colors"
+    >
+      <p className="text-center text-xs font-bold text-slate-700 mb-1.5">{MONTH_FULL[month]}</p>
+      <div className="grid grid-cols-7">
         {DAY_NAMES.map(d => (
           <div key={d} className="text-center text-[8px] font-semibold text-slate-400">{d[0]}</div>
         ))}
-        {weeks.flat().map((day, i) => {
-          if (day === 0) return <div key={i} />
-          const ds = dateStr(year, month, day)
-          const status = dayStatus(ds, bookedDates, todayStr)
-          const isToday = ds === todayStr
-          return (
-            <div key={i} className="flex items-center justify-center py-0.5">
-              <span className={[
-                'w-full aspect-square max-w-[18px] flex items-center justify-center rounded-full text-[9px] font-semibold',
-                STATUS_CELL[status],
-                isToday ? 'ring-1 ring-offset-1 ring-[#bdac7e]' : '',
-              ].join(' ')}>
-                {day}
-              </span>
-            </div>
-          )
-        })}
       </div>
-    </div>
+      <WeekRows year={year} month={month} weeks={weeks} bookedDates={bookedDates} todayStr={todayStr} size="mini" />
+    </button>
   )
 }
 
 function Legend() {
   return (
     <div className="flex items-center gap-4 justify-center mt-5 flex-wrap">
-      {([['available', 'Available'], ['booked', 'Booked'], ['past', 'Past']] as const).map(([key, label]) => (
-        <div key={key} className="flex items-center gap-1.5">
-          <span className={`w-3 h-3 rounded-full shrink-0 ${STATUS_DOT[key]}`} />
-          <span className="text-xs text-slate-500">{label}</span>
-        </div>
-      ))}
+      <div className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full shrink-0 bg-red-500" />
+        <span className="text-xs text-slate-500">Booked</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="w-3 h-3 rounded-full shrink-0 bg-slate-300" />
+        <span className="text-xs text-slate-500">Past</span>
+      </div>
     </div>
   )
 }
@@ -214,36 +240,7 @@ export default function KapalCalendarPage() {
               ))}
             </div>
 
-            <div className="p-2 flex flex-col gap-1">
-              {weeks.map((week, wi) => (
-                <div key={wi} className="grid grid-cols-7 h-10">
-                  {week.map((day, col) => {
-                    if (day === 0) return <div key={col} />
-                    const ds = dateStr(year, month, day)
-                    const status = dayStatus(ds, bookedDates, todayStr)
-                    const prevDay = week[col - 1]
-                    const nextDay = week[col + 1]
-                    const prevSameStatus = col > 0 && prevDay > 0 && dayStatus(dateStr(year, month, prevDay), bookedDates, todayStr) === status
-                    const nextSameStatus = col < 6 && nextDay > 0 && dayStatus(dateStr(year, month, nextDay), bookedDates, todayStr) === status
-                    const isToday = ds === todayStr
-                    return (
-                      <div
-                        key={col}
-                        className={[
-                          'flex items-center justify-center text-sm font-semibold',
-                          STATUS_CELL[status],
-                          !prevSameStatus ? 'rounded-l-full' : '',
-                          !nextSameStatus ? 'rounded-r-full' : '',
-                          isToday ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
-                        ].join(' ')}
-                      >
-                        {day}
-                      </div>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
+            <WeekRows year={year} month={month} weeks={weeks} bookedDates={bookedDates} todayStr={todayStr} size="full" />
           </div>
 
           <Legend />

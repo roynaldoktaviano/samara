@@ -59,6 +59,29 @@ interface OpenTripEvent {
 
 type DbYacht = { id: string; name: string; dailyRate: number }
 
+type InternalEventType = 'DOCKING' | 'CROSSING' | 'OVERHAUL' | 'COMPANY_NEED'
+
+interface InternalEventItem {
+  id: string
+  type: InternalEventType
+  title: string
+  notes?: string | null
+  startDate: string
+  endDate: string
+  yachtId: string | null
+  yachtName: string | null
+}
+
+const INTERNAL_EVENT_LABEL: Record<InternalEventType, string> = {
+  DOCKING: 'Docking', CROSSING: 'Crossing', OVERHAUL: 'Overhaul', COMPANY_NEED: 'Company Need',
+}
+const INTERNAL_EVENT_COLOR: Record<InternalEventType, string> = {
+  DOCKING: '#7dd3fc',       // light blue
+  CROSSING: '#1e3a8a',      // dark blue
+  OVERHAUL: '#000000',      // black
+  COMPANY_NEED: '#78350f',  // brown
+}
+
 const STATUS_CONFIG = {
   on_hold:    { label: 'On Hold',    color: '#f97316' },
   confirmed:  { label: 'Confirmed',  color: '#22c55e' },
@@ -94,16 +117,17 @@ const DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT']
 
 // ─── Single-month grid ───────────────────────────────────────────────────────
 function MonthGrid({
-  year, month, bookings, openTrips, allBookings, allOpenTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, isInFilterRange, onPrev, onNext, fillHeight,
+  year, month, bookings, openTrips, internalEvents, allBookings, allOpenTrips, yachtColorMap, yachtFilter, onDateClick, onBookingClick, onOpenTripClick, onInternalEventClick, isInFilterRange, onPrev, onNext, fillHeight,
 }: {
   year: number; month: number
-  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]; internalEvents: InternalEventItem[]
   allBookings?: BookingEvent[]; allOpenTrips?: OpenTripEvent[]
   yachtColorMap: Record<string, string>
   yachtFilter: string
   onDateClick: (d: string) => void
   onBookingClick: (b: BookingEvent) => void
   onOpenTripClick: (t: OpenTripEvent) => void
+  onInternalEventClick: (e: InternalEventItem) => void
   isInFilterRange: (dateStr: string) => boolean
   onPrev?: () => void
   onNext?: () => void
@@ -131,7 +155,7 @@ function MonthGrid({
       key: string; weekIdx: number; startCol: number; endCol: number
       isRealStart: boolean; isRealEnd: boolean
       label: string; color: string; isStripe: boolean; isFull: boolean
-      tooltip: string; bookingRef?: BookingEvent; openTripRef?: OpenTripEvent
+      tooltip: string; bookingRef?: BookingEvent; openTripRef?: OpenTripEvent; internalEventRef?: InternalEventItem
       lane: number; laneSpan: number
       showDetails: boolean  // true on the widest segment of this event
     }
@@ -141,7 +165,7 @@ function MonthGrid({
     const addSegs = (
       id: string, label: string, color: string, isStripe: boolean, isFull: boolean,
       eStart: Date, eEnd: Date, tooltip: string,
-      bookingRef?: BookingEvent, openTripRef?: OpenTripEvent
+      bookingRef?: BookingEvent, openTripRef?: OpenTripEvent, internalEventRef?: InternalEventItem
     ) => {
       weeks.forEach((week, wi) => {
         const actual = week.map((d, col) => d > 0 ? { d, col } : null).filter(Boolean) as { d: number; col: number }[]
@@ -158,7 +182,7 @@ function MonthGrid({
           key: `${id}-w${wi}`, weekIdx: wi, startCol, endCol,
           isRealStart: eStart.getTime() === sDate.getTime(),
           isRealEnd:   eEnd.getTime()   === eDate.getTime(),
-          label, color, isStripe, isFull, tooltip, bookingRef, openTripRef,
+          label, color, isStripe, isFull, tooltip, bookingRef, openTripRef, internalEventRef,
         })
       })
     }
@@ -195,6 +219,15 @@ function MonthGrid({
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
         `[Open Trip] ${t.title} · ${t.yacht.name} — ${tooltip}`,
         undefined, t,
+      )
+    })
+
+    internalEvents.forEach(ev => {
+      addSegs(
+        ev.id, ev.title, INTERNAL_EVENT_COLOR[ev.type], false, false,
+        new Date(ev.startDate + 'T00:00:00'), new Date(ev.endDate + 'T00:00:00'),
+        `[${INTERNAL_EVENT_LABEL[ev.type]}] ${ev.title}${ev.yachtName ? ` · ${ev.yachtName}` : ' · Company-wide'}`,
+        undefined, undefined, ev,
       )
     })
 
@@ -241,7 +274,7 @@ function MonthGrid({
     })
 
     return result
-  }, [bookings, openTrips, yachtColorMap, year, month, weeks])
+  }, [bookings, openTrips, internalEvents, yachtColorMap, year, month, weeks])
 
   return (
     <div className={fillHeight ? 'h-full flex flex-col' : 'flex-1 min-w-0'}>
@@ -392,8 +425,16 @@ function MonthGrid({
                       if (isPrivatePCBar || isOthersSalesBooking) return
                       if (seg.bookingRef) onBookingClick(seg.bookingRef)
                       else if (seg.openTripRef) onOpenTripClick(seg.openTripRef)
+                      else if (seg.internalEventRef) onInternalEventClick(seg.internalEventRef)
                     }}
                   >
+                    {seg.internalEventRef ? (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                        <span style={{ fontSize: seg.showDetails ? 11 : 10, fontWeight: 700, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.35)' }}>
+                          {seg.showDetails ? seg.label : `↳ ${seg.label}`}
+                        </span>
+                      </div>
+                    ) : (<>
                     {!seg.showDetails && (
                       /* Non-detail bar — show condensed label so user can identify the event */
                       seg.bookingRef ? (
@@ -592,6 +633,7 @@ function MonthGrid({
                         })()
                       )
                     )}
+                    </>)}
                   </div>
                 )
               })}
@@ -803,8 +845,19 @@ export default function CalendarView() {
   const [yachts, setYachts]             = useState<DbYacht[]>([])
   const [loading, setLoading]           = useState(true)
   const [openTrips, setOpenTrips]       = useState<OpenTripEvent[]>([])
+  const [internalEvents, setInternalEvents] = useState<InternalEventItem[]>([])
   const [tripFilter, setTripFilter]     = useState<'all' | 'PRIVATE_CHARTER' | 'OPEN_TRIP'>('all')
   const [yachtFilter, setYachtFilter]   = useState<string>('')
+
+  /* Add/Edit Internal Event modal */
+  const [internalEventModalOpen, setInternalEventModalOpen] = useState(false)
+  const [internalEventEditing, setInternalEventEditing]     = useState<InternalEventItem | null>(null)
+  const [internalEventForm, setInternalEventForm] = useState({
+    type: 'DOCKING' as InternalEventType, title: '', notes: '', startDate: todayStr(), endDate: todayStr(), yachtId: '',
+  })
+  const [internalEventSaving, setInternalEventSaving] = useState(false)
+  const [internalEventError, setInternalEventError]   = useState('')
+  const [internalEventDeleteConfirm, setInternalEventDeleteConfirm] = useState(false)
 
   /* date filter */
   const [filterMode, setFilterMode]     = useState<'single' | 'range'>('single')
@@ -1069,12 +1122,28 @@ export default function CalendarView() {
     } catch (e) { console.error('Failed to fetch open trips', e) }
   }, [])
 
+  const fetchInternalEvents = useCallback(async () => {
+    try {
+      const data = await fetch('/api/internal-events').then(r => r.json())
+      setInternalEvents(
+        Array.isArray(data)
+          ? data.map((e: any) => ({
+              id: e.id, type: e.type, title: e.title, notes: e.notes ?? undefined,
+              startDate: e.startDate.split('T')[0], endDate: e.endDate.split('T')[0],
+              yachtId: e.yachtId ?? null, yachtName: e.yacht?.name ?? null,
+            }))
+          : []
+      )
+    } catch (e) { console.error('Failed to fetch internal events', e) }
+  }, [])
+
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       await Promise.all([
         fetchBookings(),
         fetchOpenTrips(),
+        fetchInternalEvents(),
         fetch('/api/yachts').then(r => r.json()).then((d: any) => {
           const list: DbYacht[] = Array.isArray(d) ? d.map(y => ({ id: y.id, name: y.name, dailyRate: y.dailyRate })) : []
           setYachts(list)
@@ -1089,7 +1158,7 @@ export default function CalendarView() {
       setLoading(false)
     }
     load()
-  }, [fetchBookings, fetchOpenTrips])
+  }, [fetchBookings, fetchOpenTrips, fetchInternalEvents])
 
   useEffect(() => {
     const handler = () => { fetchBookings(); fetchOpenTrips() }
@@ -1219,6 +1288,12 @@ export default function CalendarView() {
 
   const yachtColorMap = useMemo(() => buildYachtColorMap(yachts), [yachts])
 
+  // Company-wide events (yachtId null) always show, regardless of which yacht tab is active.
+  const filteredInternalEvents = useMemo(
+    () => internalEvents.filter(e => !yachtFilter || !e.yachtId || e.yachtName === yachtFilter),
+    [internalEvents, yachtFilter],
+  )
+
   const leftYear  = currentDate.getFullYear()
   const leftMonth = currentDate.getMonth()
 
@@ -1291,6 +1366,63 @@ export default function CalendarView() {
     setSelectedDate(dateStr)
     setWizardYachtId(yachtFilter ? (yachts.find(y => y.name === yachtFilter)?.id) : undefined)
     setWizardOpen(true)
+  }
+
+  const openAddInternalEvent = () => {
+    setInternalEventEditing(null)
+    setInternalEventForm({
+      type: 'DOCKING', title: '', notes: '', startDate: todayStr(), endDate: todayStr(),
+      yachtId: yachtFilter ? (yachts.find(y => y.name === yachtFilter)?.id ?? '') : '',
+    })
+    setInternalEventError('')
+    setInternalEventModalOpen(true)
+  }
+
+  const openEditInternalEvent = (ev: InternalEventItem) => {
+    setInternalEventEditing(ev)
+    setInternalEventForm({
+      type: ev.type, title: ev.title, notes: ev.notes ?? '', startDate: ev.startDate, endDate: ev.endDate,
+      yachtId: ev.yachtId ?? '',
+    })
+    setInternalEventError('')
+    setInternalEventDeleteConfirm(false)
+    setInternalEventModalOpen(true)
+  }
+
+  const saveInternalEvent = async () => {
+    if (!internalEventForm.title.trim()) { setInternalEventError('Title is required'); return }
+    if (internalEventForm.endDate < internalEventForm.startDate) { setInternalEventError('End date cannot be before start date'); return }
+    setInternalEventSaving(true)
+    setInternalEventError('')
+    const url    = internalEventEditing ? `/api/internal-events/${internalEventEditing.id}` : '/api/internal-events'
+    const method = internalEventEditing ? 'PATCH' : 'POST'
+    try {
+      const res = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...internalEventForm, yachtId: internalEventForm.yachtId || null }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setInternalEventError(data.error ?? 'Failed to save'); setInternalEventSaving(false); return }
+      setInternalEventModalOpen(false)
+      await fetchInternalEvents()
+    } catch {
+      setInternalEventError('Network error')
+    } finally {
+      setInternalEventSaving(false)
+    }
+  }
+
+  const deleteInternalEvent = async () => {
+    if (!internalEventEditing) return
+    setInternalEventSaving(true)
+    try {
+      await fetch(`/api/internal-events/${internalEventEditing.id}`, { method: 'DELETE' })
+      setInternalEventModalOpen(false)
+      setInternalEventDeleteConfirm(false)
+      await fetchInternalEvents()
+    } finally {
+      setInternalEventSaving(false)
+    }
   }
 
   const getDays = (s: string, e: string) =>
@@ -1504,12 +1636,21 @@ export default function CalendarView() {
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
         </div>
         {canEdit && (
-          <Button
-            onClick={() => { setSelectedDate(''); setWizardOpen(true) }}
-            className="bg-[#bdac7e] hover:bg-[#a89660] text-white shadow-sm"
-          >
-            <Plus className="mr-2 h-4 w-4" /> New Booking
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={openAddInternalEvent}
+              className="shadow-sm"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add Internal Event
+            </Button>
+            <Button
+              onClick={() => { setSelectedDate(''); setWizardOpen(true) }}
+              className="bg-[#bdac7e] hover:bg-[#a89660] text-white shadow-sm"
+            >
+              <Plus className="mr-2 h-4 w-4" /> New Booking
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1879,6 +2020,13 @@ export default function CalendarView() {
                   <span className="text-[10px] text-slate-400 whitespace-nowrap">{l.label}</span>
                 </div>
               ))}
+              <span className="w-px h-3.5 bg-border shrink-0" />
+              {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
+                <div key={t} className="flex items-center gap-1.5">
+                  <span className="w-4 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: INTERNAL_EVENT_COLOR[t] }} />
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap">{INTERNAL_EVENT_LABEL[t]}</span>
+                </div>
+              ))}
             </div>
 
           </div>
@@ -1922,6 +2070,7 @@ export default function CalendarView() {
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
                     .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
                 }
+                internalEvents={filteredInternalEvents}
                 allBookings={bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter)}
                 allOpenTrips={openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
@@ -1937,6 +2086,7 @@ export default function CalendarView() {
                   }).catch(() => setBookingDetailLoading(false))
                 }}
                 onOpenTripClick={t => { setIsFullscreen(false); handleOpenTripClick(t) }}
+                onInternalEventClick={e => { setIsFullscreen(false); openEditInternalEvent(e) }}
                 isInFilterRange={isInFilterRange}
                 fillHeight
               />
@@ -1962,6 +2112,7 @@ export default function CalendarView() {
                   (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
                     .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
                 }
+                internalEvents={filteredInternalEvents}
                 allBookings={bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter)}
                 allOpenTrips={openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
                 yachtColorMap={yachtColorMap}
@@ -1976,6 +2127,7 @@ export default function CalendarView() {
                   }).catch(() => setBookingDetailLoading(false))
                 }}
                 onOpenTripClick={handleOpenTripClick}
+                onInternalEventClick={openEditInternalEvent}
                 isInFilterRange={isInFilterRange}
                 onPrev={() => navigate('prev')}
                 onNext={() => navigate('next')}
@@ -2976,6 +3128,116 @@ export default function CalendarView() {
           openTripId={wlBooking.openTripId}
         />
       )}
+
+      {/* ── Add/Edit Internal Event Modal ── */}
+      <Dialog open={internalEventModalOpen} onOpenChange={v => { setInternalEventModalOpen(v); if (!v) setInternalEventDeleteConfirm(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{internalEventEditing ? 'Internal Event' : 'Add Internal Event'}</DialogTitle>
+            <DialogDescription>Docking, crossing, overhaul, or a company-wide need — shown on the calendar in its own color.</DialogDescription>
+          </DialogHeader>
+
+          {internalEventDeleteConfirm ? (
+            <div className="space-y-4 py-1">
+              <p className="text-sm">Delete <span className="font-semibold">{internalEventEditing?.title}</span>? This cannot be undone.</p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setInternalEventDeleteConfirm(false)}>Cancel</Button>
+                <Button variant="destructive" disabled={internalEventSaving} onClick={deleteInternalEvent}>
+                  {internalEventSaving ? 'Deleting…' : 'Delete'}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4 py-1">
+                {internalEventError && <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded-lg px-3 py-2">{internalEventError}</p>}
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Type</Label>
+                  <Select value={internalEventForm.type} onValueChange={v => setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
+                        <SelectItem key={t} value={t}>
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: INTERNAL_EVENT_COLOR[t] }} />
+                            {INTERNAL_EVENT_LABEL[t]}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
+                  <Input
+                    placeholder={internalEventForm.type === 'COMPANY_NEED' ? 'e.g. Photoshoot, All Crew Annual Leave' : 'e.g. Engine overhaul'}
+                    value={internalEventForm.title}
+                    onChange={e => setInternalEventForm(f => ({ ...f, title: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yacht</Label>
+                  <Select value={internalEventForm.yachtId || '__all__'} onValueChange={v => setInternalEventForm(f => ({ ...f, yachtId: v === '__all__' ? '' : v }))}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Company-wide (all yachts)</SelectItem>
+                      {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
+                    <input
+                      type="date"
+                      value={internalEventForm.startDate}
+                      onChange={e => setInternalEventForm(f => ({ ...f, startDate: e.target.value, endDate: f.endDate < e.target.value ? e.target.value : f.endDate }))}
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
+                    <input
+                      type="date"
+                      value={internalEventForm.endDate}
+                      min={internalEventForm.startDate}
+                      onChange={e => setInternalEventForm(f => ({ ...f, endDate: e.target.value }))}
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes (optional)</Label>
+                  <Textarea
+                    rows={2}
+                    value={internalEventForm.notes}
+                    onChange={e => setInternalEventForm(f => ({ ...f, notes: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                {internalEventEditing && canEdit ? (
+                  <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setInternalEventDeleteConfirm(true)}>
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                  </Button>
+                ) : <span />}
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setInternalEventModalOpen(false)}>Cancel</Button>
+                  <Button disabled={internalEventSaving} onClick={saveInternalEvent} className="bg-[#bdac7e] hover:bg-[#a89660] text-white">
+                    {internalEventSaving ? 'Saving…' : internalEventEditing ? 'Save Changes' : 'Add Event'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Print Modal ── */}
       {printModalOpen && (
