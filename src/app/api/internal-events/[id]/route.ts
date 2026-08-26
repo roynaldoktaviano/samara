@@ -13,7 +13,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { type, title, notes, startDate, endDate, yachtId } = await req.json()
+  const { type, title, notes, startDate, endDate, yachtId, internalOnly } = await req.json()
 
   if (type !== undefined && !TYPES.includes(type)) return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
   if (title !== undefined && !title?.trim()) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -34,6 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(startDate !== undefined && { startDate: new Date(startDate) }),
       ...(endDate !== undefined && { endDate: new Date(endDate) }),
       ...(yachtId !== undefined && { yachtId: yachtId || null }),
+      ...(internalOnly !== undefined && { internalOnly: internalOnly !== false }),
     },
     include: { yacht: { select: { id: true, name: true } } },
   })

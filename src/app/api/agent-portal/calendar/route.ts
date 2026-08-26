@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
 
   try {
-    const [bookings, openTrips] = await Promise.all([
+    const [bookings, openTrips, internalEvents] = await Promise.all([
       db.booking.findMany({
         where: { status: { not: 'cancelled' }, yachtId },
         select: { id: true, startDate: true, endDate: true, status: true, tripType: true },
@@ -31,6 +31,12 @@ export async function GET(request: NextRequest) {
           yacht: { include: { cabins: { orderBy: { name: 'asc' } } } },
         },
         orderBy: { startDate: 'asc' },
+      }),
+      // internalOnly:false events (this yacht, or company-wide) also block this feed —
+      // surfaced as a plain "booked" range, same reasoning as public/calendar's route.
+      db.internalEvent.findMany({
+        where: { internalOnly: false, OR: [{ yachtId }, { yachtId: null }] },
+        select: { id: true, startDate: true, endDate: true },
       }),
     ])
 
@@ -62,7 +68,10 @@ export async function GET(request: NextRequest) {
     const safeBookings = bookings.map(b => ({
       id: b.id, startDate: b.startDate, endDate: b.endDate, status: b.status, tripType: b.tripType,
     }))
+    const eventBookings = internalEvents.map(ev => ({
+      id: `internal-${ev.id}`, startDate: ev.startDate, endDate: ev.endDate, status: 'confirmed', tripType: 'PRIVATE_CHARTER',
+    }))
 
-    return NextResponse.json({ bookings: safeBookings, openTrips: trips })
+    return NextResponse.json({ bookings: [...safeBookings, ...eventBookings], openTrips: trips })
   } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to load calendar' }, { status: 500 }) }
 }

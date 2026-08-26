@@ -911,6 +911,9 @@ model InternalEvent {
   endDate     DateTime
   yachtId     String?
   yacht       Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  // true (default) = shown only on the internal ERP calendar. false = also surfaced as a
+  // blocked/unavailable range on the agent portal and public/external booking calendars.
+  internalOnly Boolean          @default(true)
   createdById String?
   createdBy   User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime          @default(now())

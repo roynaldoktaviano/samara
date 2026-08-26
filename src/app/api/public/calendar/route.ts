@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [bookings, openTrips, yachts] = await Promise.all([
+    const [bookings, openTrips, yachts, internalEvents] = await Promise.all([
       db.booking.findMany({
         where: { status: { not: 'cancelled' } },
         select: {
@@ -61,6 +61,12 @@ export async function GET(req: NextRequest) {
       db.yacht.findMany({
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
+      }),
+      // internalOnly:false events also block this feed — surfaced as plain "booked"
+      // ranges (no docking/overhaul/etc. detail leaks to agents or the public site).
+      db.internalEvent.findMany({
+        where: { internalOnly: false },
+        select: { id: true, startDate: true, endDate: true, yachtId: true },
       }),
     ])
 
@@ -101,7 +107,26 @@ export async function GET(req: NextRequest) {
       openTripId: b.openTrip?.id ?? null,
     }))
 
-    return NextResponse.json({ bookings: safeBookings, openTrips: trips, yachts })
+    // A company-wide event (yachtId null) blocks every yacht — expand it into one
+    // synthetic "booking" per yacht so it reads the same as any other blocked range.
+    const eventBookings = internalEvents.flatMap(ev => {
+      const targets = ev.yachtId ? [ev.yachtId] : yachts.map(y => y.id)
+      return targets.map(yachtId => {
+        const yacht = yachts.find(y => y.id === yachtId)
+        return {
+          id: `internal-${ev.id}-${yachtId}`,
+          startDate: ev.startDate,
+          endDate: ev.endDate,
+          status: 'confirmed',
+          tripType: 'PRIVATE_CHARTER',
+          yachtName: yacht?.name ?? '',
+          yachtId,
+          openTripId: null,
+        }
+      })
+    })
+
+    return NextResponse.json({ bookings: [...safeBookings, ...eventBookings], openTrips: trips, yachts })
   } catch (err) {
     console.error('public calendar error:', err)
     return NextResponse.json({ error: 'Failed to load calendar' }, { status: 500 })

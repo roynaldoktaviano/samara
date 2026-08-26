@@ -14,13 +14,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ yac
     })
     if (!yacht || yacht.deletedAt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const [bookings, openTrips] = await Promise.all([
+    const [bookings, openTrips, internalEvents] = await Promise.all([
       db.booking.findMany({
         where: { yachtId, status: { not: 'cancelled' } },
         select: { startDate: true, endDate: true },
       }),
       db.openTrip.findMany({
         where: { yachtId, status: { not: 'cancelled' } },
+        select: { startDate: true, endDate: true },
+      }),
+      // internalOnly:false events (this yacht, or company-wide) also block this public
+      // feed — they're indistinguishable from a real booking here by design (no reason
+      // details leak to this route, same as everything else it returns).
+      db.internalEvent.findMany({
+        where: { internalOnly: false, OR: [{ yachtId }, { yachtId: null }] },
         select: { startDate: true, endDate: true },
       }),
     ])
@@ -38,6 +45,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ yac
     }
     bookings.forEach(b => markRange(b.startDate, b.endDate))
     openTrips.forEach(t => markRange(t.startDate, t.endDate))
+    internalEvents.forEach(e => markRange(e.startDate, e.endDate))
 
     return NextResponse.json({ yachtName: yacht.name, bookedDates: [...booked].sort() })
   } catch (err) {

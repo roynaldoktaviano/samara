@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { BookingWizard } from '@/components/bookings/BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
@@ -70,6 +71,7 @@ interface InternalEventItem {
   endDate: string
   yachtId: string | null
   yachtName: string | null
+  internalOnly: boolean
 }
 
 const INTERNAL_EVENT_LABEL: Record<InternalEventType, string> = {
@@ -856,7 +858,7 @@ export default function CalendarView() {
   const [internalEventModalOpen, setInternalEventModalOpen] = useState(false)
   const [internalEventEditing, setInternalEventEditing]     = useState<InternalEventItem | null>(null)
   const [internalEventForm, setInternalEventForm] = useState({
-    type: 'DOCKING' as InternalEventType, title: '', notes: '', startDate: todayStr(), endDate: todayStr(), yachtId: '',
+    type: 'DOCKING' as InternalEventType, title: '', notes: '', startDate: todayStr(), endDate: todayStr(), yachtId: '', internalOnly: true,
   })
   const [internalEventSaving, setInternalEventSaving] = useState(false)
   const [internalEventError, setInternalEventError]   = useState('')
@@ -1134,6 +1136,7 @@ export default function CalendarView() {
               id: e.id, type: e.type, title: e.title, notes: e.notes ?? undefined,
               startDate: e.startDate.split('T')[0], endDate: e.endDate.split('T')[0],
               yachtId: e.yachtId ?? null, yachtName: e.yacht?.name ?? null,
+              internalOnly: e.internalOnly !== false,
             }))
           : []
       )
@@ -1387,6 +1390,7 @@ export default function CalendarView() {
     setInternalEventForm({
       type: 'DOCKING', title: '', notes: '', startDate: todayStr(), endDate: todayStr(),
       yachtId: yachtFilter ? (yachts.find(y => y.name === yachtFilter)?.id ?? '') : '',
+      internalOnly: true,
     })
     setInternalEventError('')
     setInternalEventModalOpen(true)
@@ -1396,7 +1400,7 @@ export default function CalendarView() {
     setInternalEventEditing(ev)
     setInternalEventForm({
       type: ev.type, title: ev.title, notes: ev.notes ?? '', startDate: ev.startDate, endDate: ev.endDate,
-      yachtId: ev.yachtId ?? '',
+      yachtId: ev.yachtId ?? '', internalOnly: ev.internalOnly,
     })
     setInternalEventError('')
     setInternalEventDeleteConfirm(false)
@@ -3233,6 +3237,22 @@ export default function CalendarView() {
                     onChange={e => setInternalEventForm(f => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
+
+                <label className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={internalEventForm.internalOnly}
+                    onCheckedChange={v => setInternalEventForm(f => ({ ...f, internalOnly: v === true }))}
+                  />
+                  <span>
+                    <span className="text-sm font-medium block">Internal Only</span>
+                    <span className="text-xs text-muted-foreground">
+                      {internalEventForm.internalOnly
+                        ? "Only visible on this internal calendar — hidden from the agent portal and public/external calendars."
+                        : "Also shown as unavailable on the agent portal and public/external calendars."}
+                    </span>
+                  </span>
+                </label>
               </div>
 
               <DialogFooter className="gap-2 sm:justify-between">

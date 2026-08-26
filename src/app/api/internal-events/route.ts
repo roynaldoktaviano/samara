@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { type, title, notes, startDate, endDate, yachtId } = await req.json()
+  const { type, title, notes, startDate, endDate, yachtId, internalOnly } = await req.json()
 
   if (!TYPES.includes(type)) return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
   if (!title?.trim()) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       type, title: title.trim(), notes: notes?.trim() || null,
       startDate: new Date(startDate), endDate: new Date(endDate),
       yachtId: yachtId || null,
+      internalOnly: internalOnly !== false,
       createdById: session.user.id,
     },
     include: { yacht: { select: { id: true, name: true } } },
