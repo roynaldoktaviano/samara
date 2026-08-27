@@ -3,10 +3,14 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { receiveGoods } from '@/lib/purchasing/receiveGoods'
+import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// POST-only: Boat Captain/Cruise Director may receive goods for their own yacht (see the
+// yacht-ownership check below), but never the company-wide receipts list GET returns.
+const RECEIVE_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -33,7 +37,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, RECEIVE_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
   const { orderId, locationId, notes, receivePhotoKey, receiverName, items } = body
@@ -46,8 +50,8 @@ export async function POST(req: NextRequest) {
     select: {
       status: true,
       deliveryLocationId: true,
-      deliveryLocation: { select: { managedBy: true } },
-      transitStops: { orderBy: { sequence: 'asc' }, take: 1, select: { location: { select: { managedBy: true } } } },
+      deliveryLocation: { select: { managedBy: true, yachtId: true } },
+      transitStops: { orderBy: { sequence: 'asc' }, take: 1, select: { location: { select: { managedBy: true, yachtId: true } } } },
     },
   })
   if (!poForPermission) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
@@ -59,12 +63,22 @@ export async function POST(req: NextRequest) {
   // (receiveGoods below re-derives this the same way; here we only need it to know which
   // team's permission applies).
   const firstStop = poForPermission.transitStops[0]
-  const receivingLocationManagedBy = (firstStop ? firstStop.location.managedBy : poForPermission.deliveryLocation?.managedBy) ?? 'WAREHOUSE'
-  const receiveAllowed = receivingLocationManagedBy === 'PURCHASING'
-    ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
-    : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-  if (!roleMatches(role, receiveAllowed))
-    return NextResponse.json({ error: `Only ${receivingLocationManagedBy.toLowerCase()} team can receive items for this PO` }, { status: 403 })
+  const receivingLocation = firstStop ? firstStop.location : poForPermission.deliveryLocation
+  if (roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])) {
+    // Yacht-scoped roles skip the managedBy/team check entirely — they're allowed here
+    // only for their own assigned yacht, whatever the location's managedBy says.
+    const yachtId = await resolveAssignedYachtId(db, session.user.id)
+    if (!yachtId || receivingLocation?.yachtId !== yachtId) {
+      return NextResponse.json({ error: 'PO not found' }, { status: 404 })
+    }
+  } else {
+    const receivingLocationManagedBy = receivingLocation?.managedBy ?? 'WAREHOUSE'
+    const receiveAllowed = receivingLocationManagedBy === 'PURCHASING'
+      ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+      : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+    if (!roleMatches(role, receiveAllowed))
+      return NextResponse.json({ error: `Only ${receivingLocationManagedBy.toLowerCase()} team can receive items for this PO` }, { status: 403 })
+  }
 
   const result = await receiveGoods(db, {
     orderId,

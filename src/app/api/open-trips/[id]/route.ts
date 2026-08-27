@@ -165,7 +165,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(departurePort !== undefined && { departurePort: departurePort || null }),
         ...(arrivalPort   !== undefined && { arrivalPort: arrivalPort || null }),
         ...(status        !== undefined && { status }),
-        ...(pricePerCabin !== undefined && { pricePerCabin: parseFloat(pricePerCabin) }),
+        ...(pricePerCabin !== undefined && { pricePerCabin: parseFloat(pricePerCabin) || 0 }),
         ...(startDate     !== undefined && { startDate: new Date(startDate) }),
         ...(endDate       !== undefined && { endDate:   new Date(endDate) }),
         ...(yachtId       !== undefined && { yachtId }),

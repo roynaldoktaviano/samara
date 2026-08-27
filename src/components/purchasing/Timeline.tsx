@@ -22,7 +22,7 @@ export function Timeline({
   onViewPhoto?: (photoKey: string) => void
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-4 ${sticky ? 'sticky top-4' : ''}`}>
+    <div className={`rounded-xl border bg-card p-4 ${sticky ? 'lg:sticky lg:top-4' : ''}`}>
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4">{title}</p>
       <div>
         {steps.map((step, idx) => (

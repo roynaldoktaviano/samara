@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
-const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR']
+const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function PUT(
   req: NextRequest,
@@ -17,7 +17,7 @@ export async function PUT(
   }
 
   const { id } = await params
-  const { name, email, role, password, employeeId, purchasingDivision } = await req.json()
+  const { name, email, role, password, employeeId, purchasingDivision, assignedYachtId } = await req.json()
 
   if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Cannot assign SUPER_ADMIN role through this interface' }, { status: 403 })
@@ -35,9 +35,14 @@ export async function PUT(
   if (role     !== undefined) data.role     = role
   if (password)               data.password = await bcrypt.hash(password, 12)
   if (purchasingDivision !== undefined) data.purchasingDivision = purchasingDivision || null
+  if (assignedYachtId !== undefined) data.assignedYachtId = assignedYachtId || null
 
   try {
     const db = await getDb(session)
+
+    if (assignedYachtId && !(await db.yacht.findUnique({ where: { id: assignedYachtId }, select: { id: true } }))) {
+      return NextResponse.json({ error: 'Selected yacht was not found' }, { status: 400 })
+    }
 
     if (employeeId !== undefined) {
       // Unlink whichever employee currently holds this login (if any) before
@@ -53,7 +58,7 @@ export async function PUT(
       where: { id },
       data,
       select: {
-        id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true,
+        id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true, assignedYachtId: true,
         employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },
       },
     })

@@ -138,7 +138,8 @@ export default function MyApprovalsPage() {
       </div>
 
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Purchase Requests</h3>
-      <div className="rounded-lg border overflow-hidden">
+      {/* Desktop table — full column set, only makes sense at desktop+ width */}
+      <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -206,6 +207,59 @@ export default function MyApprovalsPage() {
         </table></div>
       </div>
 
+      {/* Tablet/mobile card layout — one PR per card, Approve/Reject inline */}
+      <div className="desktop:hidden space-y-2">
+        {loading ? (
+          [...Array(3)].map((_, i) => (
+            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
+              <div className="h-3.5 w-32 rounded bg-muted" />
+              <div className="h-3.5 w-48 rounded bg-muted" />
+            </div>
+          ))
+        ) : requests.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
+            <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            No PRs waiting for your approval.
+          </div>
+        ) : requests.map(r => (
+          <div key={r.id} className="rounded-lg border p-3 space-y-2">
+            <button onClick={() => openDetail(r)} className="w-full text-left space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
+                  {r.prNumber}
+                  {r.isUrgent && <UrgentBadge />}
+                </span>
+                {r.totalBudget > 0 && (
+                  <span className="text-xs font-medium tabular-nums shrink-0">Rp {new Intl.NumberFormat('id-ID').format(r.totalBudget)}</span>
+                )}
+              </div>
+              <p className="text-sm text-foreground">
+                {r.requestedByEmployee ? `${r.requestedByEmployee.fullName}${r.requestedByEmployee.department ? ` · ${r.requestedByEmployee.department}` : ''}` : '—'}
+              </p>
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                {r.deliveryLocation ? (
+                  <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{r.deliveryLocation.name}</span>
+                ) : <span />}
+                <span className="shrink-0">{r.itemCount} item{r.itemCount !== 1 ? 's' : ''} · {fmtDate(r.createdAt)}</span>
+              </div>
+            </button>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                disabled={actingId === r.id}
+                onClick={() => act(r.id, 'approve')}
+                className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+              </button>
+              <button
+                disabled={actingId === r.id}
+                onClick={() => setRejectModal(r)}
+                className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Supplier Selections</h3>
       {quotationItems.length === 0 ? (

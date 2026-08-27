@@ -9,7 +9,17 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+// WAREHOUSE sits in VIEW_ALLOWED, which (see GET below) skips the per-request ownership
+// check entirely — an existing, wider allowance kept as-is. Crew/Boat Captain/Cruise
+// Director are deliberately NOT added here: they must always fall through to the
+// ownership/approver check below, since they have no fulfillment role in Purchasing the
+// way Warehouse does.
 const VIEW_ALLOWED = [...ALLOWED, 'WAREHOUSE']
+// Roles that may only ever view/delete their own submissions — never Purchasing's full
+// queue. Mirrors OWN_ONLY_ROLES in ../route.ts.
+const OWN_ONLY_ROLES = ['WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+// Roles allowed to call DELETE at all (still subject to the own-draft-only check inside).
+const DELETE_ALLOWED = [...VIEW_ALLOWED, 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -49,11 +59,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!roleMatches(role, VIEW_ALLOWED)) {
     // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
-    if (role === 'WAREHOUSE') {
-      if (request.requestedById !== session.user.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (roleMatches(role, OWN_ONLY_ROLES) && request.requestedById === session.user.id) {
+      // own submission — allowed straight through
     } else {
-      // Not on the Purchasing team and not Warehouse — still let the PR's assigned
-      // approver (any role, e.g. a department manager) open it to review before approving.
+      // Not on the Purchasing team and not the requester — still let the PR's assigned
+      // approver (any role, e.g. a Boat Captain/Cruise Director or department manager)
+      // open it to review before approving.
       const employee = await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true } })
       if (!employee || request.approverEmployeeId !== employee.id) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -483,11 +494,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, DELETE_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, requestedById: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (role === 'WAREHOUSE' && existing.requestedById !== session.user.id) {
+  if (roleMatches(role, OWN_ONLY_ROLES) && existing.requestedById !== session.user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR yang masih Draft yang bisa dihapus' }, { status: 409 })

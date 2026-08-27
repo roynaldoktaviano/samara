@@ -71,7 +71,9 @@ interface TierInput { nights: number; price: string }
 // Rate-card view: '' (empty string) = the destination-less fallback rate, otherwise a
 // Destination.id — the same `nights` columns (formTiers) are shared across every
 // destination, only the price per cell differs.
-const DEFAULT_RATE_KEY = ''
+// A Radix Select item can't have an empty-string value (reserved for "clear selection"),
+// so this needs a real sentinel — converted back to a null destinationId on save/load.
+const DEFAULT_RATE_KEY = '__default__'
 
 interface RoomInput {
   tempId: string
@@ -301,7 +303,7 @@ export default function Yachts() {
           pricingTiers: Object.entries(r.pricingTiersByDest).flatMap(([destKey, tiers]) =>
             tiers
               .filter(t => t.price && parseFloat(t.price) > 0)
-              .map(t => ({ nights: t.nights, price: parseFloat(t.price), destinationId: destKey || null }))
+              .map(t => ({ nights: t.nights, price: parseFloat(t.price), destinationId: destKey === DEFAULT_RATE_KEY ? null : destKey }))
           ),
         })),
         destinationPrices: Object.entries(destPriceByDest)

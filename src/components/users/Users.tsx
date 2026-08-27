@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
 type PurchasingDivision = 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
 
 interface UserRecord {
@@ -22,6 +22,7 @@ interface UserRecord {
   role: Role
   createdAt: string
   purchasingDivision: PurchasingDivision | null
+  assignedYachtId: string | null
   employeeProfile: { id: string; fullName: string; employeeNumber: string } | null
 }
 
@@ -141,6 +142,27 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     modules: 'Everything Purchasing, Finance, and HR can access',
   },
   {
+    value: 'CREW',
+    label: 'Crew',
+    desc: 'Ship crew — file purchase requests',
+    color: 'bg-sky-100 text-sky-700',
+    modules: 'Purchasing (Purchase Requests only)',
+  },
+  {
+    value: 'BOAT_CAPTAIN',
+    label: 'Boat Captain',
+    desc: 'File & approve crew purchase requests',
+    color: 'bg-blue-100 text-blue-700',
+    modules: 'Purchasing (Purchase Requests, My Approvals)',
+  },
+  {
+    value: 'CRUISE_DIRECTOR',
+    label: 'Cruise Director',
+    desc: 'File & approve crew purchase requests',
+    color: 'bg-indigo-100 text-indigo-700',
+    modules: 'Purchasing (Purchase Requests, My Approvals)',
+  },
+  {
     value: 'ADMIN',
     label: 'Admin',
     desc: 'Full access',
@@ -173,6 +195,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [yachts, setYachts] = useState<{ id: string; name: string }[]>([])
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editUser, setEditUser] = useState<UserRecord | null>(null)
@@ -182,6 +205,7 @@ export default function UsersPage() {
   const [formRole, setFormRole] = useState<Role>('SALES')
   const [formEmployeeId, setFormEmployeeId] = useState('')
   const [formPurchasingDivision, setFormPurchasingDivision] = useState<PurchasingDivision | ''>('')
+  const [formAssignedYachtId, setFormAssignedYachtId] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -201,7 +225,15 @@ export default function UsersPage() {
     if (res.ok) setEmployees(await res.json())
   }
 
-  useEffect(() => { fetchUsers(); fetchEmployees() }, [])
+  const fetchYachts = async () => {
+    const res = await fetch('/api/yachts')
+    if (res.ok) {
+      const data = await res.json() as { id: string; name: string }[]
+      setYachts(data.map(y => ({ id: y.id, name: y.name })))
+    }
+  }
+
+  useEffect(() => { fetchUsers(); fetchEmployees(); fetchYachts() }, [])
 
   // Employees already linked to a different login shouldn't be pickable here —
   // the currently-selected one stays visible so switching back is possible.
@@ -210,7 +242,7 @@ export default function UsersPage() {
   const openAdd = () => {
     setEditUser(null)
     setFormName(''); setFormEmail(''); setFormPassword(''); setFormRole('SALES'); setFormEmployeeId('')
-    setFormPurchasingDivision('')
+    setFormPurchasingDivision(''); setFormAssignedYachtId('')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -220,6 +252,7 @@ export default function UsersPage() {
     setFormName(u.name ?? ''); setFormEmail(u.email); setFormPassword(''); setFormRole(u.role)
     setFormEmployeeId(u.employeeProfile?.id ?? '')
     setFormPurchasingDivision(u.purchasingDivision ?? '')
+    setFormAssignedYachtId(u.assignedYachtId ?? '')
     setShowPw(false); setFormError('')
     setDialogOpen(true)
   }
@@ -229,7 +262,7 @@ export default function UsersPage() {
     setSaving(true)
     try {
       if (editUser) {
-        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision }
+        const body: Record<string, string> = { name: formName, email: formEmail, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision, assignedYachtId: formAssignedYachtId }
         if (formPassword) body.password = formPassword
         const res = await fetch(`/api/users/${editUser.id}`, {
           method: 'PUT',
@@ -241,7 +274,7 @@ export default function UsersPage() {
         const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision }),
+          body: JSON.stringify({ name: formName, email: formEmail, password: formPassword, role: formRole, employeeId: formEmployeeId, purchasingDivision: formPurchasingDivision, assignedYachtId: formAssignedYachtId }),
         })
         if (!res.ok) { const d = await res.json(); setFormError(d.error ?? 'Failed'); return }
       }
@@ -503,6 +536,24 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">Requests submitted for this division only notify and show up for this person (plus Admin/Super Admin).</p>
+              </div>
+            )}
+
+            {(formRole === 'BOAT_CAPTAIN' || formRole === 'CRUISE_DIRECTOR') && (
+              <div className="space-y-1.5">
+                <Label>Assigned Yacht <span className="text-destructive">*</span></Label>
+                <Select value={formAssignedYachtId || 'NONE'} onValueChange={v => setFormAssignedYachtId(v === 'NONE' ? '' : v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">— Select a yacht —</SelectItem>
+                    {yachts.map(y => (
+                      <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">Which yacht this person captains/directs — they only get notified about deliveries to this yacht.</p>
               </div>
             )}
 

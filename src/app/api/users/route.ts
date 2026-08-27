@@ -6,7 +6,7 @@ import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
 
-const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR']
+const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'ADMIN', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -17,7 +17,7 @@ export async function GET() {
   const tenantDb = await getDb(session)
   const users = await tenantDb.user.findMany({
     select: {
-      id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true,
+      id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true, assignedYachtId: true,
       employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },
     },
     orderBy: { createdAt: 'asc' },
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { name, email, password, role, employeeId, purchasingDivision } = await req.json()
+  const { name, email, password, role, employeeId, purchasingDivision, assignedYachtId } = await req.json()
   if (!email || !password || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
@@ -49,6 +49,10 @@ export async function POST(req: Request) {
 
   const tenantDb = await getDb(session)
 
+  if (assignedYachtId && !(await tenantDb.yacht.findUnique({ where: { id: assignedYachtId }, select: { id: true } }))) {
+    return NextResponse.json({ error: 'Selected yacht was not found' }, { status: 400 })
+  }
+
   const normalizedEmail = email.toLowerCase().trim()
   const existing = await tenantDb.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) {
@@ -61,7 +65,7 @@ export async function POST(req: Request) {
   let user: { id: string; name: string | null; email: string; role: string; createdAt: Date }
   try {
     user = await tenantDb.user.create({
-      data: { name: name || null, email: normalizedEmail, password: hashed, role, purchasingDivision: purchasingDivision || null },
+      data: { name: name || null, email: normalizedEmail, password: hashed, role, purchasingDivision: purchasingDivision || null, assignedYachtId: assignedYachtId || null },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     })
   } catch {

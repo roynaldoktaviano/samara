@@ -26,6 +26,9 @@ enum Role {
   HR
   SALES_MARKETING // combined role — treated as SALES for sales-gated screens, MARKETING for marketing-gated ones
   FINANCE_DIRECTOR // combined role — treated as PURCHASING + FINANCE + HR (see src/lib/role-utils.ts)
+  CREW // ship crew — Purchase Request module only, no approval authority
+  BOAT_CAPTAIN // Purchase Request module + approves their crew's requests + receives delivery links for their assignedYacht
+  CRUISE_DIRECTOR // same scope as BOAT_CAPTAIN
 }
 
 enum BookingSource {
@@ -111,6 +114,11 @@ model User {
   // and gets notified about every PR regardless of division, same as before this field
   // existed, so this stays fully backward-compatible until an admin actually sets it.
   purchasingDivision                     PurchaseRequestDivision?
+  // For BOAT_CAPTAIN/CRUISE_DIRECTOR-role users only: which yacht they're captain/director
+  // of — used to route auto-generated PO/Transfer receive links to the right person only
+  // (e.g. Otium's captain never gets notified about a delivery to another yacht).
+  assignedYachtId                        String?
+  assignedYacht                          Yacht?                      @relation(fields: [assignedYachtId], references: [id], onDelete: SetNull)
   createdAt                              DateTime                    @default(now())
   updatedAt                              DateTime                    @updatedAt
   bookings                               Booking[]                   @relation("SalespersonBookings")
@@ -172,6 +180,8 @@ model User {
   loanFinanceDecisions                   LoanRequest[]               @relation("LoanFinanceDecidedBy")
   loanSpecialDecisions                   LoanRequest[]               @relation("LoanSpecialDecidedBy")
   internalEventsCreated                  InternalEvent[]
+
+  @@index([assignedYachtId])
 }
 
 model Customer {
@@ -554,6 +564,7 @@ model Yacht {
   posDiscounts       PosDiscount[]
   documents          LegalDocument[]
   internalEvents     InternalEvent[]
+  assignedUsers      User[]
 }
 
 enum MediaFileType {
@@ -903,24 +914,34 @@ model Maintenance {
 // company-wide event shown regardless of which yacht tab is selected, matching how a
 // crew-wide leave block isn't tied to any one vessel.
 model InternalEvent {
-  id          String            @id @default(cuid())
-  type        InternalEventType
-  title       String
-  notes       String?
-  startDate   DateTime
-  endDate     DateTime
-  yachtId     String?
-  yacht       Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  id           String            @id @default(cuid())
+  type         InternalEventType
+  title        String
+  notes        String?
+  startDate    DateTime
+  endDate      DateTime
+  yachtId      String?
+  yacht        Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   // true (default) = shown only on the internal ERP calendar. false = also surfaced as a
   // blocked/unavailable range on the agent portal and public/external booking calendars.
-  internalOnly Boolean          @default(true)
-  createdById String?
-  createdBy   User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  internalOnly Boolean           @default(true)
+  createdById  String?
+  createdBy    User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   @@index([yachtId])
   @@index([startDate, endDate])
+}
+
+// One row per Role = an admin-edited override of which sidebar modules that role can open.
+// A role with no row here just uses the hardcoded defaults in src/lib/nav-items.ts —
+// see src/lib/role-permissions.ts for the merge logic.
+model RoleModuleAccess {
+  id        String   @id @default(cuid())
+  role      Role     @unique
+  modules   String[]
+  updatedAt DateTime @updatedAt
 }
 
 model Expense {
@@ -1462,35 +1483,35 @@ enum StockCountStatus {
 }
 
 model PurchaseItem {
-  id               String   @id @default(cuid())
-  sku              String   @unique
-  name             String
-  type             String   @default("MAINTENANCE")
-  category         String
-  baseUnit         String
-  purchaseUnit     String
-  conversionFactor Float    @default(1)
-  standardCost     Float    @default(0)
-  sellingPrice     Float    @default(0)
-  valuationMethod  String   @default("FIFO")
-  minStock         Float    @default(0)
-  reorderQty       Float    @default(0)
-  imageKey         String?
-  isActive         Boolean  @default(true)
-  isSoldInPos      Boolean  @default(true)
+  id                String   @id @default(cuid())
+  sku               String   @unique
+  name              String
+  type              String   @default("MAINTENANCE")
+  category          String
+  baseUnit          String
+  purchaseUnit      String
+  conversionFactor  Float    @default(1)
+  standardCost      Float    @default(0)
+  sellingPrice      Float    @default(0)
+  valuationMethod   String   @default("FIFO")
+  minStock          Float    @default(0)
+  reorderQty        Float    @default(0)
+  imageKey          String?
+  isActive          Boolean  @default(true)
+  isSoldInPos       Boolean  @default(true)
   // false for items that are purchased but never held as inventory (services, one-off
   // buys promoted from a PR/PO "Custom Request" line) — receiveGoods() still logs their
   // receipt for history, but never pools them into a location's stock balance, and they
   // never trigger min-stock/reorder logic. Default true keeps every existing catalog row
   // (all of which are real stock items today) unaffected.
-  isStockTracked   Boolean  @default(true)
+  isStockTracked    Boolean  @default(true)
   // Where a non-stock item currently physically sits — manually set (see "Change
   // Location" in Items & Pricing), since these items are never pooled into StockLot
   // balances and so have no other way to answer "where is it right now". Meaningless
   // for stock-tracked items, which already have a real location breakdown via StockLot.
   currentLocationId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   stockLots        StockLot[]
   requestItems     PurchaseRequestItem[]
@@ -1501,7 +1522,7 @@ model PurchaseItem {
   movements        StockMovement[]
   stockCountItems  StockCountItem[]
   cashierSaleItems CashierSaleItem[]
-  currentLocation  StockLocation? @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  currentLocation  StockLocation?        @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   posMenuItems     PosMenuItem[]
   posPackageItems  PosPackageItem[]
 
@@ -1523,19 +1544,19 @@ model StockLocation {
   isActive     Boolean           @default(true)
   createdAt    DateTime          @default(now())
 
-  yacht            Yacht?                     @relation(fields: [yachtId], references: [id], onDelete: SetNull)
-  parent           StockLocation?             @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children         StockLocation[]            @relation("LocationParent")
-  stockLots        StockLot[]
-  transfersFrom    StockTransfer[]            @relation("TransferFrom")
-  transfersTo      StockTransfer[]            @relation("TransferTo")
-  receipts         GoodsReceipt[]
-  stockCounts      StockCount[]
-  purchaseRequests PurchaseRequest[]          @relation("PRDelivery")
-  purchaseOrders   PurchaseOrder[]            @relation("PODelivery")
-  transitStops     PurchaseOrderTransitStop[]
-  cashierSales     CashierSale[]
-  nonStockItemsHere PurchaseItem[] @relation("PurchaseItemCurrentLocation")
+  yacht             Yacht?                     @relation(fields: [yachtId], references: [id], onDelete: SetNull)
+  parent            StockLocation?             @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children          StockLocation[]            @relation("LocationParent")
+  stockLots         StockLot[]
+  transfersFrom     StockTransfer[]            @relation("TransferFrom")
+  transfersTo       StockTransfer[]            @relation("TransferTo")
+  receipts          GoodsReceipt[]
+  stockCounts       StockCount[]
+  purchaseRequests  PurchaseRequest[]          @relation("PRDelivery")
+  purchaseOrders    PurchaseOrder[]            @relation("PODelivery")
+  transitStops      PurchaseOrderTransitStop[]
+  cashierSales      CashierSale[]
+  nonStockItemsHere PurchaseItem[]             @relation("PurchaseItemCurrentLocation")
 
   @@index([type])
   @@index([yachtId])
@@ -1761,18 +1782,18 @@ model StockMovement {
 }
 
 model PurchaseRequest {
-  id                    String                @id @default(cuid())
-  prNumber              String                @unique
+  id                    String                   @id @default(cuid())
+  prNumber              String                   @unique
   requestedById         String
   requestedByEmployeeId String?
   approverEmployeeId    String?
   deliveryLocationId    String?
   notes                 String?
-  status                PurchaseRequestStatus @default(DRAFT)
+  status                PurchaseRequestStatus    @default(DRAFT)
   // What this request is for — general restocking, or a specific upcoming trip. Trip
   // requests link to the actual Booking so Purchasing knows which charter/departure the
   // items need to be ready for.
-  purpose               PurchaseRequestPurpose @default(STOCK_INVENTORY)
+  purpose               PurchaseRequestPurpose   @default(STOCK_INVENTORY)
   tripBookingId         String?
   pdfKey                String?
   // Which Purchasing staffer's queue this belongs to — see PurchaseRequestDivision.
@@ -1782,7 +1803,7 @@ model PurchaseRequest {
   // Set by the requester on the public /request-order intake form — lets Purchasing
   // triage at a glance instead of discovering urgency buried in free-text notes.
   neededByDate          DateTime?
-  isUrgent              Boolean               @default(false)
+  isUrgent              Boolean                  @default(false)
   urgentReason          String?
   // One {action}At/{action}ById pair per status transition — lets KPI reporting
   // compute response time between any two steps (e.g. same-day verification, or
@@ -1797,8 +1818,8 @@ model PurchaseRequest {
   rejectedAt            DateTime?
   cancelledById         String?
   cancelledAt           DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   requestedBy         User                  @relation("PRRequestedBy", fields: [requestedById], references: [id])
   requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
@@ -1904,7 +1925,7 @@ model PurchaseRequestItem {
   // the convert action. Lets conversion run in multiple passes as items clear quotation
   // approval at different times — an item already converted is never re-processed, and a
   // PurchaseRequest only reaches CONVERTED once every item has this set.
-  convertedAt DateTime?
+  convertedAt   DateTime?
   // Which PO this item actually landed in when converted — a PR can convert in several
   // passes / across several supplier groups, so this is the only way to know which of a
   // PR's several POs a given item belongs to (used to group/label items in the PR item list).
@@ -2008,23 +2029,23 @@ model PurchaseOrder {
   requestedByDepartment String?
   requestedByRole       String?
 
-  request             PurchaseRequest?           @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  supplier            Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  deliveryLocation    StockLocation?             @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  createdBy           User?                      @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  requestedByEmployee Employee?                  @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
-  booking             Booking?                   @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  items               PurchaseOrderItem[]
-  receipts            GoodsReceipt[]
-  notifications       Notification[]
-  paymentRequests     POPaymentRequest[]
-  reimbursements      POReimbursement[]
-  deliveryFees        DeliveryFee[]
-  stockLots           StockLot[]
-  transitStops        PurchaseOrderTransitStop[]
-  transitTransfers    StockTransfer[]
-  followUps           PurchaseFollowUp[]
-  convertedRequestItems PurchaseRequestItem[] @relation("PRItemConvertedPo")
+  request               PurchaseRequest?           @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier              Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  deliveryLocation      StockLocation?             @relation("PODelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  createdBy             User?                      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  requestedByEmployee   Employee?                  @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  booking               Booking?                   @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  items                 PurchaseOrderItem[]
+  receipts              GoodsReceipt[]
+  notifications         Notification[]
+  paymentRequests       POPaymentRequest[]
+  reimbursements        POReimbursement[]
+  deliveryFees          DeliveryFee[]
+  stockLots             StockLot[]
+  transitStops          PurchaseOrderTransitStop[]
+  transitTransfers      StockTransfer[]
+  followUps             PurchaseFollowUp[]
+  convertedRequestItems PurchaseRequestItem[]      @relation("PRItemConvertedPo")
 
   @@index([createdById])
   @@index([status])
@@ -2572,29 +2593,29 @@ model CompensationBand {
 }
 
 model Employee {
-  id               String    @id @default(cuid())
-  employeeNumber   String    @unique
-  fullName         String
-  department       String?
-  gender           String?
-  employmentStatus String? // e.g. Permanent | Contract | Probation | Intern
+  id                     String             @id @default(cuid())
+  employeeNumber         String             @unique
+  fullName               String
+  department             String?
+  gender                 String?
+  employmentStatus       String? // e.g. Permanent | Contract | Probation | Intern
   // Skill/experience tier within their EmployeeRole — the compensation band (see
   // CompensationBand) this employee's actual basicSalary gets compared against.
-  level            CompensationLevel?
-  leaveBalance     Int?
+  level                  CompensationLevel?
+  leaveBalance           Int?
   // Which entitlement policy this person's leaveBalance accrues under — kept as free
   // text (like employmentStatus/department) rather than a numeric "days" column since
   // real policies mix units (e.g. crew get a lump "2 bulan" block, not a daily count).
   leaveEntitlementPolicy String?
-  joinDate         DateTime?
+  joinDate               DateTime?
   // Only meaningful for fixed-term employment (Probation/Internship/Freelance/PKWT) —
   // Permanent (PKWTT) staff typically leave contractEndDate null. Powers "contracts
   // expiring soon" reporting once that's built.
-  contractStartDate DateTime?
-  contractEndDate   DateTime?
-  phone            String?
-  address          String?
-  birthDate        DateTime?
+  contractStartDate      DateTime?
+  contractEndDate        DateTime?
+  phone                  String?
+  address                String?
+  birthDate              DateTime?
 
   // Contact Info — extended personal data
   nikPassport              String? // NIK (national ID) or Passport number
@@ -2672,7 +2693,7 @@ model Employee {
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   purchaseRequests          PurchaseRequest[]
-  purchaseRequestsToApprove PurchaseRequest[] @relation("PRApproverEmployee")
+  purchaseRequestsToApprove PurchaseRequest[]  @relation("PRApproverEmployee")
   purchaseOrdersRequested   PurchaseOrder[]
   goodsReceipts             GoodsReceipt[]
   cashierSales              CashierSale[]
@@ -2692,11 +2713,11 @@ model Employee {
 }
 
 enum ProbationStage {
-  REQUESTED            // manager (or HR on their behalf) submitted the review
-  HR_REVIEW            // sitting with HR
-  MANAGEMENT_APPROVAL  // HR passed it, sitting with Management
-  APPROVED             // fully approved — hiring confirmed, HR now works the checklist below
-  REJECTED             // stopped at either HR or Management review
+  REQUESTED // manager (or HR on their behalf) submitted the review
+  HR_REVIEW // sitting with HR
+  MANAGEMENT_APPROVAL // HR passed it, sitting with Management
+  APPROVED // fully approved — hiring confirmed, HR now works the checklist below
+  REJECTED // stopped at either HR or Management review
 }
 
 // Requested by Manager → reviewed by HR → approved by Management → Hiring. Once
@@ -2739,11 +2760,11 @@ model ProbationReview {
 }
 
 enum PayrollPeriodStatus {
-  OPEN        // HR/Finance generating & editing entries
-  SUBMITTED   // sent for Head-of-Finance approval
-  APPROVED    // approved, ready to execute
-  REJECTED    // sent back — reopen to OPEN before resubmitting
-  PAID        // Finance executed payroll (bank transfer done)
+  OPEN // HR/Finance generating & editing entries
+  SUBMITTED // sent for Head-of-Finance approval
+  APPROVED // approved, ready to execute
+  REJECTED // sent back — reopen to OPEN before resubmitting
+  PAID // Finance executed payroll (bank transfer done)
 }
 
 // Cutoff on the 20th → HR/Finance fill PayslipEntry rows while OPEN → submit →
@@ -2773,9 +2794,9 @@ model PayrollPeriod {
   rejectedBy    User?     @relation("PayrollRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
   rejectedAt    DateTime?
   rejectionNote String?
-  paidById String?
-  paidBy   User?     @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
-  paidAt   DateTime?
+  paidById      String?
+  paidBy        User?     @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paidAt        DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2808,7 +2829,7 @@ model PayslipEntry {
   bankAccountNameSnap   String?
   leaveBalanceSnap      Int?
   joinDateSnap          DateTime? // ← Employee.joinDate — payslip shows join date + tenure as of this period
-  workLocationSnap      String?   // ← Employee.location.name
+  workLocationSnap      String? // ← Employee.location.name
 
   // Earnings
   basicSalary       Float @default(0)
@@ -2826,13 +2847,13 @@ model PayslipEntry {
   bpjsKesehatanCompany Float @default(0)
 
   // Deductions
-  bpjsJhtEmployee       Float @default(0)
-  bpjsJpEmployee        Float @default(0)
-  bpjsKesehatanEmployee Float @default(0)
-  pph21                 Float @default(0)
+  bpjsJhtEmployee       Float            @default(0)
+  bpjsJpEmployee        Float            @default(0)
+  bpjsKesehatanEmployee Float            @default(0)
+  pph21                 Float            @default(0)
   // Manual amount, prefilled from the linked LoanInstallment (if any) when this entry is
   // generated — see LoanInstallment.payslipEntryId and periods/[id]/route.ts.
-  loanDeduction         Float @default(0)
+  loanDeduction         Float            @default(0)
   loanInstallment       LoanInstallment?
 
   grossEarnings    Float   @default(0)
@@ -2867,9 +2888,9 @@ model PayrollSettings {
   bpjsKesehatanSalaryCap    Float @default(12000000)
 
   // [{ upTo: number|null, rate: number }], last bracket's upTo=null (no ceiling)
-  pph21Brackets Json @default("[{\"upTo\":60000000,\"rate\":0.05},{\"upTo\":250000000,\"rate\":0.15},{\"upTo\":500000000,\"rate\":0.25},{\"upTo\":5000000000,\"rate\":0.3},{\"upTo\":null,\"rate\":0.35}]")
+  pph21Brackets                   Json  @default("[{\"upTo\":60000000,\"rate\":0.05},{\"upTo\":250000000,\"rate\":0.15},{\"upTo\":500000000,\"rate\":0.25},{\"upTo\":5000000000,\"rate\":0.3},{\"upTo\":null,\"rate\":0.35}]")
   // Keyed by Employee.maritalStatus (TK|K0|K1|K2|K3)
-  ptkpAmounts   Json @default("{\"TK\":54000000,\"K0\":58500000,\"K1\":63000000,\"K2\":67500000,\"K3\":72000000}")
+  ptkpAmounts                     Json  @default("{\"TK\":54000000,\"K0\":58500000,\"K1\":63000000,\"K2\":67500000,\"K3\":72000000}")
   positionCostDeductionRate       Float @default(0.05) // biaya jabatan
   positionCostDeductionCapMonthly Float @default(500000)
 
@@ -2916,9 +2937,9 @@ model LeaveRequest {
 
 enum AttendanceStatus {
   HADIR // present
-  IZIN  // permission / excused absence
+  IZIN // permission / excused absence
   SAKIT // sick
-  CUTI  // approved leave — auto-set when a LeaveRequest is approved (see LeaveRequest.attendanceRecords)
+  CUTI // approved leave — auto-set when a LeaveRequest is approved (see LeaveRequest.attendanceRecords)
   ALPHA // unauthorized absence
   LIBUR // scheduled day off (e.g. a public holiday falling on a weekday)
 }
@@ -2931,7 +2952,7 @@ model AttendanceRecord {
   id         String           @id @default(cuid())
   employeeId String
   employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date       DateTime         // the calendar day, stored at midnight — no meaningful time component
+  date       DateTime // the calendar day, stored at midnight — no meaningful time component
   status     AttendanceStatus
   note       String?
 
@@ -2941,7 +2962,7 @@ model AttendanceRecord {
   leaveRequest   LeaveRequest? @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
 
   setById String?
-  setBy   User?    @relation("AttendanceSetBy", fields: [setById], references: [id], onDelete: SetNull)
+  setBy   User?   @relation("AttendanceSetBy", fields: [setById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2962,7 +2983,7 @@ model NationalHoliday {
   name String
 
   createdById String?
-  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
@@ -2987,9 +3008,9 @@ enum LoanInstallmentStatus {
 // employee's manager). "Special Approval" is role-gated (ADMIN/SUPER_ADMIN) same as
 // Payroll's "Head of Finance" — no dedicated senior/owner role exists in this app.
 model LoanRequest {
-  id         String            @id @default(cuid())
+  id         String   @id @default(cuid())
   employeeId String
-  employee   Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   amount     Float
   termMonths Int
@@ -3035,11 +3056,11 @@ model LoanRequest {
 // Generated once (termMonths rows) the moment Special Approval approves. "Outstanding
 // balance" and "due this payroll run" are always computed from these rows, never stored.
 model LoanInstallment {
-  id            String                @id @default(cuid())
+  id            String      @id @default(cuid())
   loanRequestId String
-  loanRequest   LoanRequest           @relation(fields: [loanRequestId], references: [id], onDelete: Cascade)
+  loanRequest   LoanRequest @relation(fields: [loanRequestId], references: [id], onDelete: Cascade)
   employeeId    String
-  employee      Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   installmentNumber Int
   dueYear           Int

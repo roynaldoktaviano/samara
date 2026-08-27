@@ -5,10 +5,11 @@ import { getDb } from '@/lib/get-db'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseOrderWhere } from '@/lib/purchasing/warehouseScope'
+import { resolveAssignedYachtId, yachtOrderWhere } from '@/lib/purchasing/yachtScope'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const CREATE_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
 async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>) {
@@ -24,9 +25,13 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   // Warehouse never sees the full company-wide PO queue — only POs from their own PR,
-  // plus whatever delivers to or transits through their specific gudang.
+  // plus whatever delivers to or transits through their specific gudang. Boat Captain/
+  // Cruise Director are scoped even tighter — only POs whose final destination is their
+  // own assigned yacht (see yachtScope.ts).
   const where = role === 'WAREHOUSE'
     ? warehouseOrderWhere(session.user.id, await resolveWarehouseLocationId(db, session.user.id))
+    : roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])
+    ? yachtOrderWhere(await resolveAssignedYachtId(db, session.user.id))
     : undefined
   const orders = await db.purchaseOrder.findMany({
     where,

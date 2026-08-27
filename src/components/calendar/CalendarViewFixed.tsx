@@ -670,11 +670,12 @@ function bookingDayColor(status: string): string {
 // granularity that matters for the open-trip yachts.
 const SIMPLE_AVAILABILITY_YACHT = 'Samara I'
 
-function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: OpenTripEvent[], yachtFilter: string): string | null {
+function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: OpenTripEvent[], internalEvents: InternalEventItem[], yachtFilter: string): string | null {
   // "Past" always wins, but only for a day that actually had something scheduled on
   // it — a blank day with nothing planned stays blank whether it's past or future,
   // it doesn't get painted grey just for existing.
   const isPast = dateStr < todayStr()
+  const internalHit = internalEvents.find(e => dateStr >= e.startDate && dateStr <= e.endDate)
 
   if (yachtFilter === SIMPLE_AVAILABILITY_YACHT) {
     const bookingHit = bookings.find(b => b.status !== 'cancelled' && dateStr >= b.startDate && dateStr <= b.endDate)
@@ -682,9 +683,10 @@ function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: Op
       const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
       return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
     })
-    if (!bookingHit && !otHit) return null
+    if (!bookingHit && !otHit && !internalHit) return null
     if (isPast) return '#94a3b8'
     if (bookingHit) return '#ef4444' // booked
+    if (!otHit && internalHit) return INTERNAL_EVENT_COLOR[internalHit.type]
     const isClosed = otHit!.status === 'closed'
     const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
     return isClosed || isFull ? '#ef4444' : '#22c55e'
@@ -697,22 +699,23 @@ function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: Op
     const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
     return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
   })
-  if (!charterHit && !otHit) return null
+  if (!charterHit && !otHit && !internalHit) return null
   if (isPast) return '#94a3b8'
   if (charterHit) {
     const eff = getEffectiveBookingStatus(charterHit.status, charterHit.startDate, charterHit.endDate)
     return bookingDayColor(eff)
   }
+  if (!otHit && internalHit) return INTERNAL_EVENT_COLOR[internalHit.type]
   const isClosed = otHit!.status === 'closed'
   const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
   return isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
 }
 
 function YearMiniMonth({
-  year, month, bookings, openTrips, yachtFilter, onDayClick,
+  year, month, bookings, openTrips, internalEvents, yachtFilter, onDayClick,
 }: {
   year: number; month: number
-  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]; internalEvents: InternalEventItem[]
   yachtFilter: string
   onDayClick: (year: number, month: number) => void
 }) {
@@ -726,7 +729,7 @@ function YearMiniMonth({
   const colors = cells.map(day => {
     if (day === 0) return null
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return dayStatusColor(dateStr, bookings, openTrips, yachtFilter)
+    return dayStatusColor(dateStr, bookings, openTrips, internalEvents, yachtFilter)
   })
 
   return (
@@ -768,10 +771,10 @@ function YearMiniMonth({
 }
 
 function YearGrid({
-  year, bookings, openTrips, yachtFilter, onMonthClick,
+  year, bookings, openTrips, internalEvents, yachtFilter, onMonthClick,
 }: {
   year: number
-  bookings: BookingEvent[]; openTrips: OpenTripEvent[]
+  bookings: BookingEvent[]; openTrips: OpenTripEvent[]; internalEvents: InternalEventItem[]
   yachtFilter: string
   onMonthClick: (year: number, month: number) => void
 }) {
@@ -780,7 +783,7 @@ function YearGrid({
       {yachtFilter && <p className="text-xs text-muted-foreground mb-3">Showing availability for <span className="font-semibold text-foreground">{yachtFilter}</span> across {year}</p>}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {MONTH_FULL.map((_, m) => (
-          <YearMiniMonth key={m} year={year} month={m} bookings={bookings} openTrips={openTrips} yachtFilter={yachtFilter} onDayClick={onMonthClick} />
+          <YearMiniMonth key={m} year={year} month={m} bookings={bookings} openTrips={openTrips} internalEvents={internalEvents} yachtFilter={yachtFilter} onDayClick={onMonthClick} />
         ))}
       </div>
       <div className="flex items-center gap-4 mt-4 text-[11px] text-muted-foreground flex-wrap">
@@ -796,6 +799,10 @@ function YearGrid({
               { label: 'Booked',              color: '#ef4444' },
               { label: 'On Trip / Completed', color: '#94a3b8' },
             ]
+        ).concat(
+          (Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[])
+            .filter(t => internalEvents.some(e => e.type === t))
+            .map(t => ({ label: INTERNAL_EVENT_LABEL[t], color: INTERNAL_EVENT_COLOR[t] }))
         ).map(l => (
           <span key={l.label} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
@@ -837,6 +844,9 @@ export default function CalendarView() {
   const userId   = (session?.user as { id?: string })?.id   ?? ''
   const isAdmin  = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
   const canEdit = roleMatches(userRole, ['ADMIN', 'SALES'])
+  // Crew/Boat Captain/Cruise Director get the calendar purely to check dates — the
+  // booking/cabin stats strip isn't relevant to their job and stays hidden for them.
+  const hideStatsStrip = ['CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(userRole)
 
   const [currentDate, setCurrentDate]   = useState(new Date())
   const [viewMode, setViewMode]         = useState<'calendar' | 'list' | 'year'>('calendar')
@@ -1653,7 +1663,7 @@ export default function CalendarView() {
           <h3 className="text-2xl font-bold tracking-tight">Dashboard</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
         </div>
-        {canEdit && (
+        {isAdmin && (
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -1673,7 +1683,7 @@ export default function CalendarView() {
       </div>
 
       {/* Stats strip */}
-      {(() => {
+      {!hideStatsStrip && (() => {
         const todayDate = new Date(); todayDate.setHours(0,0,0,0)
         const viewYear  = currentDate.getFullYear()
         const viewMonth = currentDate.getMonth()
@@ -2164,6 +2174,7 @@ export default function CalendarView() {
                 (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
                   .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
               }
+              internalEvents={filteredInternalEvents}
               yachtFilter={yachtFilter}
               onMonthClick={(y, m) => { setCurrentDate(new Date(y, m, 1)); setViewMode('calendar') }}
             />
@@ -2603,7 +2614,7 @@ export default function CalendarView() {
                         >
                           <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
                         </Button>
-                        {selectedBooking.isOwnBooking !== false && new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
+                        {canEdit && selectedBooking.isOwnBooking !== false && new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
                           <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
                             <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
                           </Button>
@@ -3172,7 +3183,7 @@ export default function CalendarView() {
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Type</Label>
-                  <Select value={internalEventForm.type} onValueChange={v => setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))}>
+                  <Select disabled={!isAdmin} value={internalEventForm.type} onValueChange={v => setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
@@ -3190,6 +3201,7 @@ export default function CalendarView() {
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
                   <Input
+                    disabled={!isAdmin}
                     placeholder={internalEventForm.type === 'COMPANY_NEED' ? 'e.g. Photoshoot, All Crew Annual Leave' : 'e.g. Engine overhaul'}
                     value={internalEventForm.title}
                     onChange={e => setInternalEventForm(f => ({ ...f, title: e.target.value }))}
@@ -3198,7 +3210,7 @@ export default function CalendarView() {
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yacht</Label>
-                  <Select value={internalEventForm.yachtId || '__all__'} onValueChange={v => setInternalEventForm(f => ({ ...f, yachtId: v === '__all__' ? '' : v }))}>
+                  <Select disabled={!isAdmin} value={internalEventForm.yachtId || '__all__'} onValueChange={v => setInternalEventForm(f => ({ ...f, yachtId: v === '__all__' ? '' : v }))}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">Company-wide (all yachts)</SelectItem>
@@ -3212,19 +3224,21 @@ export default function CalendarView() {
                     <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
                     <input
                       type="date"
+                      disabled={!isAdmin}
                       value={internalEventForm.startDate}
                       onChange={e => setInternalEventForm(f => ({ ...f, startDate: e.target.value, endDate: f.endDate < e.target.value ? e.target.value : f.endDate }))}
-                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
                     <input
                       type="date"
+                      disabled={!isAdmin}
                       value={internalEventForm.endDate}
                       min={internalEventForm.startDate}
                       onChange={e => setInternalEventForm(f => ({ ...f, endDate: e.target.value }))}
-                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -3232,6 +3246,7 @@ export default function CalendarView() {
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes (optional)</Label>
                   <Textarea
+                    disabled={!isAdmin}
                     rows={2}
                     value={internalEventForm.notes}
                     onChange={e => setInternalEventForm(f => ({ ...f, notes: e.target.value }))}
@@ -3241,6 +3256,7 @@ export default function CalendarView() {
                 <label className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer">
                   <Checkbox
                     className="mt-0.5"
+                    disabled={!isAdmin}
                     checked={internalEventForm.internalOnly}
                     onCheckedChange={v => setInternalEventForm(f => ({ ...f, internalOnly: v === true }))}
                   />
@@ -3256,16 +3272,18 @@ export default function CalendarView() {
               </div>
 
               <DialogFooter className="gap-2 sm:justify-between">
-                {internalEventEditing && canEdit ? (
+                {internalEventEditing && isAdmin ? (
                   <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setInternalEventDeleteConfirm(true)}>
                     <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
                   </Button>
                 ) : <span />}
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setInternalEventModalOpen(false)}>Cancel</Button>
-                  <Button disabled={internalEventSaving} onClick={saveInternalEvent} className="bg-[#bdac7e] hover:bg-[#a89660] text-white">
-                    {internalEventSaving ? 'Saving…' : internalEventEditing ? 'Save Changes' : 'Add Event'}
-                  </Button>
+                  <Button variant="outline" onClick={() => setInternalEventModalOpen(false)}>{isAdmin ? 'Cancel' : 'Close'}</Button>
+                  {isAdmin && (
+                    <Button disabled={internalEventSaving} onClick={saveInternalEvent} className="bg-[#bdac7e] hover:bg-[#a89660] text-white">
+                      {internalEventSaving ? 'Saving…' : internalEventEditing ? 'Save Changes' : 'Add Event'}
+                    </Button>
+                  )}
                 </div>
               </DialogFooter>
             </>

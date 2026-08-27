@@ -6,6 +6,8 @@ import { receiveTransferLeg } from '@/lib/purchasing/transferActions'
 
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
+import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -176,6 +178,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
     })
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+
+    // This leg's destination is a yacht's own stock location — auto-generate (or reuse)
+    // the same no-login receive link the manual "Get Receive Link" button would produce,
+    // and push it straight to that yacht's assigned Boat Captain/Cruise Director. Covers
+    // both a plain ad-hoc transfer to a vessel and the final leg of a PO's transit chain.
+    const toLocation = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { yachtId: true } })
+    if (toLocation?.yachtId) {
+      const yachtId = toLocation.yachtId
+      getOrCreateTransferReceiveToken(db, id).then(({ token }) => {
+        const link = `${resolveBaseUrl(req)}/crew-receive/${token}`
+        notifyAssignedYachtCaptains(db, yachtId, {
+          type: 'TRANSFER_IN_TRANSIT_RECEIVE',
+          title: 'Barang Menuju Kapal Anda',
+          body: `${transfer.transferNumber} sedang dalam perjalanan. Konfirmasi penerimaan di sini: ${link}`,
+          url: `/crew-receive/${token}`,
+        }).catch(console.error)
+      }).catch(console.error)
+    }
+
     return NextResponse.json({ ok: true })
   }
 

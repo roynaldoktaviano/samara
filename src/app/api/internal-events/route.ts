@@ -4,9 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
-// Matches the Calendar page's own `canEdit` gate for creating a Booking — internal
-// events live on the same calendar, so anyone who can add a booking can add one.
-const ALLOWED = ['ADMIN', 'SALES']
+// Internal events are admin-only, unlike Bookings which SALES can also create.
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN']
 const TYPES = ['DOCKING', 'CROSSING', 'OVERHAUL', 'COMPANY_NEED']
 
 export async function GET() {

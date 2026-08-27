@@ -258,7 +258,10 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   onDeepLinkHandled?: () => void
 } = {}) {
   const { data: session } = useSession()
-  const isWarehouse = (session?.user as { role?: string })?.role === 'WAREHOUSE'
+  // Restricted, own-requests-only roles — none of them do Purchasing's verify/convert work,
+  // so every Purchasing-only action in this page stays hidden for all of them (mirrors the
+  // server-side OWN_ONLY_ROLES check in the requests API routes).
+  const isWarehouse = ['WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes((session?.user as { role?: string })?.role ?? '')
   // "Requested by Me" only makes sense for Admin — Purchasing/Warehouse's whole job here
   // is processing everyone else's requests, not filtering down to their own.
   const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
@@ -1535,7 +1538,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
               return rank !== 0 ? rank : a.idx - b.idx
             }).map(x => x.item)
             return (
-              <div className="grid grid-cols-[1fr_300px] gap-6 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
                 <div className="rounded-lg border overflow-hidden min-w-0">
                   <div className="px-5 py-3 bg-muted/50 border-b">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>

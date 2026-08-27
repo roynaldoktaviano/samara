@@ -22,7 +22,10 @@ type Tab = typeof TABS[number]['key']
 export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled }: { openPoId?: string | null; onOpenPoHandled?: () => void } = {}) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
-  const isWarehouse = role === 'WAREHOUSE'
+  // Warehouse, plus the two yacht-scoped viewer roles, all get the same read-only,
+  // single-tab view — the actual scoping of which POs they see happens server-side
+  // (GET /api/purchasing/orders), this just matches the surrounding UI to that.
+  const isWarehouse = ['WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(role)
 
   const [tab, setTab] = useState<Tab>('orders')
 

@@ -1840,6 +1840,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               </button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty) && (() => {
+              // Yacht-scoped roles skip the managedBy check — the list/detail endpoints
+              // already only ever show them their own assigned yacht's POs, so reaching
+              // this point already proves ownership (see yachtScope.ts).
+              if (['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(role)) return true
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
               const allowed = managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
               return allowed.includes(role)
@@ -1847,7 +1851,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty)
-              && ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE'].includes(role) && (
+              && ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(role) && (
               <button onClick={openReceiveLink} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">Get Receive Link</button>
             )}
             {/* Continue the shipping route without leaving the PO — acts on the auto-chained
@@ -1894,7 +1898,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-[1fr_272px] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_272px] gap-6 items-start">
           {/* Left column */}
           <div className="space-y-5 min-w-0">
           {/* Draft: fill supplier & confirm */}

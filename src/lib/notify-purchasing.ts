@@ -102,6 +102,38 @@ export async function notifyPurchasingForRequest(
   await notifyByRoleForRequest(db, PURCHASING_ROLES, type, title, body, requestId)
 }
 
+// Auto-delivers a receive link to whichever Boat Captain/Cruise Director is assigned
+// (User.assignedYachtId) to `yachtId` — fired the moment a PO/Transfer starts moving
+// toward their specific boat, instead of Purchasing manually generating and forwarding
+// the link. `url` is the relative /po-receive or /crew-receive path; the push payload's
+// `url` is what public/sw.js opens directly when the notification is tapped. No-op if
+// nobody's been assigned to that yacht yet.
+export async function notifyAssignedYachtCaptains(
+  db: Db,
+  yachtId: string,
+  opts: { type: string; title: string; body: string; url: string; orderId?: string },
+) {
+  const users = await db.user.findMany({
+    where: { role: { in: ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'] as never[] }, assignedYachtId: yachtId },
+    select: { id: true },
+  })
+  if (!users.length) return
+
+  await db.notification.createMany({
+    data: users.map(u => ({
+      id: crypto.randomUUID(),
+      userId: u.id,
+      type: opts.type,
+      title: opts.title,
+      body: opts.body,
+      ...(opts.orderId ? { orderId: opts.orderId } : {}),
+    })),
+    skipDuplicates: true,
+  })
+
+  sendPushToUsers(db, users.map(u => u.id), { title: opts.title, body: opts.body, url: opts.url }).catch(console.error)
+}
+
 // Called after any single installment (Request Payment / Debit Paid / Reimburse) is
 // marked PAID — recomputes the PO's aggregate payment status across ALL installments
 // and, if that now clears the grand total, reminds Purchasing it's ready to ship.

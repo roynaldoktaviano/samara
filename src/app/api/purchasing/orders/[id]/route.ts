@@ -2,21 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { notifyByRole } from '@/lib/notify-purchasing'
+import { notifyByRole, notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
+import { getOrCreatePoReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseCanViewOrder } from '@/lib/purchasing/warehouseScope'
+import { resolveAssignedYachtId, yachtCanViewOrder } from '@/lib/purchasing/yachtScope'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const TRANSIT_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+// GET-only: Boat Captain/Cruise Director may look, never touch — they're deliberately
+// excluded from ALLOWED above (which also gates PATCH) so no mutate action opens up for
+// them just by being able to view. See yachtScope.ts for how their view gets scoped.
+const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const order = await db.purchaseOrder.findUnique({
     where: { id },
@@ -73,6 +79,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (role === 'WAREHOUSE') {
     const locationId = await resolveWarehouseLocationId(db, session.user.id)
     if (!warehouseCanViewOrder(order, session.user.id, locationId)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  } else if (roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])) {
+    const yachtId = await resolveAssignedYachtId(db, session.user.id)
+    if (!yachtCanViewOrder(order, yachtId)) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
   }
@@ -339,7 +350,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const forNotify = await db.purchaseOrder.findUnique({
       where: { id },
       select: {
-        deliveryLocation: { select: { type: true } },
+        deliveryLocation: { select: { type: true, yachtId: true } },
         transitStops: { select: { location: { select: { type: true } } } },
       },
     })
@@ -352,6 +363,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang — harap siapkan penerimaan barang`,
       id,
     ).catch(console.error)
+
+    // Delivery lands directly at a yacht's own stock location — auto-generate (or reuse)
+    // the same no-login receive link Purchasing would otherwise send manually, and push
+    // it straight to that yacht's assigned Boat Captain/Cruise Director only. A PO with
+    // transit stops isn't heading to the yacht yet at this point — it's heading to the
+    // first stop, and the final leg to the yacht only exists once spawnNextTransitLeg
+    // creates that StockTransfer, whose own dispatch (below, in transfers/[id]/route.ts)
+    // is what actually notifies the captain in that case.
+    if (forNotify?.deliveryLocation?.yachtId && forNotify.transitStops.length === 0) {
+      const yachtId = forNotify.deliveryLocation.yachtId
+      getOrCreatePoReceiveToken(db, id).then(({ token }) => {
+        const link = `${resolveBaseUrl(req)}/po-receive/${token}`
+        notifyAssignedYachtCaptains(db, yachtId, {
+          type: 'PO_IN_TRANSIT_RECEIVE',
+          title: 'Barang Menuju Kapal Anda',
+          body: `${poNum} dari ${supplier} sedang dalam perjalanan. Konfirmasi penerimaan di sini: ${link}`,
+          url: `/po-receive/${token}`,
+          orderId: id,
+        }).catch(console.error)
+      }).catch(console.error)
+    }
   } else if (status === 'RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
       `Barang Diterima`,

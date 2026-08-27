@@ -6,11 +6,14 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// GET-only: Boat Captain/Cruise Director need the location list purely to populate the
+// "Receive Items" modal's location picker for their own PO — never location create/edit.
+const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
   const [locations, yachts] = await Promise.all([

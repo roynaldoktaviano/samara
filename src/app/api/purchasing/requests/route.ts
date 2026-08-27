@@ -9,8 +9,10 @@ import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+// Roles that only ever see/create their own submissions — never Purchasing's full queue.
+const OWN_ONLY_ROLES = ['WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()
@@ -30,9 +32,9 @@ export async function GET() {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  // Warehouse only requests items for warehouse stock (or forwards a ship's request) —
-  // they should only ever see their own submissions, not Purchasing's full queue.
-  const isWarehouse = role === 'WAREHOUSE'
+  // Warehouse/Crew/Boat Captain/Cruise Director only ever see their own submissions,
+  // not Purchasing's full queue — see OWN_ONLY_ROLES above.
+  const isOwnOnly = OWN_ONLY_ROLES.includes(role)
 
   // Every Purchasing/Admin user can still see every PR here — division (see
   // User.purchasingDivision / PurchaseRequest.division) is only a client-side DEFAULT
@@ -46,7 +48,7 @@ export async function GET() {
       // their own view) so they know it's sitting with their manager — the manager check
       // itself lives in the approval endpoint's identity check, not here.
       OR: [{ status: { not: 'PENDING_APPROVAL' } }, { requestedById: session.user.id }],
-      ...(isWarehouse ? { requestedById: session.user.id } : {}),
+      ...(isOwnOnly ? { requestedById: session.user.id } : {}),
     },
     orderBy: { createdAt: 'desc' },
     include: {

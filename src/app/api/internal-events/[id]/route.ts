@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['ADMIN', 'SALES']
+// Internal events are admin-only, unlike Bookings which SALES can also create.
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN']
 const TYPES = ['DOCKING', 'CROSSING', 'OVERHAUL', 'COMPANY_NEED']
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
