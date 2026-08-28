@@ -361,6 +361,7 @@ export default function Home() {
   const [pendingTransfers, setPendingTransfers] = useState(0)
   const [pendingDraftPOs, setPendingDraftPOs] = useState(0)
   const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
+  const [pendingHrLeaveRequests, setPendingHrLeaveRequests] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
@@ -438,6 +439,20 @@ export default function Home() {
       }
     } catch { /* silent */ }
   }, [])
+
+  const fetchPendingHrLeaveRequests = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['ADMIN', 'SUPER_ADMIN', 'HR'].includes(role)) return
+      const res = await fetch('/api/hr/leave-requests')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingHrLeaveRequests(Array.isArray(data)
+          ? data.filter((r: { status: string }) => r.status === 'PENDING').length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
 
   const fetchPendingRefunds = useCallback(async () => {
     try {
@@ -520,13 +535,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -540,12 +555,13 @@ export default function Home() {
       'my-approvals': fetchPendingMyApprovals,
       'payments': () => { fetchPendingPayments(); fetchPendingRefunds() },
       'purchasing-finance': fetchPendingPurchasingFinance,
+      'hr-leave-requests': fetchPendingHrLeaveRequests,
       'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -904,6 +920,7 @@ export default function Home() {
                   (item.id === 'purchasing-transfers' && pendingTransfers > 0) ||
                   (item.id === 'purchasing-orders' && pendingDraftPOs > 0) ||
                   (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
+                  (item.id === 'hr-leave-requests' && pendingHrLeaveRequests > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
@@ -917,6 +934,7 @@ export default function Home() {
                   item.id === 'purchasing-transfers' ? pendingTransfers :
                   item.id === 'purchasing-orders' ? pendingDraftPOs :
                   item.id === 'my-approvals' ? pendingMyApprovals :
+                  item.id === 'hr-leave-requests' ? pendingHrLeaveRequests :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -80,6 +81,8 @@ export async function POST(req: NextRequest) {
       sendPushToUsers(db, hrUsers.map(u => u.id), { title, body }).catch(() => {})
     }
   }
+
+  emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
 
   return NextResponse.json(leaveRequest, { status: 201 })
 }

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { sendPushToUsers } from '@/lib/push'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // Who a leave request falls back to notifying when the requester's Employee record has
 // no manager (or no manager with a login) — same list HR/Admin already see the full
@@ -81,6 +82,8 @@ export async function POST(req: NextRequest) {
       sendPushToUsers(db, hrUsers.map(u => u.id), { title, body }).catch(() => {})
     }
   }
+
+  emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
 
   return NextResponse.json(leaveRequest, { status: 201 })
 }

@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -62,6 +63,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
   }
+
+  emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
 
   return NextResponse.json(updated)
 }
