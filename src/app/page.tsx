@@ -63,6 +63,7 @@ import PosBillingHistoryPage from '@/components/pos/billing/PosBillingHistoryPag
 import EmployeesPage from '@/components/hr/EmployeesPage'
 import HROverview from '@/components/hr/HROverview'
 import LeaveRequestsPage from '@/components/hr/LeaveRequestsPage'
+import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
 import TalentPoolPage from '@/components/hr/TalentPoolPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
@@ -764,6 +765,7 @@ export default function Home() {
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
       case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
       case 'my-approvals':   return <MyApprovalsPage />
+      case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
