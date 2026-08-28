@@ -386,7 +386,7 @@ export default function Home() {
   const fetchPendingRequestOrders = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
-      if (!['PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      if (!roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'])) return
       const res = await fetch('/api/purchasing/requests')
       if (res.ok) {
         const data = await res.json()
@@ -414,7 +414,7 @@ export default function Home() {
   const fetchPendingDraftPOs = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
-      if (!['PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
+      if (!roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'])) return
       const res = await fetch('/api/purchasing/orders')
       if (res.ok) {
         const data = await res.json()

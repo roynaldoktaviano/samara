@@ -4,6 +4,11 @@
 const ROLE_ALIASES: Record<string, string[]> = {
   SALES_MARKETING: ['SALES', 'MARKETING'],
   FINANCE_DIRECTOR: ['PURCHASING', 'FINANCE', 'HR'],
+  // This tenant's HR account also handles Purchasing day-to-day — the sidebar was
+  // already opened up to every purchasing-* module via Roles & Permissions, but each
+  // purchasing API route checks its own hardcoded ALLOWED list (independent of that
+  // sidebar override), so HR still got 401s and every purchasing page rendered empty.
+  HR: ['PURCHASING'],
 }
 
 /** True if `userRole` is directly in `allowed`, or is a combined role that includes one that is. */
