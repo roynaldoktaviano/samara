@@ -11,6 +11,7 @@ import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { roleMatches } from '@/lib/role-utils'
 
 
 interface PaymentRequest {
@@ -552,7 +553,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const role = (session?.user as { role?: string })?.role ?? ''
   // canReceive is now computed per-order based on deliveryLocation.managedBy
   const isAdminish = ['ADMIN', 'SUPER_ADMIN'].includes(role)
-  const canTransit = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes(role)
+  const canTransit = roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'])
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -1846,12 +1847,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               if (['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(role)) return true
               const managedBy = detail.deliveryLocation?.managedBy ?? 'WAREHOUSE'
               const allowed = managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-              return allowed.includes(role)
+              return roleMatches(role, allowed)
             })() && (
               <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty)
-              && ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(role) && (
+              && roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']) && (
               <button onClick={openReceiveLink} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">Get Receive Link</button>
             )}
             {/* Continue the shipping route without leaving the PO — acts on the auto-chained
@@ -1865,7 +1866,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               const actingLoc = action === 'dispatch' ? openLeg.fromLocation : openLeg.toLocation
               if (actingLoc.type !== 'VESSEL') {
                 const allowed = actingLoc.managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-                if (!allowed.includes(role)) return null
+                if (!roleMatches(role, allowed)) return null
               }
               return (
                 <button onClick={() => openLegAction(openLeg, action)}
