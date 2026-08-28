@@ -2646,12 +2646,19 @@ model Employee {
   // Compensation
   basicSalary Float?
   allowance   Float?
+  // Base daily rate. For shore-based staff (work location doesn't match a Yacht name)
+  // this is paid flat each period. For crew stationed on a yacht (location name matches
+  // a Yacht.name), Payroll multiplies this by the number of days that yacht had a trip
+  // within the payroll period — see countTripDaysInPeriod in src/lib/payroll.ts.
   uangLayar   Float?
   uangMakan   Float?
-  // Free-form monthly benefit amount HR sets directly — shows on the payslip as a
-  // non-cash "Benefit" earning line (see src/lib/payroll.ts). Not derived from BPJS
-  // rates; HR decides what it represents and how much.
-  benefit     Float?
+  // THR (Tunjangan Hari Raya) — pre-fills PayslipEntry.thr at generation time, still
+  // manually overridable per period like every other payroll figure.
+  thr         Float?
+  // Recurring named income lines beyond the fixed columns above (e.g. a fixed monthly
+  // allowance HR wants itemized on the payslip) — array of { id, name, description, amount }.
+  // Snapshotted onto PayslipEntry.otherIncomeSnap at generation time.
+  otherIncome Json    @default("[]")
 
   // Documents — each stored as data-URL strings, same pattern as PurchaseQuotation.fileKey
   seamanBookFiles     String[] @default([]) // Buku Pelaut
@@ -2659,6 +2666,9 @@ model Employee {
   medicalCheckupFiles String[] @default([])
   ijazahFiles         String[] @default([])
   certificateFiles    String[] @default([])
+  // Employment contract document(s) — expiry is contractEndDate above, already surfaced
+  // on the HR Overview "Contracts Expiring Soon" widget.
+  contractFiles       String[] @default([])
 
   isActive     Boolean   @default(true)
   resignedAt   DateTime?
@@ -2691,6 +2701,8 @@ model Employee {
   // row back to the User account that should see/approve the request.
   userId String? @unique
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  candidateSource Candidate?
 
   purchaseRequests          PurchaseRequest[]
   purchaseRequestsToApprove PurchaseRequest[]  @relation("PRApproverEmployee")
@@ -2835,10 +2847,16 @@ model PayslipEntry {
   basicSalary       Float @default(0)
   functionAllowance Float @default(0) // ← Employee.allowance
   mealAllowance     Float @default(0) // ← Employee.uangMakan
-  uangLayar         Float @default(0) // ← Employee.uangLayar
+  uangLayar         Float @default(0) // ← Employee.uangLayar (rate) × uangLayarTripDays, when set
+  // Number of trip days this yacht sailed within the period, when the employee's work
+  // location matched a Yacht — null means uangLayar was paid flat (shore-based staff).
+  // Informational snapshot only; editing uangLayar above directly doesn't update this.
+  uangLayarTripDays Int?
   commission        Float @default(0) // manual only, varies per period
-  thr               Float @default(0) // manual only, varies per period
-  benefitBpjsAndTax Float @default(0) // = sum of employer-paid BPJS below
+  thr               Float @default(0) // ← Employee.thr at generation time, still manually overridable
+  // Snapshot of Employee.otherIncome at generation time — array of { id, name, description, amount }.
+  otherIncomeSnap   Json  @default("[]")
+  otherIncomeTotal  Float @default(0) // = sum of otherIncomeSnap amounts, folded into grossEarnings
 
   bpjsJkkCompany       Float @default(0)
   bpjsJkmCompany       Float @default(0)
@@ -3106,10 +3124,20 @@ model Candidate {
   email         String?
   source        String?
   resumeFiles   String[]        @default([])
+  expectedSalary Float?
+  location      String?
+  readyJoinDate DateTime?
+  additionalDocuments Json      @default("[]") // named extra docs — array of { id, name, description, fileKey }
   notes         String?
   status        CandidateStatus @default(NEW)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+
+  // Set once this candidate is converted into a real Employee (on probation) from
+  // the Talent Pool — prevents converting the same hire twice and links back to
+  // the resulting employee record.
+  convertedEmployeeId String?   @unique
+  convertedEmployee   Employee? @relation(fields: [convertedEmployeeId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([appliedRoleId])

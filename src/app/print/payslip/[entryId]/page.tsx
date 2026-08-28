@@ -32,9 +32,10 @@ interface EntryDetail {
   functionAllowance: number
   mealAllowance: number
   uangLayar: number
+  uangLayarTripDays: number | null
   commission: number
   thr: number
-  benefitBpjsAndTax: number
+  otherIncomeSnap: { id: string; name: string; description: string; amount: number }[]
   bpjsJhtEmployee: number
   bpjsJpEmployee: number
   bpjsKesehatanEmployee: number
@@ -118,10 +119,10 @@ export default function PayslipPrintPage() {
     { label: 'Basic Salary', value: entry.basicSalary },
     { label: 'Function Allowance', value: entry.functionAllowance },
     { label: 'Meal Allowance', value: entry.mealAllowance },
-    { label: 'Uang Layar', value: entry.uangLayar },
+    { label: entry.uangLayarTripDays != null ? `Uang Layar (${entry.uangLayarTripDays} hari trip)` : 'Uang Layar', value: entry.uangLayar },
     { label: 'Commission', value: entry.commission },
     { label: 'THR', value: entry.thr },
-    { label: 'Benefit', value: entry.benefitBpjsAndTax },
+    ...(entry.otherIncomeSnap ?? []).map(i => ({ label: i.name, value: i.amount })),
   ].filter(e => e.value !== 0)
 
   const deductions = [

@@ -3,10 +3,10 @@ import { isPdfDataUrl } from '@/lib/fileUpload'
 
 // Shared full-screen photo/PDF viewer used wherever a Timeline step (or any other purchasing
 // UI) links to a proof photo — dispatch/receipt photos, payment notas, transfer proofs.
-export function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
+export function PhotoLightbox({ photoKey, onClose, zIndexClass = 'z-50' }: { photoKey: string; onClose: () => void; zIndexClass?: string }) {
   const isPdf = isPdfDataUrl(photoKey)
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className={`fixed inset-0 bg-black/70 ${zIndexClass} flex items-center justify-center p-4`} onClick={onClose}>
       <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
         {isPdf ? (
           <div className="bg-white rounded-xl shadow-2xl overflow-hidden">

@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, appliedRoleId, phone, email, source, resumeFiles, notes, status } = await req.json()
+  const { fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate, additionalDocuments, notes, status } = await req.json()
 
   const candidate = await db.candidate.update({
     where: { id },
@@ -24,6 +24,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(email !== undefined && { email: email?.trim() || null }),
       ...(source !== undefined && { source: source?.trim() || null }),
       ...(resumeFiles !== undefined && { resumeFiles: Array.isArray(resumeFiles) ? resumeFiles : [] }),
+      ...(expectedSalary !== undefined && { expectedSalary: expectedSalary !== '' && expectedSalary !== null ? Number(expectedSalary) : null }),
+      ...(location !== undefined && { location: location?.trim() || null }),
+      ...(readyJoinDate !== undefined && { readyJoinDate: readyJoinDate ? new Date(readyJoinDate) : null }),
+      ...(additionalDocuments !== undefined && { additionalDocuments: Array.isArray(additionalDocuments) ? additionalDocuments : [] }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(status !== undefined && { status }),
     },

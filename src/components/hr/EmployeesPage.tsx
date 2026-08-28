@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import type { OtherIncomeItem } from '@/lib/payroll'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface BusinessUnit { id: string; name: string }
@@ -23,8 +24,9 @@ interface Employee {
   npwp: string | null; kkNumber: string | null
   bankName: string | null; bankAccountNumber: string | null; bankAccountName: string | null
   bpjsKesehatanNumber: string | null; bpjsTkNumber: string | null
-  basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null; benefit: number | null
-  seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]
+  basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null; thr: number | null
+  otherIncome: OtherIncomeItem[]
+  seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]; contractFiles: string[]
   legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
@@ -36,8 +38,9 @@ const BLANK = {
   nikPassport: '', nationality: '', religion: '', placeOfBirth: '', motherName: '', personalEmail: '', maritalStatus: '', addressCurrent: '',
   emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '',
   npwp: '', kkNumber: '', bankName: '', bankAccountNumber: '', bankAccountName: '', bpjsKesehatanNumber: '', bpjsTkNumber: '',
-  basicSalary: '', allowance: '', uangLayar: '', uangMakan: '', benefit: '',
-  seamanBookFiles: [] as string[], bstFiles: [] as string[], medicalCheckupFiles: [] as string[], ijazahFiles: [] as string[], certificateFiles: [] as string[],
+  basicSalary: '', allowance: '', uangLayar: '', uangMakan: '', thr: '',
+  otherIncome: [] as OtherIncomeItem[],
+  seamanBookFiles: [] as string[], bstFiles: [] as string[], medicalCheckupFiles: [] as string[], ijazahFiles: [] as string[], certificateFiles: [] as string[], contractFiles: [] as string[],
 }
 
 const GENDERS = ['Male', 'Female']
@@ -281,11 +284,22 @@ export default function EmployeesPage() {
       allowance: emp.allowance != null ? String(emp.allowance) : '',
       uangLayar: emp.uangLayar != null ? String(emp.uangLayar) : '',
       uangMakan: emp.uangMakan != null ? String(emp.uangMakan) : '',
-      benefit: emp.benefit != null ? String(emp.benefit) : '',
+      thr: emp.thr != null ? String(emp.thr) : '',
+      otherIncome: emp.otherIncome ?? [],
       seamanBookFiles: emp.seamanBookFiles ?? [], bstFiles: emp.bstFiles ?? [], medicalCheckupFiles: emp.medicalCheckupFiles ?? [],
-      ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [],
+      ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [], contractFiles: emp.contractFiles ?? [],
     })
     setEditing(emp); setFormError(''); setModalTab('details'); setModal(true)
+  }
+
+  function addOtherIncomeRow() {
+    setForm(f => ({ ...f, otherIncome: [...f.otherIncome, { id: crypto.randomUUID(), name: '', description: '', amount: 0 }] }))
+  }
+  function updateOtherIncomeRow(id: string, patch: Partial<OtherIncomeItem>) {
+    setForm(f => ({ ...f, otherIncome: f.otherIncome.map(r => r.id === id ? { ...r, ...patch } : r) }))
+  }
+  function removeOtherIncomeRow(id: string) {
+    setForm(f => ({ ...f, otherIncome: f.otherIncome.filter(r => r.id !== id) }))
   }
 
   async function save() {
@@ -1121,28 +1135,57 @@ export default function EmployeesPage() {
                 )}
 
                 {modalTab === 'salary' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
-                    <RupiahInput value={form.basicSalary} onChange={digits => setForm(f => ({ ...f, basicSalary: digits }))} />
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
+                      <RupiahInput value={form.basicSalary} onChange={digits => setForm(f => ({ ...f, basicSalary: digits }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</label>
+                      <RupiahInput value={form.allowance} onChange={digits => setForm(f => ({ ...f, allowance: digits }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar (base rate)</label>
+                      <RupiahInput value={form.uangLayar} onChange={digits => setForm(f => ({ ...f, uangLayar: digits }))} />
+                      <p className="text-[11px] text-muted-foreground">For crew stationed on a yacht (Work Location = yacht name), Payroll multiplies this by that yacht&apos;s trip days each period. Shore-based staff get this flat.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan (per day)</label>
+                      <RupiahInput value={form.uangMakan} onChange={digits => setForm(f => ({ ...f, uangMakan: digits }))} />
+                      <p className="text-[11px] text-muted-foreground">Daily rate — Payroll multiplies this by days actually present (from Attendance Recap) each period.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">THR</label>
+                      <RupiahInput value={form.thr} onChange={digits => setForm(f => ({ ...f, thr: digits }))} />
+                      <p className="text-[11px] text-muted-foreground">Pre-fills the payslip&apos;s THR line at generation — still editable per period.</p>
+                    </div>
                   </div>
+
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</label>
-                    <RupiahInput value={form.allowance} onChange={digits => setForm(f => ({ ...f, allowance: digits }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar</label>
-                    <RupiahInput value={form.uangLayar} onChange={digits => setForm(f => ({ ...f, uangLayar: digits }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan (per day)</label>
-                    <RupiahInput value={form.uangMakan} onChange={digits => setForm(f => ({ ...f, uangMakan: digits }))} />
-                    <p className="text-[11px] text-muted-foreground">Daily rate — Payroll multiplies this by days actually present (from Attendance Recap) each period.</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Benefit</label>
-                    <RupiahInput value={form.benefit} onChange={digits => setForm(f => ({ ...f, benefit: digits }))} />
-                    <p className="text-[11px] text-muted-foreground">Custom monthly amount — shows as a non-cash &quot;Benefit&quot; line on the payslip, doesn&apos;t add to take-home pay.</p>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other Income</label>
+                    <div className="space-y-2">
+                      {form.otherIncome.map(item => (
+                        <div key={item.id} className="flex items-start gap-2 border-2 border-gray-100 rounded-xl p-2.5">
+                          <div className="flex-1 space-y-1 min-w-0">
+                            <input value={item.name} onChange={e => updateOtherIncomeRow(item.id, { name: e.target.value })} placeholder="Name"
+                              className="w-full h-8 text-sm font-medium bg-transparent focus:outline-none" />
+                            <input value={item.description} onChange={e => updateOtherIncomeRow(item.id, { description: e.target.value })} placeholder="Description (optional)"
+                              className="w-full h-6 text-xs text-muted-foreground bg-transparent focus:outline-none" />
+                          </div>
+                          <div className="w-32 shrink-0">
+                            <RupiahInput value={String(item.amount)} onChange={digits => updateOtherIncomeRow(item.id, { amount: Number(digits) || 0 })} />
+                          </div>
+                          <button type="button" onClick={() => removeOtherIncomeRow(item.id)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addOtherIncomeRow}
+                        className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-2.5 text-sm text-muted-foreground hover:border-[#bdac7e] hover:text-foreground transition-colors">
+                        <Plus className="h-3.5 w-3.5" /> Add Other Income
+                      </button>
+                    </div>
                   </div>
                 </div>
                 )}
@@ -1168,6 +1211,11 @@ export default function EmployeesPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certificates</label>
                     <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract</label>
+                    <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} />
+                    <p className="text-[11px] text-muted-foreground">Expiry is the Contract End date (Details tab, optional) — shows on HR Overview&apos;s Contracts Expiring Soon list.</p>
                   </div>
                 </div>
                 )}

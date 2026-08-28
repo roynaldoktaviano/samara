@@ -30,7 +30,7 @@ export async function GET() {
       where: { isActive: true },
       select: {
         id: true, fullName: true, employeeNumber: true, contractEndDate: true, joinDate: true,
-        basicSalary: true, allowance: true, uangLayar: true, uangMakan: true, benefit: true,
+        basicSalary: true, allowance: true, uangLayar: true, uangMakan: true,
         location: { select: { name: true } },
         legalEntity: { select: { name: true } },
         role: { select: { title: true } },
@@ -87,7 +87,7 @@ export async function GET() {
   // working month rather than pulling real attendance data.
   const workingDaysThisMonth = countWeekdaysInMonth(today.getFullYear(), today.getMonth() + 1)
   const monthlyEmployerCost = allEmployees.reduce(
-    (sum, e) => sum + (e.basicSalary ?? 0) + (e.allowance ?? 0) + (e.uangLayar ?? 0) + (e.uangMakan ?? 0) * workingDaysThisMonth + (e.benefit ?? 0),
+    (sum, e) => sum + (e.basicSalary ?? 0) + (e.allowance ?? 0) + (e.uangLayar ?? 0) + (e.uangMakan ?? 0) * workingDaysThisMonth,
     0,
   )
 

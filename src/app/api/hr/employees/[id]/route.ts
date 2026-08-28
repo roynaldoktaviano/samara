@@ -24,8 +24,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     nikPassport, nationality, religion, placeOfBirth, motherName, personalEmail, maritalStatus, addressCurrent,
     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
-    basicSalary, allowance, uangLayar, uangMakan, benefit,
-    seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles,
+    basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
+    seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
   } = await req.json()
 
   if (employeeNumber) {
@@ -83,12 +83,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(allowance !== undefined && { allowance: toFloatOrNull(allowance) }),
         ...(uangLayar !== undefined && { uangLayar: toFloatOrNull(uangLayar) }),
         ...(uangMakan !== undefined && { uangMakan: toFloatOrNull(uangMakan) }),
-        ...(benefit !== undefined && { benefit: toFloatOrNull(benefit) }),
+        ...(thr !== undefined && { thr: toFloatOrNull(thr) }),
+        ...(otherIncome !== undefined && { otherIncome: Array.isArray(otherIncome) ? otherIncome : [] }),
         ...(seamanBookFiles !== undefined && { seamanBookFiles: Array.isArray(seamanBookFiles) ? seamanBookFiles : [] }),
         ...(bstFiles !== undefined && { bstFiles: Array.isArray(bstFiles) ? bstFiles : [] }),
         ...(medicalCheckupFiles !== undefined && { medicalCheckupFiles: Array.isArray(medicalCheckupFiles) ? medicalCheckupFiles : [] }),
         ...(ijazahFiles !== undefined && { ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [] }),
         ...(certificateFiles !== undefined && { certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [] }),
+        ...(contractFiles !== undefined && { contractFiles: Array.isArray(contractFiles) ? contractFiles : [] }),
         ...(isActive !== undefined && {
           isActive,
           // Reactivating clears any prior resignation record; deactivating records it from the payload.

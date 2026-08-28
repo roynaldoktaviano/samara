@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import type { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
-import { computeTotals } from '@/lib/payroll'
+import { computeTotals, OtherIncomeItem } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 
 // Every earning/deduction figure a PATCH may override — kept in one place so the route
-// and the total-recompute step agree on exactly what's editable.
+// and the total-recompute step agree on exactly what's editable. otherIncomeSnap is
+// handled separately below since it's an array, not a plain number.
 const EDITABLE_FIELDS = [
-  'basicSalary', 'functionAllowance', 'mealAllowance', 'uangLayar', 'commission', 'thr', 'benefitBpjsAndTax',
+  'basicSalary', 'functionAllowance', 'mealAllowance', 'uangLayar', 'commission', 'thr',
   'bpjsJkkCompany', 'bpjsJkmCompany', 'bpjsJhtCompany', 'bpjsJpCompany', 'bpjsKesehatanCompany',
   'bpjsJhtEmployee', 'bpjsJpEmployee', 'bpjsKesehatanEmployee', 'pph21', 'loanDeduction',
 ] as const
@@ -49,17 +51,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ en
       if (Number.isFinite(num)) data[field] = num
     }
   }
-  if (Object.keys(data).length === 0) return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 })
 
-  // benefitBpjsAndTax is its own independently-editable figure now (sourced from
-  // Employee.benefit at generation time) — not recomputed from the BPJS fields below,
-  // which are tracked separately for the employer's own cost record.
-  const merged = { ...entry, ...data }
+  let otherIncomeSnap: OtherIncomeItem[] | undefined
+  let otherIncomeTotal: number | undefined
+  if (Array.isArray(body.otherIncomeSnap)) {
+    otherIncomeSnap = (body.otherIncomeSnap as OtherIncomeItem[]).map(i => ({
+      id: String(i.id ?? crypto.randomUUID()),
+      name: String(i.name ?? '').trim(),
+      description: String(i.description ?? '').trim(),
+      amount: Number(i.amount) || 0,
+    }))
+    otherIncomeTotal = otherIncomeSnap.reduce((s, i) => s + i.amount, 0)
+  }
+
+  if (Object.keys(data).length === 0 && otherIncomeSnap === undefined) {
+    return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 })
+  }
+
+  const merged = { ...entry, ...data, ...(otherIncomeTotal !== undefined && { otherIncomeTotal }) }
   const totals = computeTotals(merged)
 
   const updated = await db.payslipEntry.update({
     where: { id: entryId },
-    data: { ...data, ...totals, isManuallyEdited: true },
+    data: {
+      ...data,
+      ...(otherIncomeSnap !== undefined && { otherIncomeSnap: otherIncomeSnap as unknown as Prisma.InputJsonValue, otherIncomeTotal }),
+      ...totals,
+      isManuallyEdited: true,
+    },
   })
   return NextResponse.json(updated)
 }

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import type { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
-import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth } from '@/lib/payroll'
+import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod } from '@/lib/payroll'
+
+// Bookings in these statuses represent a trip that's actually happening/happened —
+// excludes not-yet-confirmed (pending/on_hold) and cancelled bookings from crew Uang Layar.
+const TRIP_BOOKING_STATUSES = ['confirmed', 'partially_paid', 'fully_paid', 'completed', 'pending_refund'] as const
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 // "Head of Finance" has no dedicated role/seniority field in this app — FINANCE_DIRECTOR
@@ -69,6 +74,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }),
       db.nationalHoliday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
     ])
+
+    // Crew Uang Layar: an employee's work location name doubles as the name of the yacht
+    // they're stationed on (e.g. "Bali"/"Bajo" are shore locations, anything else is
+    // usually a boat name) — match it against the fleet to find that yacht's trips this
+    // period, no separate crew-assignment data needed.
+    const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+    const yachtIdByLocationName = new Map(yachts.map(y => [y.name.trim().toLowerCase(), y.id]))
+    const yachtIdByEmployeeId = new Map<string, string>()
+    for (const emp of employees) {
+      const locName = emp.location?.name?.trim().toLowerCase()
+      const yachtId = locName ? yachtIdByLocationName.get(locName) : undefined
+      if (yachtId) yachtIdByEmployeeId.set(emp.id, yachtId)
+    }
+    const neededYachtIds = [...new Set(yachtIdByEmployeeId.values())]
+    const tripBookings = neededYachtIds.length
+      ? await db.booking.findMany({
+          where: {
+            yachtId: { in: neededYachtIds },
+            status: { in: [...TRIP_BOOKING_STATUSES] },
+            startDate: { lte: monthEnd },
+            endDate: { gte: monthStart },
+          },
+          select: { yachtId: true, startDate: true, endDate: true },
+        })
+      : []
+    const bookingRangesByYachtId = new Map<string, { start: Date; end: Date }[]>()
+    for (const b of tripBookings) {
+      if (!b.yachtId) continue
+      const list = bookingRangesByYachtId.get(b.yachtId) ?? []
+      list.push({ start: b.startDate, end: b.endDate })
+      bookingRangesByYachtId.set(b.yachtId, list)
+    }
+    const tripDaysByYachtId = new Map<string, number>()
+    for (const yachtId of neededYachtIds) {
+      tripDaysByYachtId.set(yachtId, countTripDaysInPeriod(bookingRangesByYachtId.get(yachtId) ?? [], monthStart, monthEnd))
+    }
     const holidayWeekdays = holidays.filter(h => { const dow = h.date.getDay(); return dow !== 0 && dow !== 6 }).length
     const workingDays = countWeekdaysInMonth(period.year, period.month) - holidayWeekdays
     const nonHadirWorkingDaysByEmployee = new Map<string, number>()
@@ -93,10 +134,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const installmentLinks: { installmentId: string; payslipEntryId: string }[] = []
     const rows = employees.map(emp => {
+      const yachtId = yachtIdByEmployeeId.get(emp.id)
+      const tripDays = yachtId ? (tripDaysByYachtId.get(yachtId) ?? 0) : null
       const draft = buildPayslipEntryDraft(emp, {
         workingDays,
         nonHadirWorkingDays: nonHadirWorkingDaysByEmployee.get(emp.id) ?? 0,
-      })
+      }, tripDays)
       const nextInstallment = nextInstallmentByEmployee.get(emp.id)
       const entryId = crypto.randomUUID()
       if (nextInstallment) {
@@ -121,6 +164,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         joinDateSnap: emp.joinDate,
         workLocationSnap: emp.location?.name ?? null,
         ...draft,
+        otherIncomeSnap: draft.otherIncomeSnap as unknown as Prisma.InputJsonValue,
         ...totals,
       }
     })
