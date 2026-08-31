@@ -57,3 +57,24 @@ export function describeInstallment(grandTotal: number, requestedBefore: number,
   if (isFirst) return completesTotal ? 'Full Payment' : 'Down Payment'
   return completesTotal ? 'Final Payment' : 'Additional Payment'
 }
+
+/**
+ * Sorts a PO's payment requests + reimbursements chronologically and labels each one
+ * (Down Payment / Additional Payment / Final Payment / Full Payment) via
+ * describeInstallment, run cumulatively — same ordering src/lib/purchasing/poTimelineSteps.ts
+ * uses to build the PO timeline. Lets a caller showing one installment (e.g. a "Balance
+ * Payment" detail screen) look up which earlier installment was the DP and what was still
+ * owed before this one.
+ */
+export function labelInstallments<T extends { id: string; amount: number; createdAt: string | Date }>(
+  grandTotal: number,
+  allInstallments: T[],
+): (T & { label: string })[] {
+  const sorted = [...allInstallments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  let cumulative = 0
+  return sorted.map(inst => {
+    const label = describeInstallment(grandTotal, cumulative, inst.amount)
+    cumulative += inst.amount
+    return { ...inst, label }
+  })
+}

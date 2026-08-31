@@ -6,11 +6,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
-import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod } from '@/lib/payroll'
-
-// Bookings in these statuses represent a trip that's actually happening/happened —
-// excludes not-yet-confirmed (pending/on_hold) and cancelled bookings from crew Uang Layar.
-const TRIP_BOOKING_STATUSES = ['confirmed', 'partially_paid', 'fully_paid', 'completed', 'pending_refund'] as const
+import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod, matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 // "Head of Finance" has no dedicated role/seniority field in this app — FINANCE_DIRECTOR
@@ -80,13 +76,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // usually a boat name) — match it against the fleet to find that yacht's trips this
     // period, no separate crew-assignment data needed.
     const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
-    const yachtIdByLocationName = new Map(yachts.map(y => [y.name.trim().toLowerCase(), y.id]))
-    const yachtIdByEmployeeId = new Map<string, string>()
-    for (const emp of employees) {
-      const locName = emp.location?.name?.trim().toLowerCase()
-      const yachtId = locName ? yachtIdByLocationName.get(locName) : undefined
-      if (yachtId) yachtIdByEmployeeId.set(emp.id, yachtId)
-    }
+    const yachtIdByEmployeeId = matchEmployeesToYachts(
+      employees.map(emp => ({ id: emp.id, locationName: emp.location?.name ?? null })),
+      yachts,
+    )
     const neededYachtIds = [...new Set(yachtIdByEmployeeId.values())]
     const tripBookings = neededYachtIds.length
       ? await db.booking.findMany({

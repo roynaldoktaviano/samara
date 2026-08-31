@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -17,12 +18,48 @@ export async function GET() {
   const requests = await db.leaveRequest.findMany({
     orderBy: { requestedAt: 'desc' },
     include: {
-      employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, managerId: true } },
+      employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, managerId: true, location: { select: { name: true } } } },
       requestedBy: { select: { id: true, name: true } },
       decidedBy: { select: { id: true, name: true } },
     },
   })
-  return NextResponse.json(requests)
+
+  // Trip coverage: for crew (employee's Work Location name matches a Yacht name — same
+  // match used for Uang Layar in payroll, see matchEmployeesToYachts), tell HR which of
+  // that yacht's trips fall inside the requested leave range, so they know how many
+  // trips need a freelance replacement while covering the request.
+  const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+  const yachtIdByEmployeeId = matchEmployeesToYachts(
+    requests.map(r => ({ id: r.employee.id, locationName: r.employee.location?.name ?? null })),
+    yachts,
+  )
+  const neededYachtIds = [...new Set(yachtIdByEmployeeId.values())]
+  const crewRequests = requests.filter(r => yachtIdByEmployeeId.has(r.employee.id))
+
+  const tripsByRequestId = new Map<string, { bookingCode: string; destination: string | null; startDate: Date; endDate: Date }[]>()
+  if (crewRequests.length && neededYachtIds.length) {
+    const minStart = new Date(Math.min(...crewRequests.map(r => r.startDate.getTime())))
+    const maxEnd = new Date(Math.max(...crewRequests.map(r => r.endDate.getTime())))
+    const tripBookings = await db.booking.findMany({
+      where: {
+        yachtId: { in: neededYachtIds },
+        status: { in: [...TRIP_BOOKING_STATUSES] },
+        startDate: { lte: maxEnd },
+        endDate: { gte: minStart },
+      },
+      select: { yachtId: true, bookingCode: true, destination: true, startDate: true, endDate: true },
+    })
+    for (const r of crewRequests) {
+      const yachtId = yachtIdByEmployeeId.get(r.employee.id)!
+      const overlapping = tripBookings
+        .filter(b => b.yachtId === yachtId && b.startDate <= r.endDate && b.endDate >= r.startDate)
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+        .map(b => ({ bookingCode: b.bookingCode, destination: b.destination, startDate: b.startDate, endDate: b.endDate }))
+      tripsByRequestId.set(r.id, overlapping)
+    }
+  }
+
+  return NextResponse.json(requests.map(r => ({ ...r, trips: tripsByRequestId.get(r.id) ?? [] })))
 }
 
 export async function POST(req: NextRequest) {

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList } from 'lucide-react'
+import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship } from 'lucide-react'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
+interface Trip { bookingCode: string; destination: string | null; startDate: string; endDate: string }
 interface LeaveRequest {
   id: string
   employee: EmployeeLite
@@ -15,6 +16,10 @@ interface LeaveRequest {
   decidedBy: { id: string; name: string | null } | null
   decidedAt: string | null
   decisionNote: string | null
+  // Trips of the crew member's yacht that fall inside the leave range (Work Location
+  // name matched against Yacht name, same as payroll's Uang Layar) — empty for
+  // shore-based staff or a crew member whose yacht has no trip in that window.
+  trips: Trip[]
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -169,6 +174,7 @@ export default function LeaveRequestsPage() {
                 <th className="text-left px-4 py-3 font-medium">Employee</th>
                 <th className="text-left px-4 py-3 font-medium">Dates</th>
                 <th className="text-center px-4 py-3 font-medium">Days</th>
+                <th className="text-left px-4 py-3 font-medium">Trips Affected</th>
                 <th className="text-left px-4 py-3 font-medium">Reason</th>
                 <th className="text-center px-4 py-3 font-medium">Status</th>
                 <th className="text-left px-4 py-3 font-medium">Requested By</th>
@@ -177,7 +183,7 @@ export default function LeaveRequestsPage() {
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                   <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   No leave requests {statusFilter !== 'All' ? `with status "${statusFilter}"` : 'yet'}.
                 </td></tr>
@@ -189,6 +195,24 @@ export default function LeaveRequestsPage() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
                   <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {r.trips.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                          <Ship className="h-3 w-3" /> {r.trips.length} trip{r.trips.length !== 1 ? 's' : ''}
+                        </span>
+                        <div className="text-muted-foreground space-y-0.5">
+                          {r.trips.map(t => (
+                            <p key={t.bookingCode} className="whitespace-nowrap">
+                              <span className="font-mono">{t.bookingCode}</span> ({fmtDate(t.startDate)} – {fmtDate(t.endDate)})
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={r.reason ?? undefined}>{r.reason ?? '—'}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status]}`}>{r.status}</span>

@@ -35,6 +35,28 @@ export interface DateRange {
   end: Date
 }
 
+// Bookings in these statuses represent a trip that's actually happening/happened —
+// excludes not-yet-confirmed (pending/on_hold) and cancelled bookings. Shared by crew
+// Uang Layar (payroll generation) and Leave Request trip-coverage lookup.
+export const TRIP_BOOKING_STATUSES = ['confirmed', 'partially_paid', 'fully_paid', 'completed', 'pending_refund'] as const
+
+// An employee's work location name doubles as the name of the yacht they're stationed
+// on (e.g. "Bali"/"Bajo" are shore locations, anything else is usually a boat name) — no
+// separate crew-assignment data needed, just match the two name lists case-insensitively.
+export function matchEmployeesToYachts(
+  employees: { id: string; locationName: string | null }[],
+  yachts: { id: string; name: string }[],
+): Map<string, string> {
+  const yachtIdByLocationName = new Map(yachts.map(y => [y.name.trim().toLowerCase(), y.id]))
+  const result = new Map<string, string>()
+  for (const emp of employees) {
+    const locName = emp.locationName?.trim().toLowerCase()
+    const yachtId = locName ? yachtIdByLocationName.get(locName) : undefined
+    if (yachtId) result.set(emp.id, yachtId)
+  }
+  return result
+}
+
 // Merges overlapping date ranges (e.g. multiple Bookings for the same yacht) and counts
 // the total number of calendar days covered, clipped to [periodStart, periodEnd]
 // inclusive on both ends. Used to turn a yacht's trip schedule into "days sailed this

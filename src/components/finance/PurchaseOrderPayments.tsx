@@ -19,6 +19,12 @@ interface PaymentRequest {
   transferProofKeys: string[]
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
+  // Earlier installments (DP/top-ups) for the same PO, this request's own installment
+  // label, and what's still owed on the PO after this one — lets a Balance/Final
+  // payment show its DP context plus its own settled amount and date.
+  installmentLabel: string | null
+  remainingBalance: number
+  priorInstallments: { label: string; amount: number; date: string; status: string; kind: 'payment' | 'reimbursement' }[]
   order: {
     poNumber: string; supplierName: string | null; createdAt: string; deliveryLocation: { name: string } | null
     requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
@@ -229,6 +235,33 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
                 </div>
               )
             })()}
+
+            {selected.priorInstallments.length > 0 && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2.5 text-sm space-y-1.5">
+                {selected.priorInstallments.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between text-blue-900">
+                    <span>{p.label}{p.kind === 'reimbursement' ? ' (Reimbursement)' : ''}</span>
+                    <span className="font-medium">
+                      {fmtMoney(p.amount)}
+                      <span className="text-blue-700 font-normal"> — {p.status === 'PAID' ? 'Paid' : 'Requested'} {fmtDate(p.date)}</span>
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-blue-900">
+                  <span>{selected.installmentLabel ?? 'This Payment'}</span>
+                  <span className="font-medium">
+                    {fmtMoney(selected.amount)}
+                    <span className="text-blue-700 font-normal">
+                      {' — '}{selected.status === 'PAID' ? 'Paid' : 'Requested'} {fmtDate(selected.status === 'PAID' && selected.paidAt ? selected.paidAt : selected.createdAt)}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-blue-200 font-semibold text-blue-900">
+                  <span>Remaining Balance</span>
+                  <span>{fmtMoney(selected.remainingBalance)}</span>
+                </div>
+              </div>
+            )}
 
             {selected.paymentMethod === 'CARD' && (
               <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
