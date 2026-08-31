@@ -791,6 +791,7 @@ function BookingFormInner() {
   const [foodData,    setFoodData]    = useState<any>({})
   const [drinksData,  setDrinksData]  = useState<any>({})
   const [sharedSaved, setSharedSaved] = useState<Set<Section>>(new Set())
+  const [travelingWith, setTravelingWith] = useState('')
 
   // Self-service "add guest" — private charters (whole vessel) and open trips (cabin capacity)
   const [showAddGuestForm, setShowAddGuestForm] = useState(false)
@@ -812,6 +813,7 @@ function BookingFormInner() {
         if (data.medical) setMedicalData(data.medical)
         if (data.food)    setFoodData(data.food)
         if (data.drinks)  setDrinksData(data.drinks)
+        if (data.travelingWith) setTravelingWith(data.travelingWith)
 
         const shared = new Set<Section>()
         if (data.travel && (data.travel.arrivalPickupTime || data.travel.departurePickupTime)) shared.add('travel')
@@ -830,6 +832,15 @@ function BookingFormInner() {
   const STEPS = ALL_STEPS.filter(s => s.id !== 'diving' || formData?.hasDiving)
   const currentStep = STEPS[stepIdx]
   const currentIsShared = currentStep ? SHARED_SECTIONS.includes(currentStep.id) : false
+
+  const handleTravelingWithChange = (value: string) => {
+    setTravelingWith(value)
+    fetch(`/api/booking-form/${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'travelingWith', data: { value } }),
+    }).catch(() => {})
+  }
 
   const setData = (guestId: string, section: GuestScopedSection, k: string, v: any) => {
     setGuestStates(prev => ({
@@ -1235,6 +1246,25 @@ function BookingFormInner() {
               <span className="text-xs font-bold uppercase tracking-widest" style={{ color: TEAL }}>Step {stepIdx + 1} of {STEPS.length}</span>
               <h2 className="text-xl font-extrabold text-gray-800 mt-0.5">{currentStep.title}</h2>
               <p className="text-sm text-gray-400 mt-0.5">{currentStep.subtitle}</p>
+              {currentStep.id === 'profile' && (
+                <div className="mt-3 max-w-xs">
+                  <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">
+                    Who are you sharing this journey with?
+                  </label>
+                  <select
+                    value={travelingWith}
+                    onChange={e => handleTravelingWithChange(e.target.value)}
+                    className={selectCls}
+                  >
+                    <option value="">Select…</option>
+                    <option value="Family">Family</option>
+                    <option value="Partner">Partner</option>
+                    <option value="Friends">Friends</option>
+                    <option value="Travelling solo">Travelling solo</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              )}
             </div>
             {canAddGuest && (
               <button onClick={() => setShowAddGuestForm(true)}

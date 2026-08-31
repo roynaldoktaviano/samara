@@ -7,7 +7,7 @@ import { notifyByRole } from '@/lib/notify-purchasing'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['PURCHASING', 'HR', 'ADMIN', 'SUPER_ADMIN']
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

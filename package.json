@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate && prisma generate --schema=prisma/central.schema.prisma",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r scripts .next/standalone/ && cp .env .next/standalone/.env",
+    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r scripts .next/standalone/ && cp .env .next/standalone/.env",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push",

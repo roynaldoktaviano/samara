@@ -790,6 +790,7 @@ model Booking {
   hasPhotoPackage               Boolean              @default(false)
   masterFormToken               String?              @unique
   masterFormExpiresAt           DateTime?
+  travelingWith                 String?
   salesperson                   String?
   salespersonId                 String?
   notes                         String?

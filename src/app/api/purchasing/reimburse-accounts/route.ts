@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['PURCHASING', 'HR', 'ADMIN', 'SUPER_ADMIN']
 
 export async function GET() {
   const session = await getServerSession(authOptions)

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantByLookup } from '@/lib/resolve-tenant'
 import type { PrismaClient } from '@prisma/client'
 
-const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile', 'travel'] as const
+const ALLOWED_SECTIONS = ['medical', 'food', 'drinks', 'diving', 'surfing', 'profile', 'travel', 'travelingWith'] as const
 type Section = typeof ALLOWED_SECTIONS[number]
 
 /** Max guests this booking can self-register — the whole vessel for a private charter,
@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       hasSurfing: true,
       tripType: true,
       masterFormExpiresAt: true,
+      travelingWith: true,
       yacht:    { select: { name: true, canDiving: true, canSurfing: true, capacity: true } },
       openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
       guests: {
@@ -134,7 +135,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   const food    = leadGuest?.customer?.foodData    ?? {}
   const drinks  = leadGuest?.customer?.drinksData  ?? {}
 
-  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, medical, food, drinks, expiresAt: booking.masterFormExpiresAt })
+  return NextResponse.json({ tripInfo, hasDiving, hasSurfing, guests, travel, medical, food, drinks, travelingWith: booking.travelingWith ?? '', expiresAt: booking.masterFormExpiresAt })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -160,6 +161,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   if (!ALLOWED_SECTIONS.includes(section)) {
     return NextResponse.json({ error: 'Invalid section' }, { status: 400 })
+  }
+
+  // "Who are you sharing this journey with" is a single answer for the whole booking
+  if (section === 'travelingWith') {
+    const { value } = data as { value: string | null | undefined }
+    await db.booking.update({ where: { id: booking.id }, data: { travelingWith: value || null } })
+    return NextResponse.json({ ok: true })
   }
 
   // Travel details are shared across the whole booking, not tied to one customer

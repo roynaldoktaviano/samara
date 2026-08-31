@@ -7,7 +7,7 @@ import { notifyByRole } from '@/lib/notify-purchasing'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
-const ALLOWED = ['FINANCE', 'ADMIN', 'SUPER_ADMIN']
+const ALLOWED = ['FINANCE', 'HR', 'ADMIN', 'SUPER_ADMIN']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
