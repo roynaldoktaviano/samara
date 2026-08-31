@@ -435,7 +435,8 @@ export default function Home() {
         const data = await res.json()
         const prCount = Array.isArray(data?.prApprovals) ? data.prApprovals.length : 0
         const quotationCount = Array.isArray(data?.quotationApprovals) ? data.quotationApprovals.length : 0
-        setPendingMyApprovals(prCount + quotationCount)
+        const crewLeaveCount = Array.isArray(data?.crewLeaveApprovals) ? data.crewLeaveApprovals.length : 0
+        setPendingMyApprovals(prCount + quotationCount + crewLeaveCount)
       }
     } catch { /* silent */ }
   }, [])

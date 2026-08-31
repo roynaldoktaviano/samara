@@ -23,7 +23,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { employee: { select: { id: true, fullName: true, leaveBalance: true, userId: true } } },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (existing.status !== 'PENDING') return NextResponse.json({ error: 'This request has already been decided' }, { status: 409 })
+  // Crew requests must clear the Cruise Director/Captain stage first (see
+  // ./crew-approval/route.ts) — HR can't jump ahead of an unresolved crew stage.
+  if (existing.requiresCrewApproval && existing.status === 'PENDING') {
+    return NextResponse.json({ error: 'Waiting on the Cruise Director/Captain to approve first' }, { status: 409 })
+  }
+  if (existing.status !== 'PENDING' && existing.status !== 'PENDING_HR_APPROVAL') {
+    return NextResponse.json({ error: 'This request has already been decided' }, { status: 409 })
+  }
 
   const updated = await db.leaveRequest.update({
     where: { id },

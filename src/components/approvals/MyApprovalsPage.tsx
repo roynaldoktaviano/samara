@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
 
 interface ApprovalRequest {
   id: string
@@ -50,6 +51,16 @@ interface QuotationApprovalItem {
   quotations: { id: string; supplierId: string | null; supplierName: string; price: number; submittedAt: string; fileKey: string | null }[]
 }
 
+interface CrewLeaveApproval {
+  id: string
+  startDate: string; endDate: string; days: number
+  reason: string | null
+  needsFreelance: boolean
+  freelanceRecommendations: FreelanceRecommendation[]
+  requestedAt: string
+  employee: { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
+}
+
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -78,6 +89,14 @@ export default function MyApprovalsPage() {
   const [chosenQuotation, setChosenQuotation] = useState<Record<string, string>>({})
   const [fileLightbox, setFileLightbox] = useState<string | null>(null)
 
+  const [crewLeaveRequests, setCrewLeaveRequests] = useState<CrewLeaveApproval[]>([])
+  // Per-request draft of needsFreelance/freelanceRecommendations — the Cruise
+  // Director/Captain can correct what the requester filled in before approving (they
+  // know the yacht's crew needs best), seeded from each request's own current values.
+  const [crewLeaveDrafts, setCrewLeaveDrafts] = useState<Record<string, { needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>>({})
+  const [crewRejectModal, setCrewRejectModal] = useState<CrewLeaveApproval | null>(null)
+  const [crewRejectNote, setCrewRejectNote] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     const res = await fetch('/api/purchasing/my-approvals')
@@ -85,6 +104,9 @@ export default function MyApprovalsPage() {
       const data = await res.json()
       setRequests(data.prApprovals ?? [])
       setQuotationItems(data.quotationApprovals ?? [])
+      const crewLeave: CrewLeaveApproval[] = data.crewLeaveApprovals ?? []
+      setCrewLeaveRequests(crewLeave)
+      setCrewLeaveDrafts(Object.fromEntries(crewLeave.map(r => [r.id, { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }])))
     }
     setLoading(false)
   }, [])
@@ -130,6 +152,28 @@ export default function MyApprovalsPage() {
     setQuotationItems(prev => prev.filter(q => q.id !== item.id))
   }
 
+  async function actOnCrewLeave(r: CrewLeaveApproval, action: 'approve' | 'reject', decisionNote?: string) {
+    setActingId(r.id)
+    const draft = crewLeaveDrafts[r.id]
+    const res = await fetch(`/api/hr/leave-requests/${r.id}/crew-approval`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action, decisionNote,
+        ...(action === 'approve' ? {
+          needsFreelance: draft?.needsFreelance ?? r.needsFreelance,
+          freelanceRecommendations: draft?.freelanceRecommendations ?? r.freelanceRecommendations,
+        } : {}),
+      }),
+    })
+    const data = await res.json()
+    setActingId(null)
+    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    setCrewRejectModal(null)
+    setCrewRejectNote('')
+    setCrewLeaveRequests(prev => prev.filter(x => x.id !== r.id))
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -137,7 +181,54 @@ export default function MyApprovalsPage() {
         <p className="text-muted-foreground text-sm mt-1">Purchase requests and supplier selections awaiting your approval</p>
       </div>
 
-      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Purchase Requests</h3>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Crew Leave Requests</h3>
+      {crewLeaveRequests.length === 0 ? (
+        <div className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
+          <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          No crew leave requests waiting for your approval.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {crewLeaveRequests.map(r => {
+            const draft = crewLeaveDrafts[r.id] ?? { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }
+            return (
+              <div key={r.id} className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-sm">{r.employee.fullName}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0 text-right">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
+                </div>
+                {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
+
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={draft.needsFreelance}
+                    onChange={e => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? draft.freelanceRecommendations : [] } }))} />
+                  Needs a freelance replacement for the trips missed?
+                </label>
+                {draft.needsFreelance && (
+                  <FreelanceRecommendationsField value={draft.freelanceRecommendations}
+                    onChange={v => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: true, freelanceRecommendations: v } }))} />
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button disabled={actingId === r.id} onClick={() => actOnCrewLeave(r, 'approve')}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
+                    <CheckCircle2 className="h-3 w-3" /> Approve
+                  </button>
+                  <button disabled={actingId === r.id} onClick={() => { setCrewRejectModal(r); setCrewRejectNote('') }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
+                    <XCircle className="h-3 w-3" /> Reject
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Purchase Requests</h3>
       {/* Desktop table — full column set, only makes sense at desktop+ width */}
       <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -372,6 +463,30 @@ export default function MyApprovalsPage() {
               <button
                 disabled={actingId === quoteRejectModal.id || !quoteRejectReason.trim()}
                 onClick={() => actOnQuotation(quoteRejectModal, 'reject', quoteRejectReason)}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                Yes, Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {crewRejectModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-semibold text-base">Reject {crewRejectModal.employee.fullName}&apos;s leave request?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
+              <textarea rows={3} autoFocus value={crewRejectNote} onChange={e => setCrewRejectNote(e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button onClick={() => setCrewRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+              <button
+                disabled={actingId === crewRejectModal.id}
+                onClick={() => actOnCrewLeave(crewRejectModal, 'reject', crewRejectNote)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
               </button>

@@ -129,6 +129,7 @@ model User {
   purchaseRequestsApproved               PurchaseRequest[]           @relation("PRApprovedBy")
   leaveRequestsSubmitted                 LeaveRequest[]              @relation("LeaveRequestedBy")
   leaveRequestsDecided                   LeaveRequest[]              @relation("LeaveDecidedBy")
+  leaveRequestsCrewApproved              LeaveRequest[]              @relation("LeaveCrewApprovedBy")
   probationReviewsRequested              ProbationReview[]           @relation("ProbationRequestedBy")
   probationReviewsHrDecided              ProbationReview[]           @relation("ProbationHrDecided")
   probationReviewsManagementDecided      ProbationReview[]           @relation("ProbationManagementDecided")
@@ -2920,15 +2921,23 @@ model PayrollSettings {
 
 enum LeaveRequestStatus {
   PENDING
+  // Crew-only intermediate stage: the Cruise Director/Captain of the employee's yacht
+  // already approved (see requiresCrewApproval below); waiting on HR's final sign-off.
+  PENDING_HR_APPROVAL
   APPROVED
   REJECTED
 }
 
-// Single-step approval, same routing idea as PurchaseRequest: goes to the employee's
-// manager (via Employee.managerId) if that manager has an ERP login, otherwise falls
-// back to notifying HR/Admin directly so it never sits unseen. Approving debits
-// Employee.leaveBalance by `days` (not enforced as a hard floor — HR can still approve
-// into a negative balance, e.g. advance leave, but sees the resulting balance).
+// Two possible approval paths: shore-based staff (or crew whose yacht has no Cruise
+// Director/Captain user assigned) go straight to HR/Admin, same routing idea as
+// PurchaseRequest (goes to the employee's manager via Employee.managerId if that manager
+// has an ERP login, otherwise falls back to notifying HR/Admin directly). Crew whose
+// Work Location matches a Yacht with a CRUISE_DIRECTOR or BOAT_CAPTAIN User assigned
+// (User.assignedYachtId) go through that person first (requiresCrewApproval = true,
+// crewApproved* fields), then to HR for final approval — HR can never skip ahead of an
+// unresolved crew stage. Approving (the final decision) debits Employee.leaveBalance by
+// `days` (not enforced as a hard floor — HR can still approve into a negative balance,
+// e.g. advance leave, but sees the resulting balance).
 model LeaveRequest {
   id         String             @id @default(cuid())
   employeeId String
@@ -2938,6 +2947,26 @@ model LeaveRequest {
   days       Int
   reason     String?
   status     LeaveRequestStatus @default(PENDING)
+
+  // See the model comment above — true when a Cruise Director/Captain was resolved for
+  // this employee's yacht at request time, meaning it must clear that stage
+  // (crewApproved* below) before HR's PATCH endpoint will accept a final decision.
+  requiresCrewApproval Boolean   @default(false)
+  crewApprovedById     String?
+  crewApprovedBy       User?     @relation("LeaveCrewApprovedBy", fields: [crewApprovedById], references: [id], onDelete: SetNull)
+  crewApprovedAt       DateTime?
+  crewDecisionNote     String?
+
+  // Checked by the requester when the trips they'd miss need a freelance replacement —
+  // gates whether freelanceRecommendations was even offered as a field, and kept as its
+  // own flag (not just "recommendations is non-empty") so HR still sees the need flagged
+  // even when the requester doesn't have anyone to suggest yet.
+  needsFreelance Boolean @default(false)
+  // Freelance replacement contacts the requester knows of (relevant for crew, where the
+  // yacht still needs to sail) — array of { id, name, phone }, filled in optionally at
+  // request time, can be more than one. Purely informational for HR/Finance to reach out
+  // to; no separate freelancer/contact model needed for this.
+  freelanceRecommendations Json @default("[]")
 
   requestedById String
   requestedBy   User     @relation("LeaveRequestedBy", fields: [requestedById], references: [id])
