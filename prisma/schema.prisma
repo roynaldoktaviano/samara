@@ -130,6 +130,11 @@ model User {
   leaveRequestsSubmitted                 LeaveRequest[]              @relation("LeaveRequestedBy")
   leaveRequestsDecided                   LeaveRequest[]              @relation("LeaveDecidedBy")
   leaveRequestsCrewApproved              LeaveRequest[]              @relation("LeaveCrewApprovedBy")
+  businessTripsSubmitted                 BusinessTrip[]              @relation("BusinessTripRequestedBy")
+  businessTripsDecided                   BusinessTrip[]              @relation("BusinessTripDecidedBy")
+  businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
+  businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
+  businessTripReimbursementsPaid         BusinessTripReimbursement[] @relation("BusinessTripReimbursementPaidBy")
   probationReviewsRequested              ProbationReview[]           @relation("ProbationRequestedBy")
   probationReviewsHrDecided              ProbationReview[]           @relation("ProbationHrDecided")
   probationReviewsManagementDecided      ProbationReview[]           @relation("ProbationManagementDecided")
@@ -2712,6 +2717,7 @@ model Employee {
   goodsReceipts             GoodsReceipt[]
   cashierSales              CashierSale[]
   leaveRequests             LeaveRequest[]
+  businessTrips             BusinessTrip[]
   probationReviews          ProbationReview[]
   payslipEntries            PayslipEntry[]
   attendanceRecords         AttendanceRecord[]
@@ -2981,6 +2987,108 @@ model LeaveRequest {
 
   @@index([employeeId])
   @@index([status])
+}
+
+enum BusinessTripStatus {
+  PENDING // waiting on the employee's manager (or HR directly if no manager has a login)
+  PENDING_HR_APPROVAL // manager approved, waiting on HR's final sign-off
+  APPROVED
+  REJECTED
+  // Requester marked the trip fully wrapped up — only reachable from APPROVED, and only
+  // once every BusinessTripReimbursement on it is PAID (or there are none). See
+  // src/app/api/hr/business-trips/[id]/close/route.ts.
+  CLOSED
+}
+
+// Self-service business trip request: any user can submit one for their linked Employee
+// (see Employee.userId), goes through a two-stage approval — manager first (see
+// requiresManagerApproval below), then HR — mirroring LeaveRequest's crew/HR staging.
+// Once APPROVED, the requester can file a BusinessTripReimbursement against it.
+model BusinessTrip {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  destination String
+  purpose     String
+  startDate   DateTime
+  endDate     DateTime
+
+  status BusinessTripStatus @default(PENDING)
+
+  // True when the requester's Employee had a manager (Employee.managerId) with an ERP
+  // login at request time — mirrors LeaveRequest.requiresCrewApproval, but resolved from
+  // the employee's manager instead of a yacht's Cruise Director/Captain.
+  requiresManagerApproval Boolean   @default(false)
+  managerApprovedById     String?
+  managerApprovedBy       User?     @relation("BusinessTripManagerApprovedBy", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+  managerApprovedAt       DateTime?
+  managerDecisionNote     String?
+
+  requestedById String
+  requestedBy   User     @relation("BusinessTripRequestedBy", fields: [requestedById], references: [id])
+  requestedAt   DateTime @default(now())
+
+  decidedById  String?
+  decidedBy    User?     @relation("BusinessTripDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?
+
+  // Optional post-trip report the requester can add once APPROVED — purely informational,
+  // nothing downstream (including reimbursement) depends on it being filled in.
+  report            String?
+  reportFileKeys    String[]  @default([])
+  reportSubmittedAt DateTime?
+
+  // Set when the requester closes the trip themselves (see close/route.ts) — closedById
+  // isn't tracked separately since only the trip's own requester can close it.
+  closedAt DateTime?
+
+  reimbursements BusinessTripReimbursement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+enum BusinessTripReimbursementStatus {
+  PENDING
+  PAID
+}
+
+// Reimbursement claim tied to an APPROVED BusinessTrip — mirrors POReimbursement's shape
+// (Purchasing → Finance flow) but routes straight from the requester to Finance, with no
+// Purchasing stage in between.
+model BusinessTripReimbursement {
+  id             String       @id @default(cuid())
+  businessTripId String
+  businessTrip   BusinessTrip @relation(fields: [businessTripId], references: [id], onDelete: Cascade)
+
+  requestedById     String
+  requestedBy       User      @relation("BusinessTripReimbursementRequestedBy", fields: [requestedById], references: [id])
+  amount            Float
+  notePhotoKeys     String[]  @default([])
+  notes             String?
+  notaDate          DateTime?
+  requesterName     String
+  bankName          String
+  accountNumber     String
+  accountHolderName String
+
+  status            BusinessTripReimbursementStatus @default(PENDING)
+  paidAt            DateTime?
+  paidById          String?
+  paidBy            User?     @relation("BusinessTripReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  transferProofKeys String[]  @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessTripId])
+  @@index([status])
+  @@index([requestedById])
 }
 
 enum AttendanceStatus {

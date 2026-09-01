@@ -8,10 +8,10 @@ import {
   ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate,
   UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText,
   MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins,
-  Anchor, KeyRound, CalendarDays,
+  Anchor, KeyRound, CalendarDays, Plane,
 } from 'lucide-react'
 
-export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-probation' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-loans' | 'hr-boat-documents' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
+export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-probation' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-loans' | 'hr-boat-documents' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
 
 export type NavItem = {
   id: View
@@ -45,6 +45,7 @@ export const navigationItems: NavItem[] = [
   { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'my-approvals',  label: 'My Approvals',  icon: CheckCircle2, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'my-leave-requests', label: 'Leave Request', icon: CalendarDays, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
+  { id: 'my-business-trips', label: 'Business Trip', icon: Plane, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
@@ -60,6 +61,7 @@ export const navigationItems: NavItem[] = [
   { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-payments', label: 'Delivery Fee Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],   group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-reimbursements', label: 'Delivery Fee Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance', feature: 'purchasing' },
+  { id: 'finance-business-trip-reimbursements', label: 'Business Trip Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
   { id: 'finance-agent-clawback', label: 'Agent Clawback', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
@@ -106,6 +108,7 @@ export const navigationItems: NavItem[] = [
   { id: 'hr-overview',   label: 'Overview',       icon: LayoutDashboard, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],        group: 'hr'         },
   { id: 'hr-employees',  label: 'Employees',      icon: IdCard,     roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
   { id: 'hr-leave-requests', label: 'Leave Requests', icon: Calendar, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],           group: 'hr'         },
+  { id: 'hr-business-trips', label: 'Business Trips', icon: Plane, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],              group: 'hr'         },
   { id: 'hr-candidates', label: 'Talent Pool',    icon: UserPlus,   roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
   { id: 'hr-entities-assignments', label: 'Entities & Assignments', icon: Building2, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'   },
   { id: 'hr-compensation', label: 'Roles & Compensation', icon: Wallet, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],         group: 'hr'         },

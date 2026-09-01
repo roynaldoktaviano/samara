@@ -31,6 +31,7 @@ import Payments from '@/components/payments/Payments'
 import TripSheet from '@/components/payments/TripSheet'
 import PurchaseOrderPayments from '@/components/finance/PurchaseOrderPayments'
 import POReimbursements from '@/components/finance/POReimbursements'
+import BusinessTripReimbursements from '@/components/finance/BusinessTripReimbursements'
 import AgentClawbacks from '@/components/finance/AgentClawbacks'
 import DeliveryFeePayments from '@/components/finance/DeliveryFeePayments'
 import DeliveryFeeReimbursements from '@/components/finance/DeliveryFeeReimbursements'
@@ -64,6 +65,8 @@ import EmployeesPage from '@/components/hr/EmployeesPage'
 import HROverview from '@/components/hr/HROverview'
 import LeaveRequestsPage from '@/components/hr/LeaveRequestsPage'
 import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
+import BusinessTripsPage from '@/components/hr/BusinessTripsPage'
+import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
 import TalentPoolPage from '@/components/hr/TalentPoolPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
@@ -362,10 +365,12 @@ export default function Home() {
   const [pendingDraftPOs, setPendingDraftPOs] = useState(0)
   const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
   const [pendingHrLeaveRequests, setPendingHrLeaveRequests] = useState(0)
+  const [pendingHrBusinessTrips, setPendingHrBusinessTrips] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
   const [pendingDeliveryFeeReimbursements, setPendingDeliveryFeeReimbursements] = useState(0)
+  const [pendingBusinessTripReimbursements, setPendingBusinessTripReimbursements] = useState(0)
   const [unreadWhatsapp, setUnreadWhatsapp] = useState(0)
   const [unreadInstagram, setUnreadInstagram] = useState(0)
   const [unreadEmailInbox, setUnreadEmailInbox] = useState(0)
@@ -436,7 +441,8 @@ export default function Home() {
         const prCount = Array.isArray(data?.prApprovals) ? data.prApprovals.length : 0
         const quotationCount = Array.isArray(data?.quotationApprovals) ? data.quotationApprovals.length : 0
         const crewLeaveCount = Array.isArray(data?.crewLeaveApprovals) ? data.crewLeaveApprovals.length : 0
-        setPendingMyApprovals(prCount + quotationCount + crewLeaveCount)
+        const businessTripCount = Array.isArray(data?.businessTripApprovals) ? data.businessTripApprovals.length : 0
+        setPendingMyApprovals(prCount + quotationCount + crewLeaveCount + businessTripCount)
       }
     } catch { /* silent */ }
   }, [])
@@ -450,6 +456,20 @@ export default function Home() {
         const data = await res.json()
         setPendingHrLeaveRequests(Array.isArray(data)
           ? data.filter((r: { status: string }) => r.status === 'PENDING').length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
+  const fetchPendingHrBusinessTrips = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['ADMIN', 'SUPER_ADMIN', 'HR'].includes(role)) return
+      const res = await fetch('/api/hr/business-trips')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingHrBusinessTrips(Array.isArray(data)
+          ? data.filter((t: { status: string; requiresManagerApproval: boolean }) => t.status === 'PENDING_HR_APPROVAL' || (t.status === 'PENDING' && !t.requiresManagerApproval)).length
           : 0)
       }
     } catch { /* silent */ }
@@ -473,16 +493,18 @@ export default function Home() {
       const role = (session?.user as { role?: string })?.role ?? ''
       if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return
       const countPending = (data: unknown) => Array.isArray(data) ? data.filter((r: { status: string }) => r.status === 'PENDING').length : 0
-      const [poPayRes, poReimbRes, dfPayRes, dfReimbRes] = await Promise.all([
+      const [poPayRes, poReimbRes, dfPayRes, dfReimbRes, tripReimbRes] = await Promise.all([
         fetch('/api/finance/purchase-order-payments'),
         fetch('/api/finance/po-reimbursements'),
         fetch('/api/finance/delivery-fee-payments'),
         fetch('/api/finance/delivery-fee-reimbursements'),
+        fetch('/api/finance/business-trip-reimbursements'),
       ])
       if (poPayRes.ok) setPendingPOPayments(countPending(await poPayRes.json()))
       if (poReimbRes.ok) setPendingPOReimbursements(countPending(await poReimbRes.json()))
       if (dfPayRes.ok) setPendingDeliveryFeePayments(countPending(await dfPayRes.json()))
       if (dfReimbRes.ok) setPendingDeliveryFeeReimbursements(countPending(await dfReimbRes.json()))
+      if (tripReimbRes.ok) setPendingBusinessTripReimbursements(countPending(await tripReimbRes.json()))
     } catch { /* silent */ }
   }, [session])
 
@@ -536,13 +558,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -557,12 +579,14 @@ export default function Home() {
       'payments': () => { fetchPendingPayments(); fetchPendingRefunds() },
       'purchasing-finance': fetchPendingPurchasingFinance,
       'hr-leave-requests': fetchPendingHrLeaveRequests,
+      'hr-business-trips': fetchPendingHrBusinessTrips,
+      'finance-business-trip-reimbursements': fetchPendingPurchasingFinance,
       'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -764,6 +788,7 @@ export default function Home() {
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments deepLinkId={deepLink?.view === 'finance-po-payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-po-reimbursements': return <POReimbursements deepLinkId={deepLink?.view === 'finance-po-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'finance-business-trip-reimbursements': return <BusinessTripReimbursements deepLinkId={deepLink?.view === 'finance-business-trip-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-delivery-fee-payments': return <DeliveryFeePayments deepLinkId={deepLink?.view === 'finance-delivery-fee-payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements deepLinkId={deepLink?.view === 'finance-delivery-fee-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-agent-clawback': return <AgentClawbacks />
@@ -783,6 +808,7 @@ export default function Home() {
       case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
+      case 'my-business-trips': return <MyBusinessTripsPage />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
@@ -809,6 +835,7 @@ export default function Home() {
       case 'hr-overview':   return <HROverview onNavigate={setCurrentView} />
       case 'hr-employees':  return <EmployeesPage />
       case 'hr-leave-requests': return <LeaveRequestsPage />
+      case 'hr-business-trips': return <BusinessTripsPage />
       case 'hr-candidates': return <TalentPoolPage />
       case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />
@@ -922,10 +949,12 @@ export default function Home() {
                   (item.id === 'purchasing-orders' && pendingDraftPOs > 0) ||
                   (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
                   (item.id === 'hr-leave-requests' && pendingHrLeaveRequests > 0) ||
+                  (item.id === 'hr-business-trips' && pendingHrBusinessTrips > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
                   (item.id === 'finance-delivery-fee-reimbursements' && pendingDeliveryFeeReimbursements > 0) ||
+                  (item.id === 'finance-business-trip-reimbursements' && pendingBusinessTripReimbursements > 0) ||
                   (item.id === 'chat-email' && unreadEmailInbox > 0) ||
                   (item.id === 'chat-inbox' && (unreadWhatsapp + unreadInstagram) > 0)
                 const dotCount =
@@ -936,10 +965,12 @@ export default function Home() {
                   item.id === 'purchasing-orders' ? pendingDraftPOs :
                   item.id === 'my-approvals' ? pendingMyApprovals :
                   item.id === 'hr-leave-requests' ? pendingHrLeaveRequests :
+                  item.id === 'hr-business-trips' ? pendingHrBusinessTrips :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :
                   item.id === 'finance-delivery-fee-reimbursements' ? pendingDeliveryFeeReimbursements :
+                  item.id === 'finance-business-trip-reimbursements' ? pendingBusinessTripReimbursements :
                   item.id === 'chat-email' ? unreadEmailInbox :
                   item.id === 'chat-inbox' ? unreadWhatsapp + unreadInstagram :
                   0

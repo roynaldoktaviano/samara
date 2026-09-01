@@ -1063,7 +1063,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       ))}
                       <Separator />
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Balance Due' : 'Total Deposit Paid'}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Balance Due' : selected.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}</span>
                         <span className="font-bold text-sm">${fmt(isClosingPayment ? selected.amount : grandTotal)}</span>
                       </div>
                       {!isClosingPayment && (

@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 
 export const REALTIME_TOPICS = [
   'purchasing-requests', 'purchasing-transfers', 'purchasing-orders', 'my-approvals', 'payments', 'purchasing-finance', 'chat', 'hr-leave-requests',
+  'hr-business-trips', 'finance-business-trip-reimbursements',
 ] as const
 export type RealtimeTopic = typeof REALTIME_TOPICS[number]
 

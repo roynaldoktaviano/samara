@@ -24,6 +24,17 @@ export async function GET() {
   const employee = await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true } })
   const user = await db.user.findUnique({ where: { id: session.user.id }, select: { role: true, assignedYachtId: true } })
 
+  // Business trips waiting on this user as the resolved manager (Employee.managerId of
+  // the requester → this user's Employee.id) — any role can be a manager, so this is
+  // identity-based like the PR approval check above, not role-gated.
+  const businessTripApprovals = employee
+    ? await db.businessTrip.findMany({
+        where: { status: 'PENDING', requiresManagerApproval: true, employee: { managerId: employee.id } },
+        orderBy: { requestedAt: 'asc' },
+        include: { employee: { select: { id: true, fullName: true, employeeNumber: true } } },
+      })
+    : []
+
   const [prRequests, quotationItems] = await Promise.all([
     employee
       ? db.purchaseRequest.findMany({
@@ -83,5 +94,6 @@ export async function GET() {
     })),
     quotationApprovals: quotationItems,
     crewLeaveApprovals: crewLeaveRequests,
+    businessTripApprovals,
   })
 }

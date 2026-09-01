@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays, Plane } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
@@ -61,6 +61,15 @@ interface CrewLeaveApproval {
   employee: { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
 }
 
+interface BusinessTripApproval {
+  id: string
+  destination: string
+  purpose: string
+  startDate: string; endDate: string
+  requestedAt: string
+  employee: { id: string; fullName: string; employeeNumber: string }
+}
+
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -97,6 +106,10 @@ export default function MyApprovalsPage() {
   const [crewRejectModal, setCrewRejectModal] = useState<CrewLeaveApproval | null>(null)
   const [crewRejectNote, setCrewRejectNote] = useState('')
 
+  const [businessTripApprovals, setBusinessTripApprovals] = useState<BusinessTripApproval[]>([])
+  const [tripRejectModal, setTripRejectModal] = useState<BusinessTripApproval | null>(null)
+  const [tripRejectNote, setTripRejectNote] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     const res = await fetch('/api/purchasing/my-approvals')
@@ -107,6 +120,7 @@ export default function MyApprovalsPage() {
       const crewLeave: CrewLeaveApproval[] = data.crewLeaveApprovals ?? []
       setCrewLeaveRequests(crewLeave)
       setCrewLeaveDrafts(Object.fromEntries(crewLeave.map(r => [r.id, { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }])))
+      setBusinessTripApprovals(data.businessTripApprovals ?? [])
     }
     setLoading(false)
   }, [])
@@ -174,6 +188,21 @@ export default function MyApprovalsPage() {
     setCrewLeaveRequests(prev => prev.filter(x => x.id !== r.id))
   }
 
+  async function actOnBusinessTrip(t: BusinessTripApproval, action: 'approve' | 'reject', decisionNote?: string) {
+    setActingId(t.id)
+    const res = await fetch(`/api/hr/business-trips/${t.id}/manager-approval`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, decisionNote }),
+    })
+    const data = await res.json()
+    setActingId(null)
+    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    setTripRejectModal(null)
+    setTripRejectNote('')
+    setBusinessTripApprovals(prev => prev.filter(x => x.id !== t.id))
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -225,6 +254,41 @@ export default function MyApprovalsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Business Trips</h3>
+      {businessTripApprovals.length === 0 ? (
+        <div className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
+          <Plane className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          No business trip requests waiting for your approval.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {businessTripApprovals.map(t => (
+            <div key={t.id} className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-sm">{t.employee.fullName}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{t.employee.employeeNumber}</p>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0 text-right">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</span>
+              </div>
+              <p className="text-sm"><span className="font-medium">{t.destination}</span></p>
+              <p className="text-sm text-muted-foreground">{t.purpose}</p>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button disabled={actingId === t.id} onClick={() => actOnBusinessTrip(t, 'approve')}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
+                  <CheckCircle2 className="h-3 w-3" /> Approve
+                </button>
+                <button disabled={actingId === t.id} onClick={() => { setTripRejectModal(t); setTripRejectNote('') }}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
+                  <XCircle className="h-3 w-3" /> Reject
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -487,6 +551,30 @@ export default function MyApprovalsPage() {
               <button
                 disabled={actingId === crewRejectModal.id}
                 onClick={() => actOnCrewLeave(crewRejectModal, 'reject', crewRejectNote)}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                Yes, Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tripRejectModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-semibold text-base">Reject {tripRejectModal.employee.fullName}&apos;s business trip request?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
+              <textarea rows={3} autoFocus value={tripRejectNote} onChange={e => setTripRejectNote(e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button onClick={() => setTripRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+              <button
+                disabled={actingId === tripRejectModal.id}
+                onClick={() => actOnBusinessTrip(tripRejectModal, 'reject', tripRejectNote)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
               </button>

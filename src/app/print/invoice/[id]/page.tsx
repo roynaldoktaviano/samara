@@ -540,7 +540,7 @@ export default function InvoicePage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 5, padding: '8px 10px', marginBottom: 6 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>
-                {isClosingPayment ? 'Balance Due' : 'Total Deposit Paid'}
+                {isClosingPayment ? 'Balance Due' : payment.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}
               </div>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(isClosingPayment ? payment.amount : grandTotal)}</div>
             </div>
