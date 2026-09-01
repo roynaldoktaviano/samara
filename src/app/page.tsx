@@ -70,7 +70,7 @@ import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
 import TalentPoolPage from '@/components/hr/TalentPoolPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
-import ProbationReviewsPage from '@/components/hr/ProbationReviewsPage'
+import PerformanceReviewsPage from '@/components/hr/PerformanceReviewsPage'
 import PayrollPage from '@/components/hr/PayrollPage'
 import AttendanceRecapPage from '@/components/hr/AttendanceRecapPage'
 import NationalHolidaysPage from '@/components/hr/NationalHolidaysPage'
@@ -839,7 +839,7 @@ export default function Home() {
       case 'hr-candidates': return <TalentPoolPage />
       case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />
-      case 'hr-probation':  return <ProbationReviewsPage />
+      case 'hr-performance-reviews':  return <PerformanceReviewsPage />
       case 'hr-payroll':    return <PayrollPage />
       case 'hr-attendance': return <AttendanceRecapPage />
       case 'hr-national-holidays': return <NationalHolidaysPage />

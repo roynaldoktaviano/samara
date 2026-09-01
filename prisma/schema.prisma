@@ -135,9 +135,8 @@ model User {
   businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
   businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
   businessTripReimbursementsPaid         BusinessTripReimbursement[] @relation("BusinessTripReimbursementPaidBy")
-  probationReviewsRequested              ProbationReview[]           @relation("ProbationRequestedBy")
-  probationReviewsHrDecided              ProbationReview[]           @relation("ProbationHrDecided")
-  probationReviewsManagementDecided      ProbationReview[]           @relation("ProbationManagementDecided")
+  performanceReviewsRequested             PerformanceReview[]         @relation("PerformanceReviewRequestedBy")
+  performanceReviewsReviewed              PerformanceReview[]         @relation("PerformanceReviewReviewedBy")
   purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
@@ -162,6 +161,8 @@ model User {
   poReimbursementsPaid                   POReimbursement[]           @relation("POReimbursementPaidBy")
   poFollowUpsCreated                     PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
   poFollowUpsEscalatedTo                 PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
+  prFollowUpsCreated                      PurchaseRequestFollowUp[]  @relation("PRFollowUpCreatedBy")
+  prFollowUpsEscalatedTo                  PurchaseRequestFollowUp[]  @relation("PRFollowUpEscalatedTo")
   purchaseQuotationsCreated              PurchaseQuotation[]
   deliveryFeesCreated                    DeliveryFee[]
   deliveryFeePaymentRequestsMade         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
@@ -1842,6 +1843,7 @@ model PurchaseRequest {
   orders              PurchaseOrder[]
   transfers           StockTransfer[]
   notifications       Notification[]
+  followUps           PurchaseRequestFollowUp[]
 
   @@index([status])
   @@index([createdAt])
@@ -2080,6 +2082,26 @@ model PurchaseFollowUp {
   createdBy   User          @relation("POFollowUpCreatedBy", fields: [createdById], references: [id])
 
   @@index([orderId])
+  @@index([createdAt])
+}
+
+// Same idea as PurchaseFollowUp above, kept as its own model (rather than a shared
+// polymorphic table) since a PR's escalation-target pool and lifecycle don't need to
+// track a PO's — a PR can pick up its own follow-up trail before it's ever converted.
+model PurchaseRequestFollowUp {
+  id            String   @id @default(cuid())
+  requestId     String
+  note          String
+  isEscalation  Boolean  @default(false)
+  escalatedToId String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  request     PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  escalatedTo User?           @relation("PRFollowUpEscalatedTo", fields: [escalatedToId], references: [id], onDelete: SetNull)
+  createdBy   User            @relation("PRFollowUpCreatedBy", fields: [createdById], references: [id])
+
+  @@index([requestId])
   @@index([createdAt])
 }
 
@@ -2718,7 +2740,7 @@ model Employee {
   cashierSales              CashierSale[]
   leaveRequests             LeaveRequest[]
   businessTrips             BusinessTrip[]
-  probationReviews          ProbationReview[]
+  performanceReviews        PerformanceReview[]
   payslipEntries            PayslipEntry[]
   attendanceRecords         AttendanceRecord[]
   loanRequests              LoanRequest[]
@@ -2732,51 +2754,68 @@ model Employee {
   @@index([managerId])
 }
 
-enum ProbationStage {
-  REQUESTED // manager (or HR on their behalf) submitted the review
-  HR_REVIEW // sitting with HR
-  MANAGEMENT_APPROVAL // HR passed it, sitting with Management
-  APPROVED // fully approved — hiring confirmed, HR now works the checklist below
-  REJECTED // stopped at either HR or Management review
+enum PerformanceReviewStatus {
+  REQUESTED // manager asked HR to review this employee — HR hasn't filled the form in yet
+  COMPLETED // HR filled in and finalized the review
 }
 
-// Requested by Manager → reviewed by HR → approved by Management → Hiring. Once
-// APPROVED, HR works through contractProcessedAt/pklProcessedAt/bpjs*RegisteredAt as a
-// checklist (PKL = Perjanjian Kerja Laut, the seafarer's employment agreement — only
-// meaningful for crew, but harmless to leave unchecked for office staff).
-model ProbationReview {
-  id         String         @id @default(cuid())
-  employeeId String
-  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  stage      ProbationStage @default(REQUESTED)
+enum PerformanceRating {
+  NEEDS_IMPROVEMENT
+  GOOD
+  VERY_GOOD
+  EXCELLENT
+}
 
-  requestedById String
-  requestedBy   User     @relation("ProbationRequestedBy", fields: [requestedById], references: [id])
+enum PerformanceReviewDecision {
+  CONFIRM_PERMANENT
+  EXTEND_PROBATION
+  END_EMPLOYMENT
+}
+
+// Generalized version of Samara's paper "Probation Review" form — any employee, not just
+// those still on probation. Two ways in: HR opens "New Performance Review" and fills the
+// whole form in one go (status goes straight to COMPLETED), or a manager requests one for
+// a direct report (Employee.managerId → their own userId, see .../mine/route.ts) which
+// lands here as REQUESTED for HR to open and fill in via PATCH.
+model PerformanceReview {
+  id         String                  @id @default(cuid())
+  employeeId String
+  employee   Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  status     PerformanceReviewStatus @default(REQUESTED)
+
+  requestedById String?
+  requestedBy   User?    @relation("PerformanceReviewRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   requestedAt   DateTime @default(now())
   requestNote   String?
 
-  hrDecidedById String?
-  hrDecidedBy   User?     @relation("ProbationHrDecided", fields: [hrDecidedById], references: [id], onDelete: SetNull)
-  hrDecidedAt   DateTime?
-  hrApproved    Boolean?
-  hrNote        String?
+  reviewedById String?
+  reviewedBy   User?     @relation("PerformanceReviewReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewDate   DateTime? // the "Denpasar, ___ 2026" date printed on the form
 
-  managementDecidedById String?
-  managementDecidedBy   User?     @relation("ProbationManagementDecided", fields: [managementDecidedById], references: [id], onDelete: SetNull)
-  managementDecidedAt   DateTime?
-  managementApproved    Boolean?
-  managementNote        String?
+  // Criteria table — each left null until HR rates it.
+  attendanceDiscipline     PerformanceRating?
+  workPerformance          PerformanceRating?
+  communicationTeamwork    PerformanceRating?
+  attitudeResponsibility   PerformanceRating?
+  initiativeProblemSolving PerformanceRating?
+  adaptabilityLearning     PerformanceRating?
+  managerComments          String?
 
-  contractProcessedAt DateTime?
-  pklProcessedAt      DateTime?
-  bpjsTkRegisteredAt  DateTime?
-  bpjsKesRegisteredAt DateTime?
+  // Final Decision — decision is the mutually-exclusive outcome (confirm/extend/end);
+  // salaryIncrementApproved is independent and can accompany any of them.
+  decision                PerformanceReviewDecision?
+  salaryIncrementApproved Boolean                    @default(false)
+  currentSalary           Float?
+  newSalary               Float?
+  effectiveDate           DateTime?
+  reasonNotes             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId])
-  @@index([stage])
+  @@index([status])
 }
 
 enum PayrollPeriodStatus {
@@ -2790,7 +2829,7 @@ enum PayrollPeriodStatus {
 // Cutoff on the 20th → HR/Finance fill PayslipEntry rows while OPEN → submit →
 // Head-of-Finance (FINANCE_DIRECTOR/ADMIN/SUPER_ADMIN) approves/rejects → Finance
 // executes payroll around the 25th and marks PAID. Actor+timestamp triplets follow
-// ProbationReview's convention above.
+// PerformanceReview's convention above.
 model PayrollPeriod {
   id     String              @id @default(cuid())
   year   Int

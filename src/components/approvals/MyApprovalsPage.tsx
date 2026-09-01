@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays, Plane } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays, Plane, Send } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
@@ -70,6 +70,14 @@ interface BusinessTripApproval {
   employee: { id: string; fullName: string; employeeNumber: string }
 }
 
+interface TeamMember { id: string; fullName: string; employeeNumber: string; department: string | null; employmentStatus: string | null }
+interface TeamPerformanceReview {
+  id: string
+  status: 'REQUESTED' | 'COMPLETED'
+  createdAt: string
+  employee: { id: string; fullName: string; employeeNumber: string }
+}
+
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -110,9 +118,18 @@ export default function MyApprovalsPage() {
   const [tripRejectModal, setTripRejectModal] = useState<BusinessTripApproval | null>(null)
   const [tripRejectNote, setTripRejectNote] = useState('')
 
+  const [teamReports, setTeamReports] = useState<TeamMember[]>([])
+  const [teamReviews, setTeamReviews] = useState<TeamPerformanceReview[]>([])
+  const [requestReviewModal, setRequestReviewModal] = useState<TeamMember | null>(null)
+  const [requestReviewNote, setRequestReviewNote] = useState('')
+  const [requestingReview, setRequestingReview] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await fetch('/api/purchasing/my-approvals')
+    const [res, teamRes] = await Promise.all([
+      fetch('/api/purchasing/my-approvals'),
+      fetch('/api/hr/performance-reviews/mine'),
+    ])
     if (res.ok) {
       const data = await res.json()
       setRequests(data.prApprovals ?? [])
@@ -121,6 +138,11 @@ export default function MyApprovalsPage() {
       setCrewLeaveRequests(crewLeave)
       setCrewLeaveDrafts(Object.fromEntries(crewLeave.map(r => [r.id, { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }])))
       setBusinessTripApprovals(data.businessTripApprovals ?? [])
+    }
+    if (teamRes.ok) {
+      const teamData = await teamRes.json()
+      setTeamReports(teamData.directReports ?? [])
+      setTeamReviews(teamData.requests ?? [])
     }
     setLoading(false)
   }, [])
@@ -203,12 +225,57 @@ export default function MyApprovalsPage() {
     setBusinessTripApprovals(prev => prev.filter(x => x.id !== t.id))
   }
 
+  async function submitReviewRequest() {
+    if (!requestReviewModal) return
+    setRequestingReview(true)
+    const res = await fetch('/api/hr/performance-reviews/mine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: requestReviewModal.id, requestNote: requestReviewNote }),
+    })
+    const data = await res.json()
+    setRequestingReview(false)
+    if (!res.ok) { alert(data.error ?? 'Failed to request review'); return }
+    setRequestReviewModal(null)
+    setRequestReviewNote('')
+    load()
+  }
+
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">My Approvals</h2>
         <p className="text-muted-foreground text-sm mt-1">Purchase requests and supplier selections awaiting your approval</p>
       </div>
+
+      {teamReports.length > 0 && (
+        <>
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">My Team — Performance Reviews</h3>
+          <div className="space-y-2">
+            {teamReports.map(m => {
+              const latest = teamReviews.filter(r => r.employee.id === m.id)[0]
+              const pending = latest?.status === 'REQUESTED'
+              return (
+                <div key={m.id} className="rounded-lg border p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sm">{m.fullName}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{m.employeeNumber}{m.department ? ` · ${m.department}` : ''}</p>
+                    {latest && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {latest.status === 'REQUESTED' ? `Review requested ${fmtDate(latest.createdAt)}, waiting for HR` : `Last reviewed ${fmtDate(latest.createdAt)}`}
+                      </p>
+                    )}
+                  </div>
+                  <button disabled={pending} onClick={() => { setRequestReviewModal(m); setRequestReviewNote('') }}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <Send className="h-3.5 w-3.5" /> {pending ? 'Requested' : 'Request Review'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Crew Leave Requests</h3>
       {crewLeaveRequests.length === 0 ? (
@@ -577,6 +644,28 @@ export default function MyApprovalsPage() {
                 onClick={() => actOnBusinessTrip(tripRejectModal, 'reject', tripRejectNote)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {requestReviewModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-semibold text-base">Request performance review — {requestReviewModal.fullName}?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Note for HR (optional)</label>
+              <textarea rows={3} autoFocus value={requestReviewNote} onChange={e => setRequestReviewNote(e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button onClick={() => setRequestReviewModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+              <button disabled={requestingReview} onClick={submitReviewRequest}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {requestingReview ? 'Sending...' : 'Send Request'}
               </button>
             </div>
           </div>

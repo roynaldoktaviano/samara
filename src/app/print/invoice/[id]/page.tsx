@@ -246,6 +246,11 @@ export default function InvoicePage() {
       }
     : null
 
+  // TEMPORARY one-off Bill To name override for booking SL1-ST-0148 — guest asked for the
+  // invoice to show her company name instead of her own; the guest name elsewhere (booking,
+  // guest list) stays untouched. Remove after this invoice is issued.
+  const customerBillToNameOverride = b.bookingCode === 'SL1-ST-0148' ? 'PT. Behong Bali Invest' : null
+
   return (
     <>
       <style>{`
@@ -432,7 +437,7 @@ export default function InvoicePage() {
               </>
             ) : (
               <>
-                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
+                <div style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>{customerBillToNameOverride ?? [salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
                 {b.customer.email   && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 2 }}>{b.customer.email}</div>}
                 {b.customer.phone   && <div style={{ color: '#6b7280', fontSize: 11 }}>{b.customer.phone}</div>}
                 {b.customer.address && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{b.customer.address}</div>}

@@ -91,6 +91,11 @@ interface TripOption {
   yacht: { id: string; name: string } | null
   leadGuestName: string; guestNames: string[]
 }
+interface FollowUp {
+  id: string; note: string; isEscalation: boolean; escalatedToId: string | null
+  escalatedTo: { name: string | null } | null; createdBy: { name: string | null }; createdAt: string
+}
+interface EscalationTarget { id: string; name: string | null }
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
@@ -300,6 +305,16 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[]; remainingItems: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
+  // Follow-up / escalation log (mirrors OrdersPage.tsx's own PO follow-up log)
+  const [prFollowUps, setPrFollowUps] = useState<FollowUp[]>([])
+  const [escalationTargets, setEscalationTargets] = useState<EscalationTarget[]>([])
+  const [followUpModal, setFollowUpModal] = useState(false)
+  const [followUpNote, setFollowUpNote] = useState('')
+  const [followUpIsEscalation, setFollowUpIsEscalation] = useState(false)
+  const [followUpEscalatedToId, setFollowUpEscalatedToId] = useState('')
+  const [followUpSaving, setFollowUpSaving] = useState(false)
+  const [followUpError, setFollowUpError] = useState('')
+
   // Form state (create view — catalog + cart, mirrors the /request-order page)
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
@@ -437,6 +452,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     if (res.ok) {
       data = await res.json()
       setDetail(data)
+      fetch(`/api/purchasing/requests/${id}/follow-ups`).then(r => r.ok ? r.json() : null).then(d => { if (d) setPrFollowUps(d.followUps ?? []) })
       // Full PO detail (payments, transit legs, receipts) isn't in the PR response —
       // fetched separately per linked PO, same endpoint OrdersPage.tsx itself uses, so
       // the PR Timeline can show each PO's journey exactly like the PO's own Timeline.
@@ -478,6 +494,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     setApproveSummary(null)
     setFulfillment({})
     setPoFullDetails({})
+    setPrFollowUps([])
     await fetchDetail(req.id)
   }
 
@@ -969,6 +986,34 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     const res = await fetch(`/api/purchasing/requests/${req.id}`, { method: 'DELETE' })
     if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to delete'); return }
     setView('list'); load()
+  }
+
+  async function openFollowUpModal() {
+    setFollowUpNote(''); setFollowUpIsEscalation(false); setFollowUpEscalatedToId(''); setFollowUpError(''); setFollowUpModal(true)
+    if (!detail) return
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/follow-ups`)
+    if (res.ok) { const d = await res.json(); setEscalationTargets(d.escalationTargets ?? []) }
+  }
+
+  async function saveFollowUp() {
+    if (!detail) return
+    if (!followUpNote.trim()) { setFollowUpError('Note is required'); return }
+    setFollowUpSaving(true); setFollowUpError('')
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/follow-ups`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: followUpNote, isEscalation: followUpIsEscalation, escalatedToId: followUpEscalatedToId || null }),
+    })
+    const data = await res.json()
+    setFollowUpSaving(false)
+    if (!res.ok) { setFollowUpError(data.error ?? 'Failed to save'); return }
+    setFollowUpModal(false)
+    setPrFollowUps(prev => [data, ...prev])
+  }
+
+  async function deleteFollowUp(followUpId: string) {
+    if (!detail || !confirm('Delete this follow-up entry?')) return
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/follow-ups/${followUpId}`, { method: 'DELETE' })
+    if (res.ok) setPrFollowUps(prev => prev.filter(f => f.id !== followUpId))
   }
 
   // ── List view ──
@@ -1539,6 +1584,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
             }).map(x => x.item)
             return (
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+                <div className="space-y-6 min-w-0">
                 <div className="rounded-lg border overflow-hidden min-w-0">
                   <div className="px-5 py-3 bg-muted/50 border-b">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
@@ -1734,6 +1780,50 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
               </tbody>
             </table></div>
                 </div>
+
+                {(() => {
+                  const isOverdue = !!detail.neededByDate && !['CONVERTED', 'REJECTED'].includes(detail.status) && new Date(detail.neededByDate) < new Date()
+                  return (
+                    <div className="space-y-2">
+                      {isOverdue && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                          This PR is overdue — needed by {fmtDate(detail.neededByDate!)}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Follow-ups</h3>
+                        <button onClick={openFollowUpModal} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-muted transition-colors">
+                          <Plus className="h-3.5 w-3.5" /> Log Follow-up
+                        </button>
+                      </div>
+                      {prFollowUps.length === 0 ? (
+                        <p className="text-sm text-muted-foreground/60 italic">No follow-ups logged yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {prFollowUps.map(f => (
+                            <div key={f.id} className="rounded-lg border p-3 text-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="flex-1">{f.note}</p>
+                                <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-red-600 transition-colors shrink-0" title="Delete">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                {f.isEscalation && (
+                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                    Escalated{f.escalatedTo?.name && ` → ${f.escalatedTo.name}`}
+                                  </span>
+                                )}
+                                <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {fmtDateTime(f.createdAt)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+                </div>
                 <Timeline steps={steps} title="Timeline" onViewPhoto={setTimelinePhoto} />
               </div>
             )
@@ -1742,6 +1832,61 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
       )}
       {timelinePhoto && (
         <PhotoLightbox photoKey={timelinePhoto} onClose={() => setTimelinePhoto(null)} />
+      )}
+
+      {followUpModal && detail && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setFollowUpModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <div>
+                  <h3 className="font-semibold">Log Follow-up</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{detail.prNumber}</p>
+                </div>
+                <button onClick={() => setFollowUpModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+              </div>
+              <div className="p-5 space-y-4">
+                {followUpError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{followUpError}</div>}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Note <span className="text-red-500">*</span></label>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="e.g. Called supplier for a quotation, promised by Friday..."
+                    value={followUpNote}
+                    onChange={e => setFollowUpNote(e.target.value)}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={followUpIsEscalation} onChange={e => setFollowUpIsEscalation(e.target.checked)} />
+                  This is an escalation
+                </label>
+                {followUpIsEscalation && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Escalate to (optional)</label>
+                    <select
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      value={followUpEscalatedToId}
+                      onChange={e => setFollowUpEscalatedToId(e.target.value)}
+                    >
+                      <option value="">— None —</option>
+                      {escalationTargets.map(u => <option key={u.id} value={u.id}>{u.name ?? u.id}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                <button onClick={() => setFollowUpModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button onClick={saveFollowUp} disabled={!followUpNote.trim() || followUpSaving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
