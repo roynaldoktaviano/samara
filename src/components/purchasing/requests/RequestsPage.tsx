@@ -540,11 +540,15 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
 
   async function convertToPO() {
     if (!selected || !detail) return
-    const missingSupplier = detail.items.filter(item => !item.verifyRejectedAt && !item.convertedAt && !fulfillment[item.id!] && !item.supplierId)
-    if (missingSupplier.length > 0) {
+    const settleable = detail.items.filter(item => !item.verifyRejectedAt && !item.convertedAt)
+    const missingSupplier = settleable.filter(item => !fulfillment[item.id!] && !item.supplierId)
+    if (missingSupplier.length === settleable.length) {
       alert(`Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}`)
       return
     }
+    // Some items still need a supplier — proceed anyway and let the server convert just
+    // the ready ones, leaving the rest on this PR for a later pass (see remainingItems).
+    if (missingSupplier.length > 0 && !confirm(`These items still need a supplier and will stay on this PR for later: ${missingSupplier.map(i => i.itemName).join(', ')}.\n\nConvert the rest to PO now?`)) return
     const transferFulfillments = Object.entries(fulfillment)
       .filter(([, fromLocationId]) => fromLocationId)
       .map(([requestItemId, fromLocationId]) => ({ requestItemId, fromLocationId: fromLocationId as string }))
@@ -1402,12 +1406,16 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   const settleable = detail?.items.filter(item => !item.verifyRejectedAt && !item.convertedAt) ?? []
                   const missingSupplier = settleable.filter(item => !fulfillment[item.id!] && !item.supplierId)
                   const nothingLeft = settleable.length === 0
-                  const disabled = nothingLeft || missingSupplier.length > 0
+                  // Only block when NOTHING is ready yet — if at least one item already has
+                  // a supplier/fulfillment picked, Purchasing can send that off as its own
+                  // PO now and leave the rest on this PR for a later pass.
+                  const disabled = nothingLeft || missingSupplier.length === settleable.length
+                  const partial = missingSupplier.length > 0 && missingSupplier.length < settleable.length
                   return (
                     <button onClick={convertToPO} disabled={disabled}
-                      title={nothingLeft ? 'Every item is already converted or rejected' : missingSupplier.length > 0 ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
+                      title={nothingLeft ? 'Every item is already converted or rejected' : disabled ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : partial ? `Will convert the ready items now; still needs a supplier: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
                       className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
-                      <ShoppingCart className="h-4 w-4" /> Convert to PO
+                      <ShoppingCart className="h-4 w-4" /> {partial ? 'Convert Ready Items' : 'Convert to PO'}
                     </button>
                   )
                 })()}
@@ -1467,7 +1475,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
           )}
           {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
           {approveSummary.remainingItems.length > 0 && (
-            <p className="text-amber-700">Still needs supplier-selection approval, not yet converted: {approveSummary.remainingItems.join(', ')} — the request stays On Process until these clear too, and can be converted again once they do.</p>
+            <p className="text-amber-700">Not yet converted (still needs a supplier picked, or supplier-selection approval): {approveSummary.remainingItems.join(', ')} — the request stays On Process until these clear too, and can be converted again once they do.</p>
           )}
         </div>
       )}

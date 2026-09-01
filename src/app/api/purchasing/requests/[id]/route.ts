@@ -228,10 +228,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Which items are actually ready to convert this round. An item blocks itself (not the
   // rest of the PR) when it needs quotation approval (band B+, no known-supplier history)
-  // and hasn't gotten it yet — pending or rejected are treated the same here: not ready.
-  // Already-converted items (a prior partial-convert pass) and items rejected at verify
-  // triage are excluded too — a verify-rejected item is a deliberate, permanent exclusion
-  // (never ready, never blocking), not a pending approval like the quotation gate below.
+  // and hasn't gotten it yet, or when nobody has picked a supplier/fulfillment source for
+  // it at all yet — pending or rejected are treated the same here: not ready. Already-
+  // converted items (a prior partial-convert pass) and items rejected at verify triage
+  // are excluded too — a verify-rejected item is a deliberate, permanent exclusion (never
+  // ready, never blocking), not a pending approval like the gates below. This lets
+  // Purchasing send off whichever items already have a supplier lined up as their own PO
+  // right away, instead of waiting on every item in the PR to be settled first.
   let readyItemIds: Set<string> | null = null
   let blockedItemNames: string[] = []
   if (status === 'CONVERTED') {
@@ -245,11 +248,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       where: { requestId: id },
       select: { id: true, itemId: true, itemName: true, quantity: true, estimatedCost: true, supplierId: true, quotationApprovedAt: true, convertedAt: true, verifyRejectedAt: true },
     })
+    const transferItemIds = new Set((transferFulfillments ?? []).map(tf => tf.requestItemId))
     const settled = items.filter(i => i.convertedAt || i.verifyRejectedAt)
     const ready = new Set<string>()
     for (const item of items) {
       if (item.convertedAt || item.verifyRejectedAt) continue // already converted, or rejected at triage — settled, never blocks
-      if (item.quotationApprovedAt || !(await itemRequiresQuotationApproval(db, item))) {
+      if (!item.supplierId && !transferItemIds.has(item.id)) {
+        blockedItemNames.push(item.itemName)
+      } else if (item.quotationApprovedAt || !(await itemRequiresQuotationApproval(db, item))) {
         ready.add(item.id)
       } else {
         blockedItemNames.push(item.itemName)
