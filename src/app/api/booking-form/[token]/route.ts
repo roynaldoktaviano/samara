@@ -56,6 +56,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
           cabin: { select: { capacity: true } },
           arrivalPickupTime: true, arrivalHotel: true, arrivalFlight: true,
           departurePickupTime: true, departureHotel: true, departureFlight: true,
+          pastDestinations: true, pastDestinationsOther: true,
           customer: {
             select: {
               id: true, name: true, firstName: true, lastName: true,
@@ -127,6 +128,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     departurePickupTime: leadGuest.departurePickupTime ?? '',
     departureHotel:      leadGuest.departureHotel       ?? '',
     departureFlight:     leadGuest.departureFlight      ?? '',
+    pastDestinations:      leadGuest.pastDestinations      ?? '',
+    pastDestinationsOther: leadGuest.pastDestinationsOther ?? '',
   } : null
 
   // Medical/food/drinks are answered once for the whole booking (mirrors travel) — sourced from
@@ -172,8 +175,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
 
   // Travel details are shared across the whole booking, not tied to one customer
   if (section === 'travel') {
-    const { arrivalPickupTime, arrivalHotel, arrivalFlight, departurePickupTime, departureHotel, departureFlight } =
-      data as Record<string, string | null | undefined>
+    const {
+      arrivalPickupTime, arrivalHotel, arrivalFlight,
+      departurePickupTime, departureHotel, departureFlight,
+      pastDestinations, pastDestinationsOther,
+    } = data as Record<string, string | null | undefined>
     await db.bookingGuest.updateMany({
       where: { bookingId: booking.id },
       data: {
@@ -183,6 +189,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
         departurePickupTime: departurePickupTime || null,
         departureHotel:      departureHotel       || null,
         departureFlight:     departureFlight      || null,
+        pastDestinations:      pastDestinations      || null,
+        pastDestinationsOther: pastDestinationsOther || null,
       },
     })
     return NextResponse.json({ ok: true })

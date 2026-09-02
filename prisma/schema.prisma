@@ -861,6 +861,9 @@ model BookingGuest {
   departurePickupTime String?
   departureHotel      String?
   departureFlight     String?
+  // Comma-separated selections from a fixed checkbox set (Raja Ampat, Spice Islands, Other, Not yet).
+  pastDestinations      String?
+  pastDestinationsOther String?
   booking             Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   customer            Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cabin               Cabin?        @relation(fields: [cabinId], references: [id])

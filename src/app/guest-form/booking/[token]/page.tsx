@@ -53,7 +53,11 @@ interface TravelData {
   departurePickupTime: string
   departureHotel: string
   departureFlight: string
+  pastDestinations: string
+  pastDestinationsOther: string
 }
+
+const PAST_DESTINATION_OPTIONS = ['Raja Ampat', 'Spice Islands', 'Other', 'Not yet'] as const
 
 interface BookingFormData {
   tripInfo: TripInfo
@@ -396,8 +400,45 @@ function DrinksSection({ data, onChange }: { data: any; onChange: (k: string, v:
 
 function TravelSection({ data, onChange }: { data: TravelData; onChange: (k: keyof TravelData, v: string) => void }) {
   const f = (k: keyof TravelData) => (e: React.ChangeEvent<HTMLInputElement>) => onChange(k, e.target.value)
+  const selected = data.pastDestinations ? data.pastDestinations.split(',').filter(Boolean) : []
+  const toggleDestination = (option: string) => {
+    const next = selected.includes(option) ? selected.filter(o => o !== option) : [...selected, option]
+    onChange('pastDestinations', next.join(','))
+  }
   return (
     <div className="space-y-6">
+      <div className="pb-6 border-b border-gray-100 space-y-3">
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: TEAL }}>
+          Have you explored any of these Indonesian destinations before?
+        </p>
+        <div className="space-y-2.5">
+          {PAST_DESTINATION_OPTIONS.map(option => (
+            <div key={option} className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={selected.includes(option)}
+                onChange={() => toggleDestination(option)}
+                className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                style={{ accentColor: TEAL }}
+              />
+              <span
+                onClick={() => toggleDestination(option)}
+                className="text-sm text-gray-700 cursor-pointer select-none"
+              >
+                {option}
+              </span>
+              {option === 'Other' && selected.includes('Other') && (
+                <input
+                  value={data.pastDestinationsOther}
+                  onChange={f('pastDestinationsOther')}
+                  placeholder="Where?"
+                  className={`${inputCls} ml-1 py-1.5! max-w-[220px]`}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
         <div className="space-y-4">
           <p className="text-xs font-bold uppercase tracking-widest" style={{ color: TEAL }}>Arrival</p>
@@ -429,6 +470,7 @@ function validateTravel(data: TravelData): string | null {
 const EMPTY_TRAVEL: TravelData = {
   arrivalPickupTime: '', arrivalHotel: '', arrivalFlight: '',
   departurePickupTime: '', departureHotel: '', departureFlight: '',
+  pastDestinations: '', pastDestinationsOther: '',
 }
 
 const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
