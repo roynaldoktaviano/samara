@@ -4,22 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Send, Zap, Users2, MessageSquare, DollarSign, AlertTriangle, ChevronRight } from 'lucide-react'
 import type { MarketingPerformanceSnapshot } from '@/lib/marketing-performance'
-
-const ACCENT = '#bdac7e'
+import { ACCENT, PageHeader, KpiCard } from '@/components/marketing/shared/MarketingUI'
 
 const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-
-function KpiCard({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: string; sub?: string }) {
-  return (
-    <div className="border rounded-xl bg-white p-4">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} /> {label}
-      </div>
-      <p className="text-2xl font-bold tracking-tight mt-2">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-    </div>
-  )
-}
 
 type NavView = 'marketing-campaigns' | 'marketing-automations' | 'marketing-audiences' | 'marketing-performance'
 
@@ -53,11 +40,7 @@ export default function CommandCenterPage({ onNavigate }: { onNavigate?: (view: 
 
   return (
     <div className="p-4 md:p-6 space-y-5">
-      <div>
-        <div className="text-[11px] font-bold tracking-wider" style={{ color: ACCENT }}>MARKETING</div>
-        <h1 className="text-2xl font-bold tracking-tight mt-1">Marketing Command Center</h1>
-        <p className="text-muted-foreground text-sm mt-1">A rollup of campaign activity, automations, and attributed booking revenue.</p>
-      </div>
+      <PageHeader eyebrow="MARKETING" title="Marketing Command Center" subtitle="A rollup of campaign activity, automations, and attributed booking revenue." />
 
       {loading || !snapshot ? (
         <p className="text-sm text-muted-foreground p-6">Loading...</p>
@@ -67,7 +50,7 @@ export default function CommandCenterPage({ onNavigate }: { onNavigate?: (view: 
             <KpiCard icon={Send} label="Campaigns sent" value={String(sentCampaigns)} sub={`${draftCampaigns} draft`} />
             <KpiCard icon={Zap} label="Active automations" value={String(snapshot.automations.active)} sub={`${snapshot.automations.totalSent} emails sent`} />
             <KpiCard icon={Users2} label="Saved audiences" value={String(snapshot.audiences.count)} />
-            <KpiCard icon={MessageSquare} label="New inquiries" value={String(snapshot.inquiries.totalInPeriod)} sub="Last 30 days" />
+            <KpiCard icon={MessageSquare} label="New inquiries" value={String(snapshot.inquiries.totalInPeriod)} sub="Last 30 days" trend={snapshot.inquiries.trend.map(w => w.count)} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">

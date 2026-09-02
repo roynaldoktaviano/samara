@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 
 export interface ChannelBreakdown { channel: string; count: number }
 export interface RevenueByChannel { channel: string; revenue: number }
+export interface WeekPoint { week: string; count: number }
 
 export interface MarketingPerformanceSnapshot {
   campaigns: {
@@ -12,6 +13,7 @@ export interface MarketingPerformanceSnapshot {
     openRate: number
     clickRate: number
     recent: { id: string; name: string; status: string; sentAt: string | null; totalRecipients: number; openedCount: number; clickedCount: number }[]
+    sentTrend: WeekPoint[]
   }
   automations: {
     active: number
@@ -26,11 +28,29 @@ export interface MarketingPerformanceSnapshot {
     periodDays: number
     totalInPeriod: number
     bySource: ChannelBreakdown[]
+    trend: WeekPoint[]
   }
   revenue: {
     totalConfirmed: number
     byChannel: RevenueByChannel[]
   }
+}
+
+// Buckets a list of dates into fixed 7-day windows ending today — oldest week first, so a
+// sparkline reading left-to-right shows the recent trend the same way proto-3's did.
+function weeklyBuckets(dates: Date[], weeks: number): WeekPoint[] {
+  const now = Date.now()
+  const dayMs = 24 * 60 * 60 * 1000
+  const buckets: WeekPoint[] = Array.from({ length: weeks }, (_, i) => ({
+    week: `W-${weeks - 1 - i}`,
+    count: 0,
+  }))
+  for (const d of dates) {
+    const daysAgo = Math.floor((now - d.getTime()) / dayMs)
+    const weekIndex = weeks - 1 - Math.floor(daysAgo / 7)
+    if (weekIndex >= 0 && weekIndex < weeks) buckets[weekIndex].count++
+  }
+  return buckets
 }
 
 /**
@@ -42,20 +62,23 @@ export interface MarketingPerformanceSnapshot {
  * Revenue attribution below uses each customer's earliest Inquiry as their acquisition
  * channel — a first-touch model, consistent with how Inquiry.utmSource itself is captured.
  */
+const TREND_WEEKS = 8
+
 export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDays = 180): Promise<MarketingPerformanceSnapshot> {
   const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000)
+  const trendSince = new Date(Date.now() - TREND_WEEKS * 7 * 24 * 60 * 60 * 1000)
 
+  // Split into two batches of ~5 rather than firing all 10 at once — this app's Postgres
+  // pooler is configured with a thin connection_limit, so 10 concurrent queries on one
+  // request can exhaust it under any concurrent load and surface as a transient failure
+  // elsewhere in the app (see withRetry's doc comment in src/lib/db.ts for the same issue).
   const [
     campaignStatusRows,
     totalSentRecipients,
     totalOpened,
     totalClicked,
     recentCampaigns,
-    automations,
-    audienceCount,
-    periodInquiries,
-    allInquiriesForAttribution,
-    bookings,
+    sentTrendRows,
   ] = await Promise.all([
     db.emailCampaign.groupBy({ by: ['status'], _count: { id: true } }),
     db.campaignRecipient.count({ where: { status: 'SENT' } }),
@@ -67,9 +90,19 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
       take: 5,
       select: { id: true, name: true, status: true, sentAt: true, totalRecipients: true, recipients: { select: { openedAt: true, clickedAt: true } } },
     }),
+    db.campaignRecipient.findMany({ where: { status: 'SENT', sentAt: { gte: trendSince } }, select: { sentAt: true } }),
+  ])
+
+  const [
+    automations,
+    audienceCount,
+    periodInquiries,
+    allInquiriesForAttribution,
+    bookings,
+  ] = await Promise.all([
     db.automation.findMany({ select: { id: true, name: true, status: true, enrollments: { select: { status: true } } } }),
     db.audienceSegment.count(),
-    db.inquiry.findMany({ where: { createdAt: { gte: since } }, select: { utmSource: true, source: true } }),
+    db.inquiry.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true, utmSource: true, source: true } }),
     db.inquiry.findMany({ where: { customerId: { not: null } }, orderBy: { createdAt: 'asc' }, select: { customerId: true, utmSource: true, source: true } }),
     db.booking.findMany({ where: { status: { not: 'cancelled' } }, select: { customerId: true, payments: { where: { status: 'confirmed' }, select: { amount: true } } } }),
   ])
@@ -89,6 +122,9 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
     pendingCount: a.enrollments.filter(e => e.status === 'PENDING').length,
     failedCount: a.enrollments.filter(e => e.status === 'FAILED').length,
   }))
+
+  const sentTrend = weeklyBuckets(sentTrendRows.map(r => r.sentAt!), TREND_WEEKS)
+  const inquiryTrend = weeklyBuckets(periodInquiries.map(i => i.createdAt), TREND_WEEKS)
 
   const bySourceMap = new Map<string, number>()
   for (const inq of periodInquiries) {
@@ -122,6 +158,7 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
       openRate: totalSentRecipients ? totalOpened / totalSentRecipients : 0,
       clickRate: totalSentRecipients ? totalClicked / totalSentRecipients : 0,
       recent,
+      sentTrend,
     },
     automations: {
       active: automationList.filter(a => a.status === 'ACTIVE').length,
@@ -132,7 +169,7 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
       list: automationList,
     },
     audiences: { count: audienceCount },
-    inquiries: { periodDays, totalInPeriod: periodInquiries.length, bySource },
+    inquiries: { periodDays, totalInPeriod: periodInquiries.length, bySource, trend: inquiryTrend },
     revenue: { totalConfirmed, byChannel },
   }
 }

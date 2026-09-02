@@ -12,8 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { Zap, Plus, Trash2, Loader2, ChevronRight, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-
-const ACCENT = '#bdac7e'
+import { ACCENT, CARD_THEMES, PageHeader, ModuleHero } from '@/components/marketing/shared/MarketingUI'
 
 type TriggerType = 'BEFORE_TRIP' | 'AFTER_TRIP' | 'GUEST_BIRTHDAY'
 
@@ -22,15 +21,6 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   AFTER_TRIP: 'After trip return',
   GUEST_BIRTHDAY: "On guest's birthday",
 }
-
-// Rotates through the same card-icon palette as the module-card mockup — purely
-// decorative, so which automation lands on which color has no meaning.
-const CARD_THEMES = [
-  { bg: '#eef2ff', fg: '#4f46e5' },
-  { bg: '#ecfdf5', fg: '#059669' },
-  { bg: '#fff7ed', fg: '#d97706' },
-  { bg: '#faf5ff', fg: '#9333ea' },
-]
 
 interface Automation {
   id: string
@@ -161,27 +151,13 @@ export default function AutomationsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] font-bold tracking-wider" style={{ color: ACCENT }}>MARKETING</div>
-          <h1 className="text-2xl font-bold tracking-tight mt-1">Marketing Automations</h1>
-          <p className="text-muted-foreground text-sm mt-1">Build behavioural, lifecycle and trip-based journeys using live ERP data.</p>
-        </div>
-        <Button onClick={openNew} className="bg-black text-white hover:bg-black/85">
-          <Plus className="h-4 w-4 mr-2" /> Create new
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="MARKETING" title="Marketing Automations"
+        subtitle="Build behavioural, lifecycle and trip-based journeys using live ERP data."
+        action={<Button onClick={openNew} className="bg-black text-white hover:bg-black/85"><Plus className="h-4 w-4 mr-2" /> Create new</Button>}
+      />
 
-      <div className="border rounded-xl bg-white p-5 flex items-center gap-4">
-        <span className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#eef2ff', color: '#4f46e5' }}>
-          <Zap className="h-5 w-5" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h2 className="font-semibold">Marketing Automations</h2>
-          <p className="text-sm text-muted-foreground">This module is included in the system structure and shares the same campaign, audience, content and attribution data.</p>
-        </div>
-        <Badge className="bg-blue-100 text-blue-700 border-blue-200 shrink-0">Connected</Badge>
-      </div>
+      <ModuleHero icon={Zap} title="Marketing Automations" description="This module is included in the system structure and shares the same campaign, audience, content and attribution data." badge="Connected" />
 
       {loading ? (
         <p className="text-sm text-muted-foreground p-6">Loading...</p>

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
-import { db } from '@/lib/db'
+import { db, withRetry } from '@/lib/db'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 
@@ -18,7 +18,15 @@ export async function resolveTenantByLookup<T>(
   finder: (client: PrismaClient) => Promise<T | null>
 ): Promise<{ db: PrismaClient; record: T } | null> {
   const defaultUrl = process.env.DATABASE_URL
-  const fromDefault = await finder(db).catch(() => null)
+  // withRetry absorbs a transient connection blip (e.g. Neon's compute waking from
+  // idle-suspend). Anything else that throws here is a real bug (a bad `select`, a
+  // missing relation, etc.) — swallowing that as a plain "not found" makes it look
+  // to the guest like an expired/invalid link with zero trace of the actual cause,
+  // so it's logged loudly before falling through to the tenant scan below.
+  const fromDefault = await withRetry(db, () => finder(db)).catch(err => {
+    console.error('[resolveTenantByLookup] default DB lookup threw:', err)
+    return null
+  })
   if (fromDefault) return { db, record: fromDefault }
 
   const tenants = await centralDb.tenant.findMany({
@@ -29,7 +37,10 @@ export async function resolveTenantByLookup<T>(
   for (const t of tenants) {
     if (t.databaseUrl === defaultUrl) continue
     const tdb = getTenantDb(t.databaseUrl)
-    const record = await finder(tdb).catch(() => null)
+    const record = await withRetry(tdb, () => finder(tdb)).catch(err => {
+      console.error('[resolveTenantByLookup] tenant DB lookup threw:', err)
+      return null
+    })
     if (record) return { db: tdb, record }
   }
   return null

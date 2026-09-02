@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { withRetry } from '@/lib/db'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -10,7 +11,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
   try {
     const { id } = await params
-    const customer = await db.customer.findUnique({
+    // withRetry: a serverless Postgres compute (Neon) that's been idle can take a moment to
+    // wake up on the next query, transiently failing the first attempt — retry once instead
+    // of surfacing that as a false "customer not found"/500 to the person viewing this page.
+    const customer = await withRetry(db, () => db.customer.findUnique({
       where: { id },
       include: {
         bookings: {
@@ -41,7 +45,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           orderBy: { createdAt: 'desc' },
         },
       },
-    })
+    }))
 
     if (!customer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 

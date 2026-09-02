@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
+import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, PenSquare, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -815,7 +815,7 @@ export default function Home() {
       case 'finance-delivery-fee-reimbursements': return <DeliveryFeeReimbursements deepLinkId={deepLink?.view === 'finance-delivery-fee-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-agent-clawback': return <AgentClawbacks />
       case 'vouchers':      return <Vouchers />
-      case 'marketing-dashboard': return <MarketingComingSoon title="Command Center" desc="A rollup of every campaign's performance, spend, ROAS, and tasks that need attention." icon={LayoutDashboard} />
+      case 'marketing-dashboard': return <CommandCenterPage onNavigate={setCurrentView} />
       case 'marketing-campaigns': return <CampaignsPage />
       case 'marketing-calendar': return <MarketingComingSoon title="Content Calendar" desc="See every campaign, email send, and scheduled post in one calendar." icon={Calendar} />
       case 'marketing-automations': return <AutomationsPage />
@@ -825,7 +825,7 @@ export default function Home() {
       case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
       case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
       case 'marketing-assets': return <MediaKit />
-      case 'marketing-performance': return <MarketingComingSoon title="Performance" desc="A cross-campaign, cross-channel rollup — revenue, ROAS, and channel comparison." icon={LineChart} />
+      case 'marketing-performance': return <PerformancePage />
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
       case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
       case 'my-approvals':   return <MyApprovalsPage />
