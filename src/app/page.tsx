@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, Users, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
+import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, LayoutDashboard, PenSquare, Globe, Image, LineChart, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -67,6 +67,8 @@ import LeaveRequestsPage from '@/components/hr/LeaveRequestsPage'
 import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
 import BusinessTripsPage from '@/components/hr/BusinessTripsPage'
 import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
+import OvertimeRequestsPage from '@/components/hr/OvertimeRequestsPage'
+import MyOvertimePage from '@/components/hr/MyOvertimePage'
 import TalentPoolPage from '@/components/hr/TalentPoolPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
@@ -87,6 +89,10 @@ import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
 import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
 import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
+import AudiencesPage from '@/components/marketing/audiences/AudiencesPage'
+import AutomationsPage from '@/components/marketing/automations/AutomationsPage'
+import CommandCenterPage from '@/components/marketing/dashboard/CommandCenterPage'
+import PerformancePage from '@/components/marketing/performance/PerformancePage'
 import MediaKit from '@/components/marketing/MediaKit'
 
 const FINANCE_TABS = [
@@ -366,6 +372,7 @@ export default function Home() {
   const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
   const [pendingHrLeaveRequests, setPendingHrLeaveRequests] = useState(0)
   const [pendingHrBusinessTrips, setPendingHrBusinessTrips] = useState(0)
+  const [pendingHrOvertime, setPendingHrOvertime] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
@@ -475,6 +482,20 @@ export default function Home() {
     } catch { /* silent */ }
   }, [session])
 
+  const fetchPendingHrOvertime = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['ADMIN', 'SUPER_ADMIN', 'HR'].includes(role)) return
+      const res = await fetch('/api/hr/overtime')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingHrOvertime(Array.isArray(data)
+          ? data.filter((r: { status: string }) => r.status === 'PENDING').length
+          : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
   const fetchPendingRefunds = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
@@ -558,13 +579,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchPendingHrOvertime(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -580,13 +601,14 @@ export default function Home() {
       'purchasing-finance': fetchPendingPurchasingFinance,
       'hr-leave-requests': fetchPendingHrLeaveRequests,
       'hr-business-trips': fetchPendingHrBusinessTrips,
+      'hr-overtime': fetchPendingHrOvertime,
       'finance-business-trip-reimbursements': fetchPendingPurchasingFinance,
       'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -796,8 +818,8 @@ export default function Home() {
       case 'marketing-dashboard': return <MarketingComingSoon title="Command Center" desc="A rollup of every campaign's performance, spend, ROAS, and tasks that need attention." icon={LayoutDashboard} />
       case 'marketing-campaigns': return <CampaignsPage />
       case 'marketing-calendar': return <MarketingComingSoon title="Content Calendar" desc="See every campaign, email send, and scheduled post in one calendar." icon={Calendar} />
-      case 'marketing-automations': return <MarketingComingSoon title="Automations" desc="Behavior- and trip-data-driven journeys (pre-trip, post-trip, and more)." icon={Zap} />
-      case 'marketing-audiences': return <MarketingComingSoon title="Audiences" desc="Build and save reusable audience segments for use across campaigns." icon={Users} />
+      case 'marketing-automations': return <AutomationsPage />
+      case 'marketing-audiences': return <AudiencesPage />
       case 'marketing-content-studio': return <MarketingComingSoon title="Content Studio" desc="Produce and approve content across formats — social, video, ads — in one place." icon={PenSquare} />
       case 'marketing-templates': return <TemplatesPage />
       case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
@@ -809,6 +831,7 @@ export default function Home() {
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'my-business-trips': return <MyBusinessTripsPage />
+      case 'my-overtime':    return <MyOvertimePage />
       case 'activity-log':   return <ActivityLog />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
@@ -836,6 +859,7 @@ export default function Home() {
       case 'hr-employees':  return <EmployeesPage />
       case 'hr-leave-requests': return <LeaveRequestsPage />
       case 'hr-business-trips': return <BusinessTripsPage />
+      case 'hr-overtime':    return <OvertimeRequestsPage />
       case 'hr-candidates': return <TalentPoolPage />
       case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />
@@ -950,6 +974,7 @@ export default function Home() {
                   (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
                   (item.id === 'hr-leave-requests' && pendingHrLeaveRequests > 0) ||
                   (item.id === 'hr-business-trips' && pendingHrBusinessTrips > 0) ||
+                  (item.id === 'hr-overtime' && pendingHrOvertime > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
@@ -966,6 +991,7 @@ export default function Home() {
                   item.id === 'my-approvals' ? pendingMyApprovals :
                   item.id === 'hr-leave-requests' ? pendingHrLeaveRequests :
                   item.id === 'hr-business-trips' ? pendingHrBusinessTrips :
+                  item.id === 'hr-overtime' ? pendingHrOvertime :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :

@@ -2,9 +2,15 @@ import type { PrismaClient } from '@prisma/client'
 import { renderBlocksToHtml, injectUnsubscribeUrl, injectPreviewText, type EmailBlock } from '@/lib/email-builder'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 
+export interface CustomerConditions {
+  yachtIds?: string[] // guest has at least one booking on ANY of these yachts (OR)
+  minSpend?: number // guest's total confirmed-payment amount (USD) is at least this
+}
+
 export interface AudienceSourceFilter {
   search?: string
-  yachtId?: string // customers only — restricts to guests with a booking on this yacht
+  yachtId?: string // customers only — restricts to guests with a booking on this yacht (legacy single-select, still used by the per-person picker's boat filter)
+  conditions?: CustomerConditions // customers only — rule-based membership, independent of the per-person picker
   excludeIds?: string[] // individually unchecked in the per-person picker
 }
 
@@ -21,6 +27,22 @@ export interface AudienceMember {
   name: string | null
   sourceType: 'CUSTOMER' | 'LEAD' | 'AGENT' | 'AGENT_LEAD_CONTACT' | 'MANUAL'
   sourceId: string | null
+}
+
+// Payment.amount is always stored in USD (currency/exchangeRate are display-only
+// metadata for invoice printing — see the comment in /api/payments POST), so this
+// is a plain sum, no currency conversion needed. Only 'confirmed' payments count —
+// a requested/pending/rejected payment isn't money actually received.
+async function customerIdsWithMinSpend(db: PrismaClient, minSpend: number): Promise<string[]> {
+  const payments = await db.payment.findMany({
+    where: { status: 'confirmed' },
+    select: { amount: true, booking: { select: { customerId: true } } },
+  })
+  const totals = new Map<string, number>()
+  for (const p of payments) {
+    totals.set(p.booking.customerId, (totals.get(p.booking.customerId) ?? 0) + p.amount)
+  }
+  return [...totals.entries()].filter(([, amount]) => amount >= minSpend).map(([customerId]) => customerId)
 }
 
 /**
@@ -47,6 +69,12 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
       ]
     }
     if (customerFilter.yachtId) where.bookings = { some: { yachtId: customerFilter.yachtId } }
+    if (customerFilter.conditions?.yachtIds?.length) {
+      where.bookings = { some: { yachtId: { in: customerFilter.conditions.yachtIds } } }
+    }
+    if (customerFilter.conditions?.minSpend) {
+      where.id = { in: await customerIdsWithMinSpend(db, customerFilter.conditions.minSpend) }
+    }
     const customers = await db.customer.findMany({ where, select: { id: true, name: true, email: true } })
     for (const c of customers) {
       if (c.email && !excluded.has(c.id) && !byEmail.has(c.email.toLowerCase())) {

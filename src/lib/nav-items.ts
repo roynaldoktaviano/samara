@@ -8,10 +8,10 @@ import {
   ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate,
   UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText,
   MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins,
-  Anchor, KeyRound, CalendarDays, Plane, Star,
+  Anchor, KeyRound, CalendarDays, Plane, Star, Clock,
 } from 'lucide-react'
 
-export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-loans' | 'hr-boat-documents' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
+export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'my-overtime' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-overtime' | 'hr-loans' | 'hr-boat-documents' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
 
 export type NavItem = {
   id: View
@@ -116,6 +116,12 @@ export const navigationItems: NavItem[] = [
   { id: 'hr-payroll',    label: 'Payroll', icon: Banknote, roles: ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'],           group: 'hr'         },
   { id: 'hr-attendance', label: 'Attendance Recap', icon: CalendarCheck, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],        group: 'hr'         },
   { id: 'hr-national-holidays', label: 'National Holidays', icon: CalendarOff, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'         },
+  // Phase 1: HR-only while the weekend/holiday-only rule and approval flow get tried out
+  // internally — see src/app/api/hr/overtime/mine/route.ts. Once confirmed, "My Overtime"
+  // moves to the 'main' group with the same broad roles list as my-business-trips above,
+  // so every user can self-file — the HR queue below stays as-is either way.
+  { id: 'my-overtime', label: 'My Overtime', icon: Clock, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],                      group: 'hr'         },
+  { id: 'hr-overtime', label: 'Overtime',    icon: Clock, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],                      group: 'hr'         },
   { id: 'hr-loans', label: 'Employee Loans & Cash Bon', icon: HandCoins, roles: ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'], group: 'hr'    },
   { id: 'hr-boat-documents', label: 'Boat Documents', icon: Anchor, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],                 group: 'hr'    },
 ]

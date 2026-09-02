@@ -133,6 +133,8 @@ model User {
   businessTripsSubmitted                 BusinessTrip[]              @relation("BusinessTripRequestedBy")
   businessTripsDecided                   BusinessTrip[]              @relation("BusinessTripDecidedBy")
   businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
+  overtimeRequestsSubmitted               OvertimeRequest[]           @relation("OvertimeRequestedBy")
+  overtimeRequestsDecided                 OvertimeRequest[]           @relation("OvertimeDecidedBy")
   businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
   businessTripReimbursementsPaid         BusinessTripReimbursement[] @relation("BusinessTripReimbursementPaidBy")
   performanceReviewsRequested             PerformanceReview[]         @relation("PerformanceReviewRequestedBy")
@@ -219,6 +221,10 @@ model Customer {
   drinksData           Json?
   divingData           Json?
   surfingData          Json?
+  // Comma-separated selections from a fixed checkbox set (Raja Ampat, Spice Islands, Other, Not yet) —
+  // lives on the guest's own profile (not the booking) so it carries across future trips.
+  pastDestinations      String?
+  pastDestinationsOther String?
   passportImage        String?
   deletedAt            DateTime?
   createdAt            DateTime             @default(now())
@@ -861,9 +867,6 @@ model BookingGuest {
   departurePickupTime String?
   departureHotel      String?
   departureFlight     String?
-  // Comma-separated selections from a fixed checkbox set (Raja Ampat, Spice Islands, Other, Not yet).
-  pastDestinations      String?
-  pastDestinationsOther String?
   booking             Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   customer            Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
   cabin               Cabin?        @relation(fields: [cabinId], references: [id])
@@ -1138,8 +1141,89 @@ model EmailTemplate {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   campaigns       EmailCampaign[]
+  automations     Automation[]
 
   @@index([createdAt])
+}
+
+// A saved, reusable audience definition — same `sources` shape as EmailCampaign.audienceSources
+// (see AudienceSources in src/lib/marketing.ts). Campaigns copy a segment's sources in as a
+// starting point rather than referencing it live, so editing a segment later never silently
+// changes a campaign that already went out.
+model AudienceSegment {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  sources         Json
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+enum AutomationTriggerType {
+  BEFORE_TRIP    // N days before a booking's startDate
+  AFTER_TRIP     // N days after a booking's endDate
+  GUEST_BIRTHDAY // N days after (0 = on) a customer's dateOfBirth, evaluated yearly
+}
+
+enum AutomationStatus {
+  ACTIVE
+  PAUSED
+}
+
+// A recurring, trigger-based email send (guest journey) — e.g. "3 days before departure,
+// email everyone with a confirmed booking starting then". Always renders from the live
+// EmailTemplate at send time (no snapshot), so editing the template updates future sends.
+model Automation {
+  id              String                 @id @default(cuid())
+  name            String
+  description     String?
+  triggerType     AutomationTriggerType
+  offsetDays      Int                    @default(0)
+  status          AutomationStatus       @default(PAUSED)
+  templateId      String
+  template        EmailTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  subject         String
+  fromEmail       String
+  fromName        String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  enrollments     AutomationEnrollment[]
+
+  @@index([status])
+  @@index([triggerType])
+}
+
+enum AutomationEnrollmentStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_UNSUBSCRIBED
+}
+
+// One row per (automation, triggering entity) — the unique constraint is what stops the
+// same booking/customer from being emailed twice by the same automation on a later tick.
+model AutomationEnrollment {
+  id               String                      @id @default(cuid())
+  automationId     String
+  automation       Automation                  @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  entityType       String // "BOOKING" | "CUSTOMER"
+  entityId         String
+  email            String
+  name             String?
+  status           AutomationEnrollmentStatus  @default(PENDING)
+  unsubscribeToken String                      @unique @default(cuid())
+  errorMessage     String?
+  sentAt           DateTime?
+  createdAt        DateTime                    @default(now())
+
+  @@unique([automationId, entityType, entityId])
+  @@index([automationId, status])
 }
 
 // A short saved-picker list of "From email / From name" pairs a campaign can send
@@ -2743,6 +2827,7 @@ model Employee {
   cashierSales              CashierSale[]
   leaveRequests             LeaveRequest[]
   businessTrips             BusinessTrip[]
+  overtimeRequests          OvertimeRequest[]
   performanceReviews        PerformanceReview[]
   payslipEntries            PayslipEntry[]
   attendanceRecords         AttendanceRecord[]
@@ -3167,6 +3252,47 @@ model AttendanceRecord {
 
   @@unique([employeeId, date])
   @@index([employeeId])
+  @@index([date])
+}
+
+enum OvertimeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Self-service overtime claim — restricted to a Saturday/Sunday or a NationalHoliday date
+// only (enforced server-side in src/app/api/hr/overtime/mine/route.ts), since that's the
+// only overtime the business pays out. Single-stage: straight to HR, no manager stage like
+// LeaveRequest/BusinessTrip — HR is verifying the date qualifies and the hours are
+// legitimate, not routing an approval chain. Rolled out HR-only first (hr-overtime nav
+// item) so HR can exercise the flow before it's opened up to every user to self-file.
+model OvertimeRequest {
+  id         String                @id @default(cuid())
+  employeeId String
+  employee   Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  date        DateTime // the calendar day worked, stored at midnight — must be a weekend or a NationalHoliday
+  hours       Float
+  description String // what work was done, required so HR can judge the claim
+  proofFileKeys String[] @default([]) // supporting photo/document evidence
+
+  status OvertimeRequestStatus @default(PENDING)
+
+  requestedById String
+  requestedBy   User     @relation("OvertimeRequestedBy", fields: [requestedById], references: [id])
+  requestedAt   DateTime @default(now())
+
+  decidedById  String?
+  decidedBy    User?     @relation("OvertimeDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
   @@index([date])
 }
 

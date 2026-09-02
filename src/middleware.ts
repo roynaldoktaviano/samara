@@ -43,6 +43,9 @@ const PUBLIC_PATHS = [
   // Email unsubscribe — reached from a link in a sent email, no staff login
   '/unsubscribe',
   '/api/marketing/unsubscribe',
+  // Marketing automations tick — triggered by the self-hosted interval in
+  // instrumentation-node.ts, authenticates via its own CRON_SECRET bearer token
+  '/api/marketing/automations/tick',
   // Scheduled-campaign dispatcher — triggered by Vercel Cron, authenticates via its own bearer secret
   '/api/marketing/campaigns/dispatch',
   // PWA manifest + service worker — must be fetchable pre-login (browsers request these

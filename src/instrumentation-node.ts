@@ -49,6 +49,19 @@ export async function startNodeInstrumentation() {
     }
   }, intervalMs)
 
+  // Evaluates every ACTIVE marketing Automation (pre-trip, post-trip, birthday journeys —
+  // see src/lib/automations.ts) and sends whatever's newly due. Hourly is plenty since
+  // triggers are day-granularity; the enrollment table's unique constraint makes re-running
+  // this any number of times a day harmless (never double-emails the same guest).
+  const automationsTickIntervalMs = 60 * 60 * 1000
+  setInterval(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/marketing/automations/tick`, { headers: cronHeaders })
+    } catch (err) {
+      console.error('[scheduler] automations tick failed:', err)
+    }
+  }, automationsTickIntervalMs)
+
   // Rebuilds the Google Ads offline-conversion Google Sheet — full-refresh/idempotent (see
   // rebuildGoogleAdsConversionsSheet), so running this more often than Google Ads actually
   // reads the sheet is harmless. A few hours' cadence is enough for same-day attribution.

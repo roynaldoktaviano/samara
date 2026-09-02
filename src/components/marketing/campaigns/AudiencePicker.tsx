@@ -19,7 +19,7 @@ const PAGE_SIZE = 100
  * from an otherwise-broad source (e.g. "everyone except these two").
  */
 export default function AudiencePicker({
-  source, label, hint, enabled, onToggle, search, onSearchChange, excludeIds, onExcludeIdsChange, yachtId, onYachtChange, yachts,
+  source, label, hint, enabled, onToggle, search, onSearchChange, excludeIds, onExcludeIdsChange, yachtId, onYachtChange, yachts, hideList,
 }: {
   source: AudienceSourceKey
   label: string
@@ -33,6 +33,10 @@ export default function AudiencePicker({
   yachtId?: string
   onYachtChange?: (v: string) => void
   yachts?: Yacht[]
+  /** Skip the search/per-person checklist below the toggle — used when membership is
+   * already fully determined by rule-based conditions (see GuestConditions), so picking
+   * individuals would be both redundant and impractical against a list of hundreds. */
+  hideList?: boolean
 }) {
   const [members, setMembers] = useState<Member[]>([])
   const [total, setTotal] = useState(0)
@@ -54,11 +58,11 @@ export default function AudiencePicker({
   }, [source, search, yachtId])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || hideList) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(fetchMembers, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [enabled, fetchMembers])
+  }, [enabled, hideList, fetchMembers])
 
   // excludeIds may reference people outside the currently-fetched page, so just
   // report how many of the currently-visible rows are checked as a sanity cue —
@@ -79,7 +83,11 @@ export default function AudiencePicker({
       </label>
       {hint && <p className="text-xs text-muted-foreground ml-6">{hint}</p>}
 
-      {enabled && (
+      {enabled && hideList && (
+        <p className="text-xs text-muted-foreground ml-6">Membership is set by the conditions below — no need to pick individuals.</p>
+      )}
+
+      {enabled && !hideList && (
         <div className="ml-6 space-y-2">
           <div className="flex gap-2">
             <div className="relative flex-1">

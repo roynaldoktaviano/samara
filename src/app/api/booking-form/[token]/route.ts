@@ -56,7 +56,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
           cabin: { select: { capacity: true } },
           arrivalPickupTime: true, arrivalHotel: true, arrivalFlight: true,
           departurePickupTime: true, departureHotel: true, departureFlight: true,
-          pastDestinations: true, pastDestinationsOther: true,
           customer: {
             select: {
               id: true, name: true, firstName: true, lastName: true,
@@ -65,6 +64,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
               passportImage: true,
               emergencyContact: true,
               medicalData: true, foodData: true, drinksData: true, divingData: true, surfingData: true,
+              pastDestinations: true, pastDestinationsOther: true,
             },
           },
         },
@@ -128,8 +128,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     departurePickupTime: leadGuest.departurePickupTime ?? '',
     departureHotel:      leadGuest.departureHotel       ?? '',
     departureFlight:     leadGuest.departureFlight      ?? '',
-    pastDestinations:      leadGuest.pastDestinations      ?? '',
-    pastDestinationsOther: leadGuest.pastDestinationsOther ?? '',
+    // Lives on the guest's own Customer profile, not this booking — see the PUT handler below.
+    pastDestinations:      leadGuest.customer?.pastDestinations      ?? '',
+    pastDestinationsOther: leadGuest.customer?.pastDestinationsOther ?? '',
   } : null
 
   // Medical/food/drinks are answered once for the whole booking (mirrors travel) — sourced from
@@ -173,7 +174,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     return NextResponse.json({ ok: true })
   }
 
-  // Travel details are shared across the whole booking, not tied to one customer
+  // Pick-up logistics are shared across the whole booking, not tied to one customer.
+  // Past-destinations history is different — it belongs to the guest, not the trip, so it's
+  // written to every named guest's own Customer profile (mirrors medical/food/drinks below)
+  // and carries forward to their future bookings instead of resetting each trip.
   if (section === 'travel') {
     const {
       arrivalPickupTime, arrivalHotel, arrivalFlight,
@@ -189,6 +193,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
         departurePickupTime: departurePickupTime || null,
         departureHotel:      departureHotel       || null,
         departureFlight:     departureFlight      || null,
+      },
+    })
+    const namedGuestIds = booking.guests.map((g: any) => g.customerId).filter((id: string | null): id is string => !!id)
+    await db.customer.updateMany({
+      where: { id: { in: namedGuestIds } },
+      data: {
         pastDestinations:      pastDestinations      || null,
         pastDestinationsOther: pastDestinationsOther || null,
       },
