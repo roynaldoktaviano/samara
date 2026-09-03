@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { roleMatches } from '@/lib/role-utils'
 import type { Session } from 'next-auth'
 
-export type AppRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
+export type AppRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'MARKETING_DIRECTOR' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
 
 type RoleCheckResult =
   | { ok: true; session: Session }

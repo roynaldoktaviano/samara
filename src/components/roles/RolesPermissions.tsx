@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { KeyRound, Search, RotateCcw, Save, Lock, ShieldCheck } from 'lucide-react'
 
-type RoleKey = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
+type RoleKey = 'SUPER_ADMIN' | 'ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'MARKETING_DIRECTOR' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
 
 interface RoleRow { role: RoleKey; modules: string[]; isCustomized: boolean }
 interface ModuleDef { id: string; label: string; group: string; subGroup?: string; feature?: string }
@@ -23,6 +23,7 @@ const ROLE_META: Record<RoleKey, { label: string; desc: string; color: string }>
   SALES_MARKETING:   { label: 'Sales & Marketing',  desc: 'Combined role',                                     color: 'bg-indigo-100 text-indigo-700' },
   FINANCE:           { label: 'Finance',            desc: 'Financial overview & costs',                        color: 'bg-emerald-100 text-emerald-700' },
   MARKETING:         { label: 'Marketing',          desc: 'Trips & customer reach',                            color: 'bg-orange-100 text-orange-700' },
+  MARKETING_DIRECTOR:{ label: 'Marketing Director',  desc: 'Marketing + approval authority',                    color: 'bg-fuchsia-100 text-fuchsia-700' },
   PURCHASING:        { label: 'Purchasing',         desc: 'Manage procurement',                                color: 'bg-amber-100 text-amber-700' },
   WAREHOUSE:         { label: 'Warehouse',          desc: 'Receive & check incoming goods',                    color: 'bg-teal-100 text-teal-700' },
   HR:                { label: 'HR',                 desc: 'People & employee records',                         color: 'bg-pink-100 text-pink-700' },

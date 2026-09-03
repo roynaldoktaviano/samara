@@ -218,7 +218,7 @@ export default function EmployeesPage() {
   const [pageSize, setPageSize] = useState(10)
 
   const [modal, setModal] = useState(false)
-  const [modalTab, setModalTab] = useState<'details' | 'contact' | 'bank' | 'salary' | 'documents'>('details')
+  const [modalTab, setModalTab] = useState<'details' | 'contact' | 'bank' | 'salary' | 'documents' | 'assets'>('details')
   const [editing, setEditing] = useState<Employee | null>(null)
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
@@ -725,6 +725,7 @@ export default function EmployeesPage() {
                   { value: 'bank', label: 'Bank & Tax' },
                   { value: 'salary', label: 'Salary' },
                   { value: 'documents', label: 'Documents' },
+                  { value: 'assets', label: 'Company Assets' },
                 ] as const).map(t => (
                   <button key={t.value} type="button" onClick={() => setModalTab(t.value)}
                     className={`px-3.5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -1219,6 +1220,12 @@ export default function EmployeesPage() {
                   </div>
                 </div>
                 )}
+
+                {modalTab === 'assets' && (
+                  editing ? <CompanyAssetsTab employeeId={editing.id} /> : (
+                    <div className="text-sm text-muted-foreground text-center py-8">Save this employee first, then come back to record the company items assigned to them.</div>
+                  )
+                )}
               </div>
 
               <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">
@@ -1363,6 +1370,120 @@ export default function EmployeesPage() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+interface EmployeeAssetRow {
+  id: string
+  itemName: string
+  category: string | null
+  serialNumber: string | null
+  condition: string | null
+  assignedDate: string
+  notes: string | null
+  isReturned: boolean
+  returnedAt: string | null
+  returnCondition: string | null
+  returnNotes: string | null
+}
+
+const ASSET_BLANK = { itemName: '', category: '', serialNumber: '', condition: '', assignedDate: todayISO(), notes: '' }
+
+// Company-owned items handed to one employee — feeds the return checklist on the
+// Separation menu (see SeparationPage) if this employee ever resigns.
+function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
+  const [assets, setAssets] = useState<EmployeeAssetRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState(ASSET_BLANK)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    fetch(`/api/hr/employees/${employeeId}/assets`).then(r => r.ok ? r.json() : []).then(setAssets).finally(() => setLoading(false))
+  }, [employeeId])
+
+  useEffect(() => { load() }, [load])
+
+  async function addAsset() {
+    if (!form.itemName.trim()) return
+    setSaving(true)
+    await fetch(`/api/hr/employees/${employeeId}/assets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+    setForm(ASSET_BLANK); setAdding(false); setSaving(false)
+    load()
+  }
+
+  async function toggleReturned(asset: EmployeeAssetRow) {
+    await fetch(`/api/hr/employees/${employeeId}/assets/${asset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isReturned: !asset.isReturned }) })
+    load()
+  }
+
+  async function removeAsset(id: string) {
+    await fetch(`/api/hr/employees/${employeeId}/assets/${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  if (loading) return <div className="text-sm text-muted-foreground text-center py-8">Loading…</div>
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Company-owned items handed to this employee (laptop, phone, uniform, ID card, tools, ...). These feed the return checklist on the Separation menu if this employee ever resigns.
+      </p>
+
+      {assets.length === 0 && !adding && (
+        <div className="text-sm text-muted-foreground text-center py-6 border-2 border-dashed rounded-xl">No company assets recorded yet.</div>
+      )}
+
+      <div className="space-y-2">
+        {assets.map(a => (
+          <div key={a.id} className={`border-2 rounded-xl p-3 flex items-start gap-3 ${a.isReturned ? 'border-green-100 bg-green-50/40' : 'border-gray-100'}`}>
+            <button type="button" onClick={() => toggleReturned(a)} title={a.isReturned ? 'Mark as not returned' : 'Mark as returned'} className="mt-0.5 shrink-0">
+              {a.isReturned ? <ToggleRight className="h-6 w-6 text-green-600" /> : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">{a.itemName}</span>
+                {a.category && <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{a.category}</span>}
+                {a.isReturned && <span className="text-[10px] font-semibold text-green-700">Returned</span>}
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {a.serialNumber && <>S/N {a.serialNumber} · </>}
+                Assigned {new Date(a.assignedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {a.condition && <> · Condition: {a.condition}</>}
+              </div>
+              {a.notes && <div className="text-xs text-muted-foreground mt-0.5">{a.notes}</div>}
+            </div>
+            <button type="button" onClick={() => removeAsset(a.id)} className="p-1 text-muted-foreground hover:text-destructive shrink-0">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {adding ? (
+        <div className="border-2 border-gray-100 rounded-xl p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input placeholder="Item name *" value={form.itemName} onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" autoFocus />
+            <input placeholder="Category (e.g. Laptop)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <input placeholder="Serial number" value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <input placeholder="Condition (e.g. New)" value={form.condition} onChange={e => setForm(f => ({ ...f, condition: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <input type="date" value={form.assignedDate} onChange={e => setForm(f => ({ ...f, assignedDate: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <textarea placeholder="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setAdding(false); setForm(ASSET_BLANK) }} className="px-3 py-1.5 text-sm border rounded-lg">Cancel</button>
+            <button type="button" onClick={addAsset} disabled={saving || !form.itemName.trim()} className="px-3 py-1.5 text-sm bg-[#bdac7e] text-white rounded-lg disabled:opacity-50">
+              {saving ? 'Adding...' : 'Add Item'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)}
+          className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-2.5 text-sm text-muted-foreground hover:border-[#bdac7e] hover:text-foreground transition-colors">
+          <Plus className="h-3.5 w-3.5" /> Add Company Asset
+        </button>
       )}
     </div>
   )

@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, PenSquare, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
+import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -78,6 +78,7 @@ import AttendanceRecapPage from '@/components/hr/AttendanceRecapPage'
 import NationalHolidaysPage from '@/components/hr/NationalHolidaysPage'
 import EmployeeLoansPage from '@/components/hr/EmployeeLoansPage'
 import BoatDocumentsPage from '@/components/hr/BoatDocumentsPage'
+import SeparationPage from '@/components/hr/SeparationPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import Banks from '@/components/banks/Banks'
@@ -94,6 +95,8 @@ import AutomationsPage from '@/components/marketing/automations/AutomationsPage'
 import CommandCenterPage from '@/components/marketing/dashboard/CommandCenterPage'
 import PerformancePage from '@/components/marketing/performance/PerformancePage'
 import MediaKit from '@/components/marketing/MediaKit'
+import ContentStudioPage from '@/components/marketing/content/ContentStudioPage'
+import CampaignHubPage from '@/components/marketing/campaign/CampaignHubPage'
 
 const FINANCE_TABS = [
   { key: 'summary',           label: 'Revenue Summary'   },
@@ -816,11 +819,12 @@ export default function Home() {
       case 'finance-agent-clawback': return <AgentClawbacks />
       case 'vouchers':      return <Vouchers />
       case 'marketing-dashboard': return <CommandCenterPage onNavigate={setCurrentView} />
+      case 'marketing-campaign-hub': return <CampaignHubPage />
       case 'marketing-campaigns': return <CampaignsPage />
       case 'marketing-calendar': return <MarketingComingSoon title="Content Calendar" desc="See every campaign, email send, and scheduled post in one calendar." icon={Calendar} />
       case 'marketing-automations': return <AutomationsPage />
       case 'marketing-audiences': return <AudiencesPage />
-      case 'marketing-content-studio': return <MarketingComingSoon title="Content Studio" desc="Produce and approve content across formats — social, video, ads — in one place." icon={PenSquare} />
+      case 'marketing-content-studio': return <ContentStudioPage />
       case 'marketing-templates': return <TemplatesPage />
       case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
       case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
@@ -869,6 +873,7 @@ export default function Home() {
       case 'hr-national-holidays': return <NationalHolidaysPage />
       case 'hr-loans': return <EmployeeLoansPage />
       case 'hr-boat-documents': return <BoatDocumentsPage deepLinkId={deepLink?.view === 'hr-boat-documents' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'hr-separation': return <SeparationPage />
       case 'settings':      return (
         <div className="space-y-6">
           <div>

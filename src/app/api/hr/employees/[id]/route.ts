@@ -108,6 +108,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         user: { select: { id: true, name: true, email: true } },
       },
     })
+    // Reactivating clears the resignation fields above — the Separation record (asset
+    // clearance/paklaring state) is equally stale at that point, so drop it too.
+    if (isActive === true) {
+      await db.employeeSeparation.deleteMany({ where: { employeeId: id } })
+    }
     return NextResponse.json(employee)
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'P2002') {

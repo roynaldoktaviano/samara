@@ -4,8 +4,8 @@
 // so existing parseFloat(...)/Number(...) callers keep working unchanged; only the
 // display is formatted. Blank (not "0") shows the placeholder — nothing pre-filled to
 // type over.
-export function RupiahInput({ value, onChange, placeholder = '0', className = '', autoFocus, disabled, title }: {
-  value: string; onChange: (digits: string) => void; placeholder?: string; className?: string; autoFocus?: boolean; disabled?: boolean; title?: string
+export function RupiahInput({ value, onChange, onBlur, placeholder = '0', className = '', autoFocus, disabled, title }: {
+  value: string; onChange: (digits: string) => void; onBlur?: () => void; placeholder?: string; className?: string; autoFocus?: boolean; disabled?: boolean; title?: string
 }) {
   return (
     <div className="relative">
@@ -19,6 +19,7 @@ export function RupiahInput({ value, onChange, placeholder = '0', className = ''
         title={title}
         value={value ? new Intl.NumberFormat('id-ID').format(Number(value)) : ''}
         onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
+        onBlur={onBlur}
         className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted/40 ${className}`}
       />
     </div>

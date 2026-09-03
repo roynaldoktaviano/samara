@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'MARKETING_DIRECTOR' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
 type PurchasingDivision = 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
 
 interface UserRecord {
@@ -112,6 +112,13 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     desc: 'Trips & customer reach',
     color: 'bg-orange-100 text-orange-700',
     modules: 'Dashboard, Open Trips, Guests, Email Campaigns, Email Templates',
+  },
+  {
+    value: 'MARKETING_DIRECTOR',
+    label: 'Marketing Director',
+    desc: 'Everything Marketing can do, plus approval authority',
+    color: 'bg-fuchsia-100 text-fuchsia-700',
+    modules: 'Same as Marketing — plus approving Content Studio items and moving campaigns out of Approval',
   },
   {
     value: 'PURCHASING',

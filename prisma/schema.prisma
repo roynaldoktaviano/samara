@@ -25,6 +25,7 @@ enum Role {
   WAREHOUSE
   HR
   SALES_MARKETING // combined role — treated as SALES for sales-gated screens, MARKETING for marketing-gated ones
+  MARKETING_DIRECTOR // everything MARKETING can access, plus exclusive approval authority (content approval, campaign approval-stage sign-off — see src/lib/role-utils.ts)
   FINANCE_DIRECTOR // combined role — treated as PURCHASING + FINANCE + HR (see src/lib/role-utils.ts)
   CREW // ship crew — Purchase Request module only, no approval authority
   BOAT_CAPTAIN // Purchase Request module + approves their crew's requests + receives delivery links for their assignedYacht
@@ -133,12 +134,14 @@ model User {
   businessTripsSubmitted                 BusinessTrip[]              @relation("BusinessTripRequestedBy")
   businessTripsDecided                   BusinessTrip[]              @relation("BusinessTripDecidedBy")
   businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
-  overtimeRequestsSubmitted               OvertimeRequest[]           @relation("OvertimeRequestedBy")
-  overtimeRequestsDecided                 OvertimeRequest[]           @relation("OvertimeDecidedBy")
+  overtimeRequestsSubmitted              OvertimeRequest[]           @relation("OvertimeRequestedBy")
+  overtimeRequestsDecided                OvertimeRequest[]           @relation("OvertimeDecidedBy")
   businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
   businessTripReimbursementsPaid         BusinessTripReimbursement[] @relation("BusinessTripReimbursementPaidBy")
-  performanceReviewsRequested             PerformanceReview[]         @relation("PerformanceReviewRequestedBy")
-  performanceReviewsReviewed              PerformanceReview[]         @relation("PerformanceReviewReviewedBy")
+  performanceReviewsRequested            PerformanceReview[]         @relation("PerformanceReviewRequestedBy")
+  performanceReviewsReviewed             PerformanceReview[]         @relation("PerformanceReviewReviewedBy")
+  employeeSeparationsCleared             EmployeeSeparation[]        @relation("SeparationClearedBy")
+  employeeSeparationsPaklaringIssued     EmployeeSeparation[]        @relation("SeparationPaklaringIssuedBy")
   purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
@@ -163,8 +166,8 @@ model User {
   poReimbursementsPaid                   POReimbursement[]           @relation("POReimbursementPaidBy")
   poFollowUpsCreated                     PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
   poFollowUpsEscalatedTo                 PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
-  prFollowUpsCreated                      PurchaseRequestFollowUp[]  @relation("PRFollowUpCreatedBy")
-  prFollowUpsEscalatedTo                  PurchaseRequestFollowUp[]  @relation("PRFollowUpEscalatedTo")
+  prFollowUpsCreated                     PurchaseRequestFollowUp[]   @relation("PRFollowUpCreatedBy")
+  prFollowUpsEscalatedTo                 PurchaseRequestFollowUp[]   @relation("PRFollowUpEscalatedTo")
   purchaseQuotationsCreated              PurchaseQuotation[]
   deliveryFeesCreated                    DeliveryFee[]
   deliveryFeePaymentRequestsMade         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
@@ -194,47 +197,47 @@ model User {
 }
 
 model Customer {
-  id                   String               @id @default(cuid())
-  name                 String
-  firstName            String?
-  lastName             String?
-  gender               String?
-  email                String?
-  phone                String?
-  passport             String?
-  dateOfBirth          DateTime?
-  isChild              Boolean              @default(false)
-  address              String?
-  dietaryRequirements  String?
-  allergies            String?
-  equipmentSizes       String?
-  operationalNotes     String?
-  nationality          String?
-  passportExpiry       DateTime?
-  emergencyContact     String?
-  drinkPreferences     String?
-  guestFormToken       String?              @unique
-  guestFormExpiresAt   DateTime?
-  freshsalesContactId  String?              @unique
-  medicalData          Json?
-  foodData             Json?
-  drinksData           Json?
-  divingData           Json?
-  surfingData          Json?
+  id                    String               @id @default(cuid())
+  name                  String
+  firstName             String?
+  lastName              String?
+  gender                String?
+  email                 String?
+  phone                 String?
+  passport              String?
+  dateOfBirth           DateTime?
+  isChild               Boolean              @default(false)
+  address               String?
+  dietaryRequirements   String?
+  allergies             String?
+  equipmentSizes        String?
+  operationalNotes      String?
+  nationality           String?
+  passportExpiry        DateTime?
+  emergencyContact      String?
+  drinkPreferences      String?
+  guestFormToken        String?              @unique
+  guestFormExpiresAt    DateTime?
+  freshsalesContactId   String?              @unique
+  medicalData           Json?
+  foodData              Json?
+  drinksData            Json?
+  divingData            Json?
+  surfingData           Json?
   // Comma-separated selections from a fixed checkbox set (Raja Ampat, Spice Islands, Other, Not yet) —
   // lives on the guest's own profile (not the booking) so it carries across future trips.
   pastDestinations      String?
   pastDestinationsOther String?
-  passportImage        String?
-  deletedAt            DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  bookings             Booking[]
-  guestOf              BookingGuest[]
-  waitingListItems     WaitingList[]
-  waitingListHistories WaitingListHistory[] @relation("WaitingListHistoryCustomer")
-  inquiries            Inquiry[]
-  pageViews            PageView[]
+  passportImage         String?
+  deletedAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  bookings              Booking[]
+  guestOf               BookingGuest[]
+  waitingListItems      WaitingList[]
+  waitingListHistories  WaitingListHistory[] @relation("WaitingListHistoryCustomer")
+  inquiries             Inquiry[]
+  pageViews             PageView[]
 
   @@index([deletedAt])
   @@index([name])
@@ -1164,8 +1167,8 @@ model AudienceSegment {
 }
 
 enum AutomationTriggerType {
-  BEFORE_TRIP    // N days before a booking's startDate
-  AFTER_TRIP     // N days after a booking's endDate
+  BEFORE_TRIP // N days before a booking's startDate
+  AFTER_TRIP // N days after a booking's endDate
   GUEST_BIRTHDAY // N days after (0 = on) a customer's dateOfBirth, evaluated yearly
 }
 
@@ -1209,18 +1212,18 @@ enum AutomationEnrollmentStatus {
 // One row per (automation, triggering entity) — the unique constraint is what stops the
 // same booking/customer from being emailed twice by the same automation on a later tick.
 model AutomationEnrollment {
-  id               String                      @id @default(cuid())
+  id               String                     @id @default(cuid())
   automationId     String
-  automation       Automation                  @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  automation       Automation                 @relation(fields: [automationId], references: [id], onDelete: Cascade)
   entityType       String // "BOOKING" | "CUSTOMER"
   entityId         String
   email            String
   name             String?
-  status           AutomationEnrollmentStatus  @default(PENDING)
-  unsubscribeToken String                      @unique @default(cuid())
+  status           AutomationEnrollmentStatus @default(PENDING)
+  unsubscribeToken String                     @unique @default(cuid())
   errorMessage     String?
   sentAt           DateTime?
-  createdAt        DateTime                    @default(now())
+  createdAt        DateTime                   @default(now())
 
   @@unique([automationId, entityType, entityId])
   @@index([automationId, status])
@@ -1262,6 +1265,7 @@ model EmailCampaign {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   recipients      CampaignRecipient[]
+  channel         CampaignChannel?
 
   @@index([status])
   @@index([scheduledAt])
@@ -1325,6 +1329,180 @@ model CampaignOpenEvent {
   openedAt    DateTime          @default(now())
 
   @@index([recipientId])
+}
+
+enum CampaignStage {
+  PLANNING
+  IN_PRODUCTION
+  APPROVAL
+  LIVE
+  COMPLETED
+}
+
+enum CampaignChannelType {
+  EMAIL
+  META_ADS
+  GOOGLE_ADS
+  WHATSAPP
+  ORGANIC_SOCIAL
+  LANDING_PAGE
+  AGENT_OUTREACH
+  OTHER
+}
+
+enum CampaignChannelStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  READY
+  LIVE
+  PAUSED
+  DONE
+}
+
+// The multi-channel container proto-3 calls a "Campaign" — a shared brief plus one
+// CampaignChannel per activity (Email, Meta Ads, Organic Social, ...), each tracked
+// independently. This sits above EmailCampaign rather than replacing it: a campaign's
+// EMAIL channel links to one EmailCampaign row, which still does the actual sending.
+model Campaign {
+  id                  String            @id @default(cuid())
+  name                String
+  brand               String?
+  stage               CampaignStage     @default(PLANNING)
+  objective           String?
+  targetResult        String?
+  promise             String?
+  offer               String?
+  startDate           DateTime?
+  endDate             DateTime?
+  plannedBudget       Float?
+  ownerName           String?
+  audienceSegments    Json?
+  markets             Json?
+  masterLanguage      String?
+  additionalLanguages Json?
+  exclusions          Json?
+  createdByUserId     String?
+  createdByName       String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  channels            CampaignChannel[]
+  comments            CampaignComment[]
+  contentItems        ContentItem[]
+
+  @@index([stage])
+  @@index([createdAt])
+}
+
+model CampaignChannel {
+  id              String                @id @default(cuid())
+  campaignId      String
+  campaign        Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  type            CampaignChannelType
+  status          CampaignChannelStatus @default(NOT_STARTED)
+  ownerName       String?
+  notes           String?
+  plannedBudget   Float?
+  actualSpend     Float?
+  externalUrl          String? // LANDING_PAGE: the published page's URL
+  externalCampaignName String? // META_ADS/GOOGLE_ADS: the campaign's name inside that ad platform (no live API integration — kept as a manual reference)
+  emailCampaignId String?               @unique
+  emailCampaign   EmailCampaign?        @relation(fields: [emailCampaignId], references: [id], onDelete: SetNull)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([campaignId])
+}
+
+model CampaignComment {
+  id           String   @id @default(cuid())
+  campaignId   String
+  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  authorUserId String?
+  authorName   String
+  text         String
+  createdAt    DateTime @default(now())
+
+  @@index([campaignId])
+}
+
+enum ContentFormat {
+  INSTAGRAM_REEL
+  INSTAGRAM_POST
+  INSTAGRAM_STORY
+  META_AD
+  GOOGLE_DISPLAY
+  EMAIL_HERO
+  WHATSAPP_BROADCAST
+  LANDING_PAGE_ASSET
+  OTHER
+}
+
+// The production/approval lifecycle a piece of content moves through, left to right.
+// REVISION always loops back to IN_PRODUCTION (never straight to WAITING_APPROVAL) so the
+// owner gets a chance to actually address the feedback before it's back in front of a reviewer.
+enum ContentStatus {
+  IDEA
+  IN_PRODUCTION
+  WAITING_APPROVAL
+  APPROVED
+  REVISION
+  PUBLISHED
+}
+
+model ContentItem {
+  id              String           @id @default(cuid())
+  title           String
+  format          ContentFormat
+  status          ContentStatus    @default(IDEA)
+  campaignId      String?
+  campaign        Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignTag     String?
+  caption         String?
+  ownerName       String?
+  dueDate         DateTime?
+  liveUrl         String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  versions        ContentVersion[]
+  comments        ContentComment[]
+
+  @@index([status])
+  @@index([format])
+  @@index([createdAt])
+  @@index([campaignId])
+}
+
+model ContentVersion {
+  id              String      @id @default(cuid())
+  contentItemId   String
+  contentItem     ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  versionNumber   Int
+  mediaUrl        String?
+  mediaType       String?
+  note            String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime    @default(now())
+
+  @@index([contentItemId])
+}
+
+// A unified timeline of plain discussion comments and status-change events (approve /
+// request-changes / submit / publish) — action carries the event type so the UI can render
+// both in one chronological thread without a second query.
+model ContentComment {
+  id              String      @id @default(cuid())
+  contentItemId   String
+  contentItem     ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  authorUserId    String?
+  authorName      String
+  text            String
+  action          String?
+  createdAt       DateTime    @default(now())
+
+  @@index([contentItemId])
 }
 
 model EmailUnsubscribe {
@@ -1916,16 +2094,16 @@ model PurchaseRequest {
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt
 
-  requestedBy         User                  @relation("PRRequestedBy", fields: [requestedById], references: [id])
-  requestedByEmployee Employee?             @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
-  approverEmployee    Employee?             @relation("PRApproverEmployee", fields: [approverEmployeeId], references: [id], onDelete: SetNull)
-  deliveryLocation    StockLocation?        @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
-  tripBooking         Booking?              @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
-  approvedBy          User?                 @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  verifiedBy          User?                 @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
-  convertedBy         User?                 @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
-  rejectedBy          User?                 @relation("PRRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
-  cancelledBy         User?                 @relation("PRCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  requestedBy         User                      @relation("PRRequestedBy", fields: [requestedById], references: [id])
+  requestedByEmployee Employee?                 @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
+  approverEmployee    Employee?                 @relation("PRApproverEmployee", fields: [approverEmployeeId], references: [id], onDelete: SetNull)
+  deliveryLocation    StockLocation?            @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  tripBooking         Booking?                  @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
+  approvedBy          User?                     @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  verifiedBy          User?                     @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  convertedBy         User?                     @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
+  rejectedBy          User?                     @relation("PRRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  cancelledBy         User?                     @relation("PRCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
   items               PurchaseRequestItem[]
   orders              PurchaseOrder[]
   transfers           StockTransfer[]
@@ -2774,7 +2952,7 @@ model Employee {
   // Recurring named income lines beyond the fixed columns above (e.g. a fixed monthly
   // allowance HR wants itemized on the payslip) — array of { id, name, description, amount }.
   // Snapshotted onto PayslipEntry.otherIncomeSnap at generation time.
-  otherIncome Json    @default("[]")
+  otherIncome Json   @default("[]")
 
   // Documents — each stored as data-URL strings, same pattern as PurchaseQuotation.fileKey
   seamanBookFiles     String[] @default([]) // Buku Pelaut
@@ -2821,7 +2999,7 @@ model Employee {
   candidateSource Candidate?
 
   purchaseRequests          PurchaseRequest[]
-  purchaseRequestsToApprove PurchaseRequest[]  @relation("PRApproverEmployee")
+  purchaseRequestsToApprove PurchaseRequest[]   @relation("PRApproverEmployee")
   purchaseOrdersRequested   PurchaseOrder[]
   goodsReceipts             GoodsReceipt[]
   cashierSales              CashierSale[]
@@ -2833,6 +3011,8 @@ model Employee {
   attendanceRecords         AttendanceRecord[]
   loanRequests              LoanRequest[]
   loanInstallments          LoanInstallment[]
+  assets                    EmployeeAsset[]
+  separation                EmployeeSeparation?
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -2840,6 +3020,58 @@ model Employee {
   @@index([roleId])
   @@index([fullName])
   @@index([managerId])
+}
+
+// Company-owned item handed to an employee (laptop, phone, uniform, ID card, tools, etc.)
+// — managed anytime from the Employee record. Separation's checklist just queries the
+// rows for one employee where isReturned is still false; there's no separate junction
+// table, the return fields live right here.
+model EmployeeAsset {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  itemName     String
+  category     String? // e.g. Laptop, Phone, Uniform, ID Card, Tool — free text like other HR classifiers
+  serialNumber String?
+  condition    String? // condition at assignment, free text (New/Good/Fair/...)
+  assignedDate DateTime @default(now())
+  notes        String?
+
+  isReturned      Boolean   @default(false)
+  returnedAt      DateTime?
+  returnCondition String?
+  returnNotes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+}
+
+// One row per employee's current/most-recent resignation — tracks the Separation menu's
+// process state (asset clearance + paklaring issuance) on top of the plain
+// Employee.isActive/resignedAt/resignStatus/resignReason fields. Deleted when the
+// employee is reactivated, same as those fields (see employees/[id] PUT).
+model EmployeeSeparation {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  clearanceCompletedAt   DateTime?
+  clearanceCompletedById String?
+  clearanceCompletedBy   User?     @relation("SeparationClearedBy", fields: [clearanceCompletedById], references: [id], onDelete: SetNull)
+  clearanceNotes         String?
+
+  // Assigned once, the first time the paklaring is generated for this separation — reprints
+  // reuse the same number/date rather than issuing a new one each time it's printed.
+  paklaringNumber     String?
+  paklaringIssuedAt   DateTime?
+  paklaringIssuedById String?
+  paklaringIssuedBy   User?     @relation("SeparationPaklaringIssuedBy", fields: [paklaringIssuedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum PerformanceReviewStatus {
@@ -3094,12 +3326,12 @@ model LeaveRequest {
   // gates whether freelanceRecommendations was even offered as a field, and kept as its
   // own flag (not just "recommendations is non-empty") so HR still sees the need flagged
   // even when the requester doesn't have anyone to suggest yet.
-  needsFreelance Boolean @default(false)
+  needsFreelance           Boolean @default(false)
   // Freelance replacement contacts the requester knows of (relevant for crew, where the
   // yacht still needs to sail) — array of { id, name, phone }, filled in optionally at
   // request time, can be more than one. Purely informational for HR/Finance to reach out
   // to; no separate freelancer/contact model needed for this.
-  freelanceRecommendations Json @default("[]")
+  freelanceRecommendations Json    @default("[]")
 
   requestedById String
   requestedBy   User     @relation("LeaveRequestedBy", fields: [requestedById], references: [id])
@@ -3207,8 +3439,8 @@ model BusinessTripReimbursement {
   status            BusinessTripReimbursementStatus @default(PENDING)
   paidAt            DateTime?
   paidById          String?
-  paidBy            User?     @relation("BusinessTripReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
-  transferProofKeys String[]  @default([])
+  paidBy            User?                           @relation("BusinessTripReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  transferProofKeys String[]                        @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3268,13 +3500,13 @@ enum OvertimeRequestStatus {
 // legitimate, not routing an approval chain. Rolled out HR-only first (hr-overtime nav
 // item) so HR can exercise the flow before it's opened up to every user to self-file.
 model OvertimeRequest {
-  id         String                @id @default(cuid())
+  id         String   @id @default(cuid())
   employeeId String
-  employee   Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  date        DateTime // the calendar day worked, stored at midnight — must be a weekend or a NationalHoliday
-  hours       Float
-  description String // what work was done, required so HR can judge the claim
+  date          DateTime // the calendar day worked, stored at midnight — must be a weekend or a NationalHoliday
+  hours         Float
+  description   String // what work was done, required so HR can judge the claim
   proofFileKeys String[] @default([]) // supporting photo/document evidence
 
   status OvertimeRequestStatus @default(PENDING)
@@ -3422,22 +3654,22 @@ enum CandidateStatus {
 // Talent pool — a lightweight recruitment pipeline, not a full ATS. HIRED/REJECTED are
 // terminal states excluded from the "active pipeline" count shown on HR Overview.
 model Candidate {
-  id            String          @id @default(cuid())
-  fullName      String
-  appliedRoleId String?
-  appliedRole   EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
-  phone         String?
-  email         String?
-  source        String?
-  resumeFiles   String[]        @default([])
-  expectedSalary Float?
-  location      String?
-  readyJoinDate DateTime?
-  additionalDocuments Json      @default("[]") // named extra docs — array of { id, name, description, fileKey }
-  notes         String?
-  status        CandidateStatus @default(NEW)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  fullName            String
+  appliedRoleId       String?
+  appliedRole         EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
+  phone               String?
+  email               String?
+  source              String?
+  resumeFiles         String[]        @default([])
+  expectedSalary      Float?
+  location            String?
+  readyJoinDate       DateTime?
+  additionalDocuments Json            @default("[]") // named extra docs — array of { id, name, description, fileKey }
+  notes               String?
+  status              CandidateStatus @default(NEW)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   // Set once this candidate is converted into a real Employee (on probation) from
   // the Talent Pool — prevents converting the same hire twice and links back to

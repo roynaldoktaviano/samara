@@ -7,7 +7,7 @@ import type { Role } from '@prisma/client'
 // generation order.
 export const ALL_ROLES: Role[] = [
   'SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR',
-  'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR',
+  'SALES_MARKETING', 'MARKETING_DIRECTOR', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR',
 ]
 
 // ADMIN/SUPER_ADMIN can never lose access to these two modules, no matter what an override

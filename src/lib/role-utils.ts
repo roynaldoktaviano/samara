@@ -3,6 +3,7 @@
 // Add new combos here rather than sprinkling role literals through every route/component.
 const ROLE_ALIASES: Record<string, string[]> = {
   SALES_MARKETING: ['SALES', 'MARKETING'],
+  MARKETING_DIRECTOR: ['MARKETING'],
   FINANCE_DIRECTOR: ['PURCHASING', 'FINANCE', 'HR'],
   // This tenant's HR account also handles Purchasing day-to-day — the sidebar was
   // already opened up to every purchasing-* module via Roles & Permissions, but each
