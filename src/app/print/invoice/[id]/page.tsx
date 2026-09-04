@@ -205,6 +205,23 @@ export default function InvoicePage() {
   const isClosingPayment = !!currentRow && currentRow.cumAfter >= afterDiscount - 0.01
   const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : payment.amount
   const balanceAfterAll = Math.max(0, afterDiscount - grandTotal)
+  // A 2nd (or later) DP invoice used to headline the *cumulative* total of every deposit
+  // recorded so far (this one plus every earlier confirmed one) instead of what this
+  // specific invoice is actually billing — e.g. a 2nd deposit invoice would show "Total
+  // Deposit Due: $1,856.50" (1st + 2nd combined) when only the 2nd installment's own
+  // amount is actually being requested here. The headline now always reflects just this
+  // payment's own amount, with the ordinal called out in the label so it's still clear
+  // which installment this is.
+  const ordinalWord = (n: number) => {
+    if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`
+    switch (n % 10) {
+      case 1: return `${n}st`
+      case 2: return `${n}nd`
+      case 3: return `${n}rd`
+      default: return `${n}th`
+    }
+  }
+  const depositLabel = currentRow && currentRow.ordinal > 1 ? `${ordinalWord(currentRow.ordinal)} Deposit` : 'Total Deposit'
 
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
@@ -537,6 +554,19 @@ export default function InvoicePage() {
               <span style={{ color: '#111827', fontSize: 10, fontWeight: 600 }}>{fmtAmt(afterDiscount)}</span>
             </div>
 
+            {/* Earlier installments already paid on this booking — spelled out so a 2nd (or
+                later) deposit/balance invoice doesn't look like it's billing from scratch. */}
+            {currentRow && currentRow.ordinal > 1 && (
+              <div style={{ marginBottom: 6 }}>
+                {historyRows.filter(h => h.ordinal < currentRow.ordinal).map(h => (
+                  <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span style={{ color: '#6b7280', fontSize: 9 }}>{ordinalWord(h.ordinal)} Deposit (Paid{h.paymentDate ? ` ${fmtDateShort(h.paymentDate)}` : ''})</span>
+                    <span style={{ color: '#6b7280', fontSize: 9 }}>{fmtAmt(h.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {isClosingPayment && (
               <div style={{ marginBottom: 4 }}>
                 <span style={{ color: '#374151', fontSize: 10, fontStyle: 'italic' }}>Balance Payment</span>
@@ -545,9 +575,9 @@ export default function InvoicePage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', border: `1.5px solid ${ACCENT}`, borderRadius: 5, padding: '8px 10px', marginBottom: 6 }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: ACCENT, textTransform: 'uppercase' }}>
-                {isClosingPayment ? 'Balance Due' : payment.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}
+                {isClosingPayment ? 'Balance Due' : `${depositLabel} ${payment.status === 'confirmed' ? 'Paid' : 'Due'}`}
               </div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(isClosingPayment ? payment.amount : grandTotal)}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>{fmtAmt(payment.amount)}</div>
             </div>
 
             {!isClosingPayment && (
