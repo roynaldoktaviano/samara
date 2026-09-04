@@ -236,25 +236,37 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     payments.map(p => p.booking.yacht?.name).filter(Boolean) as string[]
   )).sort()
 
-  const filtered = payments.filter(p => {
-    if (filter !== 'all' && p.status !== filter) return false
-    if (vesselFilter !== 'all') {
-      const v = p.booking.yacht?.name ?? null
-      if (v !== vesselFilter) return false
-    }
-    if (dateFrom && p.createdAt < dateFrom) return false
-    if (dateTo   && p.createdAt > dateTo + 'T23:59:59') return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        p.invoiceNumber.toLowerCase().includes(q) ||
-        p.booking.bookingCode.toLowerCase().includes(q) ||
-        p.booking.customer.name.toLowerCase().includes(q) ||
-        (p.submittedByName ?? '').toLowerCase().includes(q)
-      )
-    }
-    return true
-  })
+  // Rows needing finance action (generate an invoice, or confirm/reject a submitted
+  // transfer proof) float to the top so they don't get buried under a long history of
+  // already-settled rows — everything else keeps its original (date-desc) order.
+  const ACTION_NEEDED_STATUSES = ['pending_confirmation', 'requested']
+  const filtered = payments
+    .filter(p => {
+      if (filter !== 'all' && p.status !== filter) return false
+      if (vesselFilter !== 'all') {
+        const v = p.booking.yacht?.name ?? null
+        if (v !== vesselFilter) return false
+      }
+      if (dateFrom && p.createdAt < dateFrom) return false
+      if (dateTo   && p.createdAt > dateTo + 'T23:59:59') return false
+      if (search) {
+        const q = search.toLowerCase()
+        return (
+          p.invoiceNumber.toLowerCase().includes(q) ||
+          p.booking.bookingCode.toLowerCase().includes(q) ||
+          p.booking.customer.name.toLowerCase().includes(q) ||
+          (p.submittedByName ?? '').toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+    .sort((a, b) => {
+      const rankOf = (status: string) => {
+        const idx = ACTION_NEEDED_STATUSES.indexOf(status)
+        return idx === -1 ? ACTION_NEEDED_STATUSES.length : idx
+      }
+      return rankOf(a.status) - rankOf(b.status)
+    })
 
   const counts = {
     all:                  payments.length,

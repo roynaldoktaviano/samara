@@ -18,6 +18,7 @@ interface Reimbursement {
   accountHolderName: string
   createdAt: string
   paidAt: string | null
+  paidNotes: string | null
   transferProofKeys: string[]
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
@@ -78,6 +79,7 @@ export default function DeliveryFeeReimbursements({ deepLinkId, onDeepLinkHandle
   // pay modal
   const [payModal, setPayModal] = useState(false)
   const [transferProofs, setTransferProofs] = useState<string[]>([])
+  const [payNotes, setPayNotes] = useState('')
   const [paySaving, setPaySaving] = useState(false)
   const [payError, setPayError] = useState('')
 
@@ -98,11 +100,11 @@ export default function DeliveryFeeReimbursements({ deepLinkId, onDeepLinkHandle
     setPaySaving(true); setPayError('')
     const res = await fetch(`/api/finance/delivery-fee-reimbursements/${selected.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transferProofKeys: transferProofs }),
+      body: JSON.stringify({ transferProofKeys: transferProofs, paidNotes: payNotes || undefined }),
     })
     const data = await res.json()
     if (!res.ok) { setPayError(data.error ?? 'Failed'); setPaySaving(false); return }
-    setPaySaving(false); setPayModal(false); setTransferProofs([])
+    setPaySaving(false); setPayModal(false); setTransferProofs([]); setPayNotes('')
     const list = await load()
     setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
   }
@@ -249,6 +251,9 @@ export default function DeliveryFeeReimbursements({ deepLinkId, onDeepLinkHandle
                       <p className="text-xs text-green-700 mt-1.5">
                         Paid {selected.paidAt && fmtDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
                       </p>
+                      {selected.paidNotes && (
+                        <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{selected.paidNotes}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -257,7 +262,7 @@ export default function DeliveryFeeReimbursements({ deepLinkId, onDeepLinkHandle
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setSelected(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Close</button>
                 {selected.status === 'PENDING' && (
-                  <button onClick={() => { setTransferProofs([]); setPayError(''); setPayModal(true) }}
+                  <button onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}
                     className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
                     <Upload className="h-3.5 w-3.5" /> Upload Transfer Proof
                   </button>
@@ -290,6 +295,12 @@ export default function DeliveryFeeReimbursements({ deepLinkId, onDeepLinkHandle
                 </div>
                 <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file (e.g. multiple transfer receipts)</p>
                 <MultiFilePicker files={transferProofs} onChange={setTransferProofs} />
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Notes (optional)</label>
+                  <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} rows={2}
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    placeholder="Add a note for this payment..." />
+                </div>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPayModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>

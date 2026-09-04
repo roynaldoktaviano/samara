@@ -17,13 +17,13 @@ import { roleMatches } from '@/lib/role-utils'
 interface PaymentRequest {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
   createdAt: string; requestedBy: { name: string } | null
-  paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
+  paidAt: string | null; paidBy: { name: string } | null; paidNotes: string | null; transferProofKeys: string[]
 }
 interface Reimbursement {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string
   requesterName: string; bankName: string; accountNumber: string; accountHolderName: string
   createdAt: string; requestedBy: { name: string } | null
-  paidAt: string | null; paidBy: { name: string } | null; transferProofKeys: string[]
+  paidAt: string | null; paidBy: { name: string } | null; paidNotes: string | null; transferProofKeys: string[]
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null; parentId?: string | null }
 interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
@@ -567,6 +567,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [filterRequestedBy, setFilterRequestedBy] = useState('')
   const [filterDate, setFilterDate] = useState('')
   const [itemSearch, setItemSearch] = useState('')
+  const [statusTab, setStatusTab] = useState<string>('ALL')
   const [itemsPopoverOrder, setItemsPopoverOrder] = useState<PurchaseOrder | null>(null)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 14
@@ -892,7 +893,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const destinationOptions = Array.from(new Set(scopedOrders.map(o => o.deliveryLocation?.name).filter((n): n is string => !!n))).sort()
   const requestedByOptions = Array.from(new Set(scopedOrders.map(o => o.requestedByName).filter((n): n is string => !!n))).sort()
   const hasActiveFilters = !!(filterSupplier || filterDestination || filterRequestedBy || filterDate || itemSearch.trim())
-  const visibleOrders = scopedOrders.filter(o => {
+  const preStatusOrders = scopedOrders.filter(o => {
     if (filterSupplier && o.supplierName !== filterSupplier) return false
     if (filterDestination && o.deliveryLocation?.name !== filterDestination) return false
     if (filterRequestedBy && o.requestedByName !== filterRequestedBy) return false
@@ -903,6 +904,16 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     }
     return true
   })
+  // Warehouse view already scopes out DRAFT/CANCELLED entirely (see WAREHOUSE_STATUSES
+  // above), so those tabs would always read 0 there — leave them out rather than clutter.
+  const STATUS_TAB_ORDER = warehouseView
+    ? ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
+    : ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
+  const statusTabs = [
+    { key: 'ALL', label: 'All', count: preStatusOrders.length },
+    ...STATUS_TAB_ORDER.map(s => ({ key: s, label: STATUS_LABEL[s], count: preStatusOrders.filter(o => o.status === s).length })),
+  ]
+  const visibleOrders = statusTab === 'ALL' ? preStatusOrders : preStatusOrders.filter(o => o.status === statusTab)
   const totalPages = Math.max(1, Math.ceil(visibleOrders.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const pageOrders = visibleOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -920,6 +931,17 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             <Plus className="h-4 w-4" /> Create PO
           </button>
         )}
+      </div>
+      <div className="flex items-center gap-1 overflow-x-auto border-b">
+        {statusTabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => { setStatusTab(t.key); setPage(1); setCardPage(1) }}
+            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-amber-600 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          >
+            {t.label} <span className="text-xs">({t.count})</span>
+          </button>
+        ))}
       </div>
       {/* 4-up grid so the filter row stays compact — 2-up on narrow/mobile widths.
           Search gets its own full-width row above, since it's typed into (not picked
@@ -1024,6 +1046,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
+                      {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
+                        <p className="mt-0.5"><span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap">Needs to be Delivered</span></p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{o.createdByName ?? '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -1107,6 +1132,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 )}
               </span>
               <span className="flex items-center gap-1 shrink-0"><MapPin className="h-3 w-3" />{currentLocationLabel(o)}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
+              {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap">Needs to be Delivered</span>
+              )}
             </div>
           </button>
         ))}
@@ -2227,6 +2258,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                           <p className="text-xs text-green-700 mt-1.5">
                             Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
                           </p>
+                          {p.paidNotes && (
+                            <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{p.paidNotes}</p>
+                          )}
                         </div>
                       )}
                       {isCard && p.status === 'PAID' && (
@@ -2288,6 +2322,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                           <p className="text-xs text-green-700 mt-1.5">
                             Paid {r.paidAt && fmtDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
                           </p>
+                          {r.paidNotes && (
+                            <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{r.paidNotes}</p>
+                          )}
                         </div>
                       )}
                     </div>

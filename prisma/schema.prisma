@@ -2387,6 +2387,7 @@ model POPaymentRequest {
   paymentMethod     String                 @default("TRANSFER")
   paidAt            DateTime?
   paidById          String?
+  paidNotes         String?
   transferProofKeys String[]               @default([])
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -2420,6 +2421,7 @@ model POReimbursement {
   status            POReimbursementStatus @default(PENDING)
   paidAt            DateTime?
   paidById          String?
+  paidNotes         String?
   transferProofKeys String[]              @default([])
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
@@ -2474,6 +2476,7 @@ model DeliveryFeePaymentRequest {
   paymentMethod     String                          @default("TRANSFER")
   paidAt            DateTime?
   paidById          String?
+  paidNotes         String?
   transferProofKeys String[]                        @default([])
   createdAt         DateTime                        @default(now())
   updatedAt         DateTime                        @updatedAt
@@ -2507,6 +2510,7 @@ model DeliveryFeeReimbursement {
   status            DeliveryFeeReimbursementStatus @default(PENDING)
   paidAt            DateTime?
   paidById          String?
+  paidNotes         String?
   transferProofKeys String[]                       @default([])
   createdAt         DateTime                       @default(now())
   updatedAt         DateTime                       @updatedAt
@@ -3440,6 +3444,7 @@ model BusinessTripReimbursement {
   paidAt            DateTime?
   paidById          String?
   paidBy            User?                           @relation("BusinessTripReimbursementPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paidNotes         String?
   transferProofKeys String[]                        @default([])
 
   createdAt DateTime @default(now())

@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (existing.status === 'PAID') return NextResponse.json({ error: 'This reimbursement has already been marked as paid' }, { status: 409 })
 
   const body = await req.json()
-  const { transferProofKeys } = body
+  const { transferProofKeys, paidNotes } = body
   if (!Array.isArray(transferProofKeys) || transferProofKeys.length === 0) return NextResponse.json({ error: 'At least one transfer proof photo is required' }, { status: 400 })
 
   const updated = await db.businessTripReimbursement.update({
@@ -54,6 +54,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       paidAt: new Date(),
       paidById: session.user.id,
       transferProofKeys,
+      paidNotes: typeof paidNotes === 'string' && paidNotes.trim() ? paidNotes.trim() : null,
       updatedAt: new Date(),
     },
   })
