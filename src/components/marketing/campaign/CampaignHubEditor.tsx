@@ -4,15 +4,10 @@ import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { RupiahInput } from '@/components/ui/rupiah-input'
-import { X, Check, Mail, Megaphone, Search, MessageCircle, ImageIcon, Globe, Users2, Layers } from 'lucide-react'
+import { X, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { CHANNEL_LABELS, type CampaignChannelType } from './campaignTypes'
+import { CHANNEL_LABELS, CHANNEL_ICONS, type CampaignChannelType } from './campaignTypes'
 import { useMarketingTeam, ownerOptionNames } from '@/components/marketing/shared/useMarketingTeam'
-
-const CHANNEL_ICONS: Record<CampaignChannelType, React.ElementType> = {
-  EMAIL: Mail, META_ADS: Megaphone, GOOGLE_ADS: Search, WHATSAPP: MessageCircle,
-  ORGANIC_SOCIAL: ImageIcon, LANDING_PAGE: Globe, AGENT_OUTREACH: Users2, OTHER: Layers,
-}
 
 // Visual language mirrors proto-3's CreateCampaign modal (src/app/proto-3/App.jsx) as closely
 // as Tailwind utilities allow: dark near-black primary action (not this app's gold accent),

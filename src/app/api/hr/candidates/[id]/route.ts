@@ -13,7 +13,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate, additionalDocuments, notes, status } = await req.json()
+  const {
+    fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate,
+    additionalDocuments, notes, status, assessmentScore, skills, languages,
+  } = await req.json()
 
   const candidate = await db.candidate.update({
     where: { id },
@@ -30,6 +33,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(additionalDocuments !== undefined && { additionalDocuments: Array.isArray(additionalDocuments) ? additionalDocuments : [] }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(status !== undefined && { status }),
+      ...(assessmentScore !== undefined && { assessmentScore: assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null }),
+      ...(skills !== undefined && { skills: Array.isArray(skills) ? skills : [] }),
+      ...(languages !== undefined && { languages: Array.isArray(languages) ? languages : [] }),
     },
     include: { appliedRole: { select: { id: true, title: true } } },
   })

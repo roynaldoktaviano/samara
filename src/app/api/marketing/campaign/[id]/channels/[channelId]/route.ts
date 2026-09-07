@@ -17,7 +17,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const existing = await db.campaignChannel.findUnique({ where: { id: channelId } })
   if (!existing || existing.campaignId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const { status, ownerName, notes, plannedBudget, actualSpend, emailCampaignId, unlinkEmail, externalUrl, externalCampaignName } = await req.json()
+  const {
+    status, ownerName, notes, plannedBudget, actualSpend, emailCampaignId, unlinkEmail, externalUrl, externalCampaignName,
+  } = await req.json()
 
   if (emailCampaignId) {
     const target = await db.emailCampaign.findUnique({ where: { id: emailCampaignId }, select: { id: true, channel: { select: { id: true } } } })

@@ -34,6 +34,8 @@ export async function GET() {
       role: true,
       manager: { select: { id: true, fullName: true } },
       user: { select: { id: true, name: true, email: true } },
+      replacingEmployee: { select: { id: true, fullName: true } },
+      tripAssignments: { include: { booking: { select: { id: true, bookingCode: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } } } },
     },
   })
   return NextResponse.json(employees)
@@ -51,6 +53,7 @@ export async function POST(req: NextRequest) {
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
+    freelanceFee, replacingEmployeeId, tripBookingIds,
   } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
@@ -112,6 +115,11 @@ export async function POST(req: NextRequest) {
         ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [],
         certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [],
         contractFiles: Array.isArray(contractFiles) ? contractFiles : [],
+        freelanceFee: toFloatOrNull(freelanceFee),
+        replacingEmployeeId: replacingEmployeeId || null,
+        ...(Array.isArray(tripBookingIds) && tripBookingIds.length > 0 && {
+          tripAssignments: { create: tripBookingIds.map((bookingId: string) => ({ bookingId })) },
+        }),
         updatedAt: new Date(),
       },
       include: {
@@ -121,6 +129,8 @@ export async function POST(req: NextRequest) {
         role: true,
         manager: { select: { id: true, fullName: true } },
         user: { select: { id: true, name: true, email: true } },
+        replacingEmployee: { select: { id: true, fullName: true } },
+        tripAssignments: { include: { booking: { select: { id: true, bookingCode: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } } } },
       },
     })
     return NextResponse.json(employee, { status: 201 })

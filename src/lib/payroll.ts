@@ -16,6 +16,7 @@ export interface EmployeeForPayroll {
   uangMakan: number | null
   thr: number | null
   otherIncome: unknown // Prisma Json column — cast to OtherIncomeItem[] below
+  employmentStatus: string | null
 }
 
 // Work week is Monday–Friday (confirmed by the business) — counts working days in a
@@ -134,9 +135,14 @@ export function buildPayslipEntryDraft(employee: EmployeeForPayroll, attendance:
   const otherIncomeSnap = (employee.otherIncome as OtherIncomeItem[] | null) ?? []
   const otherIncomeTotal = otherIncomeSnap.reduce((s, i) => s + (Number(i.amount) || 0), 0)
 
+  // Freelance staff aren't entitled to THR (Tunjangan Hari Raya is a statutory benefit
+  // for employees, not contractors) — zeroed here regardless of what's saved on the
+  // profile, so a stray Employee.thr value left over from a status change never leaks in.
+  const thr = employee.employmentStatus === 'Freelance' ? 0 : (employee.thr ?? 0)
+
   return {
     basicSalary, functionAllowance, mealAllowance, uangLayar, uangLayarTripDays: tripDays,
-    commission: 0, thr: employee.thr ?? 0,
+    commission: 0, thr,
     otherIncomeSnap, otherIncomeTotal,
     bpjsJkkCompany: 0,
     bpjsJkmCompany: 0,

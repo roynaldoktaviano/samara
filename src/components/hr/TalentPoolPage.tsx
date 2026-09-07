@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
@@ -16,23 +16,70 @@ interface Candidate {
   location: string | null
   readyJoinDate: string | null
   additionalDocuments: AdditionalDocument[]
-  status: 'NEW' | 'SCREENING' | 'INTERVIEW' | 'OFFER' | 'HIRED' | 'REJECTED'
+  status: 'TALENT_POOL' | 'SHORTLISTED' | 'ASSESSMENT' | 'INTERVIEW' | 'OFFER' | 'HIRED' | 'REJECTED'
+  assessmentScore: number | null
+  skills: string[]
+  languages: string[]
   appliedRole: EmployeeRole | null
   convertedEmployeeId: string | null
   createdAt: string
 }
 
-const STATUSES = ['NEW', 'SCREENING', 'INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
+const STATUSES = ['TALENT_POOL', 'SHORTLISTED', 'ASSESSMENT', 'INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
 const STATUS_LABEL: Record<string, string> = {
-  NEW: 'New', SCREENING: 'Screening', INTERVIEW: 'Interview', OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
+  TALENT_POOL: 'Talent Pool', SHORTLISTED: 'Shortlisted', ASSESSMENT: 'Assessment', INTERVIEW: 'Interview',
+  OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
 }
 const STATUS_COLOR: Record<string, string> = {
-  NEW: 'bg-slate-100 text-slate-700',
-  SCREENING: 'bg-blue-100 text-blue-700',
+  TALENT_POOL: 'bg-slate-100 text-slate-700',
+  SHORTLISTED: 'bg-sky-100 text-sky-700',
+  ASSESSMENT: 'bg-blue-100 text-blue-700',
   INTERVIEW: 'bg-purple-100 text-purple-700',
   OFFER: 'bg-amber-100 text-amber-700',
   HIRED: 'bg-green-100 text-green-700',
   REJECTED: 'bg-red-100 text-red-700',
+}
+
+// Real, computed from readyJoinDate rather than a free-text field — "how soon can they
+// start", derived the same way whether it was set yesterday or a year ago.
+function availabilityLabel(readyJoinDate: string | null): string {
+  if (!readyJoinDate) return 'Not specified'
+  const days = Math.ceil((new Date(readyJoinDate).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
+  return days <= 0 ? 'Immediate' : `${days} day${days === 1 ? '' : 's'}`
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-muted/40 border rounded-lg px-3 py-2.5">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-sm font-semibold mt-1">{value}</div>
+    </div>
+  )
+}
+
+function TagInput({ values, onChange, placeholder }: { values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+  const [input, setInput] = useState('')
+  const add = () => {
+    const v = input.trim()
+    if (v && !values.includes(v)) onChange([...values, v])
+    setInput('')
+  }
+  return (
+    <div className="min-h-10 border rounded-lg flex items-center gap-1.5 flex-wrap p-1.5 bg-background focus-within:ring-1 focus-within:ring-amber-500">
+      {values.map((v, i) => (
+        <span key={i} className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-800 rounded-full px-2.5 py-1">
+          {v}
+          <button type="button" onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+        </span>
+      ))}
+      <input
+        value={input} onChange={e => setInput(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+        onBlur={add} placeholder={values.length === 0 ? placeholder : ''}
+        className="flex-1 min-w-[120px] h-7 text-sm border-0 bg-transparent focus:outline-none px-1"
+      />
+    </div>
+  )
 }
 
 const BLANK = {
@@ -42,6 +89,9 @@ const BLANK = {
   location: '',
   readyJoinDate: '',
   additionalDocuments: [] as AdditionalDocument[],
+  assessmentScore: '',
+  skills: [] as string[],
+  languages: [] as string[],
 }
 
 export default function TalentPoolPage() {
@@ -65,6 +115,9 @@ export default function TalentPoolPage() {
   const [docUploading, setDocUploading] = useState(false)
   const [docError, setDocError] = useState('')
   const [docPreview, setDocPreview] = useState<string | null>(null)
+
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [detailPreview, setDetailPreview] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -92,6 +145,9 @@ export default function TalentPoolPage() {
       location: c.location ?? '',
       readyJoinDate: c.readyJoinDate ? c.readyJoinDate.slice(0, 10) : '',
       additionalDocuments: (c.additionalDocuments ?? []).map(d => ({ ...d, description: d.description ?? '' })),
+      assessmentScore: c.assessmentScore != null ? String(c.assessmentScore) : '',
+      skills: c.skills ?? [],
+      languages: c.languages ?? [],
     })
     setFormError(''); setModal(true)
   }
@@ -169,6 +225,7 @@ export default function TalentPoolPage() {
 
   const filtered = statusFilter === 'All' ? candidates : candidates.filter(c => c.status === statusFilter)
   const activeCount = candidates.filter(c => c.status !== 'HIRED' && c.status !== 'REJECTED').length
+  const detailCandidate = candidates.find(c => c.id === detailId) ?? null
 
   return (
     <div className="space-y-6">
@@ -230,7 +287,7 @@ export default function TalentPoolPage() {
                   No candidates {statusFilter !== 'All' ? `with status "${STATUS_LABEL[statusFilter]}"` : 'yet'}.
                 </td></tr>
               ) : filtered.map(c => (
-                <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                <tr key={c.id} onClick={() => setDetailId(c.id)} className="hover:bg-muted/30 transition-colors cursor-pointer">
                   <td className="px-4 py-3 font-medium">{c.fullName}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{c.appliedRole?.title ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -241,13 +298,13 @@ export default function TalentPoolPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{c.source ?? '—'}</td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                     <select value={c.status} onChange={e => changeStatus(c, e.target.value)}
                       className={`text-xs font-medium rounded-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-amber-500 ${STATUS_COLOR[c.status]}`}>
                       {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                     </select>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       {c.status === 'HIRED' && (
                         c.convertedEmployeeId ? (
@@ -339,6 +396,19 @@ export default function TalentPoolPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Score (0-100)</label>
+                <input type="number" min={0} max={100} className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={form.assessmentScore} onChange={e => setForm(f => ({ ...f, assessmentScore: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Skills</label>
+                <TagInput values={form.skills} onChange={skills => setForm(f => ({ ...f, skills }))} placeholder="Add a skill and press Enter" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Languages</label>
+                <TagInput values={form.languages} onChange={languages => setForm(f => ({ ...f, languages }))} placeholder="Add a language and press Enter" />
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CV</label>
                 <MultiFilePicker files={form.resumeFiles} onChange={files => setForm(f => ({ ...f, resumeFiles: files }))} />
               </div>
@@ -370,7 +440,7 @@ export default function TalentPoolPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Notes</label>
                 <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
                   value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
@@ -384,6 +454,141 @@ export default function TalentPoolPage() {
           </div>
         </div>
       )}
+
+      {/* ── Candidate Detail ── */}
+      {detailCandidate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="h-11 w-11 rounded-full bg-amber-100 text-amber-800 font-bold text-sm flex items-center justify-center shrink-0">
+                  {detailCandidate.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-base truncate">{detailCandidate.fullName}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {detailCandidate.appliedRole?.title ?? 'No role specified'}{detailCandidate.location ? ` · ${detailCandidate.location}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setDetailId(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <SummaryCard label="Assessment score" value={detailCandidate.assessmentScore != null ? `${detailCandidate.assessmentScore}/100` : '—'} />
+                <SummaryCard label="Availability" value={availabilityLabel(detailCandidate.readyJoinDate)} />
+                <SummaryCard label="Expected salary" value={detailCandidate.expectedSalary != null ? `Rp ${detailCandidate.expectedSalary.toLocaleString('id-ID')}` : '—'} />
+                <SummaryCard label="Current stage" value={STATUS_LABEL[detailCandidate.status]} />
+              </div>
+
+              {(detailCandidate.skills.length > 0 || detailCandidate.languages.length > 0) && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Skills and languages</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...detailCandidate.skills, ...detailCandidate.languages].map((item, i) => (
+                      <span key={i} className="text-xs font-medium bg-blue-50 text-blue-700 rounded-full px-2.5 py-1">{item}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {detailCandidate.notes && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Assessment notes</h4>
+                  <div className="bg-muted/40 rounded-lg p-3 text-sm text-muted-foreground whitespace-pre-wrap">{detailCandidate.notes}</div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-sm font-semibold mb-2">CV</h4>
+                {detailCandidate.resumeFiles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No CV uploaded.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {detailCandidate.resumeFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-3 border rounded-lg px-3 py-2.5">
+                        <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                          <FileText className="h-4 w-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">CV{detailCandidate.resumeFiles.length > 1 ? ` — file ${i + 1}` : ''}</p>
+                          <p className="text-xs text-muted-foreground">Candidate CV</p>
+                        </div>
+                        <button type="button" onClick={() => setDetailPreview(f)} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
+                          <Paperclip className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button" onClick={() => downloadDataUrl(f, `${detailCandidate.fullName.replace(/[^a-z0-9]+/gi, '-')}-cv-${i + 1}.${extFromDataUrl(f)}`)}
+                          className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {detailCandidate.additionalDocuments.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Additional Documents</h4>
+                  <div className="space-y-2">
+                    {detailCandidate.additionalDocuments.map(doc => (
+                      <div key={doc.id} className="flex items-center gap-3 border rounded-lg px-3 py-2.5">
+                        <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                          <FileText className="h-4 w-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{doc.name}</p>
+                          {doc.description ? <p className="text-xs text-muted-foreground truncate">{doc.description}</p> : <p className="text-xs text-muted-foreground">Document</p>}
+                        </div>
+                        <button type="button" onClick={() => setDetailPreview(doc.fileKey)} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
+                          <Paperclip className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button" onClick={() => downloadDataUrl(doc.fileKey, `${doc.name.replace(/[^a-z0-9]+/gi, '-') || 'document'}.${extFromDataUrl(doc.fileKey)}`)}
+                          className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Move candidate</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUSES.map(s => (
+                    <button
+                      key={s} onClick={() => changeStatus(detailCandidate, s)}
+                      className={`text-xs font-medium border rounded-md px-3 py-1.5 transition-colors ${
+                        detailCandidate.status === s ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      {STATUS_LABEL[s]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
+              <button onClick={() => setDetailId(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Close</button>
+              <button
+                onClick={() => { changeStatus(detailCandidate, 'INTERVIEW'); setDetailId(null) }}
+                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
+              >
+                Schedule Interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailPreview && <PhotoLightbox photoKey={detailPreview} onClose={() => setDetailPreview(null)} zIndexClass="z-60" />}
 
       {/* ── Add/Edit Document Modal ── */}
       {docModal && (

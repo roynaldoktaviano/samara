@@ -24,7 +24,7 @@ export async function GET() {
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, fullName: true, leaveBalance: true, leaveEntitlementPolicy: true, location: { select: { name: true } } },
+    select: { id: true, fullName: true, leaveBalance: true, leaveEntitlementPolicy: true, employmentStatus: true, location: { select: { name: true } } },
   })
   if (!employee) return NextResponse.json({ linked: false, employee: null, requests: [] })
 
@@ -77,9 +77,16 @@ export async function POST(req: NextRequest) {
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, fullName: true, leaveBalance: true, managerId: true, manager: { select: { userId: true } }, location: { select: { name: true } } },
+    select: { id: true, fullName: true, leaveBalance: true, managerId: true, manager: { select: { userId: true } }, location: { select: { name: true } }, employmentStatus: true },
   })
   if (!employee) return NextResponse.json({ error: "Your account isn't linked to an HR employee profile yet. Ask an Admin to link it under Team." }, { status: 400 })
+
+  // Freelance staff aren't on the leave-accrual system at all (no leaveBalance is ever
+  // set up for them) — block the request outright instead of silently letting an
+  // uncapped one (leaveBalance null skips the over-request check below) through.
+  if (employee.employmentStatus === 'Freelance') {
+    return NextResponse.json({ error: 'Freelance staff are not eligible for leave requests.' }, { status: 400 })
+  }
 
   if (!startDate || !endDate) return NextResponse.json({ error: 'Please select a start and end date' }, { status: 400 })
   const start = new Date(startDate)

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { generateUniqueUtmSlug } from '@/lib/campaign-attribution'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -36,9 +37,12 @@ export async function POST(request: NextRequest) {
   } = await request.json()
   if (!name?.trim()) return NextResponse.json({ error: 'name is required' }, { status: 400 })
 
+  const utmSlug = await generateUniqueUtmSlug(db, name.trim())
+
   const campaign = await db.campaign.create({
     data: {
       name: name.trim(),
+      utmSlug,
       brand: brand?.trim() || null,
       objective: objective?.trim() || null,
       targetResult: targetResult?.trim() || null,

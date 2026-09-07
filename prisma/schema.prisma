@@ -841,6 +841,7 @@ model Booking {
   cashierSales                  CashierSale[]
   purchaseOrders                PurchaseOrder[]
   purchaseRequests              PurchaseRequest[]
+  freelanceTripAssignments      FreelanceTripAssignment[]
 
   @@index([status])
   @@index([openTripId, status])
@@ -1381,6 +1382,11 @@ model Campaign {
   masterLanguage      String?
   additionalLanguages Json?
   exclusions          Json?
+  // Matched against Inquiry.utmCampaign (the website form's first-touch ?utm_campaign=
+  // value) to compute this campaign's real leads/bookings/revenue — see
+  // src/lib/marketing/campaignAttribution.ts. Auto-generated from `name` on create,
+  // editable afterward; unique so two campaigns never silently share attribution.
+  utmSlug             String?           @unique
   createdByUserId     String?
   createdByName       String?
   createdAt           DateTime          @default(now())
@@ -1403,7 +1409,7 @@ model CampaignChannel {
   notes           String?
   plannedBudget   Float?
   actualSpend     Float?
-  externalUrl          String? // LANDING_PAGE: the published page's URL
+  externalUrl          String? // LANDING_PAGE: the published page's URL (typed in manually — the actual page lives outside this app)
   externalCampaignName String? // META_ADS/GOOGLE_ADS: the campaign's name inside that ad platform (no live API integration — kept as a manual reference)
   emailCampaignId String?               @unique
   emailCampaign   EmailCampaign?        @relation(fields: [emailCampaignId], references: [id], onDelete: SetNull)
@@ -2953,6 +2959,10 @@ model Employee {
   // THR (Tunjangan Hari Raya) — pre-fills PayslipEntry.thr at generation time, still
   // manually overridable per period like every other payroll figure.
   thr         Float?
+  // Freelance only (employmentStatus = 'Freelance') — the one-off/per-engagement fee
+  // agreed for this booking, distinct from basicSalary which flows through the
+  // recurring monthly payroll-period cycle a freelancer was never enrolled in.
+  freelanceFee Float?
   // Recurring named income lines beyond the fixed columns above (e.g. a fixed monthly
   // allowance HR wants itemized on the payslip) — array of { id, name, description, amount }.
   // Snapshotted onto PayslipEntry.otherIncomeSnap at generation time.
@@ -2994,6 +3004,13 @@ model Employee {
   manager       Employee?  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
   directReports Employee[] @relation("EmployeeManager")
 
+  // Freelance only — which regular employee this person is covering for while they're
+  // away (e.g. crew on leave). Same self-relation shape as managerId/manager above.
+  replacingEmployeeId  String?
+  replacingEmployee    Employee?  @relation("EmployeeFreelanceReplacement", fields: [replacingEmployeeId], references: [id], onDelete: SetNull)
+  coveredByFreelancers Employee[] @relation("EmployeeFreelanceReplacement")
+  tripAssignments      FreelanceTripAssignment[]
+
   // Links this Employee record to their login account — lets the system resolve
   // "who is logged in" to an org-chart position, and resolve a manager's Employee
   // row back to the User account that should see/approve the request.
@@ -3024,6 +3041,22 @@ model Employee {
   @@index([roleId])
   @@index([fullName])
   @@index([managerId])
+}
+
+// One row per (freelance Employee, Booking) pair — which trip(s) a freelancer is
+// covering. Only meaningful for Employee.employmentStatus = 'Freelance'; a freelancer
+// commonly covers more than one trip while they're standing in, hence a join table
+// rather than a single field on Employee.
+model FreelanceTripAssignment {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  bookingId  String
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([employeeId, bookingId])
+  @@index([bookingId])
 }
 
 // Company-owned item handed to an employee (laptop, phone, uniform, ID card, tools, etc.)
@@ -3648,8 +3681,9 @@ model LoanInstallment {
 }
 
 enum CandidateStatus {
-  NEW
-  SCREENING
+  TALENT_POOL
+  SHORTLISTED
+  ASSESSMENT
   INTERVIEW
   OFFER
   HIRED
@@ -3672,7 +3706,10 @@ model Candidate {
   readyJoinDate       DateTime?
   additionalDocuments Json            @default("[]") // named extra docs — array of { id, name, description, fileKey }
   notes               String?
-  status              CandidateStatus @default(NEW)
+  status              CandidateStatus @default(TALENT_POOL)
+  assessmentScore     Int? // 0-100, set once an assessment/interview has actually happened
+  skills              String[]        @default([])
+  languages           String[]        @default([])
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 

@@ -26,6 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
+    freelanceFee, replacingEmployeeId, tripBookingIds,
   } = await req.json()
 
   if (employeeNumber) {
@@ -35,6 +36,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (managerId !== undefined && managerId === id) {
     return NextResponse.json({ error: 'An employee cannot be their own manager' }, { status: 400 })
+  }
+  if (replacingEmployeeId !== undefined && replacingEmployeeId === id) {
+    return NextResponse.json({ error: 'An employee cannot replace themselves' }, { status: 400 })
   }
 
   try {
@@ -91,6 +95,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(ijazahFiles !== undefined && { ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [] }),
         ...(certificateFiles !== undefined && { certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [] }),
         ...(contractFiles !== undefined && { contractFiles: Array.isArray(contractFiles) ? contractFiles : [] }),
+        ...(freelanceFee !== undefined && { freelanceFee: toFloatOrNull(freelanceFee) }),
+        ...(replacingEmployeeId !== undefined && { replacingEmployeeId: replacingEmployeeId || null }),
+        // Trip coverage is fully replaced rather than diffed — the picker always sends
+        // the complete current selection, so deleteMany+create keeps this simple and
+        // avoids reasoning about which rows to add/remove piecemeal.
+        ...(Array.isArray(tripBookingIds) && {
+          tripAssignments: { deleteMany: {}, create: tripBookingIds.map((bookingId: string) => ({ bookingId })) },
+        }),
         ...(isActive !== undefined && {
           isActive,
           // Reactivating clears any prior resignation record; deactivating records it from the payload.
@@ -106,6 +118,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         role: true,
         manager: { select: { id: true, fullName: true } },
         user: { select: { id: true, name: true, email: true } },
+        replacingEmployee: { select: { id: true, fullName: true } },
+        tripAssignments: { include: { booking: { select: { id: true, bookingCode: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } } } },
       },
     })
     // Reactivating clears the resignation fields above — the Separation record (asset

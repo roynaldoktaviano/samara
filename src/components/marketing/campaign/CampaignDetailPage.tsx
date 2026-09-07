@@ -7,39 +7,55 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  ArrowLeft, Loader2, Plus, X, Mail, Megaphone, Search, MessageCircle, Globe,
-  Users2, Layers, Trash2, Link2, Unlink, ImageIcon, Video, FileText,
+  Loader2, Plus, X, Trash2, Link2, Unlink, Eye, Pencil, ChevronRight, ChevronUp, Calendar, Users, Globe,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import ContentEditor from '@/components/marketing/content/ContentEditor'
+import ContentApprovalTab from './ContentApprovalTab'
 import ContentDetailSheet from '@/components/marketing/content/ContentDetailSheet'
-import { FORMAT_LABELS, STATUS_LABELS, STATUS_STYLE, type ContentItem, type ContentFormat } from '@/components/marketing/content/contentTypes'
+import { STATUS_LABELS, type ContentItem, type ContentFormat, type ContentStatus } from '@/components/marketing/content/contentTypes'
 import {
-  STAGE_LABELS, STAGE_STYLE, STAGE_ORDER, CHANNEL_LABELS, CHANNEL_STATUS_LABELS, CHANNEL_STATUS_STYLE,
-  CHANNEL_STATUS_ORDER, type Campaign, type CampaignChannel, type CampaignChannelType, type CampaignStage,
+  STAGE_LABELS, STAGE_STYLE, STAGE_ORDER, CHANNEL_LABELS, CHANNEL_ICONS, CHANNEL_ACCENT, CHANNEL_STATUS_LABELS, CHANNEL_STATUS_STYLE,
+  CHANNEL_STATUS_ORDER, PILL, heroBackground, computeCampaignReadiness, type Campaign, type CampaignChannel, type CampaignChannelType, type CampaignStage,
 } from './campaignTypes'
 import { useMarketingTeam, ownerOptionNames, type MarketingTeamMember } from '@/components/marketing/shared/useMarketingTeam'
 
-const ACCENT = '#bdac7e'
+// Visual language for this whole detail page mirrors proto-3's CampaignDetail exactly
+// (src/app/proto-3/App.jsx) — the campaign-tabs underline accent (#b39a69), badge tones,
+// KPI strip, channel cards and asset grid all use its literal hex values rather than this
+// app's usual gold (#bdac7e), per explicit user request to match the mockup pixel-for-pixel.
+const TAB_ACCENT = '#b39a69'
 const TABS = ['Overview', 'Brief', 'Channels', 'Content & Approval', 'Performance'] as const
 type Tab = typeof TABS[number]
 
-const CHANNEL_ICONS: Record<CampaignChannelType, React.ElementType> = {
-  EMAIL: Mail, META_ADS: Megaphone, GOOGLE_ADS: Search, WHATSAPP: MessageCircle,
-  ORGANIC_SOCIAL: ImageIcon, LANDING_PAGE: Globe, AGENT_OUTREACH: Users2, OTHER: Layers,
+// Content Studio's format enum already has a counterpart for most channel types (a Meta ad
+// creative IS format META_AD, an Organic Social post is one of the three Instagram formats,
+// etc.) — so "connecting" a channel to its content is just filtering the campaign's content
+// items by format, no new relation needed. AGENT_OUTREACH/OTHER have no matching format
+// (their content, if any, would only ever land in the shared 'OTHER' bucket, which isn't
+// unique to one channel) so they're left unmapped — no "Content for this channel" section.
+const CHANNEL_TO_CONTENT_FORMATS: Partial<Record<CampaignChannelType, ContentFormat[]>> = {
+  EMAIL: ['EMAIL_HERO'],
+  META_ADS: ['META_AD'],
+  GOOGLE_ADS: ['GOOGLE_DISPLAY'],
+  WHATSAPP: ['WHATSAPP_BROADCAST'],
+  ORGANIC_SOCIAL: ['INSTAGRAM_REEL', 'INSTAGRAM_POST', 'INSTAGRAM_STORY'],
+  LANDING_PAGE: ['LANDING_PAGE_ASSET'],
 }
 
-// Content Studio's format enum already has a 1:1 counterpart for these three channel types
-// (a Meta ad creative IS format META_AD, etc.) — so "connecting" a channel to its content is
-// just filtering the campaign's content items by format, no new relation needed.
-const CHANNEL_TO_CONTENT_FORMAT: Partial<Record<CampaignChannelType, ContentFormat>> = {
-  META_ADS: 'META_AD',
-  GOOGLE_ADS: 'GOOGLE_DISPLAY',
-  LANDING_PAGE: 'LANDING_PAGE_ASSET',
+// Local override of Content Studio's STATUS_STYLE (contentTypes.ts) with proto-3's exact
+// badge hex pairs — kept local rather than changed globally, since Content Studio's own
+// pages are out of scope for this reskin (per the user's "Campaign Hub only for now" choice).
+const CONTENT_STATUS_HEX: Record<ContentStatus, string> = {
+  IDEA: 'bg-[#eef0f2] text-[#626872]',
+  IN_PRODUCTION: 'bg-[#eaf1ff] text-[#2864d7]',
+  WAITING_APPROVAL: 'bg-[#fff2d8] text-[#996313]',
+  APPROVED: 'bg-[#e6f7ee] text-[#087b4c]',
+  REVISION: 'bg-[#fdecec] text-[#bd3c3c]',
+  PUBLISHED: 'bg-[#f3ebfa] text-[#8553b5]',
 }
 
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -72,7 +88,7 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
     })
     if (res.ok) fetchCampaign()
-    else toast.error('Failed to save')
+    else toast.error((await res.json().catch(() => null))?.error ?? 'Failed to save')
   }
 
   if (loading || !campaign) {
@@ -82,73 +98,107 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
   const contentNeedingAttention = (campaign.contentItems ?? []).filter(c => c.status === 'WAITING_APPROVAL' || c.status === 'REVISION')
 
   return (
-    <div className="p-4 md:p-6 space-y-5">
-      <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-3">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to campaigns
-        </button>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="space-y-0">
+      {/* Hero — same layout as proto-3's .campaign-hero. Backdrop is a decorative stock
+          photo (see heroBackground) — this app has no campaign cover-image field, so it's
+          chosen deterministically per campaign rather than faked as real campaign content. */}
+      <div
+        className="relative rounded-t-xl md:mx-6 mt-4 md:mt-6 px-5 sm:px-8 pt-5 pb-6 text-white overflow-hidden bg-cover bg-center"
+        style={{ backgroundImage: heroBackground(campaign.brand ?? campaign.name) }}
+      >
+        <div className="flex items-center justify-between gap-3 mb-8 sm:mb-10 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[10px] min-w-0">
+            <button onClick={onBack} className="inline-flex items-center gap-1 text-white/90 hover:text-white shrink-0">
+              <ChevronUp className="h-3.5 w-3.5" /> Back to campaigns
+            </button>
+            <span className="text-white/40">/</span>
+            <span className="text-white/95 font-medium truncate">{campaign.name}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const landingUrl = campaign.channels.find(c => c.type === 'LANDING_PAGE')?.externalUrl
+                if (landingUrl) window.open(landingUrl, '_blank', 'noopener')
+                else toast.error('No landing page link set yet — add one in the Channels tab.')
+              }}
+              className="h-[30px] px-3 rounded-md bg-white/15 border border-white/30 hover:bg-white/25 text-white text-[10px] font-semibold inline-flex items-center gap-1.5"
+            >
+              <Eye className="h-3 w-3" /> Preview
+            </button>
+            <button
+              onClick={() => setTab('Brief')}
+              className="h-[30px] px-3 rounded-md bg-white text-[#222] hover:bg-white/90 text-[10px] font-semibold inline-flex items-center gap-1.5"
+            >
+              <Pencil className="h-3 w-3" /> Edit campaign
+            </button>
+          </div>
+        </div>
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              {campaign.brand && <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">{campaign.brand}</span>}
-              <Badge className={STAGE_STYLE[campaign.stage]}>{STAGE_LABELS[campaign.stage]}</Badge>
-            </div>
+            {campaign.brand && <div className="text-[9px] tracking-[.16em] text-[#e8d9ba] font-semibold">{campaign.brand.toUpperCase()}</div>}
             <input
               defaultValue={campaign.name} onBlur={e => e.target.value.trim() && e.target.value !== campaign.name && updateField({ name: e.target.value })}
-              className="text-2xl font-bold tracking-tight bg-transparent focus:outline-none focus:border-b focus:border-[#bdac7e] w-full"
+              className="text-2xl sm:text-[28px] font-bold tracking-tight bg-transparent focus:outline-none focus:border-b focus:border-white/40 w-full mt-1.5 mb-2 placeholder:text-white/50"
             />
-            <div className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
-              <select
-                value={campaign.ownerName ?? ''} onChange={e => updateField({ ownerName: e.target.value || null })}
-                className="bg-transparent border-0 -ml-1 px-1 rounded hover:bg-muted focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
-              >
-                <option value="">Unassigned</option>
-                {ownerOptionNames(team, campaign.ownerName).map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span>· {fmtDate(campaign.startDate)} – {fmtDate(campaign.endDate)}</span>
+            {campaign.objective && <p className="text-[11px] text-white/85 max-w-xl mb-3">{campaign.objective}</p>}
+            <div className="flex items-center gap-4 flex-wrap text-[9px] text-white/85">
+              <span className="inline-flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {fmtDate(campaign.startDate)} – {fmtDate(campaign.endDate)}</span>
+              {campaign.audienceSegments && campaign.audienceSegments.length > 0 && (
+                <span className="inline-flex items-center gap-1.5"><Users className="h-3 w-3" /> {campaign.audienceSegments.join(' · ')}</span>
+              )}
+              {campaign.markets && campaign.markets.length > 0 && (
+                <span className="inline-flex items-center gap-1.5"><Globe className="h-3 w-3" /> {campaign.markets.join(' · ')}</span>
+              )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`${PILL} ${STAGE_STYLE[campaign.stage]} mb-1`}>{STAGE_LABELS[campaign.stage]}</span>
+            <select
+              value={campaign.ownerName ?? ''} onChange={e => updateField({ ownerName: e.target.value || null })}
+              className="bg-transparent border-0 px-1 rounded hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/40 text-white text-[9px] mb-1"
+            >
+              <option value="" className="text-black">Unassigned</option>
+              {ownerOptionNames(team, campaign.ownerName).map(n => <option key={n} value={n} className="text-black">{n}</option>)}
+            </select>
             <Select
               value={campaign.stage} onValueChange={v => updateField({ stage: v as CampaignStage })}
               disabled={campaign.stage === 'APPROVAL' && !canApprove}
             >
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-44 h-8 bg-white/15 border-white/30 text-white text-[11px] hover:bg-white/20 [&_svg]:text-white/80"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {STAGE_ORDER.map(s => <SelectItem key={s} value={s}>{STAGE_LABELS[s]}</SelectItem>)}
               </SelectContent>
             </Select>
             {campaign.stage === 'APPROVAL' && !canApprove && (
-              <span className="text-[11px] text-muted-foreground">Only a Marketing Director can move this past Approval</span>
+              <span className="text-[9px] text-white/75 max-w-44 text-right">Only a Marketing Director can move this past Approval</span>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 overflow-x-auto border-b">
+      <div className="md:mx-6 sticky top-0 z-10 bg-white border-b flex items-center gap-5 overflow-x-auto px-1 sm:px-2">
         {TABS.map(t => (
           <button
             key={t} onClick={() => setTab(t)}
-            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'border-[#bdac7e] text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 py-3 text-[11px] font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'text-[#222]' : 'border-transparent text-[#6f747c] hover:text-[#222]'}`}
+            style={tab === t ? { borderColor: TAB_ACCENT } : { borderColor: 'transparent' }}
           >
-            {t}{t === 'Content & Approval' && contentNeedingAttention.length > 0 && <em className="ml-1.5 not-italic text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{contentNeedingAttention.length}</em>}
+            {t}{t === 'Content & Approval' && contentNeedingAttention.length > 0 && <em className={`ml-1.5 not-italic ${PILL} bg-[#fff0d4] text-[#936115]`}>{contentNeedingAttention.length}</em>}
           </button>
         ))}
       </div>
 
-      {tab === 'Overview' && <OverviewTab campaign={campaign} onGo={setTab} />}
+      <div className="p-4 md:p-6 md:pt-5">
+        {tab === 'Overview' && <OverviewTab campaign={campaign} onGo={setTab} />}
       {tab === 'Brief' && <BriefTab campaign={campaign} onSave={updateField} onRefresh={fetchCampaign} campaignId={id} />}
       {tab === 'Channels' && (
         <ChannelsTab campaign={campaign} onRefresh={fetchCampaign} team={team} onOpenContent={setOpenContentId} onNewContent={openNewContent} />
       )}
       {tab === 'Content & Approval' && (
-        <ContentTab
-          campaign={campaign}
-          onNew={() => openNewContent()}
-          onOpen={setOpenContentId}
-        />
+        <ContentApprovalTab campaign={campaign} onNew={() => openNewContent()} onRefresh={fetchCampaign} />
       )}
       {tab === 'Performance' && <PerformanceTab campaign={campaign} />}
+      </div>
 
       <ContentEditor
         open={contentEditorOpen} onOpenChange={setContentEditorOpen} campaignId={id} defaultFormat={newContentFormat}
@@ -159,72 +209,164 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
   )
 }
 
-function KpiTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// proto-3's inline "→" navigation links (.text-btn) are blue, distinct from the gold/tab
+// accent used elsewhere on this page — kept as its own constant so every such link matches.
+const LINK_BLUE = '#2764d9'
+
+// One continuous bordered strip with internal dividers — proto-3's .campaign-kpis, not
+// this app's usual gapped grid of separate cards.
+function KpiStrip({ items }: { items: { label: string; value: string; sub?: string; subTone?: 'green' | 'blue' }[] }) {
   return (
-    <div className="border rounded-xl bg-white p-4">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <p className="text-xl font-bold tracking-tight mt-1.5">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+    <div className={`grid bg-white border rounded-xl`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0,1fr))` }}>
+      {items.map((it, i) => (
+        <div key={it.label} className={`p-4 ${i < items.length - 1 ? 'border-r' : ''}`}>
+          <span className="text-[8px] tracking-wide text-muted-foreground">{it.label}</span>
+          <strong className="text-xl font-bold tracking-tight block mt-1.5 mb-0.5">{it.value}</strong>
+          {it.sub && <small className={`text-[8px] ${it.subTone === 'green' ? 'text-[#168458]' : it.subTone === 'blue' ? 'text-[#2563eb]' : 'text-muted-foreground'}`}>{it.sub}</small>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// proto-3's .donut — a conic-gradient ring with the value printed in the middle. `value`
+// drives the gradient stop directly, so this is inert decoration around a real number.
+function Donut({ value, color = '#16a46a', size = 58 }: { value: number; color?: string; size?: number }) {
+  return (
+    <div
+      className="rounded-full grid place-items-center relative shrink-0"
+      style={{ width: size, height: size, background: `conic-gradient(${color} ${value}%, #edf0f3 0)` }}
+    >
+      <div className="absolute rounded-full bg-white" style={{ inset: size * 0.12 }} />
+      <span className="relative text-[10px] font-bold">{value}%</span>
     </div>
   )
 }
 
 function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) => void }) {
   const totalSpend = campaign.channels.reduce((s, c) => s + (c.actualSpend ?? 0), 0)
-  const doneChannels = campaign.channels.filter(c => c.status === 'DONE' || c.status === 'LIVE').length
-  const readiness = campaign.channels.length ? Math.round((doneChannels / campaign.channels.length) * 100) : 0
   const attention = (campaign.contentItems ?? []).filter(c => c.status === 'WAITING_APPROVAL' || c.status === 'REVISION')
+  const attribution = campaign.attribution ?? { leads: 0, bookings: 0, revenue: 0 }
+  const roas = totalSpend > 0 && attribution.revenue > 0 ? `${(attribution.revenue / totalSpend).toFixed(1)}×` : '—'
+  const readiness = computeCampaignReadiness(campaign)
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiTile label="PLANNED BUDGET" value={fmtMoney(campaign.plannedBudget)} />
-        <KpiTile label="ACTUAL SPEND" value={fmtMoney(totalSpend || null)} sub={campaign.plannedBudget ? `${Math.round((totalSpend / campaign.plannedBudget) * 100)}% of budget` : undefined} />
-        <KpiTile label="CHANNEL READINESS" value={`${readiness}%`} sub={`${doneChannels} of ${campaign.channels.length} live/done`} />
-        <KpiTile label="NEEDS ATTENTION" value={String(attention.length)} sub="content items" />
-      </div>
+    <div className="space-y-4">
+      <KpiStrip items={[
+        { label: 'SPEND', value: fmtMoney(totalSpend || null), sub: campaign.plannedBudget ? `${Math.round((totalSpend / campaign.plannedBudget) * 100)}% of budget` : undefined, subTone: 'blue' },
+        { label: 'QUALIFIED LEADS', value: String(attribution.leads), sub: campaign.utmSlug ? undefined : 'set a UTM slug in Brief to track', subTone: attribution.leads > 0 ? 'green' : undefined },
+        { label: 'BOOKINGS', value: String(attribution.bookings), sub: attribution.bookings > 0 ? 'attributed' : undefined, subTone: 'blue' },
+        { label: 'REVENUE', value: fmtMoney(attribution.revenue || null), sub: attribution.revenue > 0 ? 'confirmed payments' : undefined, subTone: 'green' },
+        { label: 'ROAS', value: roas, sub: totalSpend > 0 ? 'revenue ÷ spend' : undefined },
+      ]} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="border rounded-xl bg-white p-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-4">
+        <div className="border rounded-xl bg-white p-5 h-fit">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-sm">Campaign components</h2>
-            <button onClick={() => onGo('Channels')} className="text-xs font-medium" style={{ color: ACCENT }}>Manage channels →</button>
+            <button onClick={() => onGo('Channels')} className="text-[10px] font-semibold" style={{ color: LINK_BLUE }}>Manage channels →</button>
           </div>
           {campaign.channels.length === 0 ? (
             <p className="text-sm text-muted-foreground">No channels added yet.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y">
               {campaign.channels.map(ch => {
                 const Icon = CHANNEL_ICONS[ch.type]
+                // Real subtitle only — proto-3's "3 ad sets · 11 ads" needs an ad-platform
+                // API integration this app doesn't have, so anything beyond Email (which
+                // really is tracked end-to-end) stays honest with whatever the staffer
+                // actually typed in, rather than a fabricated number.
+                const subtitle = ch.type === 'EMAIL' && ch.emailCampaign
+                  ? `${ch.emailCampaign.sentCount}/${ch.emailCampaign.totalRecipients} recipients`
+                  : ch.externalCampaignName || ch.notes || null
+                // "Since" caption under the status badge — real last-edited time, standing
+                // in for proto-3's fabricated "Live since 08 Jul" / "Next send 24 Jul".
+                const since = ch.type === 'EMAIL' && ch.emailCampaign?.sentAt
+                  ? `Sent ${fmtDate(ch.emailCampaign.sentAt)}`
+                  : `Updated ${fmtDate(ch.updatedAt)}`
+                // Result column — only Email has a real, tracked result; every other
+                // channel type has no ad-platform/analytics integration to pull one from.
+                const result = ch.type === 'EMAIL' && ch.emailCampaign && ch.emailCampaign.sentCount > 0
+                  ? {
+                      main: `${Math.round(((ch.emailCampaign.openedCount ?? 0) / ch.emailCampaign.sentCount) * 100)}% open`,
+                      sub: `${Math.round(((ch.emailCampaign.clickedCount ?? 0) / ch.emailCampaign.sentCount) * 100)}% click`,
+                    }
+                  : null
                 return (
-                  <div key={ch.id} className="flex items-center gap-2.5 text-sm">
-                    <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="flex-1 truncate">{CHANNEL_LABELS[ch.type]}</span>
-                    <Badge className={CHANNEL_STATUS_STYLE[ch.status]}>{CHANNEL_STATUS_LABELS[ch.status]}</Badge>
-                  </div>
+                  <button
+                    key={ch.id} onClick={() => onGo('Channels')}
+                    className="w-full flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0 text-left hover:bg-muted/30 -mx-1 px-1 rounded"
+                  >
+                    <span className="h-9 w-9 rounded-lg grid place-items-center shrink-0" style={{ background: `${CHANNEL_ACCENT[ch.type]}14`, color: CHANNEL_ACCENT[ch.type] }}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-medium truncate">{CHANNEL_LABELS[ch.type]}</div>
+                      {subtitle && <div className="text-[9px] text-muted-foreground truncate mt-0.5">{subtitle}</div>}
+                    </div>
+                    <div className="hidden sm:flex flex-col items-start shrink-0 w-32">
+                      <span className={`${PILL} ${CHANNEL_STATUS_STYLE[ch.status]}`}>{CHANNEL_STATUS_LABELS[ch.status]}</span>
+                      <span className="text-[8px] text-muted-foreground mt-1 truncate">{since}</span>
+                    </div>
+                    <div className="hidden md:flex flex-col items-start shrink-0 w-20">
+                      <strong className="text-[11px]">{result?.main ?? '—'}</strong>
+                      {result?.sub && <span className="text-[8px] text-muted-foreground mt-0.5">{result.sub}</span>}
+                    </div>
+                    {ch.ownerName && (
+                      <span className="hidden sm:flex items-center gap-1.5 shrink-0 w-24">
+                        <InitialAvatar name={ch.ownerName} size={20} />
+                        <span className="text-[9px] text-muted-foreground truncate">{ch.ownerName}</span>
+                      </span>
+                    )}
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  </button>
                 )
               })}
             </div>
           )}
         </div>
 
-        <div className="border rounded-xl bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-sm">Needs attention</h2>
-            <button onClick={() => onGo('Content & Approval')} className="text-xs font-medium" style={{ color: ACCENT }}>Open queue →</button>
-          </div>
-          {attention.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing needs attention right now.</p>
-          ) : (
-            <div className="space-y-2">
-              {attention.slice(0, 5).map(c => (
-                <div key={c.id} className="flex items-center justify-between text-sm">
-                  <span className="truncate">{c.title}</span>
-                  <Badge className={STATUS_STYLE[c.status]}>{STATUS_LABELS[c.status]}</Badge>
+        <div className="space-y-4">
+          <div className="border rounded-xl bg-white p-5">
+            <div className="flex items-center justify-between mb-1">
+              <div><h2 className="font-semibold text-sm">Campaign readiness</h2><p className="text-[10px] text-muted-foreground mt-0.5">All launch requirements</p></div>
+              <Donut value={readiness.overall} />
+            </div>
+            <div className="space-y-2 mt-3">
+              {[
+                ['Strategy & brief', readiness.strategyBrief],
+                ['Audience & markets', readiness.audienceMarkets],
+                ['Creative production', readiness.creativeProduction],
+                ['Approvals', readiness.approvals],
+                ['Tracking & attribution', readiness.trackingAttribution],
+              ].map(([label, pct]) => (
+                <div key={label as string} className="grid grid-cols-[110px_1fr_28px] items-center gap-2">
+                  <span className="text-[9px] truncate">{label}</span>
+                  <div className="h-1 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-[#21a36a]" style={{ width: `${pct}%` }} /></div>
+                  <strong className="text-[8px] text-right">{pct}%</strong>
                 </div>
               ))}
             </div>
-          )}
+          </div>
+
+          <div className="border rounded-xl bg-white p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-sm">Approval needed</h2>
+              {attention.length > 0 && <span className={`${PILL} bg-[#fff2d8] text-[#996313]`}>{attention.length}</span>}
+            </div>
+            {attention.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing needs attention right now.</p>
+            ) : (
+              <div className="space-y-2">
+                {attention.slice(0, 5).map(c => (
+                  <button key={c.id} onClick={() => onGo('Content & Approval')} className="flex items-center justify-between text-sm w-full text-left hover:opacity-70">
+                    <span className="truncate">{c.title}</span>
+                    <span className={`${PILL} ${CONTENT_STATUS_HEX[c.status]} shrink-0`}>{STATUS_LABELS[c.status]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -240,12 +382,12 @@ function TagList({ label, values, onChange, placeholder }: {
   }
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <BriefLabel>{label}</BriefLabel>
       <div className="flex flex-wrap gap-1.5 border rounded-md p-2 min-h-9">
         {values.map((v, i) => (
-          <span key={i} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
+          <span key={i} className="inline-flex items-center gap-1 text-[9px] bg-[#eef2f9] text-[#355a91] rounded px-1.5 py-1">
             {v}
-            <button onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+            <button onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-2.5 w-2.5" /></button>
           </span>
         ))}
         <input
@@ -253,11 +395,16 @@ function TagList({ label, values, onChange, placeholder }: {
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
           onBlur={add}
           placeholder={placeholder}
-          className="flex-1 min-w-[100px] text-sm bg-transparent focus:outline-none"
+          className="flex-1 min-w-[100px] text-[11px] bg-transparent focus:outline-none"
         />
       </div>
     </div>
   )
+}
+
+// proto-3's .brief-grid label formula: tiny, tracked, uppercase, muted.
+function BriefLabel({ children }: { children: React.ReactNode }) {
+  return <label className="block text-[8px] tracking-wide text-muted-foreground font-semibold uppercase">{children}</label>
 }
 
 function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
@@ -283,19 +430,19 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
           <h2 className="font-semibold text-sm">Campaign brief</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Business objective</Label>
+              <BriefLabel>Business objective</BriefLabel>
               <Textarea defaultValue={campaign.objective ?? ''} onBlur={e => onSave({ objective: e.target.value })} rows={2} placeholder="What should this campaign achieve, and why now?" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Target result</Label>
+              <BriefLabel>Target result</BriefLabel>
               <Input defaultValue={campaign.targetResult ?? ''} onBlur={e => onSave({ targetResult: e.target.value })} placeholder="e.g. 3 confirmed charters" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Campaign promise</Label>
+              <BriefLabel>Campaign promise</BriefLabel>
               <Textarea defaultValue={campaign.promise ?? ''} onBlur={e => onSave({ promise: e.target.value })} rows={2} placeholder="The one thing this campaign promises" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Offer</Label>
+              <BriefLabel>Offer</BriefLabel>
               <Textarea defaultValue={campaign.offer ?? ''} onBlur={e => onSave({ offer: e.target.value })} rows={2} placeholder="Any incentive attached, if applicable" />
             </div>
           </div>
@@ -307,7 +454,7 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
             <TagList label="AUDIENCE SEGMENTS" values={campaign.audienceSegments ?? []} onChange={v => onSave({ audienceSegments: v })} placeholder="Add audience..." />
             <TagList label="MARKETS" values={campaign.markets ?? []} onChange={v => onSave({ markets: v })} placeholder="Add country or region..." />
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Master language</Label>
+              <BriefLabel>Master language</BriefLabel>
               <Input defaultValue={campaign.masterLanguage ?? ''} onBlur={e => onSave({ masterLanguage: e.target.value })} placeholder="e.g. English" />
             </div>
             <TagList label="ADDITIONAL LANGUAGES" values={campaign.additionalLanguages ?? []} onChange={v => onSave({ additionalLanguages: v })} placeholder="Add..." />
@@ -316,25 +463,58 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
             </div>
           </div>
         </div>
+
+        <div className="border rounded-xl bg-white p-5 space-y-2">
+          <h2 className="font-semibold text-sm">Attribution</h2>
+          <p className="text-[10px] text-muted-foreground">
+            Add <code className="bg-muted px-1 rounded">?utm_campaign={campaign.utmSlug || '…'}</code> to this campaign's ad and link URLs — inquiries that come in with it get counted as this campaign's leads, bookings and revenue on the Overview tab.
+          </p>
+          <Input
+            defaultValue={campaign.utmSlug ?? ''} onBlur={e => onSave({ utmSlug: e.target.value })}
+            placeholder="e.g. raja-ampat-2027" className="font-mono text-xs"
+          />
+        </div>
       </div>
 
       <div className="border rounded-xl bg-white p-5 space-y-3 h-fit">
         <h2 className="font-semibold text-sm">Discussion</h2>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {(campaign.comments ?? []).map(c => (
-            <div key={c.id} className="text-sm">
-              <p><strong>{c.authorName}</strong> <span className="text-xs text-muted-foreground">{new Date(c.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></p>
-              <p className="text-muted-foreground">{c.text}</p>
+            <div key={c.id} className="flex gap-2">
+              <InitialAvatar name={c.authorName} />
+              <div className="flex-1 min-w-0">
+                <p className="flex items-center justify-between gap-2">
+                  <strong className="text-[9px]">{c.authorName}</strong>
+                  <span className="text-[7px] text-muted-foreground shrink-0">{new Date(c.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                </p>
+                <p className="text-[9px] text-[#5f646c] leading-relaxed mt-0.5">{c.text}</p>
+              </div>
             </div>
           ))}
           {(campaign.comments ?? []).length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
         </div>
         <div className="flex gap-2">
           <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a campaign comment..." onKeyDown={e => e.key === 'Enter' && postComment()} />
-          <Button size="sm" variant="outline" onClick={postComment} disabled={!comment.trim()}>Send</Button>
+          <Button size="sm" onClick={postComment} disabled={!comment.trim()} style={{ backgroundColor: '#22262b' }} className="hover:bg-[#0d0f11]">Send</Button>
         </div>
       </div>
     </div>
+  )
+}
+
+// proto-3's Avatar — initials on a colored circle, same hashed-hue trick as brandGradient
+// so a given name always lands on the same color across the page.
+function InitialAvatar({ name, size = 26 }: { name: string | null; size?: number }) {
+  const label = (name ?? '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'
+  let hash = 0
+  for (const ch of (name ?? '?')) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return (
+    <span
+      className="rounded-full grid place-items-center text-white font-bold shrink-0"
+      style={{ width: size, height: size, fontSize: size * 0.36, background: `hsl(${hash % 360} 35% 38%)` }}
+    >
+      {label}
+    </span>
   )
 }
 
@@ -388,12 +568,12 @@ function ChannelsTab({ campaign, onRefresh, team, onOpenContent, onNewContent }:
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {campaign.channels.map(ch => {
-            const format = CHANNEL_TO_CONTENT_FORMAT[ch.type]
-            const linkedContent = format ? (campaign.contentItems ?? []).filter(c => c.format === format) : undefined
+            const formats = CHANNEL_TO_CONTENT_FORMATS[ch.type]
+            const linkedContent = formats ? (campaign.contentItems ?? []).filter(c => formats.includes(c.format)) : undefined
             return (
               <ChannelCard
                 key={ch.id} channel={ch} onUpdate={p => updateChannel(ch.id, p)} onDelete={() => setDeleteTarget(ch)} team={team}
-                linkedContent={linkedContent} onOpenContent={onOpenContent} onNewContent={() => onNewContent(format)}
+                linkedContent={linkedContent} onOpenContent={onOpenContent} onNewContent={() => onNewContent(formats?.[0])}
               />
             )
           })}
@@ -420,7 +600,7 @@ function ChannelsTab({ campaign, onRefresh, team, onOpenContent, onNewContent }:
 }
 
 function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenContent, onNewContent }: {
-  channel: CampaignChannel; onUpdate: (p: Record<string, unknown>) => void; onDelete: () => void; team: MarketingTeamMember[]
+  channel: CampaignChannel; onUpdate: (p: Record<string, unknown>) => Promise<void>; onDelete: () => void; team: MarketingTeamMember[]
   linkedContent?: ContentItem[]; onOpenContent?: (id: string) => void; onNewContent?: () => void
 }) {
   const Icon = CHANNEL_ICONS[channel.type]
@@ -444,12 +624,15 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
     setLinking(false); setPickEmailId('')
   }
 
+  const accent = CHANNEL_ACCENT[channel.type]
+  const progress = channel.status === 'NOT_STARTED' ? 0 : channel.status === 'IN_PROGRESS' ? 45 : channel.status === 'READY' ? 80 : 100
+
   return (
     <div className="border rounded-xl bg-white p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 bg-muted"><Icon className="h-4 w-4 text-muted-foreground" /></span>
-          <h3 className="font-medium text-sm truncate">{CHANNEL_LABELS[channel.type]}</h3>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}14`, color: accent }}><Icon className="h-4.5 w-4.5" /></span>
+          <h3 className="font-semibold text-[12px] truncate">{CHANNEL_LABELS[channel.type]}</h3>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Select value={channel.status} onValueChange={v => onUpdate({ status: v })}>
@@ -459,6 +642,16 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
             </SelectContent>
           </Select>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[8px] text-muted-foreground">SETUP & PRODUCTION</span>
+          <strong className="text-[9px]">{progress}%</strong>
+        </div>
+        <div className="h-1 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full" style={{ width: `${progress}%`, background: accent }} />
         </div>
       </div>
 
@@ -484,7 +677,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setLinking(false)}>Cancel</Button>
             </div>
           ) : (
-            <button onClick={startLinking} className="inline-flex items-center gap-1.5 hover:underline" style={{ color: ACCENT }}>
+            <button onClick={startLinking} className="inline-flex items-center gap-1.5 hover:underline" style={{ color: LINK_BLUE }}>
               <Link2 className="h-3.5 w-3.5" /> Link an email campaign (built in Email Campaigns)
             </button>
           )}
@@ -522,7 +715,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">Content for this channel ({linkedContent.length})</Label>
-            <button onClick={onNewContent} className="text-xs font-medium inline-flex items-center gap-1" style={{ color: ACCENT }}>
+            <button onClick={onNewContent} className="text-[10px] font-semibold inline-flex items-center gap-1" style={{ color: LINK_BLUE }}>
               <Plus className="h-3 w-3" /> Add
             </button>
           </div>
@@ -533,7 +726,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
               {linkedContent.slice(0, 4).map(item => (
                 <button key={item.id} onClick={() => onOpenContent?.(item.id)} className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-muted/50">
                   <span className="text-xs truncate">{item.title}</span>
-                  <Badge className={`${STATUS_STYLE[item.status]} shrink-0 text-[10px]`}>{STATUS_LABELS[item.status]}</Badge>
+                  <span className={`${PILL} ${CONTENT_STATUS_HEX[item.status]} shrink-0`}>{STATUS_LABELS[item.status]}</span>
                 </button>
               ))}
               {linkedContent.length > 4 && (
@@ -580,47 +773,6 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
   )
 }
 
-function ContentTab({ campaign, onNew, onOpen }: { campaign: Campaign; onNew: () => void; onOpen: (id: string) => void }) {
-  const items = campaign.contentItems ?? []
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{items.length} content item{items.length === 1 ? '' : 's'} in this campaign</p>
-        <Button size="sm" onClick={onNew} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> New content
-        </Button>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">No content linked to this campaign yet.</p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map(item => <ContentCardMini key={item.id} item={item} onClick={() => onOpen(item.id)} />)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ContentCardMini({ item, onClick }: { item: ContentItem; onClick: () => void }) {
-  const latest = item.versions?.[0] ?? null
-  return (
-    <button onClick={onClick} className="text-left border rounded-xl bg-white overflow-hidden hover:shadow-md hover:border-[#bdac7e]/50 transition-all">
-      <div className="h-32 bg-muted/40 flex items-center justify-center relative">
-        {latest?.mediaUrl ? (
-          latest.mediaType === 'video' ? <video src={latest.mediaUrl} className="w-full h-full object-cover" muted /> : latest.mediaType === 'image' ? <img src={latest.mediaUrl} alt={item.title} className="w-full h-full object-cover" /> : <FileText className="h-7 w-7 text-muted-foreground/40" />
-        ) : <ImageIcon className="h-7 w-7 text-muted-foreground/30" />}
-        <Badge className={`absolute top-2 right-2 ${STATUS_STYLE[item.status]}`}>{STATUS_LABELS[item.status]}</Badge>
-      </div>
-      <div className="p-3 space-y-1">
-        <h3 className="font-medium text-sm leading-snug line-clamp-2">{item.title}</h3>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{FORMAT_LABELS[item.format]}</span>
-          {latest?.mediaType === 'video' && <Video className="h-3 w-3" />}
-        </div>
-      </div>
-    </button>
-  )
-}
 
 function PerformanceTab({ campaign }: { campaign: Campaign }) {
   const totalPlanned = campaign.channels.reduce((s, c) => s + (c.plannedBudget ?? 0), 0) || campaign.plannedBudget || 0
@@ -630,11 +782,11 @@ function PerformanceTab({ campaign }: { campaign: Campaign }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <KpiTile label="PLANNED BUDGET" value={fmtMoney(totalPlanned || null)} />
-        <KpiTile label="ACTUAL SPEND" value={fmtMoney(totalSpend || null)} sub={totalPlanned ? `${Math.round((totalSpend / totalPlanned) * 100)}% of budget` : undefined} />
-        <KpiTile label="CONTENT PUBLISHED" value={String((campaign.contentItems ?? []).filter(c => c.status === 'PUBLISHED').length)} sub={`of ${(campaign.contentItems ?? []).length} total`} />
-      </div>
+      <KpiStrip items={[
+        { label: 'PLANNED BUDGET', value: fmtMoney(totalPlanned || null) },
+        { label: 'ACTUAL SPEND', value: fmtMoney(totalSpend || null), sub: totalPlanned ? `${Math.round((totalSpend / totalPlanned) * 100)}% of budget` : undefined, subTone: 'blue' },
+        { label: 'CONTENT PUBLISHED', value: String((campaign.contentItems ?? []).filter(c => c.status === 'PUBLISHED').length), sub: `of ${(campaign.contentItems ?? []).length} total`, subTone: 'green' },
+      ]} />
 
       {emailChannel?.emailCampaign && (
         <div className="border rounded-xl bg-white p-5">
@@ -655,7 +807,7 @@ function PerformanceTab({ campaign }: { campaign: Campaign }) {
             <div key={status} className="flex items-center gap-3 text-sm">
               <span className="w-32 shrink-0 text-muted-foreground">{STATUS_LABELS[status]}</span>
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${(campaign.contentItems ?? []).length ? (count / (campaign.contentItems ?? []).length) * 100 : 0}%`, background: ACCENT }} />
+                <div className="h-full rounded-full" style={{ width: `${(campaign.contentItems ?? []).length ? (count / (campaign.contentItems ?? []).length) * 100 : 0}%`, background: '#21a36a' }} />
               </div>
               <span className="w-6 text-right font-medium">{count}</span>
             </div>

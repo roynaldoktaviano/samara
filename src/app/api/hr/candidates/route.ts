@@ -24,7 +24,10 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate, additionalDocuments, notes } = await req.json()
+  const {
+    fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate,
+    additionalDocuments, notes, assessmentScore, skills, languages,
+  } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
   const candidate = await db.candidate.create({
@@ -41,6 +44,9 @@ export async function POST(req: NextRequest) {
       readyJoinDate: readyJoinDate ? new Date(readyJoinDate) : null,
       additionalDocuments: Array.isArray(additionalDocuments) ? additionalDocuments : [],
       notes: notes?.trim() || null,
+      assessmentScore: assessmentScore !== undefined && assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null,
+      skills: Array.isArray(skills) ? skills : [],
+      languages: Array.isArray(languages) ? languages : [],
       updatedAt: new Date(),
     },
     include: { appliedRole: { select: { id: true, title: true } } },

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship, ArrowLeft } from 'lucide-react'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from './FreelanceRecommendationsField'
 
-interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
+interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null; employmentStatus: string | null }
 interface Trip { bookingCode: string; destination: string | null; startDate: string; endDate: string }
 interface LeaveRequest {
   id: string
@@ -114,7 +114,10 @@ export default function LeaveRequestsPage() {
     const [rRes, eRes] = await Promise.all([fetch('/api/hr/leave-requests'), fetch('/api/hr/employees')])
     const list: LeaveRequest[] = rRes.ok ? await rRes.json() : []
     setRequests(list)
-    if (eRes.ok) setEmployees((await eRes.json()).filter((e: EmployeeLite & { isActive: boolean }) => e.isActive))
+    // Freelance staff aren't on the leave-accrual system — same rule the API enforces
+    // (src/app/api/hr/leave-requests/route.ts), kept out of the picker so HR can't pick
+    // one and only find out from a submit error.
+    if (eRes.ok) setEmployees((await eRes.json()).filter((e: EmployeeLite & { isActive: boolean }) => e.isActive && e.employmentStatus !== 'Freelance'))
     setLoading(false)
     return list
   }, [])

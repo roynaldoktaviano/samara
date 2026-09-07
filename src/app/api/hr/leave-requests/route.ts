@@ -82,9 +82,15 @@ export async function POST(req: NextRequest) {
 
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
-    select: { id: true, fullName: true, leaveBalance: true, managerId: true, manager: { select: { userId: true } }, location: { select: { name: true } } },
+    select: { id: true, fullName: true, leaveBalance: true, managerId: true, manager: { select: { userId: true } }, location: { select: { name: true } }, employmentStatus: true },
   })
   if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+
+  // Freelance staff aren't on the leave-accrual system at all — block outright rather
+  // than let HR file one that has no leaveBalance to cap against.
+  if (employee.employmentStatus === 'Freelance') {
+    return NextResponse.json({ error: `${employee.fullName} is Freelance and not eligible for leave requests.` }, { status: 400 })
+  }
 
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
   // for this employee yet), in which case there's nothing to cap against.

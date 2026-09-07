@@ -45,6 +45,7 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2
 export default function MyLeaveRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [linked, setLinked] = useState(true)
+  const [isFreelance, setIsFreelance] = useState(false)
   const [leaveBalance, setLeaveBalance] = useState<number | null>(null)
   const [requests, setRequests] = useState<LeaveRequest[]>([])
 
@@ -61,6 +62,7 @@ export default function MyLeaveRequestsPage() {
     if (res.ok) {
       const data = await res.json()
       setLinked(data.linked)
+      setIsFreelance(data.employee?.employmentStatus === 'Freelance')
       setLeaveBalance(data.employee?.leaveBalance ?? null)
       setRequests(data.requests ?? [])
     }
@@ -111,6 +113,22 @@ export default function MyLeaveRequestsPage() {
           <ShieldAlert className="h-8 w-8 mx-auto mb-3 text-amber-600" />
           <p className="font-medium text-sm">Your account isn&apos;t linked to an HR employee profile yet</p>
           <p className="text-muted-foreground text-sm mt-1">Ask an Admin to link your login to an employee record under Team, then you&apos;ll be able to request leave here.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isFreelance) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Leave Request</h2>
+          <p className="text-muted-foreground text-sm mt-1">Request time off and track your approval status</p>
+        </div>
+        <div className="rounded-xl border bg-muted/40 px-6 py-10 text-center">
+          <ShieldAlert className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
+          <p className="font-medium text-sm">Leave requests aren&apos;t available for Freelance staff</p>
+          <p className="text-muted-foreground text-sm mt-1">Freelance employees aren&apos;t on the leave-accrual system.</p>
         </div>
       </div>
     )

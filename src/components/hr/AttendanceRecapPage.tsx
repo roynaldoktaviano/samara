@@ -43,6 +43,10 @@ export default function AttendanceRecapPage() {
   const now = useMemo(() => new Date(), [])
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1) // 1-12
+  // A select (rather than a bare number input) keeps this visually consistent with the
+  // Month/Location dropdowns beside it and rules out garbage years — a few back for
+  // historical recaps, one ahead for early planning.
+  const yearOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => now.getFullYear() - 4 + i), [now])
 
   const startDate = toYmd(new Date(year, month - 1, 1))
   const endDate = toYmd(new Date(year, month, 0))
@@ -134,28 +138,31 @@ export default function AttendanceRecapPage() {
         </div>
       </div>
 
-      <div className="flex items-end gap-3 flex-wrap">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Month</label>
+      <div className="border rounded-xl bg-white px-4 py-3 flex items-center gap-5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">Month</label>
           <select value={month} onChange={e => setMonth(Number(e.target.value))}
             className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
             {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Year</label>
-          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))}
-            className="h-9 w-24 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">Year</label>
+          <select value={year} onChange={e => setYear(Number(e.target.value))}
+            className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</label>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">Location</label>
           <select value={locationId} onChange={e => setLocationId(e.target.value)}
             className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
             <option value="">All locations</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
-        <div className="flex items-center gap-3 ml-auto flex-wrap">
+        <div className="h-6 w-px bg-border hidden sm:block" />
+        <div className="flex items-center gap-3.5 flex-wrap sm:ml-auto">
           {STATUSES.map(s => (
             <div key={s} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[s].dot}`} />

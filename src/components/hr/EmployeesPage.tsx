@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import type { OtherIncomeItem } from '@/lib/payroll'
+import AddFreelanceModal, { type FreelanceEmployee } from './AddFreelanceModal'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface BusinessUnit { id: string; name: string }
@@ -30,6 +31,9 @@ interface Employee {
   legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
+  freelanceFee: number | null
+  replacingEmployeeId: string | null; replacingEmployee: { id: string; fullName: string } | null
+  tripAssignments: { booking: { id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string; yacht: { name: string } | null } }[]
 }
 
 const BLANK = {
@@ -224,6 +228,9 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
+
+  const [freelanceModal, setFreelanceModal] = useState(false)
+  const [editingFreelance, setEditingFreelance] = useState<Employee | null>(null)
 
   const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null)
   const [resignForm, setResignForm] = useState({ ...RESIGN_BLANK })
@@ -445,6 +452,12 @@ export default function EmployeesPage() {
           <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <Plus className="h-4 w-4" /> Add Employee
           </button>
+          <button
+            onClick={() => { setEditingFreelance(null); setFreelanceModal(true) }}
+            className="flex items-center gap-2 border border-amber-600 text-amber-700 hover:bg-amber-50 text-sm font-medium px-4 py-2 rounded-md transition-colors"
+          >
+            <Plus className="h-4 w-4" /> Add Freelance
+          </button>
         </div>
       </div>
 
@@ -604,7 +617,13 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.role?.title ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.manager?.fullName ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.gender ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{emp.employmentStatus ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {emp.employmentStatus === 'Freelance' ? (
+                      <span className="inline-block text-xs font-medium bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">Freelance</span>
+                    ) : (
+                      <span className="text-muted-foreground">{emp.employmentStatus ?? '—'}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs text-center">{emp.leaveBalance ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatServiceYear(emp.joinDate, emp.resignedAt)}</td>
@@ -622,7 +641,13 @@ export default function EmployeesPage() {
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(emp)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
+                      <button
+                        onClick={() => {
+                          if (emp.employmentStatus === 'Freelance') { setEditingFreelance(emp); setFreelanceModal(true) }
+                          else openEdit(emp)
+                        }}
+                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button onClick={() => setDeleteConfirm(emp)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
@@ -1240,6 +1265,14 @@ export default function EmployeesPage() {
           </div>
         </>
       )}
+
+      <AddFreelanceModal
+        open={freelanceModal}
+        editing={editingFreelance as FreelanceEmployee | null}
+        employees={employees}
+        onClose={() => { setFreelanceModal(false); setEditingFreelance(null) }}
+        onSaved={() => { setFreelanceModal(false); setEditingFreelance(null); load() }}
+      />
 
       {/* ── Delete Confirm ── */}
       {deleteConfirm && (

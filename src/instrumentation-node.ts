@@ -62,6 +62,19 @@ export async function startNodeInstrumentation() {
     }
   }, automationsTickIntervalMs)
 
+  // Nags a PO's creator once it's gone 3 days with no movement, and escalates to
+  // their manager at 5 days — see src/lib/purchasing/stagnantPOCheck.ts. A few times a
+  // day is plenty since the thresholds are day-granularity, and the endpoint's own
+  // dedup (renotify window / escalate-once-per-stall) makes re-running it harmless.
+  const poStagnantCheckIntervalMs = 3 * 60 * 60 * 1000
+  setInterval(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/purchasing/orders/stagnant-check`, { headers: cronHeaders })
+    } catch (err) {
+      console.error('[scheduler] PO stagnant check tick failed:', err)
+    }
+  }, poStagnantCheckIntervalMs)
+
   // Rebuilds the Google Ads offline-conversion Google Sheet — full-refresh/idempotent (see
   // rebuildGoogleAdsConversionsSheet), so running this more often than Google Ads actually
   // reads the sheet is harmless. A few hours' cadence is enough for same-day attribution.

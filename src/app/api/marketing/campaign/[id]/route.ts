@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { getCampaignAttribution, slugify } from '@/lib/campaign-attribution'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -34,7 +35,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(campaign)
+
+  // Real open/click rate per Email channel — the only channel type this app actually
+  // tracks results for (no ad-platform API integration for Meta/Google/etc), so its
+  // "Campaign components" row is the only one with a real result number instead of "—".
+  const channels = await Promise.all(campaign.channels.map(async ch => {
+    if (!ch.emailCampaign) return ch
+    const [openedCount, clickedCount] = await Promise.all([
+      db.campaignRecipient.count({ where: { campaignId: ch.emailCampaign.id, status: 'SENT', openedAt: { not: null } } }),
+      db.campaignRecipient.count({ where: { campaignId: ch.emailCampaign.id, status: 'SENT', clickedAt: { not: null } } }),
+    ])
+    return { ...ch, emailCampaign: { ...ch.emailCampaign, openedCount, clickedCount } }
+  }))
+
+  const attribution = await getCampaignAttribution(db, campaign.utmSlug)
+  return NextResponse.json({ ...campaign, channels, attribution })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,11 +65,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json()
   const {
     name, brand, stage, objective, targetResult, promise, offer, startDate, endDate, plannedBudget,
-    ownerName, audienceSegments, markets, masterLanguage, additionalLanguages, exclusions,
+    ownerName, audienceSegments, markets, masterLanguage, additionalLanguages, exclusions, utmSlug,
   } = body
 
   if (stage !== undefined && existing.stage === 'APPROVAL' && stage !== 'APPROVAL' && !roleMatches(role, APPROVER_ROLES)) {
     return NextResponse.json({ error: 'Only a Marketing Director can move a campaign out of Approval' }, { status: 403 })
+  }
+
+  let cleanUtmSlug: string | null | undefined
+  if (utmSlug !== undefined) {
+    cleanUtmSlug = utmSlug?.trim() ? slugify(utmSlug.trim()) : null
+    if (cleanUtmSlug) {
+      const clash = await db.campaign.findUnique({ where: { utmSlug: cleanUtmSlug }, select: { id: true } })
+      if (clash && clash.id !== id) return NextResponse.json({ error: `"${cleanUtmSlug}" is already used by another campaign` }, { status: 400 })
+    }
   }
 
   const campaign = await db.campaign.update({
@@ -76,6 +100,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(masterLanguage !== undefined && { masterLanguage: masterLanguage?.trim() || null }),
       ...(additionalLanguages !== undefined && { additionalLanguages }),
       ...(exclusions !== undefined && { exclusions }),
+      ...(cleanUtmSlug !== undefined && { utmSlug: cleanUtmSlug }),
     },
   })
   return NextResponse.json(campaign)
