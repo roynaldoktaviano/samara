@@ -24,7 +24,7 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const [activeEmployees, allEmployees, pendingLeaveCount, talentPoolCount, expiringDocuments] = await Promise.all([
+  const [activeEmployees, allEmployees, pendingLeaveCount, talentPoolCount, expiringDocuments, freelanceEmployees] = await Promise.all([
     db.employee.count({ where: { isActive: true } }),
     db.employee.findMany({
       where: { isActive: true },
@@ -46,6 +46,16 @@ export async function GET() {
         yacht: { select: { name: true } },
       },
       orderBy: { expiryDate: 'asc' },
+    }),
+    db.employee.findMany({
+      where: { isActive: true, employmentStatus: 'Freelance' },
+      select: {
+        id: true, fullName: true,
+        replacingEmployee: { select: { fullName: true } },
+        tripAssignments: {
+          select: { booking: { select: { id: true, bookingCode: true, openTripId: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } } },
+        },
+      },
     }),
   ])
 
@@ -97,6 +107,26 @@ export async function GET() {
     0,
   )
 
+  // One row per (freelancer, covered trip) — a freelancer covering 3 trips shows up 3
+  // times, once per trip, so "which trip" and "covering since when" both read as plain
+  // per-row facts rather than a nested list crammed into one cell.
+  const freelanceCoverage = freelanceEmployees
+    .flatMap(f => f.tripAssignments.map(t => ({
+      freelanceId: f.id,
+      freelanceName: f.fullName,
+      replacingName: f.replacingEmployee?.fullName ?? null,
+      bookingId: t.booking.id,
+      // Open Trip departures are shared by several guests' individual bookings (same
+      // yacht, same dates) — showing one arbitrary guest's code here would misleadingly
+      // imply the freelancer is tied to that one guest rather than the whole voyage.
+      bookingLabel: t.booking.openTripId != null ? 'Open Trip' : t.booking.bookingCode,
+      destination: t.booking.destination,
+      yachtName: t.booking.yacht?.name ?? null,
+      startDate: t.booking.startDate,
+      endDate: t.booking.endDate,
+    })))
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+
   const countBy = (getKey: (e: (typeof allEmployees)[number]) => string | null) => {
     const map = new Map<string, number>()
     for (const e of allEmployees) {
@@ -120,6 +150,7 @@ export async function GET() {
     estimatedExitExposure,
     anySalaryDataSet,
     talentPoolCount,
+    freelanceCoverage,
     headcountByLocation: countBy(e => e.location?.name ?? null),
     headcountByLegalEntity: countBy(e => e.legalEntity?.name ?? null),
   })

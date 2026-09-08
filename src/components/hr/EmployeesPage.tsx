@@ -31,7 +31,7 @@ interface Employee {
   legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
-  freelanceFee: number | null
+  freelanceFee: number | null; freelanceFeeType: string | null
   replacingEmployeeId: string | null; replacingEmployee: { id: string; fullName: string } | null
   tripAssignments: { booking: { id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string; yacht: { name: string } | null } }[]
 }
@@ -1266,13 +1266,15 @@ export default function EmployeesPage() {
         </>
       )}
 
-      <AddFreelanceModal
-        open={freelanceModal}
-        editing={editingFreelance as FreelanceEmployee | null}
-        employees={employees}
-        onClose={() => { setFreelanceModal(false); setEditingFreelance(null) }}
-        onSaved={() => { setFreelanceModal(false); setEditingFreelance(null); load() }}
-      />
+      {freelanceModal && (
+        <AddFreelanceModal
+          key={editingFreelance?.id ?? 'new'}
+          editing={editingFreelance as FreelanceEmployee | null}
+          employees={employees}
+          onClose={() => { setFreelanceModal(false); setEditingFreelance(null) }}
+          onSaved={() => { setFreelanceModal(false); setEditingFreelance(null); load() }}
+        />
+      )}
 
       {/* ── Delete Confirm ── */}
       {deleteConfirm && (

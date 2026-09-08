@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
-    freelanceFee, replacingEmployeeId, tripBookingIds,
+    freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
   } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
@@ -116,6 +116,7 @@ export async function POST(req: NextRequest) {
         certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [],
         contractFiles: Array.isArray(contractFiles) ? contractFiles : [],
         freelanceFee: toFloatOrNull(freelanceFee),
+        freelanceFeeType: freelanceFeeType?.trim() || null,
         replacingEmployeeId: replacingEmployeeId || null,
         ...(Array.isArray(tripBookingIds) && tripBookingIds.length > 0 && {
           tripAssignments: { create: tripBookingIds.map((bookingId: string) => ({ bookingId })) },

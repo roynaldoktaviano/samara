@@ -2962,7 +2962,10 @@ model Employee {
   // Freelance only (employmentStatus = 'Freelance') — the one-off/per-engagement fee
   // agreed for this booking, distinct from basicSalary which flows through the
   // recurring monthly payroll-period cycle a freelancer was never enrolled in.
-  freelanceFee Float?
+  freelanceFee     Float?
+  // 'Per Day' | 'Per Month' — how freelanceFee's amount is rated, free text like
+  // employmentStatus/leaveEntitlementPolicy elsewhere on this model.
+  freelanceFeeType String?
   // Recurring named income lines beyond the fixed columns above (e.g. a fixed monthly
   // allowance HR wants itemized on the payslip) — array of { id, name, description, amount }.
   // Snapshotted onto PayslipEntry.otherIncomeSnap at generation time.

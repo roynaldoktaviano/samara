@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { X, Ship } from 'lucide-react'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 
-interface BookingLite { id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string; yacht: { name: string } | null }
+interface BookingLite {
+  id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string
+  yacht: { name: string } | null; isOpenTrip: boolean
+}
+interface YachtLite { id: string; name: string }
 interface EmployeeLite { id: string; fullName: string; employmentStatus: string | null; isActive: boolean }
 export interface FreelanceEmployee {
   id: string
@@ -13,19 +17,31 @@ export interface FreelanceEmployee {
   personalEmail: string | null
   contractEndDate: string | null
   freelanceFee: number | null
+  freelanceFeeType: string | null
   replacingEmployeeId: string | null
   tripAssignments: { booking: BookingLite }[]
 }
 
-const fmtTrip = (b: BookingLite) => `${b.bookingCode}${b.yacht ? ` · ${b.yacht.name}` : ''} · ${new Date(b.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}–${new Date(b.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
+const FEE_TYPES = ['Per Day', 'Per Month']
+
+// An Open Trip departure collapses several guests' individual bookings into one pick
+// server-side (see /api/hr/bookings-lite) — labeled by the shared voyage, not by
+// whichever single guest's booking code happened to represent the group, since showing
+// that code here would misleadingly imply the freelancer is tied to one specific guest.
+const fmtTrip = (b: BookingLite) => {
+  const dates = `${new Date(b.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}–${new Date(b.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+  if (b.isOpenTrip) {
+    return `Open Trip${b.yacht ? ` · ${b.yacht.name}` : ''}${b.destination ? ` · ${b.destination}` : ''} · ${dates}`
+  }
+  return `${b.bookingCode}${b.yacht ? ` · ${b.yacht.name}` : ''} · ${dates}`
+}
 
 // A deliberately lighter form than the full Add/Edit Employee modal (no bank account,
 // salary band, or document tabs — none of that applies to a one-off freelance
 // engagement) — see the "Add Freelance" button next to "Add Employee" in
 // EmployeesPage.tsx. Still creates/updates a real Employee row (employmentStatus:
 // 'Freelance'), just through a narrower set of fields.
-export default function AddFreelanceModal({ open, editing, employees, onClose, onSaved }: {
-  open: boolean
+export default function AddFreelanceModal({ editing, employees, onClose, onSaved }: {
   editing: FreelanceEmployee | null
   employees: EmployeeLite[]
   onClose: () => void
@@ -39,24 +55,42 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
   const [email, setEmail] = useState(() => editing?.personalEmail ?? '')
   const [contractEndDate, setContractEndDate] = useState(() => editing?.contractEndDate ? editing.contractEndDate.slice(0, 10) : '')
   const [fee, setFee] = useState(() => editing?.freelanceFee != null ? String(editing.freelanceFee) : '')
+  const [feeType, setFeeType] = useState(() => editing?.freelanceFeeType ?? 'Per Day')
   const [replacingEmployeeId, setReplacingEmployeeId] = useState(() => editing?.replacingEmployeeId ?? '')
   const [selectedTrips, setSelectedTrips] = useState<BookingLite[]>(() => editing?.tripAssignments.map(t => t.booking) ?? [])
   const [tripSearch, setTripSearch] = useState('')
+  const [tripYacht, setTripYacht] = useState('')
+  const [tripDate, setTripDate] = useState('')
   const [tripResults, setTripResults] = useState<BookingLite[]>([])
+  const [yachts, setYachts] = useState<YachtLite[]>([])
   const [tripSearchOpen, setTripSearchOpen] = useState(false)
+  const [replacingSearch, setReplacingSearch] = useState(() => editing ? employees.find(e => e.id === editing.replacingEmployeeId)?.fullName ?? '' : '')
+  const [replacingOpen, setReplacingOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const searchTrips = useCallback(async (q: string) => {
-    const res = await fetch(`/api/hr/bookings-lite${q ? `?search=${encodeURIComponent(q)}` : ''}`)
-    if (res.ok) setTripResults(await res.json())
+  const searchTrips = useCallback(async (q: string, yachtId: string, date: string) => {
+    const params = new URLSearchParams()
+    if (q) params.set('search', q)
+    if (yachtId) params.set('yachtId', yachtId)
+    if (date) params.set('date', date)
+    const res = await fetch(`/api/hr/bookings-lite?${params}`)
+    if (res.ok) {
+      const data = await res.json()
+      setTripResults(data.bookings)
+      setYachts(data.yachts)
+    }
   }, [])
+
+  // Fetches the yacht filter's options up front, so it's populated the moment the modal
+  // opens rather than staying empty until the trip search box is first focused.
+  useEffect(() => { searchTrips('', '', '') }, [searchTrips])
 
   useEffect(() => {
     if (!tripSearchOpen) return
-    const t = setTimeout(() => searchTrips(tripSearch), 250)
+    const t = setTimeout(() => searchTrips(tripSearch, tripYacht, tripDate), 250)
     return () => clearTimeout(t)
-  }, [tripSearch, tripSearchOpen, searchTrips])
+  }, [tripSearch, tripYacht, tripDate, tripSearchOpen, searchTrips])
 
   const addTrip = (b: BookingLite) => {
     if (!selectedTrips.some(t => t.id === b.id)) setSelectedTrips(prev => [...prev, b])
@@ -65,6 +99,9 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
   const removeTrip = (id: string) => setSelectedTrips(prev => prev.filter(t => t.id !== id))
 
   const replacementOptions = employees.filter(e => e.isActive && e.employmentStatus !== 'Freelance' && e.id !== editing?.id)
+  const replacingMatches = replacementOptions.filter(e => e.fullName.toLowerCase().includes(replacingSearch.toLowerCase()))
+  const pickReplacing = (e: EmployeeLite) => { setReplacingEmployeeId(e.id); setReplacingSearch(e.fullName); setReplacingOpen(false) }
+  const clearReplacing = () => { setReplacingEmployeeId(''); setReplacingSearch('') }
 
   async function save() {
     if (!fullName.trim()) { setError('Full name is required'); return }
@@ -76,6 +113,7 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
       employmentStatus: 'Freelance',
       contractEndDate: contractEndDate || null,
       freelanceFee: fee || null,
+      freelanceFeeType: fee ? feeType : null,
       replacingEmployeeId: replacingEmployeeId || null,
       tripBookingIds: selectedTrips.map(t => t.id),
     }
@@ -86,8 +124,6 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
     if (!res.ok) { setError(data.error ?? 'An error occurred'); setSaving(false); return }
     setSaving(false); onSaved()
   }
-
-  if (!open) return null
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -125,6 +161,19 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Covering Trip(s)</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              <select
+                value={tripYacht} onChange={e => { setTripYacht(e.target.value); setTripSearchOpen(true) }}
+                className="h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                <option value="">All yachts</option>
+                {yachts.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
+              </select>
+              <input
+                type="date" value={tripDate} onChange={e => { setTripDate(e.target.value); setTripSearchOpen(true) }}
+                className="h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
             <div className="min-h-10 border rounded-lg p-1.5 flex flex-wrap gap-1.5 relative">
               {selectedTrips.map(t => (
                 <span key={t.id} className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-800 rounded-full px-2.5 py-1">
@@ -136,7 +185,7 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
                 <input
                   value={tripSearch}
                   onChange={e => { setTripSearch(e.target.value); setTripSearchOpen(true) }}
-                  onFocus={() => { setTripSearchOpen(true); searchTrips(tripSearch) }}
+                  onFocus={() => { setTripSearchOpen(true); searchTrips(tripSearch, tripYacht, tripDate) }}
                   onBlur={() => setTimeout(() => setTripSearchOpen(false), 150)}
                   placeholder="Search booking code or destination..."
                   className="h-7 w-full text-sm border-0 focus:outline-none px-1"
@@ -161,22 +210,53 @@ export default function AddFreelanceModal({ open, editing, employees, onClose, o
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Replacing</label>
-            <select className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-              value={replacingEmployeeId} onChange={e => setReplacingEmployeeId(e.target.value)}>
-              <option value="">— None —</option>
-              {replacementOptions.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-            </select>
+            <div className="relative">
+              <input
+                value={replacingSearch}
+                onChange={e => { setReplacingSearch(e.target.value); setReplacingEmployeeId(''); setReplacingOpen(true) }}
+                onFocus={() => setReplacingOpen(true)}
+                onBlur={() => setTimeout(() => setReplacingOpen(false), 150)}
+                placeholder="Search employee..."
+                className="w-full h-10 border rounded-lg pl-3 pr-8 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+              {replacingSearch && (
+                <button type="button" onClick={clearReplacing} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {replacingOpen && (
+                <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {replacingMatches.length === 0 ? (
+                    <p className="px-3 py-2.5 text-xs text-muted-foreground">No employees found</p>
+                  ) : (
+                    replacingMatches.map(e => (
+                      <button key={e.id} type="button" onMouseDown={() => pickReplacing(e)}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 border-b last:border-0">
+                        {e.fullName}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Until</label>
-              <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                value={contractEndDate} onChange={e => setContractEndDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fee</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Until</label>
+            <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              value={contractEndDate} onChange={e => setContractEndDate(e.target.value)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fee</label>
+            <div className="grid grid-cols-[1fr_120px] gap-1.5">
               <RupiahInput value={fee} onChange={setFee} />
+              <select
+                value={feeType} onChange={e => setFeeType(e.target.value)}
+                className="h-9 border rounded-md px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                {FEE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Users, FileWarning, Wallet, ClipboardList, Landmark, Sparkles, Building2, MapPin, AlertTriangle, FileText } from 'lucide-react'
+import { Users, FileWarning, Wallet, ClipboardList, Landmark, Sparkles, Building2, MapPin, AlertTriangle, FileText, Ship } from 'lucide-react'
 
 interface ContractRow {
   id: string; fullName: string; employeeNumber: string; role: string | null
@@ -10,6 +10,11 @@ interface ContractRow {
 interface DocumentRow {
   id: string; name: string; ownerName: string; ownerType: 'Company' | 'Yacht'
   expiryDate: string; daysLeft: number
+}
+interface FreelanceCoverageRow {
+  freelanceId: string; freelanceName: string; replacingName: string | null
+  bookingId: string; bookingLabel: string; destination: string | null; yachtName: string | null
+  startDate: string; endDate: string
 }
 interface HROverviewData {
   activeEmployees: number
@@ -23,6 +28,7 @@ interface HROverviewData {
   estimatedExitExposure: number
   anySalaryDataSet: boolean
   talentPoolCount: number
+  freelanceCoverage: FreelanceCoverageRow[]
   headcountByLocation: { name: string; count: number }[]
   headcountByLegalEntity: { name: string; count: number }[]
 }
@@ -127,7 +133,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
   const {
     activeEmployees, contractsExpiring, contractsExpiringCount, anyContractDatesSet,
     documentsExpiring, documentsExpiringCount, monthlyEmployerCost,
-    pendingLeaveCount, estimatedExitExposure, anySalaryDataSet, talentPoolCount,
+    pendingLeaveCount, estimatedExitExposure, anySalaryDataSet, talentPoolCount, freelanceCoverage,
     headcountByLocation, headcountByLegalEntity,
   } = data
   const totalHeadcount = headcountByLocation.reduce((s, r) => s + r.count, 0)
@@ -262,6 +268,40 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{fmtDate(d.expiryDate)}</td>
                   <td className={`px-5 py-3 text-right font-semibold ${d.daysLeft <= 7 ? 'text-red-600' : 'text-amber-600'}`}>{d.daysLeft < 0 ? `${Math.abs(d.daysLeft)}d overdue` : `${d.daysLeft}d`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        )}
+      </div>
+
+      {/* Freelance crew covering a regular employee's trip(s) */}
+      <div className="rounded-xl border overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b bg-muted/20">
+          <Ship className="h-4 w-4 text-amber-500" />
+          <h3 className="font-semibold text-sm">Freelance Crew Coverage</h3>
+        </div>
+        {freelanceCoverage.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-10">No active freelance crew covering a trip right now.</p>
+        ) : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead className="bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th className="text-left px-5 py-2.5 font-medium">Dates</th>
+                <th className="text-left px-5 py-2.5 font-medium">Freelance</th>
+                <th className="text-left px-5 py-2.5 font-medium">Trip</th>
+                <th className="text-left px-5 py-2.5 font-medium">Replacing</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {freelanceCoverage.map(r => (
+                <tr key={`${r.freelanceId}-${r.bookingId}`} className="hover:bg-muted/20">
+                  <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
+                  <td className="px-5 py-3 font-medium">{r.freelanceName}</td>
+                  <td className="px-5 py-3 text-muted-foreground">
+                    {r.bookingLabel}{r.yachtName ? ` · ${r.yachtName}` : ''}{r.destination ? ` · ${r.destination}` : ''}
+                  </td>
+                  <td className="px-5 py-3 text-muted-foreground">{r.replacingName ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

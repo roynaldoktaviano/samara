@@ -26,7 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
-    freelanceFee, replacingEmployeeId, tripBookingIds,
+    freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
   } = await req.json()
 
   if (employeeNumber) {
@@ -96,6 +96,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(certificateFiles !== undefined && { certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [] }),
         ...(contractFiles !== undefined && { contractFiles: Array.isArray(contractFiles) ? contractFiles : [] }),
         ...(freelanceFee !== undefined && { freelanceFee: toFloatOrNull(freelanceFee) }),
+        ...(freelanceFeeType !== undefined && { freelanceFeeType: freelanceFeeType?.trim() || null }),
         ...(replacingEmployeeId !== undefined && { replacingEmployeeId: replacingEmployeeId || null }),
         // Trip coverage is fully replaced rather than diffed — the picker always sends
         // the complete current selection, so deleteMany+create keeps this simple and
