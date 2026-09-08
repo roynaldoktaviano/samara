@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon } from 'lucide-react'
+import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
@@ -1418,13 +1419,14 @@ interface EmployeeAssetRow {
   condition: string | null
   assignedDate: string
   notes: string | null
+  photoUrl: string | null
   isReturned: boolean
   returnedAt: string | null
   returnCondition: string | null
   returnNotes: string | null
 }
 
-const ASSET_BLANK = { itemName: '', category: '', serialNumber: '', condition: '', assignedDate: todayISO(), notes: '' }
+const ASSET_BLANK = { itemName: '', category: '', serialNumber: '', condition: '', assignedDate: todayISO(), notes: '', photoUrl: null as string | null }
 
 // Company-owned items handed to one employee — feeds the return checklist on the
 // Separation menu (see SeparationPage) if this employee ever resigns.
@@ -1434,6 +1436,20 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState(ASSET_BLANK)
   const [saving, setSaving] = useState(false)
+
+  const processAssetPhoto = (file: File) => {
+    const canvas = document.createElement('canvas')
+    const img = new window.Image()
+    img.onload = () => {
+      const MAX = 800
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      canvas.width = img.width * scale; canvas.height = img.height * scale
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      setForm(f => ({ ...f, photoUrl: canvas.toDataURL('image/jpeg', 0.8) }))
+    }
+    img.src = URL.createObjectURL(file)
+  }
+  const { isDragging: isDraggingAssetPhoto, dropProps: assetPhotoDropProps } = useFileDrop(files => { if (files[0]) processAssetPhoto(files[0]) })
 
   const load = useCallback(() => {
     fetch(`/api/hr/employees/${employeeId}/assets`).then(r => r.ok ? r.json() : []).then(setAssets).finally(() => setLoading(false))
@@ -1477,6 +1493,13 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
             <button type="button" onClick={() => toggleReturned(a)} title={a.isReturned ? 'Mark as not returned' : 'Mark as returned'} className="mt-0.5 shrink-0">
               {a.isReturned ? <ToggleRight className="h-6 w-6 text-green-600" /> : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
             </button>
+            {a.photoUrl ? (
+              <img src={a.photoUrl} alt={a.itemName} className="w-12 h-12 rounded-lg object-cover border shrink-0" />
+            ) : (
+              <div className="w-12 h-12 rounded-lg border-2 border-dashed border-muted flex items-center justify-center text-muted-foreground shrink-0">
+                <ImageIcon className="h-4 w-4 opacity-40" />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-sm">{a.itemName}</span>
@@ -1499,6 +1522,31 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
 
       {adding ? (
         <div className="border-2 border-gray-100 rounded-xl p-3 space-y-2">
+          <div {...assetPhotoDropProps} className={`flex items-center gap-3 rounded-lg p-1.5 -m-1.5 transition-colors ${isDraggingAssetPhoto ? 'ring-2 ring-amber-400 bg-amber-50' : ''}`}>
+            {form.photoUrl ? (
+              <div className="relative shrink-0">
+                <img src={form.photoUrl} alt="Asset" className="w-16 h-16 rounded-lg object-cover border" />
+                <button type="button" onClick={() => setForm(f => ({ ...f, photoUrl: null }))}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-xs">×</button>
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-lg border-2 border-dashed border-muted flex items-center justify-center text-muted-foreground shrink-0">
+                <ImageIcon className="h-5 w-5 opacity-40" />
+              </div>
+            )}
+            <label className="cursor-pointer flex-1">
+              <div className="flex items-center gap-2 border rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 transition-colors">
+                <Upload className="h-4 w-4" />
+                <span>{isDraggingAssetPhoto ? 'Drop to upload' : form.photoUrl ? 'Change photo' : 'Upload or drag photo'}</span>
+              </div>
+              <input type="file" accept="image/*" className="hidden" onChange={e => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                processAssetPhoto(file)
+                e.target.value = ''
+              }} />
+            </label>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <input placeholder="Item name *" value={form.itemName} onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" autoFocus />
             <input placeholder="Category (e.g. Laptop)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
@@ -20,6 +20,8 @@ interface Candidate {
   assessmentScore: number | null
   skills: string[]
   languages: string[]
+  interviewScheduledAt: string | null
+  interviewMeetingLink: string | null
   appliedRole: EmployeeRole | null
   convertedEmployeeId: string | null
   createdAt: string
@@ -99,6 +101,7 @@ export default function TalentPoolPage() {
   const [roles, setRoles] = useState<EmployeeRole[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'All' | typeof STATUSES[number]>('All')
+  const [roleFilter, setRoleFilter] = useState('All')
 
   const [modal, setModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -118,6 +121,11 @@ export default function TalentPoolPage() {
 
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailPreview, setDetailPreview] = useState<string | null>(null)
+
+  const [scheduleTarget, setScheduleTarget] = useState<Candidate | null>(null)
+  const [scheduleForm, setScheduleForm] = useState({ datetime: '', link: '' })
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [scheduleError, setScheduleError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -209,6 +217,39 @@ export default function TalentPoolPage() {
     load()
   }
 
+  // `datetime-local` wants "YYYY-MM-DDTHH:mm" in the viewer's local time — a plain
+  // `.slice(0,16)` on the stored ISO string would show UTC instead, quietly shifting the
+  // displayed time by the timezone offset every time the form reopens.
+  function toDatetimeLocal(iso: string | null): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  function openSchedule(c: Candidate) {
+    setScheduleForm({ datetime: toDatetimeLocal(c.interviewScheduledAt), link: c.interviewMeetingLink ?? '' })
+    setScheduleError('')
+    setScheduleTarget(c)
+  }
+
+  async function saveSchedule() {
+    if (!scheduleTarget) return
+    if (!scheduleForm.datetime) { setScheduleError('Please pick a date and time'); return }
+    setScheduleSaving(true); setScheduleError('')
+    const res = await fetch(`/api/hr/candidates/${scheduleTarget.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'INTERVIEW',
+        interviewScheduledAt: new Date(scheduleForm.datetime).toISOString(),
+        interviewMeetingLink: scheduleForm.link.trim() || null,
+      }),
+    })
+    setScheduleSaving(false)
+    if (!res.ok) { setScheduleError('Failed to save'); return }
+    setScheduleTarget(null); load()
+  }
+
   async function doDelete(c: Candidate) {
     await fetch(`/api/hr/candidates/${c.id}`, { method: 'DELETE' })
     setDeleteConfirm(null); load()
@@ -223,7 +264,9 @@ export default function TalentPoolPage() {
     load()
   }
 
-  const filtered = statusFilter === 'All' ? candidates : candidates.filter(c => c.status === statusFilter)
+  const filtered = candidates
+    .filter(c => statusFilter === 'All' || c.status === statusFilter)
+    .filter(c => roleFilter === 'All' || c.appliedRole?.id === roleFilter)
   const activeCount = candidates.filter(c => c.status !== 'HIRED' && c.status !== 'REJECTED').length
   const detailCandidate = candidates.find(c => c.id === detailId) ?? null
 
@@ -239,23 +282,30 @@ export default function TalentPoolPage() {
         </button>
       </div>
 
-      <div className="flex gap-1 border-b overflow-x-auto">
-        {(['All', ...STATUSES] as const).map(s => {
-          const count = s === 'All' ? candidates.length : candidates.filter(c => c.status === s).length
-          return (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-                statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}>
-              {s === 'All' ? 'All' : STATUS_LABEL[s]}
-              {count > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
-                  {count}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex gap-1 border-b overflow-x-auto">
+          {(['All', ...STATUSES] as const).map(s => {
+            const count = s === 'All' ? candidates.length : candidates.filter(c => c.status === s).length
+            return (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
+                  statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}>
+                {s === 'All' ? 'All' : STATUS_LABEL[s]}
+                {count > 0 && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 shrink-0">
+          <option value="All">All applied roles</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+        </select>
       </div>
 
       {convertError && (
@@ -284,7 +334,7 @@ export default function TalentPoolPage() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
                   <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                  No candidates {statusFilter !== 'All' ? `with status "${STATUS_LABEL[statusFilter]}"` : 'yet'}.
+                  No candidates {statusFilter !== 'All' || roleFilter !== 'All' ? 'match this filter' : 'yet'}.
                 </td></tr>
               ) : filtered.map(c => (
                 <tr key={c.id} onClick={() => setDetailId(c.id)} className="hover:bg-muted/30 transition-colors cursor-pointer">
@@ -559,6 +609,26 @@ export default function TalentPoolPage() {
                 </div>
               )}
 
+              {detailCandidate.interviewScheduledAt && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Interview Scheduled</p>
+                      <p className="text-sm font-medium mt-0.5">
+                        {new Date(detailCandidate.interviewScheduledAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <button onClick={() => openSchedule(detailCandidate)} className="text-xs font-medium text-amber-700 hover:underline shrink-0">Edit</button>
+                  </div>
+                  {detailCandidate.interviewMeetingLink && (
+                    <a href={detailCandidate.interviewMeetingLink} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline mt-2">
+                      Join Meeting Link →
+                    </a>
+                  )}
+                </div>
+              )}
+
               <div>
                 <h4 className="text-sm font-semibold mb-2">Move candidate</h4>
                 <div className="flex flex-wrap gap-1.5">
@@ -577,11 +647,59 @@ export default function TalentPoolPage() {
             </div>
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
               <button onClick={() => setDetailId(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Close</button>
-              <button
-                onClick={() => { changeStatus(detailCandidate, 'INTERVIEW'); setDetailId(null) }}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
-              >
-                Schedule Interview
+              {detailCandidate.status === 'OFFER' ? (
+                <button
+                  onClick={() => window.open(`/print/offering-letter/${detailCandidate.id}`, '_blank', 'noopener,noreferrer')}
+                  className="flex items-center gap-1.5 px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
+                >
+                  <FileDown className="h-3.5 w-3.5" /> Generate Offering Letter
+                </button>
+              ) : (
+                <button
+                  onClick={() => openSchedule(detailCandidate)}
+                  className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
+                >
+                  {detailCandidate.interviewScheduledAt ? 'Reschedule Interview' : 'Schedule Interview'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Schedule Interview ── */}
+      {scheduleTarget && (
+        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="font-bold text-sm">Schedule Interview</h3>
+              <button onClick={() => setScheduleTarget(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {scheduleError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{scheduleError}</p>}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date & Time</label>
+                <input
+                  type="datetime-local" autoFocus
+                  className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={scheduleForm.datetime} onChange={e => setScheduleForm(f => ({ ...f, datetime: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Zoom Meeting Link</label>
+                <input
+                  type="url" placeholder="https://zoom.us/j/..."
+                  className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={scheduleForm.link} onChange={e => setScheduleForm(f => ({ ...f, link: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
+              <button onClick={() => setScheduleTarget(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
+              <button onClick={saveSchedule} disabled={scheduleSaving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {scheduleSaving ? 'Saving...' : 'Save & Move to Interview'}
               </button>
             </div>
           </div>

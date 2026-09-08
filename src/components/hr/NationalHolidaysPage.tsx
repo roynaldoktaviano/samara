@@ -7,18 +7,21 @@ interface Holiday {
   id: string
   date: string
   name: string
+  excludedLocationIds: string[]
   createdBy: { id: string; name: string | null } | null
 }
+interface LocationLite { id: string; name: string }
 
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 
 export default function NationalHolidaysPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [locations, setLocations] = useState<LocationLite[]>([])
   const [loading, setLoading] = useState(true)
 
   const [modal, setModal] = useState(false)
   const [isRange, setIsRange] = useState(false)
-  const [form, setForm] = useState({ startDate: '', endDate: '', name: '' })
+  const [form, setForm] = useState({ startDate: '', endDate: '', name: '', excludedLocationIds: [] as string[] })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [formNote, setFormNote] = useState('')
@@ -35,7 +38,20 @@ export default function NationalHolidaysPage() {
 
   useEffect(() => { load() }, [load])
 
-  function openAdd() { setForm({ startDate: '', endDate: '', name: '' }); setIsRange(false); setFormError(''); setFormNote(''); setModal(true) }
+  useEffect(() => {
+    fetch('/api/hr/work-locations').then(r => r.ok ? r.json() : []).then((locs: LocationLite[]) => setLocations(locs)).catch(() => {})
+  }, [])
+
+  function locationName(id: string) { return locations.find(l => l.id === id)?.name.trim() ?? id }
+
+  function toggleExcludedLocation(id: string) {
+    setForm(f => ({
+      ...f,
+      excludedLocationIds: f.excludedLocationIds.includes(id) ? f.excludedLocationIds.filter(x => x !== id) : [...f.excludedLocationIds, id],
+    }))
+  }
+
+  function openAdd() { setForm({ startDate: '', endDate: '', name: '', excludedLocationIds: [] }); setIsRange(false); setFormError(''); setFormNote(''); setModal(true) }
 
   async function save() {
     const endDate = isRange ? form.endDate : form.startDate
@@ -67,7 +83,7 @@ export default function NationalHolidaysPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">National Holidays</h2>
-          <p className="text-muted-foreground text-sm mt-1">Marked automatically as Day Off for everyone in Attendance Recap, and excluded from Payroll&apos;s Meal Allowance working-days count.</p>
+          <p className="text-muted-foreground text-sm mt-1">Marked automatically as Day Off in Attendance Recap, excluded from Payroll&apos;s Meal Allowance working-days count, and opens up Overtime — for every work location, unless you exclude some below.</p>
         </div>
         <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> Add Holiday
@@ -99,7 +115,14 @@ export default function NationalHolidaysPage() {
               {holidays.map(h => (
                 <tr key={h.id} className="hover:bg-muted/20 transition-colors">
                   <td className="px-5 py-3 font-medium">{fmtDate(h.date)}</td>
-                  <td className="px-5 py-3">{h.name}</td>
+                  <td className="px-5 py-3">
+                    {h.name}
+                    {h.excludedLocationIds.length > 0 && (
+                      <div className="text-[11px] text-amber-700 mt-0.5">
+                        Working as usual: {h.excludedLocationIds.map(locationName).join(', ')}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-muted-foreground">{h.createdBy?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-right">
                     <button onClick={() => setDeleteTarget(h)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Remove">
@@ -157,6 +180,27 @@ export default function NationalHolidaysPage() {
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</label>
                 <input type="text" placeholder="e.g. Independence Day" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Working as usual (optional)</label>
+                <p className="text-[11px] text-muted-foreground">Pick any work locations that stay on a normal working day through this holiday — everyone else gets the day off.</p>
+                {locations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No work locations set up yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {locations.map(l => {
+                      const active = form.excludedLocationIds.includes(l.id)
+                      return (
+                        <button key={l.id} type="button" onClick={() => toggleExcludedLocation(l.id)}
+                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                            active ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-muted text-muted-foreground hover:border-foreground/30'
+                          }`}>
+                          {l.name.trim()}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">

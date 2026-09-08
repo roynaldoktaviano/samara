@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, fullName: true },
+    select: { id: true, fullName: true, locationId: true },
   })
   if (!employee) return NextResponse.json({ error: "Your account isn't linked to an HR employee profile yet. Ask an Admin to link it under Team." }, { status: 400 })
 
@@ -53,12 +53,16 @@ export async function POST(req: NextRequest) {
   const day = new Date(date)
   if (Number.isNaN(day.getTime())) return NextResponse.json({ error: 'Invalid date' }, { status: 400 })
 
-  // The core rule: overtime is only payable on a weekend or a gazetted national holiday.
+  // The core rule: overtime is only payable on a weekend or a gazetted national holiday —
+  // for this employee's own work location. A holiday that excludes their location (e.g. a
+  // yacht still on a trip, see NationalHoliday.excludedLocationIds) doesn't count; that's
+  // just a normal working day for them.
   const dow = day.getUTCDay()
   const isWeekend = dow === 0 || dow === 6
   if (!isWeekend) {
     const holiday = await db.nationalHoliday.findUnique({ where: { date: day } })
-    if (!holiday) return NextResponse.json({ error: 'Overtime can only be requested for a weekend (Sat/Sun) or a national holiday date' }, { status: 400 })
+    const appliesToEmployee = !!holiday && !holiday.excludedLocationIds.includes(employee.locationId ?? '')
+    if (!appliesToEmployee) return NextResponse.json({ error: 'Overtime can only be requested for a weekend (Sat/Sun) or a national holiday date' }, { status: 400 })
   }
 
   const overtime = await db.overtimeRequest.create({

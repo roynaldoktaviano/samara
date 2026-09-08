@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
+import { resolveLoanStakeholderUserIds } from '@/lib/loan-notify'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 
@@ -72,12 +73,15 @@ export async function POST(req: NextRequest) {
     include: { employee: { select: { id: true, fullName: true, employeeNumber: true } } },
   })
 
-  const hrUsers = await db.user.findMany({ where: { role: { in: ALLOWED as never[] }, id: { not: session.user.id } }, select: { id: true } })
-  if (hrUsers.length) {
-    const title = 'Loan request needs HR review'
-    const body = `${employee.fullName} — loan request submitted, waiting for HR review.`
-    await db.notification.createMany({ data: hrUsers.map(u => ({ userId: u.id, type: 'LOAN_HR_APPROVAL_NEEDED', title, body })) }).catch(() => {})
-    sendPushToUsers(db, hrUsers.map(u => u.id), { title, body }).catch(() => {})
+  // Fanned out immediately to Finance, HR, and whoever holds the General Manager /
+  // Creative Director job title (see resolveLoanStakeholderUserIds) — everyone hears
+  // about a new request right away, not just whoever's turn it is to decide.
+  const stakeholderIds = await resolveLoanStakeholderUserIds(db, session.user.id)
+  if (stakeholderIds.length) {
+    const title = 'New loan request submitted'
+    const body = `${employee.fullName} requested a loan of Rp ${new Intl.NumberFormat('id-ID').format(principal)} over ${term} month${term !== 1 ? 's' : ''}.`
+    await db.notification.createMany({ data: stakeholderIds.map(id => ({ userId: id, type: 'LOAN_SUBMITTED', title, body })) }).catch(() => {})
+    sendPushToUsers(db, stakeholderIds, { title, body }).catch(() => {})
   }
 
   return NextResponse.json(loan, { status: 201 })

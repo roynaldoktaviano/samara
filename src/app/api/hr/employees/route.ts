@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { matchEmployeesToYachts } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -38,7 +39,18 @@ export async function GET() {
       tripAssignments: { include: { booking: { select: { id: true, bookingCode: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } } } },
     },
   })
-  return NextResponse.json(employees)
+
+  // Crew flag (Work Location matches a Yacht name — same match used for Uang Layar in
+  // payroll and the weekend rule in Attendance Recap/Leave Requests): lets any consumer
+  // of this list know who always works weekends without duplicating the yacht fetch.
+  const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+  const yachtIdByEmployeeId = matchEmployeesToYachts(
+    employees.map(e => ({ id: e.id, locationName: e.location?.name ?? null })),
+    yachts,
+  )
+  const employeesOut = employees.map(e => ({ ...e, isCrew: yachtIdByEmployeeId.has(e.id) }))
+
+  return NextResponse.json(employeesOut)
 }
 
 export async function POST(req: NextRequest) {

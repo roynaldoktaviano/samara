@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { matchEmployeesToYachts } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -20,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const existing = await db.leaveRequest.findUnique({
     where: { id },
-    include: { employee: { select: { id: true, fullName: true, leaveBalance: true, userId: true } } },
+    include: { employee: { select: { id: true, fullName: true, leaveBalance: true, userId: true, location: { select: { name: true } } } } },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   // Crew requests must clear the Cruise Director/Captain stage first (see
@@ -54,9 +55,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     })
 
     // Auto-reflect the approved leave in Attendance Recap — one CUTI row per day in
-    // range, so HR never has to manually mirror an approved request into the grid.
+    // range, so HR never has to manually mirror an approved request into the grid. Office
+    // staff skip weekend dates here too (they were never working days, see the days
+    // count in countLeaveDays), leaving those cells as the normal "not a working day"
+    // placeholder instead of a leave dot; crew get every day since they always work.
+    const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+    const isCrew = matchEmployeesToYachts(
+      [{ id: existing.employee.id, locationName: existing.employee.location?.name ?? null }],
+      yachts,
+    ).has(existing.employee.id)
     const dates: Date[] = []
-    for (const d = new Date(existing.startDate); d <= existing.endDate; d.setUTCDate(d.getUTCDate() + 1)) dates.push(new Date(d))
+    for (const d = new Date(existing.startDate); d <= existing.endDate; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (isCrew || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) dates.push(new Date(d))
+    }
     await Promise.all(dates.map(date => db.attendanceRecord.upsert({
       where: { employeeId_date: { employeeId: existing.employeeId, date } },
       create: { id: crypto.randomUUID(), employeeId: existing.employeeId, date, status: 'CUTI', leaveRequestId: existing.id, setById: session.user.id },

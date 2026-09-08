@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { CalendarCheck, Loader2, X } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
-interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
+interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null; isCrew: boolean; locationId: string | null }
 interface CellRecord { status: string; note: string | null; leaveRequestId: string | null }
+interface HolidayInfo { name: string; excludedLocationIds: string[] }
 interface AttendanceData {
   employees: EmployeeLite[]
   days: string[]
   records: Record<string, Record<string, CellRecord>>
-  holidays: Record<string, string>
+  holidays: Record<string, HolidayInfo>
 }
 
 const STATUSES = ['HADIR', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR'] as const
@@ -51,7 +52,9 @@ export default function AttendanceRecapPage() {
   const startDate = toYmd(new Date(year, month - 1, 1))
   const endDate = toYmd(new Date(year, month, 0))
 
-  const [locationId, setLocationId] = useState('')
+  // Defaults to Office — boat crew work every day (including weekends) so the shore
+  // staff recap is the more useful landing view; "All locations" is one click away.
+  const [locationId, setLocationId] = useState('office')
   const [locations, setLocations] = useState<LocationLite[]>([])
 
   const [data, setData] = useState<AttendanceData | null>(null)
@@ -61,7 +64,7 @@ export default function AttendanceRecapPage() {
   const [cellNote, setCellNote] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [bulkTarget, setBulkTarget] = useState<{ employeeId: string; fullName: string } | null>(null)
+  const [bulkTarget, setBulkTarget] = useState<{ employeeId: string; fullName: string; isCrew: boolean } | null>(null)
   const [bulkStatus, setBulkStatus] = useState<string>('IZIN')
   const [bulkStart, setBulkStart] = useState('')
   const [bulkEnd, setBulkEnd] = useState('')
@@ -86,8 +89,12 @@ export default function AttendanceRecapPage() {
   function statusFor(employeeId: string, date: string): CellRecord {
     const explicit = data?.records[employeeId]?.[date]
     if (explicit) return explicit
-    const holidayName = data?.holidays[date]
-    if (holidayName) return { status: 'LIBUR', note: holidayName, leaveRequestId: null }
+    const holiday = data?.holidays[date]
+    if (holiday) {
+      const emp = data?.employees.find(e => e.id === employeeId)
+      const excluded = !!emp?.locationId && holiday.excludedLocationIds.includes(emp.locationId)
+      if (!excluded) return { status: 'LIBUR', note: holiday.name, leaveRequestId: null }
+    }
     return { status: 'HADIR', note: null, leaveRequestId: null }
   }
 
@@ -112,8 +119,8 @@ export default function AttendanceRecapPage() {
     if (ok) { setCellPopover(null); load() }
   }
 
-  function openBulk(employeeId: string, fullName: string) {
-    setBulkTarget({ employeeId, fullName })
+  function openBulk(employeeId: string, fullName: string, isCrew: boolean) {
+    setBulkTarget({ employeeId, fullName, isCrew })
     setBulkStatus('IZIN')
     setBulkStart(startDate)
     setBulkEnd(endDate)
@@ -123,7 +130,7 @@ export default function AttendanceRecapPage() {
   async function saveBulk() {
     if (!bulkTarget || !data) return
     setBulkSaving(true)
-    const dates = data.days.filter(d => d >= bulkStart && d <= bulkEnd && !dayInfo(d).isWeekend)
+    const dates = data.days.filter(d => d >= bulkStart && d <= bulkEnd && (bulkTarget.isCrew || !dayInfo(d).isWeekend))
     const ok = await setCell(bulkTarget.employeeId, dates, bulkStatus, bulkNote)
     setBulkSaving(false)
     if (ok) { setBulkTarget(null); load() }
@@ -157,6 +164,7 @@ export default function AttendanceRecapPage() {
           <label className="text-xs font-medium text-muted-foreground">Location</label>
           <select value={locationId} onChange={e => setLocationId(e.target.value)}
             className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+            <option value="office">Office</option>
             <option value="">All locations</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
@@ -188,7 +196,7 @@ export default function AttendanceRecapPage() {
                   <th className="sticky left-0 bg-muted/50 px-4 py-2.5 text-left font-medium text-muted-foreground text-xs z-10 min-w-[200px]">Employee</th>
                   {data.days.map(d => {
                     const info = dayInfo(d)
-                    const holidayName = data.holidays[d]
+                    const holidayName = data.holidays[d]?.name
                     return (
                       <th key={d} className={`px-1.5 py-2 text-center font-medium text-xs whitespace-nowrap ${info.isWeekend || holidayName ? 'bg-muted/40 text-muted-foreground/60' : 'text-muted-foreground'}`}
                         title={holidayName}>
@@ -203,7 +211,7 @@ export default function AttendanceRecapPage() {
                 {data.employees.map(emp => (
                   <tr key={emp.id} className="hover:bg-muted/10">
                     <td className="sticky left-0 bg-white px-4 py-2 z-10">
-                      <button onClick={() => openBulk(emp.id, emp.fullName)} className="text-left hover:text-amber-700 transition-colors" title="Bulk edit this employee">
+                      <button onClick={() => openBulk(emp.id, emp.fullName, emp.isCrew)} className="text-left hover:text-amber-700 transition-colors" title="Bulk edit this employee">
                         <p className="font-medium">{emp.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
                       </button>
@@ -211,7 +219,7 @@ export default function AttendanceRecapPage() {
                     {data.days.map(d => {
                       const info = dayInfo(d)
                       const rec = statusFor(emp.id, d)
-                      if (info.isWeekend && rec.status === 'HADIR') {
+                      if (info.isWeekend && rec.status === 'HADIR' && !emp.isCrew) {
                         return <td key={d} className="px-1.5 py-2 text-center bg-muted/20">
                           <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground/30" title="Weekend — not a working day" />
                         </td>
@@ -291,7 +299,9 @@ export default function AttendanceRecapPage() {
                 <textarea rows={2} value={bulkNote} onChange={e => setBulkNote(e.target.value)}
                   className="w-full border rounded-md px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
               </div>
-              <p className="text-[11px] text-muted-foreground">Weekends in this range are skipped automatically — they're never working days.</p>
+              {!bulkTarget.isCrew && (
+                <p className="text-[11px] text-muted-foreground">Weekends in this range are skipped automatically — they're never working days.</p>
+              )}
             </div>
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
               <button onClick={() => setBulkTarget(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>

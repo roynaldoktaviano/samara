@@ -21,6 +21,20 @@ export function sanitizeFreelanceRecommendations(input: unknown): FreelanceRecom
     .filter(r => r.name || r.phone)
 }
 
+// Inclusive calendar-day count between two dates. Crew (Work Location matches a Yacht
+// name — see matchEmployeesToYachts) work every day including weekends, so every day of
+// their leave counts; everyone else skips Sat/Sun since those were never working days to
+// begin with (mirrors the Attendance Recap weekend rule).
+export function countLeaveDays(start: Date, end: Date, isCrew: boolean): number {
+  if (isCrew) return Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+  let count = 0
+  for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay()
+    if (dow !== 0 && dow !== 6) count++
+  }
+  return count
+}
+
 // Resolves the single crew-leave approver for a yacht: prefers the CRUISE_DIRECTOR user
 // assigned to it (User.assignedYachtId), falls back to a BOAT_CAPTAIN if no CD is
 // assigned there — exactly one, never both ("salah satu aja"). Returns null if neither

@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         where: { employeeId: { in: employees.map(e => e.id) }, status: { not: 'HADIR' }, date: { gte: monthStart, lte: monthEnd } },
         select: { employeeId: true, date: true },
       }),
-      db.nationalHoliday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true } }),
+      db.nationalHoliday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true, excludedLocationIds: true } }),
     ])
 
     // Crew Uang Layar: an employee's work location name doubles as the name of the yacht
@@ -103,8 +103,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const yachtId of neededYachtIds) {
       tripDaysByYachtId.set(yachtId, countTripDaysInPeriod(bookingRangesByYachtId.get(yachtId) ?? [], monthStart, monthEnd))
     }
-    const holidayWeekdays = holidays.filter(h => { const dow = h.date.getDay(); return dow !== 0 && dow !== 6 }).length
-    const workingDays = countWeekdaysInMonth(period.year, period.month) - holidayWeekdays
+    // Meal Allowance working-days baseline is per work-location: a holiday that excludes
+    // an employee's location (e.g. a yacht still on a trip) doesn't reduce their count,
+    // since that day was a normal working day for them (see NationalHoliday.excludedLocationIds).
+    const baseWorkingDays = countWeekdaysInMonth(period.year, period.month)
+    const weekdayHolidays = holidays.filter(h => { const dow = h.date.getDay(); return dow !== 0 && dow !== 6 })
+    const workingDaysByLocationId = new Map<string, number>()
+    function workingDaysFor(locationId: string | null): number {
+      const key = locationId ?? ''
+      const cached = workingDaysByLocationId.get(key)
+      if (cached !== undefined) return cached
+      const applicable = weekdayHolidays.filter(h => !h.excludedLocationIds.includes(key)).length
+      const value = baseWorkingDays - applicable
+      workingDaysByLocationId.set(key, value)
+      return value
+    }
     const nonHadirWorkingDaysByEmployee = new Map<string, number>()
     for (const rec of nonHadirRecords) {
       const dow = rec.date.getDay() // 0 = Sunday, 6 = Saturday — a weekend override never counts against the weekday baseline
@@ -130,7 +143,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const yachtId = yachtIdByEmployeeId.get(emp.id)
       const tripDays = yachtId ? (tripDaysByYachtId.get(yachtId) ?? 0) : null
       const draft = buildPayslipEntryDraft(emp, {
-        workingDays,
+        workingDays: workingDaysFor(emp.locationId),
         nonHadirWorkingDays: nonHadirWorkingDaysByEmployee.get(emp.id) ?? 0,
       }, tripDays)
       const nextInstallment = nextInstallmentByEmployee.get(emp.id)

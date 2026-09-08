@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { itemName, category, serialNumber, condition, assignedDate, notes } = await req.json()
+  const { itemName, category, serialNumber, condition, assignedDate, notes, photoUrl } = await req.json()
   if (!itemName?.trim()) return NextResponse.json({ error: 'Item name is required' }, { status: 400 })
 
   const asset = await db.employeeAsset.create({
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       condition: condition?.trim() || null,
       assignedDate: assignedDate ? new Date(assignedDate) : new Date(),
       notes: notes?.trim() || null,
+      photoUrl: photoUrl || null,
     },
   })
   return NextResponse.json(asset, { status: 201 })

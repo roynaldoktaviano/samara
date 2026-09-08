@@ -29,21 +29,39 @@ export async function GET(request: NextRequest) {
   const startDate = new Date(start)
   const endDate = new Date(`${end}T23:59:59.999Z`)
 
+  // Crew (employees stationed on a yacht, matched by location name — same convention as
+  // matchEmployeesToYachts in lib/payroll.ts) work every day including weekends; only
+  // shore/office staff get weekends off. locationId="office" filters to everyone else.
+  const [yachts, allLocations] = await Promise.all([
+    db.yacht.findMany({ where: { deletedAt: null }, select: { name: true } }),
+    db.employeeWorkLocation.findMany({ select: { id: true, name: true } }),
+  ])
+  const yachtNames = new Set(yachts.map(y => y.name.trim().toLowerCase()))
+  const crewLocationIds = allLocations.filter(l => yachtNames.has(l.name.trim().toLowerCase())).map(l => l.id)
+
   const employees = await db.employee.findMany({
-    where: { isActive: true, ...(locationId ? { locationId } : {}) },
-    select: { id: true, fullName: true, employeeNumber: true, department: true },
+    where: {
+      isActive: true,
+      ...(locationId === 'office' ? { locationId: { notIn: crewLocationIds } }
+        : locationId ? { locationId } : {}),
+    },
+    select: { id: true, fullName: true, employeeNumber: true, department: true, locationId: true, location: { select: { name: true } } },
     orderBy: { fullName: 'asc' },
   })
+  const employeesOut = employees.map(({ location, ...e }) => ({
+    ...e,
+    isCrew: !!location && yachtNames.has(location.name.trim().toLowerCase()),
+  }))
 
   const days: string[] = []
   for (const d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) days.push(ymd(d))
 
   const [attendanceRecords, holidays] = await Promise.all([
     db.attendanceRecord.findMany({
-      where: { employeeId: { in: employees.map(e => e.id) }, date: { gte: startDate, lte: endDate } },
+      where: { employeeId: { in: employeesOut.map(e => e.id) }, date: { gte: startDate, lte: endDate } },
       select: { employeeId: true, date: true, status: true, note: true, leaveRequestId: true },
     }),
-    db.nationalHoliday.findMany({ where: { date: { gte: startDate, lte: endDate } }, select: { date: true, name: true } }),
+    db.nationalHoliday.findMany({ where: { date: { gte: startDate, lte: endDate } }, select: { date: true, name: true, excludedLocationIds: true } }),
   ])
 
   const records: Record<string, Record<string, { status: string; note: string | null; leaveRequestId: string | null }>> = {}
@@ -55,10 +73,12 @@ export async function GET(request: NextRequest) {
 
   // A shared calendar, not per-employee rows — the grid applies this as a LIBUR default
   // (same idea as a weekend) for any date not already overridden per-employee above.
-  const holidayMap: Record<string, string> = {}
-  for (const h of holidays) holidayMap[ymd(h.date)] = h.name
+  // excludedLocationIds lets a holiday skip specific work locations (e.g. a yacht still
+  // on a trip) — those employees see it applied client-side against their own locationId.
+  const holidayMap: Record<string, { name: string; excludedLocationIds: string[] }> = {}
+  for (const h of holidays) holidayMap[ymd(h.date)] = { name: h.name, excludedLocationIds: h.excludedLocationIds }
 
-  return NextResponse.json({ employees, days, records, holidays: holidayMap })
+  return NextResponse.json({ employees: employeesOut, days, records, holidays: holidayMap })
 }
 
 // PATCH { employeeId, dates: string[], status, note? }

@@ -142,6 +142,7 @@ model User {
   performanceReviewsReviewed             PerformanceReview[]         @relation("PerformanceReviewReviewedBy")
   employeeSeparationsCleared             EmployeeSeparation[]        @relation("SeparationClearedBy")
   employeeSeparationsPaklaringIssued     EmployeeSeparation[]        @relation("SeparationPaklaringIssuedBy")
+  candidateOfferLettersIssued            Candidate[]                 @relation("CandidateOfferLetterIssuedBy")
   purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
@@ -3077,6 +3078,7 @@ model EmployeeAsset {
   condition    String? // condition at assignment, free text (New/Good/Fair/...)
   assignedDate DateTime @default(now())
   notes        String?
+  photoUrl     String? // data URL, same pattern as PurchaseItem.imageKey
 
   isReturned      Boolean   @default(false)
   returnedAt      DateTime?
@@ -3579,6 +3581,12 @@ model NationalHoliday {
   date DateTime @unique // the calendar day, stored at midnight
   name String
 
+  // EmployeeWorkLocation ids that are NOT off on this date (e.g. a yacht still on a
+  // trip) — those employees see a normal working day everywhere this holiday is
+  // consulted (Attendance Recap, Payroll's Meal Allowance baseline, Overtime eligibility).
+  // Empty = applies to everyone, the previous behavior.
+  excludedLocationIds String[] @default([])
+
   createdById String?
   createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -3613,6 +3621,13 @@ model LoanRequest {
   termMonths Int
   reason     String?
   status     LoanRequestStatus @default(PENDING_HR)
+
+  // What was actually approved at the Special (final) stage — may differ from the
+  // amount/termMonths originally requested above (e.g. a smaller amount or shorter
+  // tenor than asked for). Null while pending; falls back to amount/termMonths if the
+  // approver leaves them unset, i.e. "approve exactly as requested".
+  approvedAmount     Float?
+  approvedTermMonths Int?
 
   requestedById String
   requestedBy   User     @relation("LoanRequestedBy", fields: [requestedById], references: [id])
@@ -3713,6 +3728,17 @@ model Candidate {
   assessmentScore     Int? // 0-100, set once an assessment/interview has actually happened
   skills              String[]        @default([])
   languages           String[]        @default([])
+  // Assigned once (first "Generate Offering Letter" click) and reused on every reprint —
+  // same pattern as EmployeeSeparation.paklaringNumber. Only ever set once status has
+  // reached OFFER; see src/app/api/hr/candidates/[id]/offer-letter/route.ts.
+  offerLetterNumber   String?
+  offerLetterIssuedAt DateTime?
+  offerLetterIssuedById String?
+  offerLetterIssuedBy   User?   @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
+  // Set via the "Schedule Interview" action in Talent Pool — a real date/time plus the
+  // meeting link the candidate joins with, not just a status flip.
+  interviewScheduledAt DateTime?
+  interviewMeetingLink String?
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 

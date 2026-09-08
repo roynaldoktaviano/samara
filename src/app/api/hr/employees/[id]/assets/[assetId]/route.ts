@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { itemName, category, serialNumber, condition, assignedDate, notes, isReturned, returnedAt, returnCondition, returnNotes } = await req.json()
+  const { itemName, category, serialNumber, condition, assignedDate, notes, photoUrl, isReturned, returnedAt, returnCondition, returnNotes } = await req.json()
 
   const asset = await db.employeeAsset.update({
     where: { id: assetId },
@@ -24,6 +24,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(condition !== undefined && { condition: condition?.trim() || null }),
       ...(assignedDate !== undefined && { assignedDate: assignedDate ? new Date(assignedDate) : new Date() }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
+      ...(photoUrl !== undefined && { photoUrl: photoUrl || null }),
       ...(isReturned !== undefined && {
         isReturned,
         returnedAt: isReturned ? (returnedAt ? new Date(returnedAt) : new Date()) : null,

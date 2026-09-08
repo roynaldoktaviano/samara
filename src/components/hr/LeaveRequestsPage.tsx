@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship, ArrowLeft } from 'lucide-react'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from './FreelanceRecommendationsField'
 
-interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null; employmentStatus: string | null }
+interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null; employmentStatus: string | null; isCrew: boolean }
 interface Trip { bookingCode: string; destination: string | null; startDate: string; endDate: string }
 interface LeaveRequest {
   id: string
@@ -124,10 +124,21 @@ export default function LeaveRequestsPage() {
 
   useEffect(() => { load() }, [load])
 
-  const days = form.startDate && form.endDate
-    ? Math.max(0, Math.round((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000) + 1)
-    : 0
   const selectedEmployee = employees.find(e => e.id === form.employeeId)
+  // Mirrors countLeaveDays on the server: crew count every calendar day (they work
+  // weekends too), everyone else skips Sat/Sun since those were never working days.
+  const days = form.startDate && form.endDate ? (() => {
+    const start = new Date(form.startDate)
+    const end = new Date(form.endDate)
+    if (end < start) return 0
+    if (selectedEmployee?.isCrew) return Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+    let count = 0
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dow = d.getUTCDay()
+      if (dow !== 0 && dow !== 6) count++
+    }
+    return count
+  })() : 0
   const overBalance = selectedEmployee?.leaveBalance != null && days > selectedEmployee.leaveBalance
 
   function openAdd() { setForm({ employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }

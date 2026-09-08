@@ -8,7 +8,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, resolveCrewLeaveApprover } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, resolveCrewLeaveApprover, countLeaveDays } from '@/lib/leave-request'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -78,7 +78,6 @@ export async function POST(req: NextRequest) {
   const start = new Date(startDate)
   const end = new Date(endDate)
   if (end < start) return NextResponse.json({ error: 'End date cannot be before the start date' }, { status: 400 })
-  const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
 
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
@@ -92,19 +91,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `${employee.fullName} is Freelance and not eligible for leave requests.` }, { status: 400 })
   }
 
+  // Crew (Work Location matches a Yacht name — same match as payroll's Uang Layar) goes
+  // through their yacht's Cruise Director/Captain first, then HR for final sign-off;
+  // everyone else (and crew whose yacht has nobody in either role yet) goes straight to
+  // HR/manager as before. See resolveCrewLeaveApprover. Also determines whether weekends
+  // count toward this request's day total — see countLeaveDays.
+  const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+  const yachtId = matchEmployeesToYachts([{ id: employee.id, locationName: employee.location?.name ?? null }], yachts).get(employee.id)
+  const crewApprover = yachtId ? await resolveCrewLeaveApprover(db, yachtId) : null
+
+  const days = countLeaveDays(start, end, !!yachtId)
+
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
   // for this employee yet), in which case there's nothing to cap against.
   if (employee.leaveBalance != null && days > employee.leaveBalance) {
     return NextResponse.json({ error: `${employee.fullName} only has ${employee.leaveBalance} day${employee.leaveBalance !== 1 ? 's' : ''} of leave remaining` }, { status: 400 })
   }
-
-  // Crew (Work Location matches a Yacht name — same match as payroll's Uang Layar) goes
-  // through their yacht's Cruise Director/Captain first, then HR for final sign-off;
-  // everyone else (and crew whose yacht has nobody in either role yet) goes straight to
-  // HR/manager as before. See resolveCrewLeaveApprover.
-  const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
-  const yachtId = matchEmployeesToYachts([{ id: employee.id, locationName: employee.location?.name ?? null }], yachts).get(employee.id)
-  const crewApprover = yachtId ? await resolveCrewLeaveApprover(db, yachtId) : null
 
   const leaveRequest = await db.leaveRequest.create({
     data: {

@@ -16,6 +16,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const {
     fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate,
     additionalDocuments, notes, status, assessmentScore, skills, languages,
+    interviewScheduledAt, interviewMeetingLink,
   } = await req.json()
 
   const candidate = await db.candidate.update({
@@ -36,6 +37,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(assessmentScore !== undefined && { assessmentScore: assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null }),
       ...(skills !== undefined && { skills: Array.isArray(skills) ? skills : [] }),
       ...(languages !== undefined && { languages: Array.isArray(languages) ? languages : [] }),
+      ...(interviewScheduledAt !== undefined && { interviewScheduledAt: interviewScheduledAt ? new Date(interviewScheduledAt) : null }),
+      ...(interviewMeetingLink !== undefined && { interviewMeetingLink: interviewMeetingLink?.trim() || null }),
     },
     include: { appliedRole: { select: { id: true, title: true } } },
   })

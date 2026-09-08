@@ -54,8 +54,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
 
   const body = await req.json() as {
-    action?: 'hr-decide' | 'finance-decide' | 'special-decide'
+    action?: 'edit' | 'hr-decide' | 'finance-decide' | 'special-decide'
     approved?: boolean; note?: string; firstDeductionYear?: number; firstDeductionMonth?: number
+    amount?: number; termMonths?: number; reason?: string
+    approvedAmount?: number; approvedTermMonths?: number
   }
 
   const loan = await db.loanRequest.findUnique({
@@ -65,6 +67,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!loan) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const approved = !!body.approved
   const note = body.note?.trim() || null
+
+  if (body.action === 'edit') {
+    if (!roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (loan.status !== 'PENDING_HR' && loan.status !== 'PENDING_FINANCE' && loan.status !== 'PENDING_SPECIAL') {
+      return NextResponse.json({ error: 'This request has already been decided and can no longer be edited' }, { status: 409 })
+    }
+    const principal = Number(body.amount)
+    const term = Number(body.termMonths)
+    if (!Number.isFinite(principal) || principal <= 0) return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
+    if (!Number.isInteger(term) || term <= 0) return NextResponse.json({ error: 'Term (months) must be a whole number greater than 0' }, { status: 400 })
+    const updated = await db.loanRequest.update({
+      where: { id },
+      data: { amount: principal, termMonths: term, reason: body.reason?.trim() || null },
+    })
+    return NextResponse.json(updated)
+  }
 
   if (body.action === 'hr-decide') {
     if (!roleMatches(role, HR_ROLES)) return NextResponse.json({ error: 'Only HR/Admin can decide at this stage' }, { status: 403 })
@@ -107,11 +125,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'A valid first deduction month/year is required to approve' }, { status: 400 })
       }
 
+      // The approved amount/tenor can differ from what was originally requested (e.g. a
+      // smaller amount or shorter tenor than asked for) — left unset means "approve
+      // exactly as requested". Whichever figures apply are what actually get scheduled.
+      let approvedAmount = loan.amount
+      let approvedTermMonths = loan.termMonths
+      if (body.approvedAmount !== undefined) {
+        approvedAmount = Number(body.approvedAmount)
+        if (!Number.isFinite(approvedAmount) || approvedAmount <= 0) return NextResponse.json({ error: 'Approved amount must be greater than 0' }, { status: 400 })
+      }
+      if (body.approvedTermMonths !== undefined) {
+        approvedTermMonths = Number(body.approvedTermMonths)
+        if (!Number.isInteger(approvedTermMonths) || approvedTermMonths <= 0) return NextResponse.json({ error: 'Approved term (months) must be a whole number greater than 0' }, { status: 400 })
+      }
+
       // Whole-Rupiah installments summing exactly to the principal — remainder from the
       // floor division goes on the last installment rather than scattering cents.
-      const base = Math.floor(loan.amount / loan.termMonths)
-      const remainder = loan.amount - base * loan.termMonths
-      const installments = Array.from({ length: loan.termMonths }, (_, i) => {
+      const base = Math.floor(approvedAmount / approvedTermMonths)
+      const remainder = approvedAmount - base * approvedTermMonths
+      const installments = Array.from({ length: approvedTermMonths }, (_, i) => {
         const totalMonthIndex = (month - 1) + i
         return {
           id: crypto.randomUUID(),
@@ -120,7 +152,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           installmentNumber: i + 1,
           dueYear: year + Math.floor(totalMonthIndex / 12),
           dueMonth: (totalMonthIndex % 12) + 1,
-          amount: i === loan.termMonths - 1 ? base + remainder : base,
+          amount: i === approvedTermMonths - 1 ? base + remainder : base,
         }
       })
 
@@ -129,12 +161,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           where: { id },
           data: {
             status: 'APPROVED', firstDeductionYear: year, firstDeductionMonth: month,
+            approvedAmount, approvedTermMonths,
             specialDecidedById: session.user.id, specialDecidedAt: new Date(), specialApproved: true, specialNote: note,
           },
         }),
         db.loanInstallment.createMany({ data: installments }),
       ])
-      await notifyRequester(db, loan.requestedById, 'Loan request approved', `${loan.employee.fullName}'s loan of Rp ${new Intl.NumberFormat('id-ID').format(loan.amount)} was approved — repayment starts ${month}/${year}.`)
+      const changed = approvedAmount !== loan.amount || approvedTermMonths !== loan.termMonths
+      const approvedSummary = `Rp ${new Intl.NumberFormat('id-ID').format(approvedAmount)} over ${approvedTermMonths} month${approvedTermMonths !== 1 ? 's' : ''}`
+      await notifyRequester(db, loan.requestedById, 'Loan request approved', `${loan.employee.fullName}'s loan was approved for ${approvedSummary}${changed ? ' (different from what was requested)' : ''} — repayment starts ${month}/${year}.`)
       return NextResponse.json(updated)
     }
 

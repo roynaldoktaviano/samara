@@ -36,6 +36,8 @@ interface LoanDetail extends LoanListItem {
   requestedBy: ActorLite
   firstDeductionYear: number | null
   firstDeductionMonth: number | null
+  approvedAmount: number | null
+  approvedTermMonths: number | null
   employee: { id: string; fullName: string; employeeNumber: string; managerId: string | null }
   hrDecidedBy: ActorLite; hrApproved: boolean | null; hrNote: string | null; hrDecidedAt: string | null
   financeDecidedBy: ActorLite; financeApproved: boolean | null; financeNote: string | null; financeDecidedAt: string | null
@@ -121,7 +123,14 @@ export default function EmployeeLoansPage() {
   const [decisionNote, setDecisionNote] = useState('')
   const [deductionYear, setDeductionYear] = useState(new Date().getFullYear())
   const [deductionMonth, setDeductionMonth] = useState(new Date().getMonth() + 1)
+  const [approvedAmount, setApprovedAmount] = useState('')
+  const [approvedTermMonths, setApprovedTermMonths] = useState('')
   const [deciding, setDeciding] = useState(false)
+
+  const [editModal, setEditModal] = useState(false)
+  const [editForm, setEditForm] = useState({ amount: '', termMonths: '', reason: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
 
   const [payoffConfirm, setPayoffConfirm] = useState(false)
   const [payingOff, setPayingOff] = useState(false)
@@ -167,6 +176,8 @@ export default function EmployeeLoansPage() {
     setDecisionNote('')
     if (detail?.firstDeductionYear) setDeductionYear(detail.firstDeductionYear)
     if (detail?.firstDeductionMonth) setDeductionMonth(detail.firstDeductionMonth)
+    setApprovedAmount(detail ? String(detail.amount) : '')
+    setApprovedTermMonths(detail ? String(detail.termMonths) : '')
     setDecision({ action, approved })
   }
 
@@ -177,10 +188,34 @@ export default function EmployeeLoansPage() {
     if (decision.action === 'special-decide' && decision.approved) {
       body.firstDeductionYear = deductionYear
       body.firstDeductionMonth = deductionMonth
+      body.approvedAmount = Number(approvedAmount)
+      body.approvedTermMonths = Number(approvedTermMonths)
     }
     const res = await fetch(`/api/hr/loans/${detailId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     setDeciding(false)
     if (res.ok) { setDecision(null); loadDetail(detailId); load() }
+  }
+
+  function openEdit() {
+    if (!detail) return
+    setEditForm({ amount: String(detail.amount), termMonths: String(detail.termMonths), reason: detail.reason ?? '' })
+    setEditError('')
+    setEditModal(true)
+  }
+
+  async function saveEdit() {
+    if (!detailId) return
+    if (!editForm.amount || Number(editForm.amount) <= 0) { setEditError('Amount must be greater than 0'); return }
+    if (!editForm.termMonths || Number(editForm.termMonths) <= 0) { setEditError('Term must be greater than 0'); return }
+    setEditSaving(true); setEditError('')
+    const res = await fetch(`/api/hr/loans/${detailId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'edit', amount: editForm.amount, termMonths: editForm.termMonths, reason: editForm.reason }),
+    })
+    const data = await res.json()
+    setEditSaving(false)
+    if (!res.ok) { setEditError(data.error ?? 'An error occurred'); return }
+    setEditModal(false); loadDetail(detailId); load()
   }
 
   async function markInstallmentPaid(installmentId: string) {
@@ -351,8 +386,17 @@ export default function EmployeeLoansPage() {
                     <div>
                       <p className="text-lg font-bold">{fmtMoney(detail.amount)}</p>
                       <p className="text-xs text-muted-foreground">{detail.termMonths} months{detail.reason ? ` · ${detail.reason}` : ''}</p>
+                      {detail.status === 'APPROVED' && detail.approvedAmount != null && detail.approvedTermMonths != null &&
+                        (detail.approvedAmount !== detail.amount || detail.approvedTermMonths !== detail.termMonths) && (
+                        <p className="text-xs text-amber-700 font-medium mt-0.5">Approved for {fmtMoney(detail.approvedAmount)} over {detail.approvedTermMonths} months instead</p>
+                      )}
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[detail.status]}`}>{STATUS_LABEL[detail.status]}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(canHr || canFinance) && detail.status !== 'APPROVED' && detail.status !== 'REJECTED' && (
+                        <button onClick={openEdit} className="px-2.5 py-1 text-xs font-medium rounded-md border hover:bg-muted transition-colors">Edit</button>
+                      )}
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[detail.status]}`}>{STATUS_LABEL[detail.status]}</span>
+                    </div>
                   </div>
 
                   <div className="text-xs text-muted-foreground space-y-1">
@@ -456,6 +500,45 @@ export default function EmployeeLoansPage() {
         </div>
       )}
 
+      {/* Edit modal */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="font-bold text-sm">Edit Loan Request</h3>
+              <button onClick={() => setEditModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {editError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editError}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Amount</label>
+                  <RupiahInput value={editForm.amount} onChange={digits => setEditForm(f => ({ ...f, amount: digits }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Term (months)</label>
+                  <input type="number" min={1} value={editForm.termMonths} onChange={e => setEditForm(f => ({ ...f, termMonths: e.target.value }))}
+                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason (optional)</label>
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+                  value={editForm.reason} onChange={e => setEditForm(f => ({ ...f, reason: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
+              <button onClick={() => setEditModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
+              <button onClick={saveEdit} disabled={editSaving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {editSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Decision modal */}
       {decision && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -463,20 +546,34 @@ export default function EmployeeLoansPage() {
             <div className="px-6 py-5 space-y-3">
               <h3 className="font-bold text-sm">{decision.approved ? 'Approve' : 'Reject'} — {detail?.employee.fullName}</h3>
               {decision.action === 'special-decide' && decision.approved && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground">First Deduction Month</label>
-                    <select value={deductionMonth} onChange={e => setDeductionMonth(Number(e.target.value))}
-                      className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500">
-                      {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                    </select>
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Approved Amount</label>
+                      <RupiahInput value={approvedAmount} onChange={setApprovedAmount} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Approved Term (months)</label>
+                      <input type="number" min={1} value={approvedTermMonths} onChange={e => setApprovedTermMonths(e.target.value)}
+                        className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground">Year</label>
-                    <input type="number" value={deductionYear} onChange={e => setDeductionYear(Number(e.target.value))}
-                      className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <p className="text-[11px] text-muted-foreground">Prefilled with what was requested — change either if you're approving a different amount or tenor.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-muted-foreground">First Deduction Month</label>
+                      <select value={deductionMonth} onChange={e => setDeductionMonth(Number(e.target.value))}
+                        className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500">
+                        {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Year</label>
+                      <input type="number" value={deductionYear} onChange={e => setDeductionYear(Number(e.target.value))}
+                        className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                    </div>
                   </div>
-                </div>
+                </>
               )}
               <textarea rows={2} placeholder="Note (optional)"
                 className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"

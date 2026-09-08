@@ -23,21 +23,25 @@ export async function GET() {
 // can be added in one go instead of one date at a time. A single day is just startDate
 // === endDate. Dates that already have a holiday are skipped rather than failing the
 // whole batch (createMany + skipDuplicates, backed by the @unique date constraint).
+// excludedLocationIds (optional) applies the same exclusion set to every date in the
+// range — locations still working through this holiday (e.g. a yacht mid-trip).
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { startDate, endDate, name } = await req.json()
+  const { startDate, endDate, name, excludedLocationIds } = await req.json()
   if (!startDate || !endDate || !name?.trim()) return NextResponse.json({ error: 'Start date, end date, and name are required' }, { status: 400 })
 
   const start = new Date(startDate)
   const end = new Date(endDate)
   if (end < start) return NextResponse.json({ error: 'End date must be on or after the start date' }, { status: 400 })
 
-  const rows: { id: string; date: Date; name: string; createdById: string }[] = []
+  const excluded = Array.isArray(excludedLocationIds) ? [...new Set(excludedLocationIds.filter((v: unknown) => typeof v === 'string' && v))] : []
+
+  const rows: { id: string; date: Date; name: string; excludedLocationIds: string[]; createdById: string }[] = []
   for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    rows.push({ id: crypto.randomUUID(), date: new Date(d), name: name.trim(), createdById: session.user.id })
+    rows.push({ id: crypto.randomUUID(), date: new Date(d), name: name.trim(), excludedLocationIds: excluded, createdById: session.user.id })
   }
 
   const result = await db.nationalHoliday.createMany({ data: rows, skipDuplicates: true })
