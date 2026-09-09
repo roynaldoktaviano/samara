@@ -19,7 +19,10 @@ export async function GET() {
   const [items, lots] = await Promise.all([
     db.purchaseItem.findMany({
       orderBy: [{ type: 'asc' }, { category: 'asc' }, { name: 'asc' }],
-      include: { currentLocation: { select: { id: true, name: true } } },
+      include: {
+        currentLocation: { select: { id: true, name: true } },
+        migratedInventoryItem: { select: { id: true, itemNumber: true } },
+      },
     }),
     db.stockLot.findMany({
       where: { quantity: { gt: 0 } },
@@ -74,6 +77,13 @@ export async function POST(req: NextRequest) {
   const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, reorderQty, imageKey, isSoldInPos, isStockTracked } = body
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
     return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+  }
+  // Non-Stock Item creation is discontinued — the new Inventory module (per-location
+  // Rooms/Categories/Items + Stock Opname) replaces it. Existing isStockTracked=false
+  // rows stay untouched for historical PO/receiving records; see
+  // scripts/migrate-non-stock-to-inventory.ts for the one-time data migration.
+  if (isStockTracked === false) {
+    return NextResponse.json({ error: 'Non-Stock Item creation has moved to the Inventory module — use Inventory > Items instead.' }, { status: 400 })
   }
   const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
   if (!typeConfig || !typeConfig.isActive) {

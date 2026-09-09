@@ -59,15 +59,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // Promote a still-ad-hoc custom line (no catalog itemId) into a real master catalog
-  // item the moment Purchasing classifies it Stock/Non-Stock here — this Save is already
-  // the review/curation step, so there's no separate "add to master" action needed. If a
+  // item the moment Purchasing marks it Stock here — this Save is already the
+  // review/curation step, so there's no separate "add to master" action needed. If a
   // catalog item with the same name already exists, link to it instead of duplicating;
   // its existing isStockTracked flag is left as-is (the master, once created, is the
   // source of truth — not whatever this one request line happens to pick).
+  //
+  // isStockItem === false no longer auto-creates anything here — Non-Stock Item
+  // creation moved to the Inventory module (per-location Rooms/Categories/Items). The
+  // classification flag is still saved below so Purchasing's triage view keeps working;
+  // once goods are received, add the InventoryItem manually from Inventory > Items
+  // (its "Link to Purchase Order" picker fills in Vendor/Purchase Date automatically).
   let promotedItemId: string | null = null
   let promotedNew = false
   let promotedSku: string | null = null
-  if (isStockItem !== undefined && !existingItem.itemId) {
+  if (isStockItem === true && !existingItem.itemId) {
     const trimmedName = existingItem.itemName.trim()
     const match = await db.purchaseItem.findFirst({ where: { name: { equals: trimmedName, mode: 'insensitive' } } })
     if (match) {
@@ -91,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           category: 'Non-Stock',
           baseUnit: unit,
           purchaseUnit: unit,
-          isStockTracked: !!isStockItem,
+          isStockTracked: true,
           updatedAt: new Date(),
         },
       })

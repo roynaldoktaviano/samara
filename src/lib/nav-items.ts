@@ -8,10 +8,10 @@ import {
   ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate,
   UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText,
   MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins,
-  Anchor, KeyRound, CalendarDays, Plane, Star, Clock, UserX, Target,
+  Anchor, KeyRound, CalendarDays, Plane, Star, Clock, UserX, Target, Archive, DoorOpen,
 } from 'lucide-react'
 
-export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'my-overtime' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-overtime' | 'hr-loans' | 'hr-boat-documents' | 'hr-separation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaign-hub' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing'
+export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'my-overtime' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-overtime' | 'hr-loans' | 'hr-boat-documents' | 'hr-separation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaign-hub' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing' | 'inventory-items' | 'inventory-rooms' | 'inventory-opname'
 
 export type NavItem = {
   id: View
@@ -31,7 +31,8 @@ export const NAV_GROUPS = [
   { key: 'statistics', label: 'Statistics', icon: TrendingUp },
   { key: 'marketing',  label: 'Marketing', icon: Send },
   { key: 'management', label: 'Management', icon: Shield },
-  { key: 'purchasing', label: 'Purchasing & Inventory', icon: ShoppingCart },
+  { key: 'purchasing', label: 'Purchasing', icon: ShoppingCart },
+  { key: 'inventory',  label: 'Inventory', icon: Archive },
   { key: 'pos',        label: 'Point of Sale', icon: Receipt },
   { key: 'hr',         label: 'People & HR', icon: IdCard },
 ]
@@ -101,6 +102,9 @@ export const navigationItems: NavItem[] = [
   { id: 'purchasing-exceptions',   label: 'Exceptions',        icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-withdrawals',  label: 'Withdrawal Report', icon: TrendingDown, roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-reports',      label: 'Reports',           icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'inventory-items',  label: 'Items',              icon: Package, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'inventory', feature: 'purchasing' },
+  { id: 'inventory-rooms',  label: 'Rooms & Categories', icon: DoorOpen, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'inventory', feature: 'purchasing' },
+  { id: 'inventory-opname', label: 'Stock Opname',       icon: Star,    roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'inventory', feature: 'purchasing' },
   { id: 'pos-categories', label: 'Categories',      icon: Tag,         roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
   { id: 'pos-menu',       label: 'Menu & Pricing',  icon: Receipt,     roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },
   { id: 'pos-packages',   label: 'Packages',        icon: PackagePlus, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'pos', feature: 'pos' },

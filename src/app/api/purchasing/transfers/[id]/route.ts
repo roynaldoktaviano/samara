@@ -103,6 +103,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const transfer = await db.stockTransfer.findUnique({ where: { id }, include: { items: true } })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Lets the Packing List print page (src/app/print/stock-transfer/[id]/page.tsx) add a
+  // real item to this transfer when a new box row is picked from the inventory catalog,
+  // rather than being a print-only note — only while the transfer hasn't moved yet, same
+  // as every other edit here (cancel/dispatch/receive are all PENDING/one-shot gated).
+  if (action === 'add-item') {
+    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Hanya transfer PENDING yang bisa ditambah item' }, { status: 409 })
+    const { itemId, itemName, qty } = body as { itemId?: string; itemName?: string; qty?: number }
+    const quantity = Number(qty)
+    if (!Number.isFinite(quantity) || quantity <= 0) return NextResponse.json({ error: 'Qty harus lebih dari 0' }, { status: 400 })
+    let resolvedName = itemName?.trim() || ''
+    if (itemId) {
+      const item = await db.purchaseItem.findUnique({ where: { id: itemId }, select: { name: true } })
+      if (!item) return NextResponse.json({ error: 'Item tidak ditemukan' }, { status: 404 })
+      resolvedName = item.name
+    }
+    if (!resolvedName) return NextResponse.json({ error: 'Nama item wajib diisi' }, { status: 400 })
+
+    // Already on this transfer (matched the same way dispatch/receive match a line —
+    // itemId for catalog items, itemName for non-stock ones) — bump its requestedQty
+    // instead of creating a second row for the same item.
+    const existing = transfer.items.find(i => (itemId ? i.itemId === itemId : i.itemId === null && i.itemName === resolvedName))
+    const result = existing
+      ? await db.stockTransferItem.update({ where: { id: existing.id }, data: { requestedQty: { increment: quantity } } })
+      : await db.stockTransferItem.create({
+          data: { id: crypto.randomUUID(), transferId: id, itemId: itemId || null, itemName: resolvedName, requestedQty: quantity },
+        })
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+    return NextResponse.json(result, { status: existing ? 200 : 201 })
+  }
+
   if (action === 'cancel') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Hanya transfer PENDING yang bisa dibatalkan' }, { status: 409 })
     await db.stockTransfer.update({ where: { id }, data: { status: 'CANCELLED', updatedAt: new Date() } })

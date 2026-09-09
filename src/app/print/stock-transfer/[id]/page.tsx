@@ -15,6 +15,7 @@ interface TransferItem {
 interface TransferDetail {
   id: string
   transferNumber: string
+  status: string
   fromLocation: { name: string } | null
   toLocation: { name: string } | null
   items: TransferItem[]
@@ -25,17 +26,32 @@ interface Row {
   qty: string
   vesselPic: string
   box: number
+  // Rows sourced from the inventory picker mirror a real StockTransferItem (id is that
+  // item's real id) — a manual/free-text row has none, it only ever exists on this
+  // printout and never touches the transfer's actual item list.
+  linked: boolean
+}
+interface CatalogItem {
+  id: string
+  name: string
+  sku: string
+  baseUnit: string | null
+  purchaseUnit: string | null
+  conversionFactor: number
 }
 
 const ACCENT = '#bdac7e'
 
+function formatQtyValue(qty: number, baseUnit: string | null, purchaseUnit: string | null, conversionFactor: number): string {
+  const hasPU = !!(purchaseUnit && purchaseUnit !== baseUnit && conversionFactor > 1)
+  if (hasPU && qty % conversionFactor === 0) {
+    return `${qty / conversionFactor}${purchaseUnit ? ' ' + purchaseUnit : ''}`
+  }
+  return `${qty}${baseUnit ? ' ' + baseUnit : ''}`
+}
 function formatQty(it: TransferItem): string {
   const qty = it.dispatchedQty > 0 ? it.dispatchedQty : it.requestedQty
-  const hasPU = !!(it.purchaseUnit && it.purchaseUnit !== it.baseUnit && it.conversionFactor > 1)
-  if (hasPU && qty % it.conversionFactor === 0) {
-    return `${qty / it.conversionFactor}${it.purchaseUnit ? ' ' + it.purchaseUnit : ''}`
-  }
-  return `${qty}${it.baseUnit ? ' ' + it.baseUnit : ''}`
+  return formatQtyValue(qty, it.baseUnit, it.purchaseUnit, it.conversionFactor)
 }
 
 let rowSeq = 0
@@ -48,6 +64,7 @@ export default function StockTransferPackingListPage() {
   const [title, setTitle] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [bulkVesselPic, setBulkVesselPic] = useState('')
+  const [catalog, setCatalog] = useState<CatalogItem[]>([])
 
   useEffect(() => {
     async function load() {
@@ -57,7 +74,7 @@ export default function StockTransferPackingListPage() {
       if (data) {
         const defaultVesselPic = data.toLocation?.name ?? ''
         setRows(data.items.map((it: TransferItem) => ({
-          id: it.id, description: it.itemName, qty: formatQty(it), vesselPic: defaultVesselPic, box: 1,
+          id: it.id, description: it.itemName, qty: formatQty(it), vesselPic: defaultVesselPic, box: 1, linked: true,
         })))
         setBulkVesselPic(defaultVesselPic)
         document.title = `Packing List - ${data.transferNumber}`
@@ -67,18 +84,51 @@ export default function StockTransferPackingListPage() {
     load().catch(() => setLoading(false))
   }, [id])
 
+  useEffect(() => {
+    fetch('/api/purchasing/items').then(r => r.ok ? r.json() : []).then((items: CatalogItem[]) => setCatalog(items)).catch(() => {})
+  }, [])
+
   function updateRow(rowId: string, field: keyof Row, value: string | number) {
     setRows(rs => rs.map(r => r.id === rowId ? { ...r, [field]: value } : r))
   }
   function removeRow(rowId: string) {
     setRows(rs => rs.filter(r => r.id !== rowId))
   }
-  function addRow(box: number) {
-    setRows(rs => [...rs, { id: newRowId(), description: '', qty: '', vesselPic: bulkVesselPic, box }])
+  // Manual/free-text row — print-only, never touches the actual Transfer.
+  function addManualRow(box: number) {
+    setRows(rs => [...rs, { id: newRowId(), description: '', qty: '', vesselPic: bulkVesselPic, box, linked: false }])
+  }
+  // Picked from the inventory catalog — actually creates a StockTransferItem on this
+  // transfer (only while it's still PENDING, see the API route), so it also shows up in
+  // the real Transfer's item list everywhere else (dispatch, receive, reporting).
+  async function addCatalogRow(box: number, item: CatalogItem, qty: number): Promise<string | null> {
+    const res = await fetch(`/api/purchasing/transfers/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add-item', itemId: item.id, qty }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) return data?.error ?? 'Gagal menambah barang'
+    // The item was already on this transfer — the API bumped its requestedQty instead of
+    // creating a second row for it. Drop any row(s) already showing that item locally and
+    // add one fresh row (in the box just picked) with the new running total, so the
+    // printout and the real total stay in sync instead of double-counting.
+    const merged = res.status === 200
+    setRows(rs => [
+      ...(merged ? rs.filter(r => r.id !== data.id) : rs),
+      { id: data.id, description: item.name, qty: formatQtyValue(data.requestedQty, item.baseUnit, item.purchaseUnit, item.conversionFactor), vesselPic: bulkVesselPic, box, linked: true },
+    ])
+    setTransfer(t => {
+      if (!t) return t
+      const items = merged
+        ? t.items.map(i => i.id === data.id ? { ...i, requestedQty: data.requestedQty } : i)
+        : [...t.items, { id: data.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit, conversionFactor: item.conversionFactor, requestedQty: data.requestedQty, dispatchedQty: 0 }]
+      return { ...t, items }
+    })
+    return null
   }
   function addBox() {
     const nextBox = rows.length ? Math.max(...rows.map(r => r.box)) + 1 : 1
-    addRow(nextBox)
+    addManualRow(nextBox)
   }
   function applyBulkVesselPic() {
     setRows(rs => rs.map(r => ({ ...r, vesselPic: bulkVesselPic })))
@@ -134,8 +184,12 @@ export default function StockTransferPackingListPage() {
         />
 
         {boxNumbers.length === 0 && (
-          <div className="print:hidden text-center text-sm text-gray-400 py-10">
-            Tidak ada item. <button onClick={() => addRow(1)} className="underline" style={{ color: ACCENT }}>+ Tambah baris</button>
+          <div className="print:hidden text-center py-10">
+            <p className="text-sm text-gray-400 mb-2">Tidak ada item.</p>
+            <div className="flex justify-center">
+              <AddRowControl box={1} pending={transfer.status === 'PENDING'} catalog={catalog}
+                onAddCatalog={addCatalogRow} onAddManual={addManualRow} />
+            </div>
           </div>
         )}
 
@@ -170,8 +224,15 @@ export default function StockTransferPackingListPage() {
                     <tr key={r.id}>
                       <td className="border border-black px-2 py-1 text-center">{i + 1}</td>
                       <td className="border border-black px-2 py-1">
-                        <input value={r.description} onChange={e => updateRow(r.id, 'description', e.target.value)}
-                          className="w-full outline-none border-0 bg-transparent" />
+                        <div className="flex items-center gap-1.5">
+                          <input value={r.description} onChange={e => updateRow(r.id, 'description', e.target.value)}
+                            className="w-full outline-none border-0 bg-transparent" />
+                          {r.linked && (
+                            <span className="print:hidden shrink-0 text-[9px] px-1 py-0.5 rounded border text-gray-500" title="Terhubung ke item Transfer ini">
+                              inv
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="border border-black px-2 py-1 text-center">
                         <input value={r.qty} onChange={e => updateRow(r.id, 'qty', e.target.value)}
@@ -193,13 +254,95 @@ export default function StockTransferPackingListPage() {
                   ))}
                 </tbody>
               </table>
-              <div className="print:hidden mt-1.5">
-                <button onClick={() => addRow(boxNum)} className="text-xs hover:underline" style={{ color: ACCENT }}>+ Tambah baris di Box {boxNum}</button>
-              </div>
+              <AddRowControl box={boxNum} pending={transfer.status === 'PENDING'} catalog={catalog}
+                onAddCatalog={addCatalogRow} onAddManual={addManualRow} />
             </div>
           )
         })}
       </div>
     </>
+  )
+}
+
+// Adding a row can either search & pick a real catalog item (persisted onto the actual
+// Transfer, only while it's still PENDING) or fall back to a manual/free-text row that
+// only ever exists on this printout (for non-inventory notes like packaging or a
+// personal favor — see the description field on Row).
+function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
+  box: number
+  pending: boolean
+  catalog: CatalogItem[]
+  onAddCatalog: (box: number, item: CatalogItem, qty: number) => Promise<string | null>
+  onAddManual: (box: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [picked, setPicked] = useState<CatalogItem | null>(null)
+  const [qty, setQty] = useState('1')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const q = search.trim().toLowerCase()
+  const matches = (q ? catalog.filter(c => c.name.toLowerCase().includes(q) || c.sku?.toLowerCase().includes(q)) : catalog).slice(0, 30)
+
+  function reset() { setOpen(false); setSearch(''); setPicked(null); setQty('1'); setError('') }
+
+  async function confirmAdd() {
+    if (!picked) return
+    const n = Number(qty)
+    if (!Number.isFinite(n) || n <= 0) { setError('Qty harus lebih dari 0'); return }
+    setSaving(true)
+    const err = await onAddCatalog(box, picked, n)
+    setSaving(false)
+    if (err) { setError(err); return }
+    reset()
+  }
+
+  if (!open) {
+    return (
+      <div className="print:hidden mt-1.5">
+        <button onClick={() => setOpen(true)} className="text-xs hover:underline" style={{ color: ACCENT }}>+ Tambah baris di Box {box}</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="print:hidden mt-1.5 border rounded-md p-2.5 space-y-2 max-w-md bg-gray-50/60">
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {!picked ? (
+        <>
+          {pending ? (
+            <>
+              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari barang di inventory..."
+                className="w-full border rounded px-2 py-1 text-xs bg-white" />
+              <div className="max-h-40 overflow-y-auto border rounded divide-y bg-white">
+                {matches.length === 0 && <p className="text-xs text-gray-400 px-2 py-2">Tidak ada barang cocok.</p>}
+                {matches.map(c => (
+                  <button key={c.id} onClick={() => setPicked(c)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50">
+                    {c.name} <span className="text-gray-400">({c.sku})</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-gray-400">Transfer ini sudah diproses — baris baru tidak lagi bisa terhubung ke inventory, cuma manual.</p>
+          )}
+          <div className="flex items-center gap-3">
+            <button onClick={() => { onAddManual(box); reset() }} className="text-xs underline text-gray-500">+ Baris manual (non-inventory)</button>
+            <button onClick={reset} className="text-xs text-gray-400 ml-auto">Batal</button>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-xs flex-1">{picked.name}</span>
+          <input type="number" min={0} step="any" value={qty} onChange={e => setQty(e.target.value)}
+            className="w-20 border rounded px-2 py-1 text-xs bg-white" placeholder="Qty" />
+          <button onClick={confirmAdd} disabled={saving} className="text-xs px-2.5 py-1 rounded text-white disabled:opacity-50" style={{ backgroundColor: ACCENT }}>
+            {saving ? 'Menambah...' : 'Tambah'}
+          </button>
+          <button onClick={() => setPicked(null)} className="text-xs text-gray-400">Batal</button>
+        </div>
+      )}
+    </div>
   )
 }

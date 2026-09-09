@@ -56,6 +56,9 @@ import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
 import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
+import InventoryItemsPage from '@/components/inventory/items/ItemsPage'
+import InventoryRoomsPage from '@/components/inventory/rooms/RoomsPage'
+import InventoryOpnamePage from '@/components/inventory/opname/OpnamePage'
 import PosCategoriesPage from '@/components/pos/categories/PosCategoriesPage'
 import PosMenuPage from '@/components/pos/menu/PosMenuPage'
 import PosPackagesPage from '@/components/pos/packages/PosPackagesPage'
@@ -854,6 +857,9 @@ export default function Home() {
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
       case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />
       case 'purchasing-reports':      return <PurchasingReportsPage />
+      case 'inventory-items':         return <InventoryItemsPage />
+      case 'inventory-rooms':         return <InventoryRoomsPage />
+      case 'inventory-opname':        return <InventoryOpnamePage />
       case 'pos-categories': return <PosCategoriesPage />
       case 'pos-menu':       return <PosMenuPage />
       case 'pos-packages':   return <PosPackagesPage />

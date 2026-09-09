@@ -193,6 +193,8 @@ model User {
   loanFinanceDecisions                   LoanRequest[]               @relation("LoanFinanceDecidedBy")
   loanSpecialDecisions                   LoanRequest[]               @relation("LoanSpecialDecidedBy")
   internalEventsCreated                  InternalEvent[]
+  inventoryItemsCreated                  InventoryItem[]
+  inventoryOpnamesCounted                InventoryOpname[]
 
   @@index([assignedYachtId])
 }
@@ -1729,6 +1731,9 @@ enum PurchaseRequestDivision {
 enum PurchaseRequestPurpose {
   STOCK_INVENTORY
   TRIP
+  // Raised from an Inventory Stock Opname's "Request for Replacement" button
+  // (rating <= 2 on a physical unit) — see InventoryOpnameEntry/InventoryItem.
+  REPLACEMENT
 }
 
 enum PurchaseOrderStatus {
@@ -1805,6 +1810,9 @@ model PurchaseItem {
   currentLocation  StockLocation?        @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   posMenuItems     PosMenuItem[]
   posPackageItems  PosPackageItem[]
+  // Set by the one-time migration script when this legacy non-stock item is converted
+  // into a proper InventoryItem (see InventoryItem.sourcePurchaseItemId) — back-relation only.
+  migratedInventoryItem InventoryItem?
 
   @@index([name])
   @@index([category])
@@ -1837,6 +1845,9 @@ model StockLocation {
   transitStops      PurchaseOrderTransitStop[]
   cashierSales      CashierSale[]
   nonStockItemsHere PurchaseItem[]             @relation("PurchaseItemCurrentLocation")
+  inventoryRooms    InventoryRoom[]
+  inventoryItems    InventoryItem[]
+  inventoryOpnames  InventoryOpname[]
 
   @@index([type])
   @@index([yachtId])
@@ -2223,7 +2234,15 @@ model PurchaseRequestItem {
   verifyRejectedAt      DateTime?
   verifyRejectionReason String?
 
+  // Set only when this line was created by "Request for Replacement" during an
+  // Inventory Stock Opname (the other half of the link is
+  // InventoryOpnameEntry.replacementRequestItemId) — lets an InventoryItem's history
+  // show every replacement PR ever raised against it, and this line's own status.
+  sourceInventoryItemId String?
+
   request              PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sourceInventoryItem  InventoryItem?      @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
+  sourceOpnameEntry    InventoryOpnameEntry?
   item                 PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
   supplier             Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   convertedPo          PurchaseOrder?      @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
@@ -2238,6 +2257,7 @@ model PurchaseRequestItem {
   @@index([quotationApproverId])
   @@index([verifyRejectedById])
   @@index([convertedPoId])
+  @@index([sourceInventoryItemId])
 }
 
 // Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the
@@ -2327,6 +2347,7 @@ model PurchaseOrder {
   transitTransfers      StockTransfer[]
   followUps             PurchaseFollowUp[]
   convertedRequestItems PurchaseRequestItem[]      @relation("PRItemConvertedPo")
+  inventoryItems        InventoryItem[]
 
   @@index([createdById])
   @@index([status])
@@ -2774,6 +2795,155 @@ model InventoryException {
   @@index([type])
   @@index([createdAt])
   @@index([referenceId])
+}
+
+// ─── Inventory (per-location Rooms/Categories/Items + Stock Opname) ───────────
+
+enum InventoryOpnameStatus {
+  DRAFT // created, entries pre-filled but not yet rated
+  IN_PROGRESS // some entries rated, not all
+  COMPLETED // every entry rated — locked
+}
+
+// Ruangan — a sub-area of an existing StockLocation ("Tempat"), CRUD per location.
+// Reusable for any StockLocation.type (VESSEL, WAREHOUSE, SITE, ...), not just ships.
+model InventoryRoom {
+  id         String   @id @default(cuid())
+  name       String
+  locationId String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  location   StockLocation       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  categories InventoryCategory[]
+  items      InventoryItem[]
+  opnames    InventoryOpname[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// Kategori Barang — belongs to exactly one Ruangan (not directly to the Tempat), CRUD per room.
+model InventoryCategory {
+  id        String   @id @default(cuid())
+  name      String
+  roomId    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room  InventoryRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  items InventoryItem[]
+
+  @@unique([roomId, name])
+  @@index([roomId])
+}
+
+model InventoryItem {
+  id           String    @id @default(cuid())
+  itemNumber   String    @unique // "No Barang" — nextVal('inventory-item') -> INV-0001
+  name         String // Nama Barang
+  categoryId   String // Kategori Barang
+  brand        String? // Merk
+  // Tanggal Beli — manual date input, or auto-filled from sourcePo.orderedAt at creation
+  // time when linked to a PO. Stored (not derived) so it stays correct even if the PO is
+  // later edited/cancelled.
+  purchaseDate DateTime?
+  webLink      String? // Web Link (optional)
+  phone        String? // Phone (optional)
+  // Vendor — denormalized supplier name, auto-filled from sourcePo.supplierName at
+  // creation if linked to a PO, else free-text. Not a Supplier FK: mirrors how
+  // PurchaseOrder.supplierName is already denormalized text, since this is
+  // historical/informational, not a live relation.
+  vendorName   String?
+  quantity     Int       @default(1) // Jumlah — how many physical units this row represents
+  unitPrice    Float     @default(0) // Harga (Total = quantity * unitPrice, computed on read, not stored)
+  notes        String? // Keterangan
+  photoKeys    Json      @default("[]") // Foto — array of base64 JPEG data URLs
+  isActive     Boolean   @default(true) // soft-hide (decommissioned) without losing opname history
+
+  roomId     String
+  locationId String // denormalized from room.locationId, avoids an extra join for location-scoped queries
+  sourcePoId String? // which PO this was purchased through, if any
+
+  // Set only by the one-time migration script that converts legacy non-stock
+  // PurchaseItem rows into InventoryItem rows. @unique: a legacy item migrates to
+  // exactly one InventoryItem, never more. Null for every item created directly here.
+  sourcePurchaseItemId String? @unique
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category            InventoryCategory      @relation(fields: [categoryId], references: [id])
+  room                InventoryRoom          @relation(fields: [roomId], references: [id])
+  location            StockLocation          @relation(fields: [locationId], references: [id])
+  sourcePo            PurchaseOrder?         @relation(fields: [sourcePoId], references: [id], onDelete: SetNull)
+  sourcePurchaseItem  PurchaseItem?          @relation(fields: [sourcePurchaseItemId], references: [id], onDelete: SetNull)
+  createdBy           User                   @relation(fields: [createdById], references: [id])
+  opnameEntries       InventoryOpnameEntry[]
+  replacementRequests PurchaseRequestItem[]
+
+  @@index([categoryId])
+  @@index([roomId])
+  @@index([locationId])
+  @@index([sourcePoId])
+}
+
+// One opname "session": Pilih Kapal -> Pilih Ruangan -> rate every unit of every item in
+// that room. Deliberately NOT a reuse of StockCount/StockCountItem: that model reconciles
+// a *quantity* against the StockLot ledger with a Purchasing-approval + stock-adjustment
+// step; this records a *qualitative condition rating* per physical unit, never touches
+// StockLot/StockMovement, and needs a forward link into a replacement PurchaseRequestItem
+// that StockCountItem has no field or reason for.
+model InventoryOpname {
+  id           String                @id @default(cuid())
+  opnameNumber String                @unique // nextVal('inventory-opname') -> INVOP-0001
+  locationId   String
+  roomId       String
+  status       InventoryOpnameStatus @default(DRAFT)
+  notes        String?
+  countedById  String
+  completedAt  DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  location  StockLocation          @relation(fields: [locationId], references: [id])
+  room      InventoryRoom          @relation(fields: [roomId], references: [id])
+  countedBy User                   @relation(fields: [countedById], references: [id])
+  entries   InventoryOpnameEntry[]
+
+  @@index([locationId])
+  @@index([roomId])
+  @@index([status])
+}
+
+model InventoryOpnameEntry {
+  id       String @id @default(cuid())
+  opnameId String
+  itemId   String
+  // 1..item.quantity at the time this session was created — a display/ordering label
+  // within this session only, not a persistent per-unit identity across sessions (if
+  // Jumlah changes between sessions, the next session just generates a fresh 1..N set).
+  unitIndex Int
+  // Nullable: pre-created as "not yet rated" when the session starts — null blocks
+  // marking the opname COMPLETED.
+  rating    Int?
+  photoKey  String? // condition photo — base64 data URL, same pattern as everywhere else
+  notes     String?
+  createdAt DateTime @default(now())
+
+  // Set once a "Request for Replacement" has been triggered from this rating slot
+  // (rating <= 2). @unique enforces at most one PR line per slot.
+  replacementRequestItemId String? @unique
+
+  opname                 InventoryOpname      @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  item                   InventoryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  replacementRequestItem  PurchaseRequestItem? @relation(fields: [replacementRequestItemId], references: [id], onDelete: SetNull)
+
+  @@index([opnameId])
+  @@index([itemId])
 }
 
 // ─── People & HR (minimal master data) ─────────────────────────────────────────

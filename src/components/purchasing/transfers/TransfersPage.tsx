@@ -205,6 +205,16 @@ export default function TransfersPage() {
   const [crewLinkError, setCrewLinkError] = useState('')
   const [crewLinkCopied, setCrewLinkCopied] = useState(false)
 
+  // Add Item modal — lets a still-PENDING transfer pick up an item it was missing,
+  // straight from the detail view (same location-scoped stock list the Create form
+  // uses), without having to cancel and recreate the whole transfer.
+  const [addItemModal, setAddItemModal] = useState(false)
+  const [addItemSearch, setAddItemSearch] = useState('')
+  const [addItemPicked, setAddItemPicked] = useState<StockPickerRow | null>(null)
+  const [addItemQty, setAddItemQty] = useState('1')
+  const [addItemSaving, setAddItemSaving] = useState(false)
+  const [addItemError, setAddItemError] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     const [tRes, lRes, uRes, eRes] = await Promise.all([
@@ -268,6 +278,34 @@ export default function TransfersPage() {
     const res = await fetch(`/api/purchasing/transfers/${t.id}`)
     if (res.ok) setDetail(await res.json())
     setDetailLoading(false)
+  }
+
+  function openAddItem() {
+    if (!detail) return
+    loadWarehouseStock(detail.fromLocationId)
+    setAddItemSearch(''); setAddItemPicked(null); setAddItemQty('1'); setAddItemError('')
+    setAddItemModal(true)
+  }
+
+  async function confirmAddItem() {
+    if (!detail || !addItemPicked) return
+    const qty = Number(addItemQty)
+    if (!Number.isFinite(qty) || qty <= 0) { setAddItemError('Qty harus lebih dari 0'); return }
+    setAddItemSaving(true); setAddItemError('')
+    const res = await fetch(`/api/purchasing/transfers/${detail.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add-item',
+        ...(addItemPicked.kind === 'stock' ? { itemId: addItemPicked.id } : { itemName: addItemPicked.name }),
+        qty,
+      }),
+    })
+    const data = await res.json().catch(() => null)
+    setAddItemSaving(false)
+    if (!res.ok) { setAddItemError(data?.error ?? 'Gagal menambah barang'); return }
+    setAddItemModal(false)
+    openDetail(detail)
+    load()
   }
 
   async function submit() {
@@ -882,7 +920,14 @@ export default function TransfersPage() {
 
           {/* Items table */}
           <div className="rounded-lg border overflow-hidden">
-            <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase">Item List</div>
+            <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
+              Item List
+              {detail.status === 'PENDING' && (
+                <button onClick={openAddItem} className="normal-case text-xs font-medium px-2.5 py-1 rounded-md border bg-white hover:bg-muted transition-colors flex items-center gap-1">
+                  <Plus className="h-3 w-3" /> Add Item
+                </button>
+              )}
+            </div>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
@@ -1229,6 +1274,64 @@ export default function TransfersPage() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addItemModal && detail && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-semibold text-lg">Add Item — {detail.transferNumber}</h3>
+              <button onClick={() => setAddItemModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-muted-foreground">Dipilih dari stok yang ada di {detail.fromLocation?.name ?? 'lokasi asal'} saat ini.</p>
+              {addItemError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{addItemError}</div>}
+              {!addItemPicked ? (
+                <>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <input autoFocus value={addItemSearch} onChange={e => setAddItemSearch(e.target.value)} placeholder="Cari barang..."
+                      className="w-full h-9 border rounded-md pl-8 pr-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  </div>
+                  <div className="max-h-64 overflow-y-auto border rounded-md divide-y">
+                    {warehouseStock
+                      .filter(s => !addItemSearch.trim() || s.name.toLowerCase().includes(addItemSearch.trim().toLowerCase()) || s.sku.toLowerCase().includes(addItemSearch.trim().toLowerCase()))
+                      .map(s => (
+                        <button key={s.kind === 'stock' ? s.id : `name:${s.name}:${s.sourcePoId ?? ''}`} onClick={() => setAddItemPicked(s)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors flex items-center justify-between gap-2">
+                          <span>{s.name}{s.sku && <span className="text-muted-foreground"> ({s.sku})</span>}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{s.qty} {s.baseUnit}</span>
+                        </button>
+                      ))}
+                    {warehouseStock.length === 0 && <p className="text-sm text-muted-foreground px-3 py-4 text-center">Tidak ada stok di lokasi ini.</p>}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border rounded-md px-3 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium">{addItemPicked.name}</p>
+                      <p className="text-xs text-muted-foreground">Tersedia: {addItemPicked.qty} {addItemPicked.baseUnit}</p>
+                    </div>
+                    <button onClick={() => setAddItemPicked(null)} className="text-xs text-muted-foreground hover:underline">Ganti</button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Qty ({addItemPicked.baseUnit})</label>
+                    <input type="number" min={0} step="any" value={addItemQty} onChange={e => setAddItemQty(e.target.value)}
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 p-5 border-t bg-gray-50/80">
+              <button onClick={() => setAddItemModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
+              <button onClick={confirmAddItem} disabled={!addItemPicked || addItemSaving}
+                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {addItemSaving ? 'Menambah...' : 'Tambah'}
+              </button>
             </div>
           </div>
         </div>
