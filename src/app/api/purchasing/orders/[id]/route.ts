@@ -27,7 +27,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const order = await db.purchaseOrder.findUnique({
     where: { id },
     include: {
-      items: { include: { item: { select: { purchaseUnit: true } } } },
+      items: { include: {
+        item: { select: { purchaseUnit: true } },
+        inventoryRoom: { select: { name: true } },
+        inventoryCategory: { select: { name: true } },
+      } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true, address: true } },
       booking: { select: { bookingCode: true, tripType: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
       createdBy: { select: { name: true } },
@@ -142,7 +146,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
     supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string
-    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string }[]
+    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
     transitStops?: string[]
   }
@@ -191,6 +195,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         discountType: true, discountValue: true, extraCharges: true,
         paymentRequests: { select: { id: true, amount: true, status: true } },
         reimbursements: { select: { id: true, amount: true, status: true } },
+        deliveryLocationId: true,
       },
     })
     if (!existing) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
@@ -210,6 +215,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'Items and pricing can no longer be edited — this PO already has receipts or payment records against it' }, { status: 400 })
       }
       if (!items || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+
+      // Same rule as PO creation: a ship-bound PO must say, per item, which Inventory
+      // Room/Category it's destined for.
+      const effectiveDeliveryLocationId = deliveryLocationId !== undefined ? (deliveryLocationId || null) : existing.deliveryLocationId
+      if (effectiveDeliveryLocationId) {
+        const deliveryLocation = await db.stockLocation.findUnique({ where: { id: effectiveDeliveryLocationId }, select: { type: true } })
+        if (deliveryLocation?.type === 'VESSEL') {
+          if (items.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
+            return NextResponse.json({ error: 'Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal' }, { status: 400 })
+          }
+          const roomIds = [...new Set(items.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
+          const categoryIds = [...new Set(items.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
+          const [validRooms, validCategories] = await Promise.all([
+            db.inventoryRoom.count({ where: { id: { in: roomIds }, locationId: effectiveDeliveryLocationId } }),
+            db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: effectiveDeliveryLocationId } } }),
+          ])
+          if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
+            return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+          }
+        }
+      }
     }
   }
 
@@ -299,6 +325,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           itemId: it.itemId || null, itemName: it.itemName,
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty), unitCost: Number(it.unitCost) || 0,
+          inventoryRoomId: it.inventoryRoomId || null, inventoryCategoryId: it.inventoryCategoryId || null,
         })),
       })
     }

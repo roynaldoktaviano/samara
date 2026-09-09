@@ -119,6 +119,32 @@ export async function POST(req: NextRequest) {
   if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
+  // A PO delivered to a ship must say, per item, which Inventory Room/Category it's
+  // destined for — lets the Inventory module know where a purchase will live without
+  // Purchasing having to re-enter it later. Not required for non-vessel destinations.
+  type OrderItemInput = {
+    itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string
+    inventoryRoomId?: string; inventoryCategoryId?: string
+  }
+  const typedItems = items as OrderItemInput[]
+  if (deliveryLocationId) {
+    const deliveryLocation = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { type: true } })
+    if (deliveryLocation?.type === 'VESSEL') {
+      if (typedItems.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
+        return NextResponse.json({ error: 'Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal' }, { status: 400 })
+      }
+      const roomIds = [...new Set(typedItems.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
+      const categoryIds = [...new Set(typedItems.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
+      const [validRooms, validCategories] = await Promise.all([
+        db.inventoryRoom.count({ where: { id: { in: roomIds }, locationId: deliveryLocationId } }),
+        db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: deliveryLocationId } } }),
+      ])
+      if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
+        return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+      }
+    }
+  }
+
   // Ordered list of intermediate transit stops between the supplier and deliveryLocationId
   // (the final destination) — see src/lib/purchasing/transitChain.ts for how each hop is
   // executed as an auto-chained StockTransfer.
@@ -187,13 +213,15 @@ export async function POST(req: NextRequest) {
         requestedByRole: requester.role?.title ?? null,
       }),
       items: {
-        create: items.map((it: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string }) => ({
+        create: typedItems.map((it) => ({
           id: crypto.randomUUID(),
           itemId: it.itemId || null,
           itemName: it.itemName,
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty),
           unitCost: Number(it.unitCost) || 0,
+          inventoryRoomId: it.inventoryRoomId || null,
+          inventoryCategoryId: it.inventoryCategoryId || null,
         })),
       },
       ...(cleanTransitStopIds.length > 0 && {

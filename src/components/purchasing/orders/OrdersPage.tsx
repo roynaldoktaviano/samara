@@ -26,7 +26,11 @@ interface Reimbursement {
   paidAt: string | null; paidBy: { name: string } | null; paidNotes: string | null; transferProofKeys: string[]
 }
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null; parentId?: string | null }
-interface OrderItem { id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null }
+interface OrderItem {
+  id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null
+  inventoryRoomId?: string | null; inventoryCategoryId?: string | null
+  inventoryRoom?: { name: string } | null; inventoryCategory?: { name: string } | null
+}
 interface TransitStop { locationId: string; sequence: number; location: { id: string; name: string; type: string } }
 interface TransitLegItem { id: string; itemId: string | null; itemName: string; requestedQty: number; dispatchedQty: number; receivedQty: number }
 interface TransitLeg {
@@ -308,7 +312,7 @@ function EmployeeCombobox({ value, employees, onChange }: {
   )
 }
 
-type OrderLine = { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }
+type OrderLine = { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean; inventoryRoomId: string; inventoryCategoryId: string }
 
 // Portal-based so the dropdown isn't clipped by the line-items table's
 // overflow-x-auto scroll container (a plain absolute/relative pair would get cut
@@ -598,7 +602,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // destination) — each hop is auto-chained into a normal StockTransfer, see
   // src/lib/purchasing/transitChain.ts.
   const [transitStopIds, setTransitStopIds] = useState<string[]>([])
-  const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean }[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+  const [lines, setLines] = useState<OrderLine[]>([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
+  // Inventory Room/Category pickers for a PO delivered to a ship — rooms scoped to the
+  // chosen deliveryLocationId, categories batch-loaded per room once its rooms are known
+  // (small counts per ship, cheaper than an on-demand fetch per line).
+  const [invRooms, setInvRooms] = useState<{ id: string; name: string }[]>([])
+  const [invCategoriesByRoom, setInvCategoriesByRoom] = useState<Record<string, { id: string; name: string }[]>>({})
   // Lets Enter in Qty jump straight to Unit Price without reaching for the mouse/Tab.
   const unitPriceRefs = useRef<(HTMLInputElement | null)[]>([])
   const qtyRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -718,6 +727,23 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
   useEffect(() => { load() }, [load])
 
+  // Delivery Location -> Inventory Rooms (+ every room's Categories, batch-loaded) — only
+  // meaningful for a ship destination; a PO to a warehouse/site has nothing to fetch.
+  useEffect(() => {
+    const loc = locations.find(l => l.id === deliveryLocationId)
+    if (loc?.type !== 'VESSEL') { setInvRooms([]); setInvCategoriesByRoom({}); return }
+    let cancelled = false
+    fetch(`/api/inventory/rooms?locationId=${deliveryLocationId}`).then(r => r.json()).then(async (rooms: { id: string; name: string }[]) => {
+      if (cancelled) return
+      setInvRooms(rooms)
+      const entries = await Promise.all(rooms.map(async r =>
+        [r.id, await fetch(`/api/inventory/categories?roomId=${r.id}`).then(rr => rr.json())] as const
+      ))
+      if (!cancelled) setInvCategoriesByRoom(Object.fromEntries(entries))
+    })
+    return () => { cancelled = true }
+  }, [deliveryLocationId, locations])
+
   // Deep-link from Item by Location's "click PO number" — open straight into
   // that PO's detail, then report back so the same id doesn't re-trigger.
   useEffect(() => {
@@ -749,7 +775,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
   // open: true so the new row's item search box (which is `autoFocus`) grabs focus right
   // away — lets you keep typing the next item without reaching for the mouse.
-  function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: true }]) }
+  function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: true, inventoryRoomId: '', inventoryCategoryId: '' }]) }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)) }
   function addCharge() { setExtraCharges(c => [...c, { label: '', amount: 0 }]) }
   function removeCharge(i: number) { setExtraCharges(c => c.filter((_, idx) => idx !== i)) }
@@ -788,22 +814,32 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // opening Create so leftover data from a cancelled Edit session doesn't leak in.
   function resetOrderForm() {
     setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setBookingId(''); setBookingLabel(''); setExpectedAt(''); setNotes('')
-    setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+    setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
     setExtraCharges([])
     setDiscountType('PERCENT'); setDiscountValue(0)
     setTransitStopIds([])
   }
 
+  // A PO delivered to a ship must say, per line, which Inventory Room/Category it's
+  // destined for — see the matching server-side check in POST/PATCH /api/purchasing/orders.
+  const isVesselDelivery = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
+
   async function submit() {
     setSaving(true); setSaveError('')
     if (!supplier.trim()) { setSaveError('Supplier name is required'); setSaving(false); return }
     if (!requestedByEmployeeId) { setSaveError('Requested By is required'); setSaving(false); return }
+    if (isVesselDelivery && lines.some(l => !l.inventoryRoomId || !l.inventoryCategoryId)) {
+      setSaveError('Every item needs a Room and Category for a PO delivered to a ship'); setSaving(false); return
+    }
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, bookingId: bookingId || undefined, expectedAt: expectedAt || undefined, notes,
         requestedByEmployeeId: requestedByEmployeeId || undefined,
-        items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
+        items: lines.map(l => ({
+          itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
+          inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
+        })),
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
         discountType: discountValue > 0 ? discountType : undefined,
         discountValue: discountValue > 0 ? discountValue : undefined,
@@ -1333,6 +1369,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <th className="text-left px-3 py-2.5 font-medium w-28">Qty</th>
                 <th className="text-left px-3 py-2.5 font-medium w-28">Unit</th>
                 <th className="text-left px-3 py-2.5 font-medium w-36">Unit Price</th>
+                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room</th>}
+                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Category</th>}
                 <th className="text-right px-4 py-2.5 font-medium w-32">Subtotal</th>
                 <th className="w-10" />
               </tr>
@@ -1391,6 +1429,24 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         }}
                       />
                     </td>
+                    {isVesselDelivery && (
+                      <td className="px-2 py-2.5">
+                        <select disabled={locked} className={inp} value={line.inventoryRoomId}
+                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryRoomId: e.target.value, inventoryCategoryId: '' }))}>
+                          <option value="">— Select —</option>
+                          {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                      </td>
+                    )}
+                    {isVesselDelivery && (
+                      <td className="px-2 py-2.5">
+                        <select disabled={locked || !line.inventoryRoomId} className={inp} value={line.inventoryCategoryId}
+                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryCategoryId: e.target.value }))}>
+                          <option value="">— Select —</option>
+                          {(invCategoriesByRoom[line.inventoryRoomId] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </td>
+                    )}
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
                       {subtotal > 0 ? fmtMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}
                     </td>
@@ -1743,8 +1799,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         itemUnit: it.unit ?? catalogItem?.purchaseUnit ?? '',
         orderedQty: it.orderedQty, unitCost: it.unitCost,
         search: '', open: false,
+        inventoryRoomId: it.inventoryRoomId ?? '', inventoryCategoryId: it.inventoryCategoryId ?? '',
       }
-    }) : [{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false }])
+    }) : [{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
     setExtraCharges(detail.extraCharges ?? [])
     setDiscountType(detail.discountType ?? 'PERCENT')
     setDiscountValue(detail.discountValue ?? 0)
@@ -1758,6 +1815,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     if (!supplier.trim()) { setEditPOError('Supplier name is required'); setEditPOSaving(false); return }
     if (!requestedByEmployeeId) { setEditPOError('Requested By is required'); setEditPOSaving(false); return }
     const locked = poFinancialsLocked(detail)
+    if (!locked && isVesselDelivery && lines.some(l => !l.inventoryRoomId || !l.inventoryCategoryId)) {
+      setEditPOError('Every item needs a Room and Category for a PO delivered to a ship'); setEditPOSaving(false); return
+    }
     const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1770,7 +1830,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         // in that case (the API rejects any transitStops touch after dispatchedAt).
         ...(!detail.dispatchedAt && { transitStops: transitStopIds }),
         ...(!locked && {
-          items: lines.map(l => ({ itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined) })),
+          items: lines.map(l => ({
+            itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
+            inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
+          })),
           extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
           discountType: discountValue > 0 ? discountType : undefined,
           discountValue: discountValue > 0 ? discountValue : undefined,
@@ -2055,7 +2118,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <tbody className="divide-y">
                 {detail.items.map((it, i) => (
                   <tr key={i} className="hover:bg-muted/20">
-                    <td className="px-5 py-3 font-medium">{it.itemName}</td>
+                    <td className="px-5 py-3 font-medium">
+                      {it.itemName}
+                      {(it.inventoryRoom || it.inventoryCategory) && (
+                        <p className="text-[11px] text-muted-foreground font-normal mt-0.5">
+                          {it.inventoryRoom?.name}{it.inventoryRoom && it.inventoryCategory ? ' · ' : ''}{it.inventoryCategory?.name}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right">{it.orderedQty} <span className="text-muted-foreground text-xs">{it.unit ?? ''}</span></td>
                     <td className="px-5 py-3 text-right">
                       <span className={it.receivedQty && it.receivedQty >= it.orderedQty ? 'text-green-600 font-medium' : it.receivedQty ? 'text-amber-600' : 'text-muted-foreground'}>

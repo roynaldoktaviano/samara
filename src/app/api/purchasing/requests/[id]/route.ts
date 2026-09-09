@@ -143,12 +143,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
   const body = await req.json()
   const {
-    status, transferFulfillments, edit,
+    status, transferFulfillments, roomAssignments, edit,
     deliveryLocationId, requestedByEmployeeId, notes, neededByDate, isUrgent, urgentReason, items: editItems,
     purpose, tripBookingId,
   } = body as {
     status?: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
     transferFulfillments?: { requestItemId: string; fromLocationId: string }[]
+    // Which Inventory Room/Category each item is destined for — required (validated
+    // below) when the PR's delivery location is a ship, for every item converting into
+    // a PO (not needed for items fulfilled via transfer instead).
+    roomAssignments?: { requestItemId: string; roomId: string; categoryId: string }[]
     edit?: boolean
     deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
@@ -341,7 +345,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // (rather than always creating a new one) keeps a trickle of approvals from the same
   // PR from fragmenting into a pile of near-duplicate POs.
   const poItems = readyItemIds ? request.items.filter(item => readyItemIds!.has(item.id) && !transferByRequestItemId.has(item.id)) : []
+  const roomAssignmentByItemId = new Map((roomAssignments ?? []).map(ra => [ra.requestItemId, ra]))
   if (status === 'CONVERTED' && poItems.length > 0) {
+    // A PR delivering to a ship must say, per item, which Inventory Room/Category it's
+    // destined for — same rule as creating/editing a PO directly (see
+    // src/app/api/purchasing/orders/route.ts).
+    if (request.deliveryLocationId) {
+      const deliveryLocation = await db.stockLocation.findUnique({ where: { id: request.deliveryLocationId }, select: { type: true } })
+      if (deliveryLocation?.type === 'VESSEL') {
+        const missing = poItems.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
+        if (missing.length > 0) {
+          return NextResponse.json({ error: `Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
+        }
+        const roomIds = [...new Set(poItems.map(it => roomAssignmentByItemId.get(it.id)!.roomId))]
+        const categoryIds = [...new Set(poItems.map(it => roomAssignmentByItemId.get(it.id)!.categoryId))]
+        const [validRooms, validCategories] = await Promise.all([
+          db.inventoryRoom.count({ where: { id: { in: roomIds }, locationId: request.deliveryLocationId } }),
+          db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: request.deliveryLocationId } } }),
+        ])
+        if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
+          return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+        }
+      }
+    }
+
     const requester = request.requestedByEmployeeId
       ? await db.employee.findUnique({
           where: { id: request.requestedByEmployeeId },
@@ -368,6 +395,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         unit: it.itemId ? null : it.unit,
         orderedQty: it.quantity,
         unitCost: it.estimatedCost,
+        inventoryRoomId: roomAssignmentByItemId.get(it.id)?.roomId ?? null,
+        inventoryCategoryId: roomAssignmentByItemId.get(it.id)?.categoryId ?? null,
       }))
 
       let groupPoId: string

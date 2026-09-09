@@ -298,6 +298,12 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   // routes onBack to the detail view instead of the list.
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
+  // Per-item Inventory Room/Category, required before converting an item into a PO when
+  // the PR's delivery location is a ship (not needed for items fulfilled via transfer
+  // instead — see convertToPO). Mirrors OrdersPage.tsx's own Room/Category pickers.
+  const [roomAssignment, setRoomAssignment] = useState<Record<string, { roomId: string; categoryId: string }>>({})
+  const [invRooms, setInvRooms] = useState<{ id: string; name: string }[]>([])
+  const [invCategoriesByRoom, setInvCategoriesByRoom] = useState<Record<string, { id: string; name: string }[]>>({})
   // Full PO detail (payments, transit legs, receipts) per linked PO id, fetched lazily so
   // the PR Timeline can render each PO's journey exactly like the PO's own Order Timeline.
   const [poFullDetails, setPoFullDetails] = useState<Record<string, PoTimelineDetail>>({})
@@ -445,6 +451,23 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
 
   useEffect(() => { load() }, [load])
 
+  // Delivery Location -> Inventory Rooms (+ every room's Categories, batch-loaded) — only
+  // meaningful when the PR's destination is a ship. Mirrors OrdersPage.tsx's same fetch.
+  useEffect(() => {
+    const locationId = detail?.deliveryLocation?.type === 'VESSEL' ? detail.deliveryLocation.id : null
+    if (!locationId) { setInvRooms([]); setInvCategoriesByRoom({}); return }
+    let cancelled = false
+    fetch(`/api/inventory/rooms?locationId=${locationId}`).then(r => r.json()).then(async (rooms: { id: string; name: string }[]) => {
+      if (cancelled) return
+      setInvRooms(rooms)
+      const entries = await Promise.all(rooms.map(async r =>
+        [r.id, await fetch(`/api/inventory/categories?roomId=${r.id}`).then(rr => rr.json())] as const
+      ))
+      if (!cancelled) setInvCategoriesByRoom(Object.fromEntries(entries))
+    })
+    return () => { cancelled = true }
+  }, [detail?.deliveryLocation])
+
   async function fetchDetail(id: string): Promise<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null> {
     setDetailLoading(true)
     const res = await fetch(`/api/purchasing/requests/${id}`)
@@ -493,6 +516,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     setView('detail')
     setApproveSummary(null)
     setFulfillment({})
+    setRoomAssignment({})
     setPoFullDetails({})
     setPrFollowUps([])
     await fetchDetail(req.id)
@@ -507,7 +531,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     if (!deepLinkId) return
     let cancelled = false
     ;(async () => {
-      setApproveSummary(null); setFulfillment({}); setPoFullDetails({})
+      setApproveSummary(null); setFulfillment({}); setRoomAssignment({}); setPoFullDetails({})
       const data = await fetchDetail(deepLinkId)
       if (!cancelled && data) { setSelected(data); setView('detail') }
       onDeepLinkHandled?.()
@@ -546,16 +570,30 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
       alert(`Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}`)
       return
     }
+    // A PR delivering to a ship must say, per item going the PO route (not transfer),
+    // which Inventory Room/Category it's destined for — same rule as creating a PO
+    // directly, see OrdersPage.tsx.
+    if (detail.deliveryLocation?.type === 'VESSEL') {
+      const poBound = settleable.filter(item => item.supplierId && !fulfillment[item.id!])
+      const missingRoom = poBound.filter(item => !roomAssignment[item.id!]?.roomId || !roomAssignment[item.id!]?.categoryId)
+      if (missingRoom.length > 0) {
+        alert(`Set a Room and Category first for: ${missingRoom.map(i => i.itemName).join(', ')}`)
+        return
+      }
+    }
     // Some items still need a supplier — proceed anyway and let the server convert just
     // the ready ones, leaving the rest on this PR for a later pass (see remainingItems).
     if (missingSupplier.length > 0 && !confirm(`These items still need a supplier and will stay on this PR for later: ${missingSupplier.map(i => i.itemName).join(', ')}.\n\nConvert the rest to PO now?`)) return
     const transferFulfillments = Object.entries(fulfillment)
       .filter(([, fromLocationId]) => fromLocationId)
       .map(([requestItemId, fromLocationId]) => ({ requestItemId, fromLocationId: fromLocationId as string }))
+    const roomAssignments = Object.entries(roomAssignment)
+      .filter(([requestItemId]) => !fulfillment[requestItemId])
+      .map(([requestItemId, a]) => ({ requestItemId, roomId: a.roomId, categoryId: a.categoryId }))
     const res = await fetch(`/api/purchasing/requests/${selected.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'CONVERTED', transferFulfillments }),
+      body: JSON.stringify({ status: 'CONVERTED', transferFulfillments, roomAssignments }),
     })
     const data = await res.json()
     if (!res.ok) { alert(data.error ?? 'Failed to convert to PO'); return }
@@ -1607,6 +1645,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium">Decision</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
+                  {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium">Room / Category</th>}
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -1771,6 +1810,33 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                                 ))}
                               </select>
                               <ChevronDown className={`h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${chosenFromLocationId ? 'text-blue-700' : 'text-muted-foreground'}`} />
+                            </div>
+                          )}
+                        </td>
+                      )}
+                      {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && (
+                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
+                          {chosenFromLocationId ? (
+                            <span className="text-xs text-muted-foreground/60 italic">— (transfer, not needed)</span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28"
+                                value={roomAssignment[item.id!]?.roomId ?? ''}
+                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: e.target.value, categoryId: '' } }))}
+                              >
+                                <option value="">Room...</option>
+                                {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                              </select>
+                              <select
+                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28 disabled:opacity-50"
+                                value={roomAssignment[item.id!]?.categoryId ?? ''}
+                                disabled={!roomAssignment[item.id!]?.roomId}
+                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
+                              >
+                                <option value="">Category...</option>
+                                {(invCategoriesByRoom[roomAssignment[item.id!]?.roomId ?? ''] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
                             </div>
                           )}
                         </td>

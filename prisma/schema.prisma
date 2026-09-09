@@ -2561,11 +2561,22 @@ model PurchaseOrderItem {
   orderedQty  Float
   receivedQty Float   @default(0)
   unitCost    Float   @default(0)
+  // Which Inventory Room/Category this item is destined for — required (enforced at the
+  // API layer) whenever the PO's deliveryLocation is a ship (StockLocation.type ===
+  // 'VESSEL'), so goods purchased for a vessel already know where they'll live in the
+  // Inventory module. Null for POs to non-vessel locations, and for POs created before
+  // this field existed.
+  inventoryRoomId     String?
+  inventoryCategoryId String?
 
-  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  item  PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  order             PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item              PurchaseItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  inventoryRoom     InventoryRoom?     @relation(fields: [inventoryRoomId], references: [id], onDelete: SetNull)
+  inventoryCategory InventoryCategory? @relation(fields: [inventoryCategoryId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([inventoryRoomId])
+  @@index([inventoryCategoryId])
 }
 
 model GoodsReceipt {
@@ -2819,6 +2830,7 @@ model InventoryRoom {
   categories InventoryCategory[]
   items      InventoryItem[]
   opnames    InventoryOpname[]
+  poItems    PurchaseOrderItem[]
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -2833,8 +2845,9 @@ model InventoryCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  room  InventoryRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  items InventoryItem[]
+  room    InventoryRoom       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  items   InventoryItem[]
+  poItems PurchaseOrderItem[]
 
   @@unique([roomId, name])
   @@index([roomId])
