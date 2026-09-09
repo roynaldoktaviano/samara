@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon, FileText } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import type { OtherIncomeItem } from '@/lib/payroll'
 import AddFreelanceModal, { type FreelanceEmployee } from './AddFreelanceModal'
 
@@ -36,6 +37,26 @@ interface Employee {
   replacingEmployeeId: string | null; replacingEmployee: { id: string; fullName: string } | null
   tripAssignments: { booking: { id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string; yacht: { name: string } | null } }[]
 }
+
+interface LeaveRequestRow {
+  id: string; employee: { id: string }
+  startDate: string; endDate: string; days: number; reason: string | null
+  status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
+  requiresCrewApproval: boolean
+}
+
+interface PerformanceReviewRow {
+  id: string; employee: { id: string }
+  status: 'REQUESTED' | 'COMPLETED'
+  requestedAt: string; reviewedAt: string | null; reviewDate: string | null
+  attendanceDiscipline: string | null; workPerformance: string | null; communicationTeamwork: string | null
+  attitudeResponsibility: string | null; initiativeProblemSolving: string | null; adaptabilityLearning: string | null
+  managerComments: string | null
+  decision: string | null; salaryIncrementApproved: boolean
+  currentSalary: number | null; newSalary: number | null; reasonNotes: string | null
+}
+
+interface CompensationBandRow { id: string; roleId: string; level: 'HIGH' | 'MEDIUM' | 'LOW'; minSalary: number; maxSalary: number }
 
 const BLANK = {
   fullName: '', employeeNumber: '', legalEntityId: '', businessUnitId: '', locationId: '', department: '', roleId: '', level: '', gender: '', employmentStatus: '', leaveBalance: '', leaveEntitlementPolicy: '',
@@ -77,6 +98,15 @@ function formatServiceYear(joinDate: string | null, endDate: string | null): str
     months += 12
   }
   return `${years}Year${months}Months${days}Days`
+}
+
+const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
+const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+function monthsRemaining(endDateStr: string): number {
+  const end = new Date(endDateStr)
+  const now = new Date()
+  return Math.max(0, (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth()))
 }
 
 const RESIGN_STATUSES = [
@@ -203,6 +233,370 @@ function UserCombobox({ value, options, onChange }: {
   )
 }
 
+const DETAIL_TABS = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'contract', label: 'Contract' },
+  { value: 'compensation', label: 'Compensation' },
+  { value: 'leave', label: 'Leave' },
+  { value: 'reviews', label: 'Reviews' },
+  { value: 'documents', label: 'Documents' },
+] as const
+type DetailTab = typeof DETAIL_TABS[number]['value']
+
+function detailLeaveStatusLabel(r: LeaveRequestRow): string {
+  if (r.status === 'PENDING') return r.requiresCrewApproval ? 'Awaiting Cruise Director/Captain' : 'Pending'
+  if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
+  return r.status.charAt(0) + r.status.slice(1).toLowerCase()
+}
+
+const REVIEW_STATUS_LABEL: Record<string, string> = { REQUESTED: 'Requested', COMPLETED: 'Completed' }
+const RATING_LABEL: Record<string, string> = { NEEDS_IMPROVEMENT: 'Needs Improvement', GOOD: 'Good', VERY_GOOD: 'Very Good', EXCELLENT: 'Excellent' }
+const RATING_COLOR: Record<string, string> = { NEEDS_IMPROVEMENT: 'text-red-700', GOOD: 'text-amber-700', VERY_GOOD: 'text-blue-700', EXCELLENT: 'text-green-700' }
+const DECISION_LABEL: Record<string, string> = { CONFIRM_PERMANENT: 'Confirmed as Permanent', EXTEND_PROBATION: 'Probation Extended', END_EMPLOYMENT: 'Employment Ended' }
+const REVIEW_CRITERIA: { key: keyof PerformanceReviewRow; label: string }[] = [
+  { key: 'attendanceDiscipline', label: 'Attendance & Discipline' },
+  { key: 'workPerformance', label: 'Work Performance' },
+  { key: 'communicationTeamwork', label: 'Communication & Teamwork' },
+  { key: 'attitudeResponsibility', label: 'Attitude & Responsibility' },
+  { key: 'initiativeProblemSolving', label: 'Initiative & Problem Solving' },
+  { key: 'adaptabilityLearning', label: 'Adaptability & Learning' },
+]
+
+const DOC_FIELDS: { key: 'seamanBookFiles' | 'bstFiles' | 'medicalCheckupFiles' | 'ijazahFiles' | 'certificateFiles'; label: string }[] = [
+  { key: 'seamanBookFiles', label: 'Buku Pelaut' },
+  { key: 'bstFiles', label: 'BST (Basic Safety Training)' },
+  { key: 'medicalCheckupFiles', label: 'Medical Check Up' },
+  { key: 'ijazahFiles', label: 'Ijazah' },
+  { key: 'certificateFiles', label: 'Certificates' },
+]
+
+function initials(name: string): string {
+  return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-muted/40 rounded-xl px-4 py-3.5">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-base font-bold mt-1.5 leading-tight">{value}</div>
+    </div>
+  )
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{title}</h4>
+      {children}
+    </div>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5 text-sm border-b border-gray-100 last:border-0">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="font-semibold text-right">{value ?? '—'}</span>
+    </div>
+  )
+}
+
+function DetailEmpty({ children }: { children: React.ReactNode }) {
+  return <div className="text-sm text-muted-foreground text-center py-10 border-2 border-dashed rounded-xl">{children}</div>
+}
+
+function DetailBadge({ tone, children }: { tone: 'green' | 'gray' | 'amber' | 'blue' | 'red'; children: React.ReactNode }) {
+  const TONES: Record<string, string> = {
+    green: 'bg-green-100 text-green-700', gray: 'bg-gray-100 text-gray-600',
+    amber: 'bg-amber-100 text-amber-700', blue: 'bg-blue-100 text-blue-700', red: 'bg-red-100 text-red-700',
+  }
+  return <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${TONES[tone]}`}>{children}</span>
+}
+
+function DocFileRow({ name, onDownload }: { name: string; onDownload: () => void }) {
+  return (
+    <div className="flex items-center gap-3 border border-gray-100 rounded-xl px-4 py-3">
+      <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+        <FileText className="h-4 w-4" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold truncate">{name}</p>
+      </div>
+      <button type="button" onClick={onDownload} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
+        <Download className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+// Read-only "detail view" opened by clicking an employee row — mirrors the shape of the
+// Edit form's tabs (Details/Contact/Bank/Salary/Documents) but organized for glanceable
+// review rather than data entry, with Leave/Reviews pulled in from their own modules.
+// The Edit button in the footer hands off to the existing edit modal for changes.
+function EmployeeDetailModal({
+  employee, leaveRequests, performanceReviews, compensationBand, tab, onTabChange, onClose, onEdit,
+}: {
+  employee: Employee
+  leaveRequests: LeaveRequestRow[]
+  performanceReviews: PerformanceReviewRow[]
+  compensationBand: CompensationBandRow | null
+  tab: DetailTab
+  onTabChange: (t: DetailTab) => void
+  onClose: () => void
+  onEdit: () => void
+}) {
+  const years = formatServiceYear(employee.joinDate, employee.resignedAt)
+  const otherIncomeTotal = employee.otherIncome.reduce((sum, i) => sum + (i.amount || 0), 0)
+  const rangePosition = compensationBand && employee.basicSalary != null
+    ? Math.min(100, Math.max(0, ((employee.basicSalary - compensationBand.minSalary) / Math.max(1, compensationBand.maxSalary - compensationBand.minSalary)) * 100))
+    : null
+  const approvedDays = leaveRequests.filter(r => r.status === 'APPROVED').reduce((sum, r) => sum + r.days, 0)
+  const pendingCount = leaveRequests.filter(r => r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL').length
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden">
+          <div className="flex items-start justify-between px-8 pt-7 pb-5">
+            <div className="flex items-center gap-4 min-w-0">
+              <span className="h-16 w-16 rounded-full bg-[#f5f0e0] text-[#8a744a] font-bold text-xl flex items-center justify-center shrink-0">
+                {initials(employee.fullName)}
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-bold text-2xl leading-tight truncate">{employee.fullName}</h3>
+                <p className="text-sm text-muted-foreground mt-1 truncate">
+                  {employee.employeeNumber} · {employee.role?.title ?? 'No role'} · {employee.location?.name ?? 'No location'}
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors shrink-0">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 px-8 border-b overflow-x-auto">
+            {DETAIL_TABS.map(t => (
+              <button key={t.value} type="button" onClick={() => onTabChange(t.value)}
+                className={`px-4 py-3 text-sm font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                  tab === t.value ? 'border-[#bdac7e] text-[#8a744a]' : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="px-8 py-7 space-y-7 max-h-[65vh] overflow-y-auto">
+            {tab === 'overview' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                  <DetailSection title="Employment Assignment">
+                    <DetailRow label="Legal Entity" value={employee.legalEntity?.name} />
+                    <DetailRow label="Business Unit" value={employee.businessUnit?.name} />
+                    <DetailRow label="Work Location" value={employee.location?.name} />
+                    <DetailRow label="Department" value={employee.department} />
+                    <DetailRow label="Manager" value={employee.manager?.fullName} />
+                    <DetailRow label="Join Date" value={employee.joinDate ? `${fmtDate(employee.joinDate)} · ${years}` : null} />
+                    <DetailRow label="Status" value={<DetailBadge tone={employee.isActive ? 'green' : 'gray'}>{employee.isActive ? 'Active' : 'Inactive'}</DetailBadge>} />
+                  </DetailSection>
+                  <DetailSection title="Contact & Emergency">
+                    <DetailRow label="Phone" value={employee.phone} />
+                    <DetailRow label="Personal Email" value={employee.personalEmail} />
+                    <DetailRow label="NIK / Passport" value={employee.nikPassport} />
+                    <DetailRow label="Nationality" value={employee.nationality} />
+                    <DetailRow label="Emergency Contact" value={employee.emergencyContactName ? `${employee.emergencyContactName}${employee.emergencyContactRelation ? ` (${employee.emergencyContactRelation})` : ''}` : null} />
+                    <DetailRow label="Emergency Phone" value={employee.emergencyContactPhone} />
+                  </DetailSection>
+                </div>
+                {!employee.isActive && employee.resignedAt && (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3.5 text-sm text-red-800">
+                    <b>{RESIGN_STATUS_LABEL[employee.resignStatus ?? ''] ?? 'Left'}</b> on {fmtDate(employee.resignedAt)}
+                    {employee.resignReason && <p className="mt-1.5 text-red-700">{employee.resignReason}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'contract' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-4 gap-3">
+                  <DetailStat label="Contract Type" value={employee.employmentStatus ?? '—'} />
+                  <DetailStat label="Start" value={employee.contractStartDate ? fmtDate(employee.contractStartDate) : '—'} />
+                  <DetailStat label="End" value={employee.contractEndDate ? fmtDate(employee.contractEndDate) : 'No end date'} />
+                  <DetailStat label="Remaining" value={employee.contractEndDate ? `${monthsRemaining(employee.contractEndDate)} months` : 'Permanent'} />
+                </div>
+                <DetailSection title="Contract Documents">
+                  {employee.contractFiles.length === 0 ? (
+                    <DetailEmpty>No contract documents uploaded.</DetailEmpty>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {employee.contractFiles.map((f, i) => (
+                        <DocFileRow key={i} name={`Contract${employee.contractFiles.length > 1 ? ` — file ${i + 1}` : ''}`}
+                          onDownload={() => downloadDataUrl(f, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-contract-${i + 1}.${extFromDataUrl(f)}`)} />
+                      ))}
+                    </div>
+                  )}
+                </DetailSection>
+              </div>
+            )}
+
+            {tab === 'compensation' && (
+              <div className="space-y-6">
+                {employee.employmentStatus === 'Freelance' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <DetailStat label="Freelance Fee" value={employee.freelanceFee != null ? fmtMoney(employee.freelanceFee) : '—'} />
+                    <DetailStat label="Fee Type" value={employee.freelanceFeeType ?? '—'} />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-3">
+                    <DetailStat label="Basic Salary" value={employee.basicSalary != null ? fmtMoney(employee.basicSalary) : '—'} />
+                    <DetailStat label="Allowance" value={employee.allowance != null ? fmtMoney(employee.allowance) : '—'} />
+                    <DetailStat label="Uang Layar (base)" value={employee.uangLayar != null ? fmtMoney(employee.uangLayar) : '—'} />
+                    <DetailStat label="Uang Makan (per day)" value={employee.uangMakan != null ? fmtMoney(employee.uangMakan) : '—'} />
+                    <DetailStat label="THR" value={employee.thr != null ? fmtMoney(employee.thr) : '—'} />
+                    <DetailStat label="Other Income" value={fmtMoney(otherIncomeTotal)} />
+                  </div>
+                )}
+
+                {employee.otherIncome.length > 0 && (
+                  <DetailSection title="Other Income Components">
+                    <div className="space-y-2.5">
+                      {employee.otherIncome.map(item => (
+                        <div key={item.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{item.name || 'Untitled'}</p>
+                            {item.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>}
+                          </div>
+                          <span className="text-sm font-bold shrink-0">{fmtMoney(item.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </DetailSection>
+                )}
+
+                {employee.role && (
+                  <DetailSection title="Role Compensation Range">
+                    {compensationBand ? (
+                      <div className="border border-gray-100 rounded-xl px-5 py-4">
+                        <p className="text-sm font-bold">{fmtMoney(compensationBand.minSalary)} — {fmtMoney(compensationBand.maxSalary)}</p>
+                        <div className="relative h-2 bg-muted rounded-full mt-3.5">
+                          <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-[#bdac7e] border-2 border-white shadow" style={{ left: `calc(${rangePosition ?? 0}% - 7px)` }} />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2.5">
+                          {employee.basicSalary != null ? `Basic salary is positioned at ${Math.round(rangePosition ?? 0)}% of the approved range for ${employee.level?.toLowerCase() ?? 'unset'} level.` : 'No basic salary set.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <DetailEmpty>No compensation band set for this role{employee.level ? ` at ${employee.level.toLowerCase()} level` : ''}.</DetailEmpty>
+                    )}
+                  </DetailSection>
+                )}
+              </div>
+            )}
+
+            {tab === 'leave' && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-3 gap-3">
+                  <DetailStat label="Entitlement Policy" value={employee.leaveEntitlementPolicy ?? '—'} />
+                  <DetailStat label="Current Balance" value={employee.leaveBalance != null ? `${employee.leaveBalance} days` : '—'} />
+                  <DetailStat label="Approved This Cycle" value={`${approvedDays} days`} />
+                </div>
+                {pendingCount > 0 && (
+                  <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-2.5">{pendingCount} request{pendingCount !== 1 ? 's' : ''} awaiting decision.</p>
+                )}
+                {leaveRequests.length === 0 ? (
+                  <DetailEmpty>No leave requests yet.</DetailEmpty>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50 text-xs text-muted-foreground">
+                        <tr>
+                          <th className="text-left px-4 py-3 font-semibold">Dates</th>
+                          <th className="text-left px-4 py-3 font-semibold">Reason</th>
+                          <th className="text-center px-4 py-3 font-semibold">Days</th>
+                          <th className="text-left px-4 py-3 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {leaveRequests.map(r => (
+                          <tr key={r.id}>
+                            <td className="px-4 py-3 whitespace-nowrap">{fmtDate(r.startDate)} → {fmtDate(r.endDate)}</td>
+                            <td className="px-4 py-3 text-muted-foreground truncate max-w-40">{r.reason ?? '—'}</td>
+                            <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
+                            <td className="px-4 py-3"><DetailBadge tone={r.status === 'APPROVED' ? 'green' : r.status === 'REJECTED' ? 'red' : r.status === 'PENDING_HR_APPROVAL' ? 'blue' : 'amber'}>{detailLeaveStatusLabel(r)}</DetailBadge></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'reviews' && (
+              <div className="space-y-3.5">
+                {performanceReviews.length === 0 ? (
+                  <DetailEmpty>No performance review history yet.</DetailEmpty>
+                ) : performanceReviews.map(r => (
+                  <div key={r.id} className="border border-gray-100 rounded-xl px-5 py-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <DetailBadge tone={r.status === 'COMPLETED' ? 'green' : 'amber'}>{REVIEW_STATUS_LABEL[r.status]}</DetailBadge>
+                      <span className="text-xs text-muted-foreground">{fmtDate(r.reviewDate ?? r.requestedAt)}</span>
+                    </div>
+                    {REVIEW_CRITERIA.some(c => r[c.key]) && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {REVIEW_CRITERIA.filter(c => r[c.key]).map(c => (
+                          <span key={c.key} className={`text-xs font-semibold bg-muted/60 rounded-full px-3 py-1.5 ${RATING_COLOR[r[c.key] as string]}`}>
+                            {c.label}: {RATING_LABEL[r[c.key] as string]}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {r.decision && <p className="text-sm font-semibold mt-3">{DECISION_LABEL[r.decision]}</p>}
+                    {r.salaryIncrementApproved && r.newSalary != null && (
+                      <p className="text-xs font-medium text-green-700 mt-1.5">Salary increment approved: {r.currentSalary != null ? `${fmtMoney(r.currentSalary)} → ` : ''}{fmtMoney(r.newSalary)}</p>
+                    )}
+                    {r.managerComments && <p className="text-sm text-muted-foreground mt-2.5">{r.managerComments}</p>}
+                    {r.reasonNotes && <p className="text-xs text-muted-foreground mt-2 italic">{r.reasonNotes}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tab === 'documents' && (
+              <div className="space-y-6">
+                {DOC_FIELDS.map(f => (
+                  <DetailSection key={f.key} title={f.label}>
+                    {employee[f.key].length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Not uploaded.</p>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {employee[f.key].map((file, i) => (
+                          <DocFileRow key={i} name={`${f.label}${employee[f.key].length > 1 ? ` — file ${i + 1}` : ''}`}
+                            onDownload={() => downloadDataUrl(file, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-${f.key}-${i + 1}.${extFromDataUrl(file)}`)} />
+                        ))}
+                      </div>
+                    )}
+                  </DetailSection>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-8 py-5 border-t bg-gray-50/80">
+            <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground border rounded-xl hover:bg-white transition-all">
+              Close
+            </button>
+            <button onClick={onEdit} className="flex items-center gap-2 px-6 py-2.5 text-sm text-white rounded-xl font-semibold transition-colors shadow-sm bg-[#bdac7e] hover:bg-[#a89860]">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([])
@@ -210,8 +604,14 @@ export default function EmployeesPage() {
   const [roles, setRoles] = useState<EmployeeRole[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequestRow[]>([])
+  const [performanceReviews, setPerformanceReviews] = useState<PerformanceReviewRow[]>([])
+  const [compensationBands, setCompensationBands] = useState<CompensationBandRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+
+  const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview')
 
   const [viewMode, setViewMode] = useState<'table' | 'location'>('table')
   const [entityFilter, setEntityFilter] = useState('All')
@@ -243,7 +643,7 @@ export default function EmployeesPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [empRes, entRes, buRes, roleRes, locRes, userRes] = await Promise.all([
+    const [empRes, entRes, buRes, roleRes, locRes, userRes, leaveRes, reviewRes, bandRes] = await Promise.all([
       fetch('/api/hr/employees'),
       fetch('/api/hr/legal-entities'),
       fetch('/api/hr/business-units'),
@@ -252,6 +652,12 @@ export default function EmployeesPage() {
       // Admin/Super Admin only — HR editors won't be able to link login accounts,
       // the picker below just stays empty for them rather than failing the page load.
       fetch('/api/users'),
+      // Feed the employee detail view's Leave/Reviews/Compensation tabs. HR-only
+      // endpoints — for a role that can see this page but not those, these just come
+      // back non-ok and those tabs render empty rather than failing the page load.
+      fetch('/api/hr/leave-requests'),
+      fetch('/api/hr/performance-reviews'),
+      fetch('/api/hr/compensation-bands'),
     ])
     if (empRes.ok) setEmployees(await empRes.json())
     if (entRes.ok) setLegalEntities(await entRes.json())
@@ -259,10 +665,15 @@ export default function EmployeesPage() {
     if (roleRes.ok) setRoles(await roleRes.json())
     if (locRes.ok) setLocations(await locRes.json())
     if (userRes.ok) setUsers(await userRes.json())
+    if (leaveRes.ok) setLeaveRequests(await leaveRes.json())
+    if (reviewRes.ok) setPerformanceReviews(await reviewRes.json())
+    if (bandRes.ok) setCompensationBands(await bandRes.json())
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  function openDetail(emp: Employee) { setDetailEmployee(emp); setDetailTab('overview') }
 
   function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModalTab('details'); setModal(true) }
   function openEdit(emp: Employee) {
@@ -553,7 +964,7 @@ export default function EmployeesPage() {
               </div>
               <div className="divide-y">
                 {emps.map(emp => (
-                  <div key={emp.id} onClick={() => openEdit(emp)}
+                  <div key={emp.id} onClick={() => openDetail(emp)}
                     className={`flex items-center justify-between px-5 py-3 cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                     <div className="min-w-0">
                       <p className="font-medium text-sm flex items-center gap-1.5 truncate">
@@ -604,7 +1015,7 @@ export default function EmployeesPage() {
                   {hasActiveFilters ? 'No employees match your filters.' : 'No employees yet. Click "Add Employee" to get started.'}
                 </td></tr>
               ) : paginated.map(emp => (
-                <tr key={emp.id} onClick={() => openEdit(emp)} className={`cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
+                <tr key={emp.id} onClick={() => openDetail(emp)} className={`cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium flex items-center gap-1.5">
                       {emp.fullName}
@@ -1265,6 +1676,25 @@ export default function EmployeesPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Employee Detail (read-only) ── */}
+      {detailEmployee && (
+        <EmployeeDetailModal
+          employee={detailEmployee}
+          leaveRequests={leaveRequests.filter(r => r.employee.id === detailEmployee.id)}
+          performanceReviews={performanceReviews.filter(r => r.employee.id === detailEmployee.id)}
+          compensationBand={compensationBands.find(b => b.roleId === detailEmployee.role?.id && b.level === detailEmployee.level) ?? null}
+          tab={detailTab}
+          onTabChange={setDetailTab}
+          onClose={() => setDetailEmployee(null)}
+          onEdit={() => {
+            const emp = detailEmployee
+            setDetailEmployee(null)
+            if (emp.employmentStatus === 'Freelance') { setEditingFreelance(emp); setFreelanceModal(true) }
+            else openEdit(emp)
+          }}
+        />
       )}
 
       {freelanceModal && (
