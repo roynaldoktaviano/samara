@@ -1,18 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User } from 'lucide-react'
+import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User, FileDown } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null }
-// Normalized picker row — flattens /api/purchasing/stock's discriminated
-// {kind:'stock', item:{...}} / {kind:'non-stock', itemName, sourcePoId, ...}
-// response into one shape the picker can key/filter/render uniformly. A
-// non-stock row's own id (its StockLot id) is what breaks the collision bug
-// stock items don't have: two different custom items at the same location
-// used to both synthesize to the same `item.id: null`.
+
 interface StockPickerRow {
   kind: 'stock' | 'non-stock'
   id: string
@@ -788,6 +783,12 @@ export default function TransfersPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
+              {detail.status !== 'CANCELLED' && (
+                <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print packing list untuk transfer ini"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">
+                  <FileDown className="h-3.5 w-3.5" /> Packing List
+                </button>
+              )}
               {detail.status === 'PENDING' && <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>}
               {detail.status === 'DISPATCHED' && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
               {detail.status === 'DISPATCHED' && (
