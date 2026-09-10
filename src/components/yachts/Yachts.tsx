@@ -23,8 +23,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X } from 'lucide-react'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X, DollarSign } from 'lucide-react'
 import LegalDocumentsPanel from '@/components/hr/LegalDocumentsPanel'
+import YachtPricingPage from '@/components/yachts/YachtPricingPage'
 
 interface PricingTier { nights: number; price: number }
 // destinationId: null = fallback rate applying regardless of destination (the original
@@ -109,6 +110,7 @@ export default function Yachts() {
   const [formStep,     setFormStep]     = useState(1)
   const [error,        setError]        = useState('')
   const [docsTarget,   setDocsTarget]   = useState<YachtRecord | null>(null)
+  const [pricingYacht, setPricingYacht] = useState<YachtRecord | null>(null)
 
   /* form state */
   const [name,        setName]    = useState('')
@@ -353,6 +355,10 @@ export default function Yachts() {
     y.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (y.model ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  if (pricingYacht && canEdit) {
+    return <YachtPricingPage yacht={pricingYacht} onBack={() => setPricingYacht(null)} />
+  }
 
   return (
     <div className="space-y-6">
@@ -867,6 +873,13 @@ export default function Yachts() {
                                   onClick={() => setDocsTarget(y)}
                                 >
                                   <FileText className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Manage Pricing"
+                                  onClick={() => setPricingYacht(y)}
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
