@@ -18,6 +18,7 @@ interface PaymentRequest {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
   createdAt: string; requestedBy: { name: string } | null
   paidAt: string | null; paidBy: { name: string } | null; paidNotes: string | null; transferProofKeys: string[]
+  rejectionReason: string | null; rejectedBy: { name: string } | null
 }
 interface Reimbursement {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string
@@ -109,14 +110,14 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
   )
 }
 
-const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
-const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
+const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled', REJECTED: 'Payment Rejected' }
+const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700', REJECTED: 'bg-pink-100 text-pink-700' }
 // Where the goods physically are right now — distinct from the static final destination.
 // For routed POs mid-transit, reuses the server-computed currentLegLabel (which already
 // tracks the open transit leg); for a direct (no transit stops) PO, derives it from
 // status + dispatchedAt instead, since there's no per-leg data to draw from.
-const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid' }
-const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700' }
+const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid', REJECTED: 'Rejected' }
+const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700' }
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
@@ -944,7 +945,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // above), so those tabs would always read 0 there — leave them out rather than clutter.
   const STATUS_TAB_ORDER = warehouseView
     ? ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED']
-    : ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
+    : ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'REJECTED', 'CANCELLED']
   const statusTabs = [
     { key: 'ALL', label: 'All', count: preStatusOrders.length },
     ...STATUS_TAB_ORDER.map(s => ({ key: s, label: STATUS_LABEL[s], count: preStatusOrders.filter(o => o.status === s).length })),
@@ -1750,9 +1751,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     ...detail.paymentRequests.map(p => ({ ...p, kind: 'payment' as const })),
     ...detail.reimbursements.map(r => ({ ...r, kind: 'reimbursement' as const })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null
-  // Only the most recent installment can be edited (and only before it's
-  // paid) — earlier, already-settled installments are history.
-  const canEditLatest = !!latestRecord && latestRecord.status !== 'PAID'
+  // Only the most recent installment can be edited, and only while still PENDING —
+  // once PAID it's settled, and once REJECTED it's terminal (editing wouldn't put it
+  // back in front of Finance since there's no way back to PENDING from here).
+  const canEditLatest = !!latestRecord && latestRecord.status === 'PENDING'
 
   function openEditAction() {
     if (!detail) return
@@ -1975,7 +1977,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <Camera className="h-3.5 w-3.5" /> Goods In Delivery
               </button>
             )}
-            {['DRAFT', 'ORDERED'].includes(detail.status) && canTransit && !hasAnyPaymentRecord && (
+            {canTransit && (
+              detail.status === 'REJECTED' || (['DRAFT', 'ORDERED'].includes(detail.status) && !hasAnyPaymentRecord)
+            ) && (
               <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }}
                 className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
                 Cancel PO
@@ -2298,13 +2302,19 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
-                        {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : 'PENDING']}
+                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : p.status === 'REJECTED' ? 'REJECTED' : 'PENDING']}`}>
+                        {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : p.status === 'REJECTED' ? 'REJECTED' : 'PENDING']}
                       </span>
                       {isCard && <span className="text-[10px] text-muted-foreground">Debit Paid</span>}
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
+                    {p.status === 'REJECTED' && p.rejectionReason && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                        <span className="font-semibold">Rejected: </span>{p.rejectionReason}
+                        {p.rejectedBy?.name && <span className="text-red-500"> · by {p.rejectedBy.name}</span>}
+                      </div>
+                    )}
                     {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                     <div className={p.status === 'PAID' && p.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>

@@ -51,6 +51,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         include: {
           requestedBy: { select: { name: true } },
           paidBy: { select: { name: true } },
+          rejectedBy: { select: { name: true } },
         },
       },
       reimbursements: {

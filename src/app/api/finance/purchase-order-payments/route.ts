@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
       },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
+      rejectedBy: { select: { name: true } },
     },
   })
 
@@ -59,7 +60,10 @@ export async function GET(request: NextRequest) {
     ]
     const labeled = labelInstallments(grandTotal, allInstallments)
     const thisIdx = labeled.findIndex(i => i.id === r.id)
-    const priorInstallments = labeled.slice(0, thisIdx)
+    // thisIdx is -1 for a REJECTED request (labelInstallments excludes those from its
+    // cumulative math since they never moved money) — slice(0, -1) would otherwise drop
+    // the last real installment instead of yielding an empty list.
+    const priorInstallments = thisIdx === -1 ? [] : labeled.slice(0, thisIdx)
     const requestedBefore = priorInstallments.reduce((s, i) => s + i.amount, 0)
 
     return {

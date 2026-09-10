@@ -29,6 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       },
       requestedBy: { select: { name: true } },
       paidBy: { select: { name: true } },
+      rejectedBy: { select: { name: true } },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -46,8 +47,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await db.pOPaymentRequest.findUnique({ where: { id }, select: { status: true, orderId: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (existing.status === 'PAID') return NextResponse.json({ error: 'This payment request has already been marked as paid' }, { status: 409 })
+  if (existing.status === 'REJECTED') return NextResponse.json({ error: 'This payment request has already been rejected' }, { status: 409 })
 
   const body = await req.json()
+
+  if (body.action === 'REJECT') {
+    const rejectionReason = typeof body.rejectionReason === 'string' ? body.rejectionReason.trim() : ''
+    if (!rejectionReason) return NextResponse.json({ error: 'A rejection reason is required' }, { status: 400 })
+
+    const [updated] = await db.$transaction([
+      db.pOPaymentRequest.update({
+        where: { id },
+        data: { status: 'REJECTED', rejectedAt: new Date(), rejectedById: session.user.id, rejectionReason, updatedAt: new Date() },
+        include: { order: { select: { poNumber: true, supplierName: true } } },
+      }),
+      db.purchaseOrder.update({ where: { id: existing.orderId }, data: { status: 'REJECTED', updatedAt: new Date() } }),
+    ])
+
+    notifyByRole(db, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'], 'PO_PAYMENT_REJECTED',
+      'Payment Rejected',
+      `${updated.order.poNumber}${updated.order.supplierName ? ` — ${updated.order.supplierName}` : ''} payment request was rejected: ${rejectionReason}`,
+      existing.orderId,
+    ).catch(console.error)
+
+    emitTenantEvent(session.user.tenantId, 'purchasing-finance')
+    return NextResponse.json(updated)
+  }
+
   const { transferProofKeys, paidNotes } = body
   if (!Array.isArray(transferProofKeys) || transferProofKeys.length === 0) return NextResponse.json({ error: 'At least one transfer proof photo is required' }, { status: 400 })
 

@@ -163,6 +163,7 @@ model User {
   stockCountsApproved                    StockCount[]                @relation("StockCountApprove")
   poPaymentRequestsMade                  POPaymentRequest[]          @relation("POPaymentRequestedBy")
   poPaymentRequestsPaid                  POPaymentRequest[]          @relation("POPaymentPaidBy")
+  poPaymentRequestsRejected              POPaymentRequest[]          @relation("POPaymentRejectedBy")
   poReimbursementsMade                   POReimbursement[]           @relation("POReimbursementRequestedBy")
   poReimbursementsPaid                   POReimbursement[]           @relation("POReimbursementPaidBy")
   poFollowUpsCreated                     PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
@@ -1745,6 +1746,10 @@ enum PurchaseOrderStatus {
   PARTIALLY_RECEIVED
   RECEIVED
   CANCELLED
+  // Set automatically when Finance rejects one of this PO's payment requests
+  // (see POPaymentRequestStatus.REJECTED) — surfaces the problem on the PO itself
+  // and unlocks the Cancel PO action even though a payment record already exists.
+  REJECTED
 }
 
 enum TransferStatus {
@@ -2403,6 +2408,7 @@ model PurchaseRequestFollowUp {
 enum POPaymentRequestStatus {
   PENDING
   PAID
+  REJECTED
 }
 
 model POPaymentRequest {
@@ -2419,12 +2425,16 @@ model POPaymentRequest {
   paidById          String?
   paidNotes         String?
   transferProofKeys String[]               @default([])
+  rejectedAt        DateTime?
+  rejectedById      String?
+  rejectionReason   String?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
   order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   requestedBy User          @relation("POPaymentRequestedBy", fields: [requestedById], references: [id])
   paidBy      User?         @relation("POPaymentPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  rejectedBy  User?         @relation("POPaymentRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([status])

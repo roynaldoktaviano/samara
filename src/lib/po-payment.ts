@@ -31,7 +31,11 @@ export interface POPaymentRecord { amount: number; status: string }
  * Unpaid/Partially Paid/Paid status shown to users.
  */
 export function summarizePOPayments(grandTotal: number, paymentRequests: POPaymentRecord[], reimbursements: POPaymentRecord[]) {
-  const all = [...paymentRequests, ...reimbursements]
+  // A REJECTED request never moved money and was never PAID — treat it as void rather
+  // than counting its amount against requestedTotal/remaining, otherwise a rejected
+  // installment would permanently eat into the PO's remaining balance and keep
+  // paymentStatus stuck on PENDING forever.
+  const all = [...paymentRequests, ...reimbursements].filter(p => p.status !== 'REJECTED')
   const requestedTotal = all.reduce((s, p) => s + p.amount, 0)
   const paidTotal = all.filter(p => p.status === 'PAID').reduce((s, p) => s + p.amount, 0)
   const remaining = Math.max(0, grandTotal - requestedTotal)
@@ -66,11 +70,14 @@ export function describeInstallment(grandTotal: number, requestedBefore: number,
  * Payment" detail screen) look up which earlier installment was the DP and what was still
  * owed before this one.
  */
-export function labelInstallments<T extends { id: string; amount: number; createdAt: string | Date }>(
+export function labelInstallments<T extends { id: string; amount: number; createdAt: string | Date; status: string }>(
   grandTotal: number,
   allInstallments: T[],
 ): (T & { label: string })[] {
-  const sorted = [...allInstallments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  // Same reasoning as summarizePOPayments above: a REJECTED installment never
+  // happened financially, so it's excluded from the cumulative running total that
+  // decides whether the next one is a Down Payment vs. an Additional/Final Payment.
+  const sorted = [...allInstallments].filter(i => i.status !== 'REJECTED').sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   let cumulative = 0
   return sorted.map(inst => {
     const label = describeInstallment(grandTotal, cumulative, inst.amount)

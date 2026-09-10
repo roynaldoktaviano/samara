@@ -18,8 +18,11 @@ interface PaymentRequest {
   paidAt: string | null
   paidNotes: string | null
   transferProofKeys: string[]
+  rejectedAt: string | null
+  rejectionReason: string | null
   requestedBy: { name: string } | null
   paidBy: { name: string } | null
+  rejectedBy: { name: string } | null
   // Earlier installments (DP/top-ups) for the same PO, this request's own installment
   // label, and what's still owed on the PO after this one — lets a Balance/Final
   // payment show its DP context plus its own settled amount and date.
@@ -41,6 +44,7 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2
 // overall progress instead of a flat "Paid" so Finance knows a final
 // settlement request may still be coming for the same PO.
 function statusBadge(status: string, poPaymentStatus: string): { label: string; className: string } {
+  if (status === 'REJECTED') return { label: 'Rejected', className: 'bg-red-100 text-red-700' }
   if (status !== 'PAID') return { label: 'Waiting for Payment', className: 'bg-amber-100 text-amber-700' }
   if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', className: 'bg-orange-100 text-orange-700' }
   return { label: 'Paid', className: 'bg-green-100 text-green-700' }
@@ -75,7 +79,7 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
 export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const [requests, setRequests] = useState<PaymentRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID'>('PENDING')
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'REJECTED'>('PENDING')
   const [selected, setSelected] = useState<PaymentRequest | null>(null)
   const [viewPhoto, setViewPhoto] = useState<string | null>(null)
 
@@ -97,6 +101,12 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
   const [payNotes, setPayNotes] = useState('')
   const [paySaving, setPaySaving] = useState(false)
   const [payError, setPayError] = useState('')
+
+  // reject modal
+  const [rejectModal, setRejectModal] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectSaving, setRejectSaving] = useState(false)
+  const [rejectError, setRejectError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -120,6 +130,20 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
     const data = await res.json()
     if (!res.ok) { setPayError(data.error ?? 'Failed'); setPaySaving(false); return }
     setPaySaving(false); setPayModal(false); setTransferProofs([]); setPayNotes('')
+    const list = await load()
+    setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
+  }
+
+  async function confirmReject() {
+    if (!selected || !rejectReason.trim()) { setRejectError('A rejection reason is required'); return }
+    setRejectSaving(true); setRejectError('')
+    const res = await fetch(`/api/finance/purchase-order-payments/${selected.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'REJECT', rejectionReason: rejectReason }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setRejectError(data.error ?? 'Failed'); setRejectSaving(false); return }
+    setRejectSaving(false); setRejectModal(false); setRejectReason('')
     const list = await load()
     setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
   }
@@ -275,6 +299,16 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
               <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-sm">{selected.notes}</div>
             )}
 
+            {selected.status === 'REJECTED' && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm">
+                <p className="font-semibold text-red-700 mb-1">Payment Rejected</p>
+                <p className="text-red-800">{selected.rejectionReason}</p>
+                <p className="text-xs text-red-500 mt-1.5">
+                  {selected.rejectedAt && fmtDate(selected.rejectedAt)}{selected.rejectedBy?.name && ` · by ${selected.rejectedBy.name}`}
+                </p>
+              </div>
+            )}
+
             <div className={selected.status === 'PAID' && selected.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
@@ -308,6 +342,10 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
 
           {selected.status === 'PENDING' && (
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <button onClick={() => { setRejectReason(''); setRejectError(''); setRejectModal(true) }}
+                className="flex items-center gap-2 px-5 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 font-semibold transition-colors">
+                <X className="h-3.5 w-3.5" /> Reject
+              </button>
               <button onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}
                 className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
                 <Upload className="h-3.5 w-3.5" /> Upload Transfer Proof
@@ -352,6 +390,41 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
           </>
         )}
 
+        {/* Reject modal */}
+        {rejectModal && (
+          <>
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55]" onClick={() => setRejectModal(false)} />
+            <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 pointer-events-none">
+              <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-5 py-4 border-b">
+                  <div>
+                    <h3 className="font-semibold">Reject Payment Request</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {fmtMoney(selected.amount)}</p>
+                  </div>
+                  <button onClick={() => setRejectModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+                </div>
+                <div className="p-5 space-y-4">
+                  {rejectError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{rejectError}</div>}
+                  <p className="text-xs text-muted-foreground">This will mark the PO itself as Rejected so purchasing can review or cancel it.</p>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Reason <span className="text-red-500">*</span></label>
+                    <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
+                      placeholder="Why is this payment request being rejected?" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-4 border-t">
+                  <button onClick={() => setRejectModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                  <button onClick={confirmReject} disabled={!rejectReason.trim() || rejectSaving}
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 font-semibold transition-colors">
+                    {rejectSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Rejecting...</> : 'Reject Payment'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         {viewPhoto && <PhotoLightbox photoKey={viewPhoto} onClose={() => setViewPhoto(null)} />}
       </div>
     )
@@ -369,6 +442,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
         {([
           ['PENDING', `Waiting for Payment${pendingCount ? ` (${pendingCount})` : ''}`],
           ['PAID', 'Paid'],
+          ['REJECTED', 'Rejected'],
           ['ALL', 'All'],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setFilterStatus(key)}
