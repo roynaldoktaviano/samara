@@ -171,6 +171,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [discPct,        setDisc]       = useState('0')
   const [discMode,       setDiscMode]   = useState<'percent' | 'amount'>('percent')
   const [discFixed,      setDiscFixed]  = useState('')
+  const [vatMode,        setVatMode]    = useState<'percent' | 'amount'>('percent')
+  const [vatPct,         setVatPct]     = useState('0')
+  const [vatFixed,       setVatFixed]   = useState('')
   const [services,       setSvc]        = useState<ServiceEntry[]>([])
   const [deposit,        setDeposit]    = useState('')
   const [depositDueDate, setDepDue]     = useState('')
@@ -606,7 +609,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setAgentId('')
     setYachtId(''); setStart(''); setEnd(''); setDest(''); setDestId(''); setNotes('')
     setOTId(''); setGuests([]); setCSearch(''); setCustFocused(false); setCrewReq(false); setHasDiving(false); setHasSurfing(false); setHasPhotoPackage(false)
-    setCurrency('USD'); setBase(''); setDisc('0'); setDiscMode('percent'); setDiscFixed(''); setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
+    setCurrency('USD'); setBase(''); setDisc('0'); setDiscMode('percent'); setDiscFixed('')
+    setVatMode('percent'); setVatPct('0'); setVatFixed('')
+    setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
@@ -634,11 +639,21 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     return b * (parseFloat(discPct) || 0) / 100
   }, [basePrice, discPct, discFixed, discMode, voucherApplied])
 
+  // VAT is a surcharge on top of (base - discount + services), either a flat $ amount or a
+  // % of that subtotal — mirrors discountAmt above, just added instead of subtracted.
+  const vatAmt = useMemo(() => {
+    const b = parseFloat(basePrice) || 0
+    const s = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0) * (parseInt(x.qty) || 1), 0)
+    const subtotal = Math.max(0, b - discountAmt) + s
+    if (vatMode === 'amount') return parseFloat(vatFixed) || 0
+    return subtotal * (parseFloat(vatPct) || 0) / 100
+  }, [basePrice, discountAmt, services, vatMode, vatPct, vatFixed])
+
   const total = useMemo(() => {
     const b = parseFloat(basePrice) || 0
     const s = services.reduce((sum, x) => sum + (parseFloat(x.price) || 0) * (parseInt(x.qty) || 1), 0)
-    return Math.max(0, b - discountAmt) + s
-  }, [basePrice, discountAmt, services])
+    return Math.max(0, b - discountAmt) + s + vatAmt
+  }, [basePrice, discountAmt, services, vatAmt])
 
   const selectedYacht   = yachts.find(y => y.id === yachtId)
   const selectedOT      = openTrips.find(t => t.id === openTripId)
@@ -885,6 +900,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           totalPrice:    total,
           depositPaid:   parseFloat(deposit) || 0,
           discount:      discountAmt,
+          vatType:       vatMode === 'amount' ? 'FIXED' : 'PERCENT',
+          vatValue:      vatMode === 'amount' ? (parseFloat(vatFixed) || 0) : (parseFloat(vatPct) || 0),
           currency,
           exchangeRate:  currency !== 'USD' ? manualRate : undefined,
           depositDueDate: depositDueDate || undefined,
@@ -927,6 +944,8 @@ notes:         resolvedNotes,
         totalPrice:    total,
         depositPaid:   parseFloat(deposit) || 0,
         discount:      discountAmt,
+        vatType:       vatMode === 'amount' ? 'FIXED' : 'PERCENT',
+        vatValue:      vatMode === 'amount' ? (parseFloat(vatFixed) || 0) : (parseFloat(vatPct) || 0),
         voucherCode:   voucherApplied?.code ?? undefined,
         currency,
         exchangeRate:  currency !== 'USD' ? manualRate : undefined,
@@ -2615,9 +2634,10 @@ notes:         resolvedNotes,
         ?? ay.extraBedTiers.reduce((a, b) => Math.abs(b.nights - nights) < Math.abs(a.nights - nights) ? b : a)
       return totalExtraBeds * (tier?.price ?? 0)
     })()
-    const tot     = Math.max(0, b - da) + svc
+    const va      = vatAmt
+    const tot     = Math.max(0, b - da) + svc + va
 
-    // Agent commission deduction — applied on base price only, not additional services
+    // Agent commission deduction — applied on base price only, not additional services/VAT
     const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
     const commPct  = tripType === 'OPEN_TRIP' ? (selectedAgent?.commissionOpenTrip ?? 0) : (selectedAgent?.commissionPrivateCharter ?? 0)
     const commAmt  = commPct > 0 ? Math.max(0, b - da) * commPct / 100 : 0
@@ -2828,6 +2848,55 @@ notes:         resolvedNotes,
             </div>
             )}
 
+            {/* VAT */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>VAT</Label>
+                <div className="flex rounded-lg border overflow-hidden text-xs">
+                  {(['percent', 'amount'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { setVatMode(m); setVatPct('0'); setVatFixed('') }}
+                      className="px-3 py-1 font-medium transition-colors"
+                      style={vatMode === m ? { backgroundColor: 'var(--brand-primary)', color: 'white' } : { color: 'var(--muted-foreground)' }}
+                    >
+                      {m === 'percent' ? '%' : '$'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {vatMode === 'percent' ? (
+                <div className="relative">
+                  <Input
+                    type="number" min="0" max="100" step="1"
+                    placeholder="0"
+                    value={vatPct}
+                    onChange={e => setVatPct(e.target.value)}
+                    className="pr-7"
+                  />
+                  <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
+                </div>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                  <Input
+                    type="text" inputMode="decimal"
+                    placeholder="0.00"
+                    value={vatFixed}
+                    onChange={e => setVatFixed(e.target.value.replace(/[^0-9.]/g, ''))}
+                    className="pl-7"
+                  />
+                </div>
+              )}
+              {vatAmt > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Adds ${vatAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {vatMode === 'percent' && (parseFloat(vatPct) || 0) > 0 && ` (${vatPct}% of subtotal)`}
+                </p>
+              )}
+            </div>
+
             {/* Additional Services */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -2926,6 +2995,14 @@ notes:         resolvedNotes,
                   </div>
                 )
               })}
+              {va > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    VAT{vatMode === 'percent' ? ` (${vatPct}%)` : ''}
+                  </span>
+                  <span>{fmtAmt(va, 'USD')}</span>
+                </div>
+              )}
               {commPct > 0 && (
                 <div className="flex justify-between" style={{ color: '#6b7280', fontStyle: 'italic' }}>
                   <span className="text-xs">Agent Commission ({commPct}%)</span>

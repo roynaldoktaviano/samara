@@ -798,6 +798,10 @@ model Booking {
   totalPrice                    Float
   depositPaid                   Float                @default(0)
   discount                      Float                @default(0)
+  // Surcharge added on top of (base + services - discount). null/FIXED means vatValue is a
+  // flat USD amount; 'PERCENT' means vatValue is a percentage of that subtotal.
+  vatType                       String?
+  vatValue                      Float                @default(0)
   depositDueDate                DateTime?
   finalDueDate                  DateTime?
   // When set, the invoice PDF shows this date instead of the live depositDueDate/finalDueDate above —

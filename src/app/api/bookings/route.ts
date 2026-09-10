@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       select: {
         id: true, bookingCode: true, source: true, tripType: true,
         startDate: true, endDate: true, status: true,
-        totalPrice: true, depositPaid: true, discount: true,
+        totalPrice: true, depositPaid: true, discount: true, vatType: true, vatValue: true,
         depositDueDate: true, finalDueDate: true, holdUntil: true,
         guestCount: true, destination: true, destinationId: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     const {
       tripType, source, agentId, agentContactId, yachtId, openTripId,
       startDate, endDate, destination, destinationId,
-      totalPrice, depositPaid, discount, voucherCode,
+      totalPrice, depositPaid, discount, vatType, vatValue, voucherCode,
       currency, exchangeRate,
       depositDueDate, finalDueDate,
       crewRequired, hasDiving, hasSurfing, hasPhotoPackage, notes,
@@ -396,6 +396,8 @@ export async function POST(request: NextRequest) {
         totalPrice:    isOnHold ? 0 : total,
         depositPaid:   isOnHold ? 0 : paid,
         discount:      parseFloat(discount) || 0,
+        vatType:       vatType || null,
+        vatValue:      parseFloat(vatValue) || 0,
         depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
         finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
         holdUntil:      isOnHold && holdUntil ? new Date(holdUntil) : null,

@@ -41,6 +41,8 @@ interface BookingRecord {
   totalPrice: number
   depositPaid: number
   discount: number
+  vatType?: string | null
+  vatValue?: number
   guestCount: number
   status: string
   depositDueDate?: string | null
@@ -119,13 +121,16 @@ interface PaymentRecord {
 
 const netBook = (b: BookingRecord) => {
   const svcTotal  = b.services?.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0) ?? 0
-  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
-  const afterDisc = Math.max(0, b.totalPrice - svcTotal)
+  // totalPrice is already net of discount and VAT-inclusive (see BookingWizard: total =
+  // max(0, base - discountAmt) + services + VAT) — strip VAT back out first so agent
+  // commission below isn't computed on top of it, then discount is already netted.
+  const { subtotalBeforeVat, vatAmt } = splitVat(b.totalPrice, b.vatType, b.vatValue)
+  const afterDisc = Math.max(0, subtotalBeforeVat - svcTotal)
   const commPct   = b.source === 'AGENT'
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
     : 0
   const commAmt   = afterDisc * commPct / 100
-  return afterDisc + svcTotal - commAmt
+  return afterDisc + svcTotal + vatAmt - commAmt
 }
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -176,6 +181,33 @@ const getDays = (s: string, e: string) =>
 const fmtAmt = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+type VatType = 'FIXED' | 'PERCENT'
+// Total = (base + services - discount) + VAT, where VAT is either a flat $ amount or a
+// % of that subtotal. Kept as a pure function so the edit form's live preview and the
+// reverse derivation below (deriveBasePrice) can't drift apart.
+const calcAutoTotal = (basePrice: number, svcTotal: number, discount: number, vatType: VatType, vatValue: number) => {
+  const subtotal = Math.max(0, basePrice + svcTotal - discount)
+  const vatAmount = vatType === 'PERCENT' ? subtotal * (vatValue / 100) : vatValue
+  return subtotal + vatAmount
+}
+// Inverse of calcAutoTotal — reconstructs the pure yacht base price from a booking's saved
+// totalPrice, given its current services/discount/VAT. Needed because openEdit only has the
+// saved totalPrice to work from (not the original base), and re-deriving it naively (just
+// subtracting services) would drift on every re-edit once discount/VAT actually affect the total.
+const deriveBasePrice = (totalPrice: number, svcTotal: number, discount: number, vatType: VatType, vatValue: number) => {
+  const subtotal = vatType === 'PERCENT' && vatValue ? totalPrice / (1 + vatValue / 100) : totalPrice - vatValue
+  return subtotal - svcTotal + discount
+}
+// Splits a saved totalPrice back into { subtotalBeforeVat, vatAmt } — used by read-only
+// summaries (netBook, Booking Detail Modal) that reconstruct a breakdown from totalPrice
+// alone rather than tracking base/discount/VAT as separate live state like the edit form does.
+const splitVat = (totalPrice: number, vatType?: string | null, vatValue?: number) => {
+  const vt = vatType === 'PERCENT' ? 'PERCENT' : 'FIXED'
+  const vv = vatValue ?? 0
+  const subtotalBeforeVat = vt === 'PERCENT' && vv ? totalPrice / (1 + vv / 100) : totalPrice - vv
+  return { subtotalBeforeVat, vatAmt: totalPrice - subtotalBeforeVat }
+}
+
 function FilterDropdown({ value, onValueChange, placeholder, active, activeClass, children }: {
   value: string
   onValueChange: (v: string) => void
@@ -199,6 +231,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const { data: session } = useSession()
   const userRole          = (session?.user as { role?: string })?.role ?? ''
   const canManageBookings = roleMatches(userRole, ['ADMIN', 'SALES'])
+  const isAdmin           = roleMatches(userRole, ['ADMIN', 'SUPER_ADMIN'])
 
   /* booking state */
   const [bookings,     setBookings]    = useState<BookingRecord[]>([])
@@ -223,6 +256,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [editTotal,    setEditTotal]   = useState('')
   const [editDeposit,  setEditDeposit] = useState('')
   const [editDiscount, setEditDiscount]= useState('')
+  const [editVatType,  setEditVatType] = useState<VatType>('FIXED')
+  const [editVatValue, setEditVatValue]= useState('0')
+  // Admin-only manual override of Total Price — only takes effect while editTotalOverrideOn
+  // is explicitly toggled on (a deliberate action), never just from touching the field, so a
+  // stray click/keystroke can't silently freeze the total away from auto-calc.
+  const [editTotalOverrideOn, setEditTotalOverrideOn] = useState(false)
+  const [editTotalOverride, setEditTotalOverride] = useState('')
   const [editCurrency,     setEditCurrency]     = useState<CurrencyCode>('USD')
   const [editExchangeRate, setEditExchangeRate] = useState(1)
   const [editDepDue,   setEditDepDue]  = useState('')
@@ -430,6 +470,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setEditTotal(b.totalPrice.toString())
     setEditDeposit(b.depositPaid.toString())
     setEditDiscount(b.discount.toString())
+    setEditVatType((b.vatType as VatType) || 'FIXED')
+    setEditVatValue(String(b.vatValue ?? 0))
+    setEditTotalOverrideOn(false)
+    setEditTotalOverride('')
     setEditDepDue(fmtDateInput(b.depositDueDate))
     setEditFinalDue(fmtDateInput(b.finalDueDate))
     setEditNotes(b.notes ?? '')
@@ -440,10 +484,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setRescheduleYachtId(''); setRescheduleYachts([])
     setEditCancelMode(false); setEditCancelReason('')
 
-    // Services & base price
+    // Services & base price — reconstruct the pure yacht base (independent of
+    // discount/VAT) from the saved totalPrice, so re-editing doesn't drift (see
+    // deriveBasePrice's comment).
     const currentSvcs = b.services ?? []
     const svcTotal = currentSvcs.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-    setEditBasePrice(b.totalPrice - svcTotal)
+    setEditBasePrice(deriveBasePrice(b.totalPrice, svcTotal, b.discount, (b.vatType as VatType) || 'FIXED', b.vatValue ?? 0))
     setEditServices(currentSvcs.map(s => ({ name: s.name, price: String(s.price), quantity: s.quantity ?? 1 })))
 
     // Trip edit fields (pending + no invoice)
@@ -471,11 +517,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     const canEditTrip = editBooking.status === 'pending' && !hasInvoice
     try {
       const svcTotal  = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
-      const autoTotal = editBasePrice + svcTotal
+      const autoTotal = calcAutoTotal(editBasePrice, svcTotal, parseFloat(editDiscount) || 0, editVatType, parseFloat(editVatValue) || 0)
+      const useOverride = isAdmin && editTotalOverrideOn && editTotalOverride.trim() !== ''
+      const finalTotal = useOverride ? (parseFloat(editTotalOverride) || 0) : autoTotal
 
       const body: Record<string, unknown> = {
-        status: editStatus, totalPrice: String(autoTotal), depositPaid: editDeposit,
-        discount: editDiscount, depositDueDate: editDepDue || null,
+        status: editStatus, totalPrice: String(finalTotal), depositPaid: editDeposit,
+        discount: editDiscount, vatType: editVatType, vatValue: editVatValue,
+        ...(useOverride && { totalPriceManualOverride: true }),
+        depositDueDate: editDepDue || null,
         finalDueDate: editFinalDue || null, notes: editNotes,
         services: editServices.filter(s => s.name.trim()),
         currency: editCurrency,
@@ -2094,7 +2144,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 const isFullyPaid    = editBooking.status === 'fully_paid'
                 const isPartiallyPaid = editBooking.status === 'partially_paid'
                 const svcTotal = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
-                const autoTotal = editBasePrice + svcTotal
+                const autoTotal = calcAutoTotal(editBasePrice, svcTotal, parseFloat(editDiscount) || 0, editVatType, parseFloat(editVatValue) || 0)
+                const vatLabel = parseFloat(editVatValue) > 0
+                  ? (editVatType === 'PERCENT' ? `${editVatValue}%` : `$ ${parseFloat(editVatValue).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
+                  : '—'
 
                 /* ── Read-only value display helper ── */
                 const RoField = ({ label, value }: { label: string; value: string }) => (
@@ -2115,6 +2168,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <RoField label="Total Price" value={`$ ${autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
                           <RoField label="Amount Paid" value={`$ ${parseFloat(editDeposit).toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
                           <RoField label="Discount" value={editDiscount ? `$ ${parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'} />
+                          <RoField label="VAT" value={vatLabel} />
                           <RoField label="Payment Due" value={editDepDue || '—'} />
                           <RoField label="Final Balance Due" value={editFinalDue || '—'} />
                           <RoField label="Notes" value={editNotes} />
@@ -2185,6 +2239,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">$ {editDiscount ? parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}</p></div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">VAT</p><p className="text-sm font-medium">{vatLabel}</p></div>
                         <div className="space-y-1.5">
                           <Label className="text-xs">Total Price (auto)</Label>
                           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
@@ -2306,6 +2361,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
+                        <Label>Base Price ($)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                          <Input type="number" min="0" value={editBasePrice}
+                            onChange={e => setEditBasePrice(parseFloat(e.target.value) || 0)} className="pl-7" />
+                        </div>
+                        {editBooking.tripType === 'PRIVATE_CHARTER' && (
+                          <p className="text-xs text-muted-foreground">Defaults to $/night × nights when Yacht is changed above — editable directly here too.</p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
                         <Label>Discount ($)</Label>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
@@ -2313,18 +2379,59 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Total Price (auto)</Label>
-                        <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
-                          $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          {editServices.length > 0 && (
-                            <span className="text-xs text-muted-foreground font-normal ml-1">
-                              (base ${editBasePrice.toLocaleString()} + services)
-                            </span>
+                        <Label>VAT</Label>
+                        <div className="flex gap-2">
+                          <div className="flex rounded-md border overflow-hidden shrink-0">
+                            <button type="button" onClick={() => setEditVatType('FIXED')}
+                              className={`px-2.5 text-sm font-medium transition-colors ${editVatType === 'FIXED' ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                              style={editVatType === 'FIXED' ? { backgroundColor: ACCENT } : {}}>
+                              $
+                            </button>
+                            <button type="button" onClick={() => setEditVatType('PERCENT')}
+                              className={`px-2.5 text-sm font-medium border-l transition-colors ${editVatType === 'PERCENT' ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                              style={editVatType === 'PERCENT' ? { backgroundColor: ACCENT } : {}}>
+                              %
+                            </button>
+                          </div>
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">{editVatType === 'PERCENT' ? '%' : '$'}</span>
+                            <Input type="number" min="0" value={editVatValue} onChange={e => setEditVatValue(e.target.value)} className="pl-7" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Total Price {editTotalOverrideOn ? '(manual override)' : '(auto)'}</Label>
+                          {isAdmin && (
+                            <button type="button"
+                              onClick={() => {
+                                if (editTotalOverrideOn) { setEditTotalOverrideOn(false); setEditTotalOverride('') }
+                                else { setEditTotalOverrideOn(true); setEditTotalOverride(autoTotal.toFixed(2)) }
+                              }}
+                              className="text-[11px] hover:underline" style={{ color: ACCENT }}>
+                              {editTotalOverrideOn ? 'Use auto-calculated' : 'Override manually'}
+                            </button>
                           )}
                         </div>
+                        {editTotalOverrideOn ? (
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
+                            <Input type="number" min="0" className="pl-7 text-sm font-semibold"
+                              value={editTotalOverride} onChange={e => setEditTotalOverride(e.target.value)} />
+                          </div>
+                        ) : (
+                          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
+                            $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </div>
+                        )}
+                        {editServices.length > 0 && !editTotalOverrideOn && (
+                          <p className="text-xs text-muted-foreground">
+                            (base ${editBasePrice.toLocaleString()} + services{parseFloat(editDiscount) > 0 ? ' - discount' : ''}{parseFloat(editVatValue) > 0 ? ' + VAT' : ''})
+                          </p>
+                        )}
                         {editCurrency !== 'USD' && (
                           <p className="text-xs text-muted-foreground">
-                            ≈ {CURRENCIES[editCurrency].symbol}{(autoTotal * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
+                            ≈ {CURRENCIES[editCurrency].symbol}{((editTotalOverrideOn ? parseFloat(editTotalOverride) || 0 : autoTotal) * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
                           </p>
                         )}
                       </div>
@@ -2563,14 +2670,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           {detailBooking && (() => {
             const db_ = detailBooking
             const svcTotal   = (db_.services ?? []).reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
-            // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
-            const afterDisc  = Math.max(0, db_.totalPrice - svcTotal)
+            // totalPrice is already net of discount and VAT-inclusive — strip VAT back out
+            // first (shown as its own line below) so agent commission isn't computed on top of it.
+            const { subtotalBeforeVat, vatAmt } = splitVat(db_.totalPrice, db_.vatType, db_.vatValue)
+            const afterDisc  = Math.max(0, subtotalBeforeVat - svcTotal)
             const basePrice  = afterDisc + db_.discount // reconstructed pre-discount price, for display only
             const commPct    = db_.source === 'AGENT'
               ? (db_.tripType === 'OPEN_TRIP' ? (db_.agent?.commissionOpenTrip ?? 0) : (db_.agent?.commissionPrivateCharter ?? 0))
               : 0
             const commAmt    = commPct > 0 ? afterDisc * commPct / 100 : 0
-            const net        = afterDisc + svcTotal - commAmt
+            const net        = afterDisc + svcTotal + vatAmt - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)
             const bdrRate    = (db_.currency === 'IDR' && db_.exchangeRate && db_.exchangeRate > 1) ? db_.exchangeRate : 0
             const hasDetailIDR = bdrRate > 0
@@ -2739,6 +2848,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <div className="flex justify-between text-emerald-600">
                             <span>Discount</span>
                             <span>−{fmtAmt(db_.discount)}</span>
+                          </div>
+                        )}
+                        {vatAmt > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">VAT{db_.vatType === 'PERCENT' ? ` (${db_.vatValue}%)` : ''}</span>
+                            <span className="font-medium">+{fmtAmt(vatAmt)}</span>
                           </div>
                         )}
                         {commAmt > 0 && (

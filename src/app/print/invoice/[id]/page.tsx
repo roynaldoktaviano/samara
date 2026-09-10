@@ -53,6 +53,8 @@ interface PaymentDetail {
     totalPrice: number
     depositPaid: number
     discount: number
+    vatType?: string | null
+    vatValue?: number
     guestCount: number
     salesperson?: string
     currency?: string
@@ -180,13 +182,20 @@ export default function InvoicePage() {
 
   const servicesTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const discountAmt    = b.discount
+  const vatType        = b.vatType === 'PERCENT' ? 'PERCENT' : 'FIXED'
+  const vatValue       = b.vatValue ?? 0
   const showNet        = showNetOverride ?? payment.showNetAmount
   const showCommissionNote = showNet && (showNoteOverride ?? payment.showCommissionNote ?? false)
   const commissionPct  = isAgentBooking && showNet
     ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
     : 0
-  // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
-  const baseAfterDisc  = b.totalPrice - servicesTotal
+  // totalPrice is already net of discount and VAT-inclusive (see Bookings.tsx: total =
+  // (base - discount + services) + VAT) — strip VAT back out first (it's shown as its own
+  // line, not baked into "base", so agent commission below is never computed on top of it),
+  // then discount is already netted into what's left.
+  const subtotalBeforeVat = vatType === 'PERCENT' && vatValue ? b.totalPrice / (1 + vatValue / 100) : b.totalPrice - vatValue
+  const vatAmt         = b.totalPrice - subtotalBeforeVat
+  const baseAfterDisc  = subtotalBeforeVat - servicesTotal
   const baseRaw        = baseAfterDisc + discountAmt // reconstructed pre-discount price, for display only
   const commissionAmt  = baseAfterDisc * commissionPct / 100
   const afterDiscount  = b.totalPrice - commissionAmt
@@ -526,6 +535,14 @@ export default function InvoicePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
               <span style={{ color: '#059669', fontSize: 10 }}>Discount</span>
               <span style={{ color: '#059669', fontSize: 10 }}>−{fmtAmt(discountAmt)}</span>
+            </div>
+          )}
+
+          {/* VAT — added on top, shown as its own line rather than folded into the base above */}
+          {vatAmt > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ color: '#374151', fontSize: 10 }}>VAT{vatType === 'PERCENT' ? ` (${vatValue}%)` : ''}</span>
+              <span style={{ color: '#374151', fontSize: 10 }}>+{fmtAmt(vatAmt)}</span>
             </div>
           )}
 

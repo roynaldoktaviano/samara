@@ -7,6 +7,7 @@ import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { recalcOpenTripPrice } from '@/lib/booking-pricing'
+import { roleMatches } from '@/lib/role-utils'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -55,7 +56,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, depositPaid, discount, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
+    const { status, totalPrice, totalPriceManualOverride, depositPaid, discount, vatType, vatValue, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
+
+    // A manual total-price override (bypassing the auto-calculated base+services-discount+VAT
+    // total, and — for Open Trip — skipping the cabin-derived recalc below) is Admin-only.
+    const actingRole = (session.user as { role?: string }).role ?? ''
+    if (totalPriceManualOverride && !roleMatches(actingRole, ['ADMIN', 'SUPER_ADMIN'])) {
+      return NextResponse.json({ error: 'Only Admin can manually override the total price' }, { status: 403 })
+    }
 
     const existing = await db.booking.findUnique({
       where:  { id },
@@ -115,6 +123,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(totalPrice     !== undefined && { totalPrice:     newTotal }),
         ...(depositPaid    !== undefined && { depositPaid:    newDeposit }),
         ...(discount       !== undefined && { discount:       parseFloat(discount) }),
+        ...(vatType        !== undefined && { vatType:        vatType || null }),
+        ...(vatValue       !== undefined && { vatValue:       parseFloat(vatValue) || 0 }),
         ...(notes          !== undefined && { notes:          notes || null }),
         ...(destination    !== undefined && { destination:    destination || null }),
         ...(destinationId  !== undefined && { destinationId:  destinationId || null }),
@@ -170,7 +180,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // last had on screen — recompute it server-side so stale wizard state can't persist
     // a wrong total (e.g. after a guest/cabin is removed mid-edit).
     let finalBooking = booking
-    if (existing.tripType === 'OPEN_TRIP') {
+    if (existing.tripType === 'OPEN_TRIP' && !totalPriceManualOverride) {
       await recalcOpenTripPrice(db, id)
       finalBooking = await db.booking.findUniqueOrThrow({
         where: { id },
@@ -204,7 +214,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id }  = await params
     const body    = await request.json()
     const { status, cancelReason, completeBooking, guests, totalPrice, depositPaid,
-            discount, depositDueDate, finalDueDate, currency, exchangeRate, services,
+            discount, vatType, vatValue, depositDueDate, finalDueDate, currency, exchangeRate, services,
             hasDiving, hasSurfing, hasPhotoPackage, notes, crewRequired } = body
 
     const existing = await db.booking.findUnique({
@@ -249,6 +259,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             totalPrice:    total,
             depositPaid:   paid,
             discount:      parseFloat(discount) || 0,
+            vatType:       vatType || null,
+            vatValue:      parseFloat(vatValue) || 0,
             depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
             finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
             currency:      currency || 'USD',
