@@ -1,13 +1,19 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Search, MessageCircle, Instagram, Mail } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ChatChannel, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
+import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
+
+interface SalesUser { id: string; name: string | null; email: string }
 
 const CHANNEL_BADGE: Record<ChatChannel, { icon: typeof MessageCircle; color: string }> = {
   whatsapp:  { icon: MessageCircle, color: '#25D366' },
@@ -35,9 +41,16 @@ function initials(name: string) {
  * email row here still hands off via onOpenEmail rather than opening inline.
  */
 export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string) => void }) {
+  const { data: session } = useSession()
+  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const isAdmin = userRole === 'ADMIN'
+
   const [items, setItems] = useState<UnifiedInboxItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [brandFilter, setBrandFilter] = useState<'all' | WhatsappBrand>('all')
+  const [salesFilter, setSalesFilter] = useState('all')
+  const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
   const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(null)
 
   const load = useCallback(async () => {
@@ -52,11 +65,24 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
     return () => clearInterval(t)
   }, [load])
 
+  // Only ADMIN sees every chat, so the "assigned to" filter is only meaningful for them —
+  // a SALES rep's list is already scoped server-side to just their own conversations.
+  useEffect(() => {
+    if (!isAdmin) return
+    fetch('/api/users')
+      .then(r => r.ok ? r.json() : [])
+      .then((users: (SalesUser & { role: string })[]) => setSalesUsers(users.filter(u => u.role === 'SALES')))
+      .catch(() => {})
+  }, [isAdmin])
+
   const filtered = useMemo(() => {
+    let list = items
+    if (brandFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.brand === brandFilter)
+    if (salesFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.assignedToId === salesFilter)
     const q = search.trim().toLowerCase()
-    if (!q) return items
-    return items.filter(i => i.name.toLowerCase().includes(q) || i.preview?.toLowerCase().includes(q))
-  }, [items, search])
+    if (q) list = list.filter(i => i.name.toLowerCase().includes(q) || i.preview?.toLowerCase().includes(q))
+    return list
+  }, [items, search, salesFilter, brandFilter])
 
   function openItem(item: UnifiedInboxItem) {
     if (item.channel === 'email') { onOpenEmail(item.id); return }
@@ -72,11 +98,34 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
           <h2 className="text-lg font-bold tracking-tight">All Chats</h2>
           <p className="text-xs text-muted-foreground mt-0.5">WhatsApp &amp; Instagram, newest first</p>
         </div>
-        <div className="p-3 border-b">
+        <div className="px-3 pt-3 border-b pb-3">
+          <Tabs value={brandFilter} onValueChange={v => setBrandFilter(v as 'all' | WhatsappBrand)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
+              {WHATSAPP_BRANDS.map(b => (
+                <TabsTrigger key={b} value={b} className="text-xs">{WHATSAPP_BRAND_LABELS[b]}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+        <div className="p-3 border-b space-y-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or message…" className="pl-8 h-9" />
           </div>
+          {isAdmin && salesUsers.length > 0 && (
+            <Select value={salesFilter} onValueChange={setSalesFilter}>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Filter by sales rep" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sales</SelectItem>
+                {salesUsers.map(u => (
+                  <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -120,6 +169,9 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
                     <p className={cn('text-xs truncate mt-0.5', unread ? 'text-foreground' : 'text-muted-foreground')}>
                       {item.preview || '—'}
                     </p>
+                    {isAdmin && item.channel === 'whatsapp' && item.assignedToName && (
+                      <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">Sales: {item.assignedToName}</p>
+                    )}
                   </div>
 
                   {unread && <span className="shrink-0 h-2 w-2 rounded-full bg-red-500" />}

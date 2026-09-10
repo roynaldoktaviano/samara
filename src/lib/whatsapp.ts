@@ -1,9 +1,9 @@
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
-// Sends via WhatsApp Cloud API (Meta). `whatsappApiUrl` (Super Admin → tenant
-// secrets) must be the full Graph API messages endpoint for this tenant's phone
-// number, e.g. https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages —
-// `whatsappApiToken` is the System User / access token, sent as a Bearer token.
+// Sends via WhatsApp Cloud API (Meta). Each brand (Samara/Mischief/Otium) is a
+// genuinely separate Meta phone number — its phone number ID and access token are
+// configured per-brand in Super Admin > tenant secrets (see whatsapp-brands.ts).
 export interface SendWhatsappResult {
   ok: boolean
   providerMessageId?: string
@@ -18,15 +18,17 @@ function cloudApiMediaType(mimeType?: string): 'image' | 'video' | 'audio' | 'do
 }
 
 export async function sendWhatsappMessage(
-  tenantId: string, to: string, body: string, mediaUrl?: string, mediaType?: string, contextMessageId?: string,
+  tenantId: string, brand: WhatsappBrand, to: string, body: string, mediaUrl?: string, mediaType?: string, contextMessageId?: string,
 ): Promise<SendWhatsappResult> {
-  const [apiUrl, apiToken] = await Promise.all([
-    getTenantSecret(tenantId, 'whatsappApiUrl'),
-    getTenantSecret(tenantId, 'whatsappApiToken'),
+  const keys = WHATSAPP_BRAND_SECRET_KEYS[brand]
+  const [phoneNumberId, apiToken] = await Promise.all([
+    getTenantSecret(tenantId, keys.phoneNumberId),
+    getTenantSecret(tenantId, keys.apiToken),
   ])
-  if (!apiUrl || !apiToken) {
-    return { ok: false, error: 'WhatsApp API is not configured for this tenant yet' }
+  if (!phoneNumberId || !apiToken) {
+    return { ok: false, error: `WhatsApp API is not configured for ${brand} yet` }
   }
+  const apiUrl = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${phoneNumberId}/messages`
 
   // `context.message_id` (the WAMID being replied to) is what makes WhatsApp render this as
   // a quoted "swipe to reply" on the recipient's phone — a sibling of `type`/`text`/etc.,

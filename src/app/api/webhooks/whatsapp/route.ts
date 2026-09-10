@@ -4,16 +4,33 @@ import { putToR2 } from '@/lib/r2'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
+import { sendPushToUser } from '@/lib/push'
+import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 // WhatsApp Cloud API (Meta) webhook — handles both the one-time GET verification
-// handshake and the actual POST event deliveries.
+// handshake and the actual POST event deliveries. Samara Yachting has 3 separate
+// WhatsApp Business numbers (Samara/Mischief/Otium) that can all point at this same
+// webhook (one Meta App) — each inbound `value` carries which phone number it came
+// in on via `metadata.phone_number_id`, resolved to a brand below.
 //
 // Point this at, in the Meta App dashboard → WhatsApp → Configuration:
 //   Callback URL:   https://<app-domain>/api/webhooks/whatsapp?tenant=<slug>
 //   Verify token:   whatever you set as "WhatsApp Webhook Verify Token" in Super Admin
 // Subscribe to the `messages` webhook field.
 
-const GRAPH_VERSION = 'v21.0'
+const GRAPH_VERSION = WHATSAPP_GRAPH_VERSION
+
+// Matches an inbound value's phone_number_id against each brand's configured one.
+async function resolveBrand(tenantId: string, phoneNumberId: string | undefined): Promise<WhatsappBrand | null> {
+  if (!phoneNumberId) return null
+  for (const brand of WHATSAPP_BRANDS) {
+    const configured = await getTenantSecret(tenantId, WHATSAPP_BRAND_SECRET_KEYS[brand].phoneNumberId)
+    if (configured && configured === phoneNumberId) return brand
+  }
+  console.error('[whatsapp webhook] no configured brand matches phone_number_id', phoneNumberId, 'for tenant', tenantId)
+  return null
+}
 
 // ── GET: Meta's webhook verification handshake ──────────────────────────────
 export async function GET(request: NextRequest) {
@@ -111,11 +128,11 @@ export async function POST(request: NextRequest) {
   const body = JSON.parse(rawBody) as CloudApiBody
   if (body.object !== 'whatsapp_business_account') return NextResponse.json({ ok: true, ignored: true })
 
-  const accessToken = await getTenantSecret(tenant.id, 'whatsappApiToken')
-
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value
+      const brand = await resolveBrand(tenant.id, value.metadata?.phone_number_id)
+      const accessToken = brand ? await getTenantSecret(tenant.id, WHATSAPP_BRAND_SECRET_KEYS[brand].apiToken) : null
 
       // Delivery/read receipts for messages we sent
       for (const status of value.statuses ?? []) {
@@ -151,11 +168,18 @@ export async function POST(request: NextRequest) {
         }
 
         const preview = text ?? (mediaUrl ? '📎 Attachment' : '')
-        const conversation = await db.whatsappConversation.upsert({
-          where: { phone: msg.from },
-          create: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1 },
-          update: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
-        })
+        // Only a brand-new number gets assigned (per the admin-configured pool/method,
+        // see pickNextSalesUserId) — an existing conversation keeps whoever it was
+        // first assigned to.
+        const existing = await db.whatsappConversation.findUnique({ where: { phone: msg.from }, select: { id: true } })
+        const conversation = existing
+          ? await db.whatsappConversation.update({
+              where: { id: existing.id },
+              data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
+            })
+          : await db.whatsappConversation.create({
+              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: await pickNextSalesUserId(db), brand },
+            })
 
         // Resolve the quoted message (if this is a reply) — Meta only gives us its WAMID,
         // so we look up which of our own rows that maps back to via providerMessageId.
@@ -167,6 +191,19 @@ export async function POST(request: NextRequest) {
           data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
         })
         emitTenantEvent(tenant.id, 'chat')
+
+        // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +
+        // chime, see src/app/page.tsx's 'chat' SSE handler) and a browser/OS push so they
+        // still hear about it if the app isn't open. Best-effort, fire-and-forget: a
+        // failure here shouldn't hold up acking the webhook to Meta.
+        if (conversation.assignedToId) {
+          const notifTitle = `WhatsApp from ${contactName || msg.from}`
+          const notifBody = preview || 'New message'
+          db.notification.create({
+            data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title: notifTitle, body: notifBody },
+          }).catch(() => {})
+          sendPushToUser(db, conversation.assignedToId, { title: notifTitle, body: notifBody, url: '/' }).catch(() => {})
+        }
       }
     }
   }

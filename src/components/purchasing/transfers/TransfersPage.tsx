@@ -205,9 +205,6 @@ export default function TransfersPage() {
   const [crewLinkError, setCrewLinkError] = useState('')
   const [crewLinkCopied, setCrewLinkCopied] = useState(false)
 
-  // Add Item modal — lets a still-PENDING transfer pick up an item it was missing,
-  // straight from the detail view (same location-scoped stock list the Create form
-  // uses), without having to cancel and recreate the whole transfer.
   const [addItemModal, setAddItemModal] = useState(false)
   const [addItemSearch, setAddItemSearch] = useState('')
   const [addItemPicked, setAddItemPicked] = useState<StockPickerRow | null>(null)

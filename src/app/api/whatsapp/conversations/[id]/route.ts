@@ -21,6 +21,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (role === 'SALES' && conversation.assignedToId !== session.user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   return NextResponse.json(conversation)
 }
 
@@ -32,6 +35,12 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params
   const db = await getDb(session)
+  const existing = await db.whatsappConversation.findUnique({ where: { id }, select: { assignedToId: true } })
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (role === 'SALES' && existing.assignedToId !== session.user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const conversation = await db.whatsappConversation.update({
     where: { id },
     data: { unreadCount: 0 },

@@ -10,8 +10,12 @@ export type TenantSecretKey =
   | 'cf7WebhookSecret'
   | 'tripSheetGoogleSheetId'
   | 'googleAdsConversionsSheetId'
-  | 'whatsappApiUrl'
-  | 'whatsappApiToken'
+  | 'whatsappSamaraPhoneNumberId'
+  | 'whatsappSamaraApiToken'
+  | 'whatsappMischiefPhoneNumberId'
+  | 'whatsappMischiefApiToken'
+  | 'whatsappOtiumPhoneNumberId'
+  | 'whatsappOtiumApiToken'
   | 'whatsappWebhookSecret'
   | 'whatsappAppSecret'
   | 'instagramApiUrl'
@@ -28,8 +32,12 @@ export interface TenantSecrets {
   cf7WebhookSecret?: string
   tripSheetGoogleSheetId?: string
   googleAdsConversionsSheetId?: string
-  whatsappApiUrl?: string
-  whatsappApiToken?: string
+  whatsappSamaraPhoneNumberId?: string
+  whatsappSamaraApiToken?: string
+  whatsappMischiefPhoneNumberId?: string
+  whatsappMischiefApiToken?: string
+  whatsappOtiumPhoneNumberId?: string
+  whatsappOtiumApiToken?: string
   whatsappWebhookSecret?: string
   whatsappAppSecret?: string
   instagramApiUrl?: string
@@ -52,10 +60,14 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'cf7WebhookSecret', label: 'Website Form Webhook Secret', description: 'Shared secret the WordPress contact form sends', envFallback: 'CF7_WEBHOOK_SECRET' },
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
   { key: 'googleAdsConversionsSheetId', label: 'Google Ads Conversions Sheet ID', description: 'Spreadsheet auto-synced with confirmed-deposit bookings, set as a Google Sheets source on a Google Ads conversion action', envFallback: 'GOOGLE_ADS_CONVERSIONS_SHEET_ID' },
-  { key: 'whatsappApiUrl', label: 'WhatsApp Cloud API Send URL', description: 'Full Graph API messages endpoint, e.g. https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages', envFallback: 'WHATSAPP_API_URL' },
-  { key: 'whatsappApiToken', label: 'WhatsApp Cloud API Access Token', description: 'System User (permanent) or temporary access token from Meta', envFallback: 'WHATSAPP_API_TOKEN' },
-  { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
-  { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256)', envFallback: 'WHATSAPP_APP_SECRET' },
+  { key: 'whatsappSamaraPhoneNumberId', label: 'WhatsApp Phone Number ID — Samara', description: "Meta phone number ID for the Samara brand's WhatsApp Business number", envFallback: 'WHATSAPP_SAMARA_PHONE_NUMBER_ID' },
+  { key: 'whatsappSamaraApiToken', label: 'WhatsApp API Token — Samara', description: 'System User (permanent) or temporary access token for the Samara number', envFallback: 'WHATSAPP_SAMARA_API_TOKEN' },
+  { key: 'whatsappMischiefPhoneNumberId', label: 'WhatsApp Phone Number ID — Mischief', description: "Meta phone number ID for the Mischief brand's WhatsApp Business number", envFallback: 'WHATSAPP_MISCHIEF_PHONE_NUMBER_ID' },
+  { key: 'whatsappMischiefApiToken', label: 'WhatsApp API Token — Mischief', description: 'System User (permanent) or temporary access token for the Mischief number', envFallback: 'WHATSAPP_MISCHIEF_API_TOKEN' },
+  { key: 'whatsappOtiumPhoneNumberId', label: 'WhatsApp Phone Number ID — Otium', description: "Meta phone number ID for the Otium brand's WhatsApp Business number", envFallback: 'WHATSAPP_OTIUM_PHONE_NUMBER_ID' },
+  { key: 'whatsappOtiumApiToken', label: 'WhatsApp API Token — Otium', description: 'System User (permanent) or temporary access token for the Otium number', envFallback: 'WHATSAPP_OTIUM_API_TOKEN' },
+  { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
+  { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256) — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_APP_SECRET' },
   { key: 'instagramApiUrl', label: 'Instagram Send API URL', description: 'Graph API endpoint for sending Instagram DMs once connected', envFallback: 'INSTAGRAM_API_URL' },
   { key: 'instagramApiToken', label: 'Instagram Access Token', description: 'Access token for the connected Instagram/Facebook Page', envFallback: 'INSTAGRAM_API_TOKEN' },
   { key: 'instagramWebhookSecret', label: 'Instagram Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'INSTAGRAM_WEBHOOK_SECRET' },

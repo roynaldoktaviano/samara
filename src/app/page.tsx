@@ -84,6 +84,7 @@ import BoatDocumentsPage from '@/components/hr/BoatDocumentsPage'
 import SeparationPage from '@/components/hr/SeparationPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
+import WhatsappDistributionSettings from '@/components/whatsapp/WhatsappDistributionSettings'
 import Banks from '@/components/banks/Banks'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
@@ -609,12 +610,14 @@ export default function Home() {
       'hr-business-trips': fetchPendingHrBusinessTrips,
       'hr-overtime': fetchPendingHrOvertime,
       'finance-business-trip-reimbursements': fetchPendingPurchasingFinance,
-      'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() },
+      // Also refetch the notification bell so a new WhatsApp chat shows up as a toast+chime
+      // within ~1-2s, instead of waiting for its own 120s poll.
+      'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchNotifications() },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchNotifications])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -804,6 +807,7 @@ export default function Home() {
       case 'calendar':     return <CalendarView />
       case 'chat-inbox':   return <UnifiedInbox onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
+      case 'chat-whatsapp-distribution': return <WhatsappDistributionSettings />
       case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />

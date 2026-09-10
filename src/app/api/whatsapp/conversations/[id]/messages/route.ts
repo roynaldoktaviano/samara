@@ -21,6 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
   const conversation = await db.whatsappConversation.findUnique({ where: { id } })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (role === 'SALES' && conversation.assignedToId !== session.user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   let quotedProviderMessageId: string | null = null
   if (replyToId) {
@@ -51,8 +54,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   })
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
+  // Conversations created before brands existed (or whose phone_number_id didn't match
+  // any configured brand) have no brand on file — Samara was the only number that ever
+  // existed until now, so it's the only sane default to fall back to.
   const result = tenantId
-    ? await sendWhatsappMessage(tenantId, conversation.phone, text ?? '', mediaUrl || undefined, mediaType || undefined, quotedProviderMessageId || undefined)
+    ? await sendWhatsappMessage(tenantId, conversation.brand ?? 'SAMARA', conversation.phone, text ?? '', mediaUrl || undefined, mediaType || undefined, quotedProviderMessageId || undefined)
     : { ok: false, error: 'No tenant on session' }
 
   const updated = await db.whatsappMessage.update({

@@ -195,6 +195,8 @@ model User {
   internalEventsCreated                  InternalEvent[]
   inventoryItemsCreated                  InventoryItem[]
   inventoryOpnamesCounted                InventoryOpname[]
+  assignedWhatsappConversations           WhatsappConversation[]      @relation("WhatsappConversationAssignedTo")
+  whatsappDistributionParticipant         WhatsappDistributionParticipant?
 
   @@index([assignedYachtId])
 }
@@ -3954,6 +3956,16 @@ enum WhatsappMessageStatus {
   FAILED
 }
 
+// Which of Samara Yachting's 3 WhatsApp Business numbers a conversation came in on —
+// each is a genuinely separate Meta phone number/System User token (see
+// src/lib/whatsapp-brands.ts + Super Admin > tenant secrets). Resolved from the
+// webhook payload's metadata.phone_number_id when a conversation is first created.
+enum WhatsappBrand {
+  SAMARA
+  MISCHIEF
+  OTIUM
+}
+
 model WhatsappConversation {
   id                 String   @id @default(cuid())
   phone              String   @unique // whatever format the provider sends, kept as-is
@@ -3964,9 +3976,20 @@ model WhatsappConversation {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // Sticky assignment — set once when the conversation is first created (see
+  // POST /api/webhooks/whatsapp + src/lib/whatsapp-distribution.ts, admin-configurable
+  // via Settings > Chat > Pembagian WhatsApp) and left untouched afterwards, so later
+  // messages from the same number stay with whoever got it first.
+  assignedToId String?
+  assignedTo   User?   @relation("WhatsappConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  brand WhatsappBrand?
+
   messages WhatsappMessage[]
 
   @@index([lastMessageAt])
+  @@index([assignedToId])
+  @@index([brand])
 }
 
 model WhatsappMessage {
@@ -3993,6 +4016,20 @@ model WhatsappMessage {
   replies   WhatsappMessage[] @relation("WhatsappMessageReplies")
 
   @@index([conversationId, createdAt])
+}
+
+// Admin-configured pool of sales reps that new WhatsApp chats get assigned to (see
+// src/lib/whatsapp-distribution.ts + /api/whatsapp/distribution UI). A row's mere
+// existence means that user is in the pool; `percentage` only matters when the
+// method (stored as SystemSetting key "whatsapp_distribution_method") is PERCENTAGE
+// — ROUND_ROBIN ignores it and cycles the pool in `createdAt` order instead.
+model WhatsappDistributionParticipant {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  percentage Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // ─── Instagram DM (admin-only inbox) ───────────────────────────────────────────
