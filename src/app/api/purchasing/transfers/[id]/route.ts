@@ -32,7 +32,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const transfer = await db.stockTransfer.findUnique({
     where: { id },
     include: {
-      items: { include: { item: { select: { baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } } } },
+      items: {
+        include: {
+          item: { select: { baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } },
+          orderedByEmployee: { select: { id: true, fullName: true } },
+        },
+      },
       dispatchedBy: { select: { id: true, name: true } },
       receivedBy: { select: { id: true, name: true } },
       expectedReceivedBy: { select: { id: true, name: true } },
@@ -131,6 +136,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         })
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
     return NextResponse.json(result, { status: existing ? 200 : 201 })
+  }
+
+  // Packing List shipping info (Depart on / ETA / Cargo vessel) — one cargo booking
+  // covers the whole transfer, editable any time (unlike items, which lock once
+  // dispatched), so no status gate here.
+  if (action === 'update-shipping') {
+    const { departAt, etaAt, cargoName } = body as { departAt?: string | null; etaAt?: string | null; cargoName?: string | null }
+    const updated = await db.stockTransfer.update({
+      where: { id },
+      data: {
+        departAt: departAt ? new Date(departAt) : null,
+        etaAt: etaAt ? new Date(etaAt) : null,
+        cargoName: cargoName?.trim() || null,
+        updatedAt: new Date(),
+      },
+    })
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+    return NextResponse.json(updated)
+  }
+
+  // Per-item "Ordered by" on the Packing List — who requested that specific line,
+  // picked from Employee records. Also editable any time.
+  if (action === 'set-item-ordered-by') {
+    const { itemId: transferItemId, orderedByEmployeeId } = body as { itemId?: string; orderedByEmployeeId?: string | null }
+    if (!transferItemId) return NextResponse.json({ error: 'itemId is required' }, { status: 400 })
+    const result = await db.stockTransferItem.updateMany({
+      where: { id: transferItemId, transferId: id },
+      data: { orderedByEmployeeId: orderedByEmployeeId || null },
+    })
+    if (result.count === 0) return NextResponse.json({ error: 'Item not found on this transfer' }, { status: 404 })
+    emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+    return NextResponse.json({ ok: true })
   }
 
   if (action === 'cancel') {

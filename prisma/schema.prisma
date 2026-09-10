@@ -2680,6 +2680,11 @@ model StockTransfer {
   notes                 String?
   dispatchedAt          DateTime?
   receivedAt            DateTime?
+  // Shipping/logistics info shown on the printed Packing List (src/app/print/stock-transfer/[id]/page.tsx)
+  // — set once per transfer (a cargo booking covers the whole shipment, not per box/item).
+  departAt              DateTime?
+  etaAt                 DateTime?
+  cargoName             String?
   // No-login crew confirmation link — see src/app/crew-receive/[token]/page.tsx and
   // src/app/api/crew-receive/[token]/route.ts. Mirrors Customer.guestFormToken.
   receiveToken          String?        @unique
@@ -2714,9 +2719,13 @@ model StockTransferItem {
   requestedQty  Float
   dispatchedQty Float   @default(0)
   receivedQty   Float   @default(0)
+  // Who requested/ordered this specific line — shown per row on the printed Packing
+  // List ("Ordered by"), distinct per item within the same transfer/box.
+  orderedByEmployeeId String?
 
-  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  item     PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  transfer          StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item              PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  orderedByEmployee Employee?     @relation(fields: [orderedByEmployeeId], references: [id], onDelete: SetNull)
 
   @@index([transferId])
 }
@@ -3221,6 +3230,7 @@ model Employee {
   purchaseRequests          PurchaseRequest[]
   purchaseRequestsToApprove PurchaseRequest[]   @relation("PRApproverEmployee")
   purchaseOrdersRequested   PurchaseOrder[]
+  stockTransferItemsOrdered StockTransferItem[]
   goodsReceipts             GoodsReceipt[]
   cashierSales              CashierSale[]
   leaveRequests             LeaveRequest[]

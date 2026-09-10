@@ -11,6 +11,8 @@ interface TransferItem {
   conversionFactor: number
   requestedQty: number
   dispatchedQty: number
+  orderedByEmployeeId: string | null
+  orderedByEmployee: { id: string; fullName: string } | null
 }
 interface TransferDetail {
   id: string
@@ -19,6 +21,9 @@ interface TransferDetail {
   fromLocation: { name: string } | null
   toLocation: { name: string } | null
   items: TransferItem[]
+  departAt: string | null
+  etaAt: string | null
+  cargoName: string | null
 }
 interface Row {
   id: string
@@ -30,6 +35,8 @@ interface Row {
   // item's real id) — a manual/free-text row has none, it only ever exists on this
   // printout and never touches the transfer's actual item list.
   linked: boolean
+  orderedByEmployeeId: string
+  orderedByName: string
 }
 interface CatalogItem {
   id: string
@@ -38,6 +45,13 @@ interface CatalogItem {
   baseUnit: string | null
   purchaseUnit: string | null
   conversionFactor: number
+}
+interface EmployeeOption {
+  id: string
+  fullName: string
+  employeeNumber: string
+  department: string | null
+  office: string | null
 }
 
 const ACCENT = '#bdac7e'
@@ -53,6 +67,16 @@ function formatQty(it: TransferItem): string {
   const qty = it.dispatchedQty > 0 ? it.dispatchedQty : it.requestedQty
   return formatQtyValue(qty, it.baseUnit, it.purchaseUnit, it.conversionFactor)
 }
+// yyyy-mm-dd for <input type="date">
+function toDateInputValue(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : ''
+}
+function fmtDateID(dateInputValue: string): string {
+  if (!dateInputValue) return ''
+  const d = new Date(dateInputValue + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
 
 let rowSeq = 0
 function newRowId() { return `row-${Date.now()}-${rowSeq++}` }
@@ -65,6 +89,14 @@ export default function StockTransferPackingListPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [bulkVesselPic, setBulkVesselPic] = useState('')
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
+
+  // Shipping info — one cargo booking covers the whole transfer, so this lives on the
+  // StockTransfer itself (not per box/row) and is saved back via PATCH action
+  // 'update-shipping' as soon as it's edited.
+  const [departAt, setDepartAt] = useState('')
+  const [etaAt, setEtaAt] = useState('')
+  const [cargoName, setCargoName] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -75,8 +107,12 @@ export default function StockTransferPackingListPage() {
         const defaultVesselPic = data.toLocation?.name ?? ''
         setRows(data.items.map((it: TransferItem) => ({
           id: it.id, description: it.itemName, qty: formatQty(it), vesselPic: defaultVesselPic, box: 1, linked: true,
+          orderedByEmployeeId: it.orderedByEmployeeId ?? '', orderedByName: it.orderedByEmployee?.fullName ?? '',
         })))
         setBulkVesselPic(defaultVesselPic)
+        setDepartAt(toDateInputValue(data.departAt))
+        setEtaAt(toDateInputValue(data.etaAt))
+        setCargoName(data.cargoName ?? '')
         document.title = `Packing List - ${data.transferNumber}`
       }
       setLoading(false)
@@ -86,6 +122,7 @@ export default function StockTransferPackingListPage() {
 
   useEffect(() => {
     fetch('/api/purchasing/items').then(r => r.ok ? r.json() : []).then((items: CatalogItem[]) => setCatalog(items)).catch(() => {})
+    fetch('/api/purchasing/employees').then(r => r.ok ? r.json() : []).then((emps: EmployeeOption[]) => setEmployees(emps)).catch(() => {})
   }, [])
 
   function updateRow(rowId: string, field: keyof Row, value: string | number) {
@@ -96,7 +133,7 @@ export default function StockTransferPackingListPage() {
   }
   // Manual/free-text row — print-only, never touches the actual Transfer.
   function addManualRow(box: number) {
-    setRows(rs => [...rs, { id: newRowId(), description: '', qty: '', vesselPic: bulkVesselPic, box, linked: false }])
+    setRows(rs => [...rs, { id: newRowId(), description: '', qty: '', vesselPic: bulkVesselPic, box, linked: false, orderedByEmployeeId: '', orderedByName: '' }])
   }
   // Picked from the inventory catalog — actually creates a StockTransferItem on this
   // transfer (only while it's still PENDING, see the API route), so it also shows up in
@@ -115,13 +152,13 @@ export default function StockTransferPackingListPage() {
     const merged = res.status === 200
     setRows(rs => [
       ...(merged ? rs.filter(r => r.id !== data.id) : rs),
-      { id: data.id, description: item.name, qty: formatQtyValue(data.requestedQty, item.baseUnit, item.purchaseUnit, item.conversionFactor), vesselPic: bulkVesselPic, box, linked: true },
+      { id: data.id, description: item.name, qty: formatQtyValue(data.requestedQty, item.baseUnit, item.purchaseUnit, item.conversionFactor), vesselPic: bulkVesselPic, box, linked: true, orderedByEmployeeId: '', orderedByName: '' },
     ])
     setTransfer(t => {
       if (!t) return t
       const items = merged
         ? t.items.map(i => i.id === data.id ? { ...i, requestedQty: data.requestedQty } : i)
-        : [...t.items, { id: data.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit, conversionFactor: item.conversionFactor, requestedQty: data.requestedQty, dispatchedQty: 0 }]
+        : [...t.items, { id: data.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit, conversionFactor: item.conversionFactor, requestedQty: data.requestedQty, dispatchedQty: 0, orderedByEmployeeId: null, orderedByEmployee: null }]
       return { ...t, items }
     })
     return null
@@ -134,6 +171,27 @@ export default function StockTransferPackingListPage() {
     setRows(rs => rs.map(r => ({ ...r, vesselPic: bulkVesselPic })))
   }
 
+  function saveShipping(patch: { departAt?: string; etaAt?: string; cargoName?: string }) {
+    const next = { departAt, etaAt, cargoName, ...patch }
+    fetch(`/api/purchasing/transfers/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update-shipping', departAt: next.departAt || null, etaAt: next.etaAt || null, cargoName: next.cargoName || null }),
+    }).catch(() => {})
+  }
+
+  // Only a linked row (real StockTransferItem) can persist who ordered it — a manual
+  // row's pick stays local to this printout, same as its description/qty already do.
+  function setRowOrderedBy(row: Row, employee: EmployeeOption | null) {
+    updateRow(row.id, 'orderedByEmployeeId', employee?.id ?? '')
+    updateRow(row.id, 'orderedByName', employee?.fullName ?? '')
+    if (row.linked) {
+      fetch(`/api/purchasing/transfers/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-item-ordered-by', itemId: row.id, orderedByEmployeeId: employee?.id ?? null }),
+      }).catch(() => {})
+    }
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen text-sm text-gray-400">Loading transfer…</div>
   )
@@ -142,6 +200,7 @@ export default function StockTransferPackingListPage() {
   )
 
   const boxNumbers = Array.from(new Set(rows.map(r => r.box))).sort((a, b) => a - b)
+  const etaLabel = `ETA${transfer.toLocation?.name ? ` ${transfer.toLocation.name}` : ''}`
 
   return (
     <>
@@ -174,6 +233,23 @@ export default function StockTransferPackingListPage() {
               className="border rounded px-2 py-1 text-sm w-40" placeholder="mis. OTIUM" />
             <button onClick={applyBulkVesselPic} className="text-xs px-2.5 py-1 border rounded-md hover:bg-gray-50">Terapkan ke semua</button>
           </div>
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              Depart on
+              <input type="date" value={departAt} onChange={e => { setDepartAt(e.target.value); saveShipping({ departAt: e.target.value }) }}
+                className="border rounded px-2 py-1 text-sm" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              {etaLabel}
+              <input type="date" value={etaAt} onChange={e => { setEtaAt(e.target.value); saveShipping({ etaAt: e.target.value }) }}
+                className="border rounded px-2 py-1 text-sm" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              Cargo
+              <input value={cargoName} onChange={e => setCargoName(e.target.value)} onBlur={() => saveShipping({ cargoName })}
+                className="border rounded px-2 py-1 text-sm w-40" placeholder="mis. BINTANG TIMUR" />
+            </label>
+          </div>
         </div>
 
         <input
@@ -197,14 +273,21 @@ export default function StockTransferPackingListPage() {
           const boxRows = rows.filter(r => r.box === boxNum)
           return (
             <div key={boxNum} className="mb-10" style={{ breakInside: 'avoid' }}>
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-3 gap-4">
                 <div>
                   <h2 className="text-xl font-bold underline underline-offset-4">Daftar Barang</h2>
                   <p className="italic text-sm mt-0.5">Packing List</p>
                 </div>
-                <div className="border border-black text-center" style={{ width: 72 }}>
-                  <div className="text-xs font-semibold border-b border-black py-0.5">BOX</div>
-                  <div className="text-2xl font-bold py-1">{boxNum}</div>
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-right space-y-0.5">
+                    <p><span className="text-gray-500">Depart on</span>&nbsp;&nbsp;: {fmtDateID(departAt) || '—'}</p>
+                    <p><span className="text-gray-500">{etaLabel}</span>&nbsp;&nbsp;: {fmtDateID(etaAt) || '—'}</p>
+                    <p><span className="text-gray-500">Cargo</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {cargoName || '—'}</p>
+                  </div>
+                  <div className="border border-black text-center" style={{ width: 72 }}>
+                    <div className="text-xs font-semibold border-b border-black py-0.5">BOX</div>
+                    <div className="text-2xl font-bold py-1">{boxNum}</div>
+                  </div>
                 </div>
               </div>
 
@@ -215,6 +298,7 @@ export default function StockTransferPackingListPage() {
                     <th className="border border-black px-2 py-1 text-left">Description</th>
                     <th className="border border-black px-2 py-1 w-24">Qty</th>
                     <th className="border border-black px-2 py-1 w-32">Vessel / PIC</th>
+                    <th className="border border-black px-2 py-1 w-32">Ordered by</th>
                     <th className="border border-black px-2 py-1 w-16 print:hidden">Box</th>
                     <th className="border border-black px-2 py-1 w-8 print:hidden" />
                   </tr>
@@ -242,6 +326,9 @@ export default function StockTransferPackingListPage() {
                         <input value={r.vesselPic} onChange={e => updateRow(r.id, 'vesselPic', e.target.value)}
                           className="w-full outline-none border-0 bg-transparent text-center" />
                       </td>
+                      <td className="border border-black px-2 py-1 text-center">
+                        <OrderedByPicker row={r} employees={employees} onPick={emp => setRowOrderedBy(r, emp)} />
+                      </td>
                       <td className="border border-black px-1 py-1 print:hidden">
                         <input type="number" min={1} value={r.box}
                           onChange={e => updateRow(r.id, 'box', Math.max(1, Number(e.target.value) || 1))}
@@ -261,6 +348,56 @@ export default function StockTransferPackingListPage() {
         })}
       </div>
     </>
+  )
+}
+
+// Searchable employee picker for a single "Ordered by" table cell — on screen it's a
+// small button that opens a search+list popover (print:hidden); the printed output is
+// just the plain resolved name, same convention as the rest of this page's inputs.
+function OrderedByPicker({ row, employees, onPick }: {
+  row: Row
+  employees: EmployeeOption[]
+  onPick: (employee: EmployeeOption | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const opts = (q ? employees.filter(e => e.fullName.toLowerCase().includes(q)) : employees).slice(0, 30)
+
+  return (
+    <div className="relative">
+      <span className="hidden print:inline">{row.orderedByName}</span>
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className={`print:hidden w-full text-left ${row.orderedByName ? '' : 'text-gray-300'}`}>
+        {row.orderedByName || 'Pilih...'}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 print:hidden" onClick={() => setOpen(false)} />
+          <div className="print:hidden absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 w-56 max-h-56 flex flex-col text-left">
+            <div className="p-1.5 border-b shrink-0">
+              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari karyawan..."
+                className="w-full h-7 border rounded px-2 text-xs focus:outline-none" />
+            </div>
+            <div className="overflow-y-auto">
+              {row.orderedByEmployeeId && (
+                <button type="button" onClick={() => { onPick(null); setOpen(false) }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs text-gray-400 hover:bg-gray-50 border-b">
+                  Clear
+                </button>
+              )}
+              {opts.length === 0 && <p className="px-2.5 py-2 text-xs text-gray-400">Tidak ada karyawan cocok.</p>}
+              {opts.map(e => (
+                <button key={e.id} type="button" onClick={() => { onPick(e); setOpen(false) }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-50">
+                  {e.fullName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
