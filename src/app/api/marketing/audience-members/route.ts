@@ -6,7 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
-const SOURCES = ['customers', 'leads', 'agents', 'agentLeads'] as const
+const SOURCES = ['customers', 'leads', 'agents', 'agentLeads', 'internal'] as const
 type Source = (typeof SOURCES)[number]
 
 /**
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   const searchOr = (fields: string[]) => search ? { OR: fields.map(f => ({ [f]: { contains: search, mode: 'insensitive' as const } })) } : {}
 
-  let members: { id: string; name: string; email: string | null }[] = []
+  let members: { id: string; name: string | null; email: string | null }[] = []
   let total = 0
 
   if (source === 'customers') {
@@ -60,11 +60,18 @@ export async function GET(req: NextRequest) {
       db.agent.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.agent.count({ where }),
     ])
-  } else {
+  } else if (source === 'agentLeads') {
     const where = { email: { not: null, contains: '@' }, ...searchOr(['name', 'email']) }
     ;[members, total] = await Promise.all([
       db.agentLeadContact.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.agentLeadContact.count({ where }),
+    ])
+  } else {
+    // internal — User.email is required/unique, no null/blank filtering needed.
+    const where = { ...searchOr(['name', 'email']) }
+    ;[members, total] = await Promise.all([
+      db.user.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
+      db.user.count({ where }),
     ])
   }
 

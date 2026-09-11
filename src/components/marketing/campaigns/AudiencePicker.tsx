@@ -5,9 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Search } from 'lucide-react'
 
-export type AudienceSourceKey = 'customers' | 'leads' | 'agents' | 'agentLeads'
+export type AudienceSourceKey = 'customers' | 'leads' | 'agents' | 'agentLeads' | 'internal'
 
-interface Member { id: string; name: string; email: string | null }
+interface Member { id: string; name: string | null; email: string | null }
 interface Yacht { id: string; name: string }
 
 const PAGE_SIZE = 100

@@ -21,6 +21,7 @@ export interface AudienceState {
   leads: AudienceSourceState
   agents: AudienceSourceState
   agentLeads: AudienceSourceState
+  internal: AudienceSourceState
   manualEmails: string
 }
 
@@ -33,6 +34,7 @@ export const emptyAudience = (): AudienceState => ({
   leads: emptySource(),
   agents: emptySource(),
   agentLeads: emptySource(),
+  internal: emptySource(),
   manualEmails: '',
 })
 
@@ -69,6 +71,7 @@ export function buildAudienceSources(a: AudienceState) {
     ...(a.leads.enabled && { leads: toFilter(a.leads) }),
     ...(a.agents.enabled && { agents: toFilter(a.agents) }),
     ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
+    ...(a.internal.enabled && { internal: toFilter(a.internal) }),
     manualEmails: a.manualEmails.split(/[\n,]/).map(s => s.trim()).filter(Boolean),
   }
 }
@@ -89,6 +92,7 @@ export function audienceStateFromSources(sources: any): AudienceState {
     leads: fill(sources?.leads),
     agents: fill(sources?.agents),
     agentLeads: fill(sources?.agentLeads),
+    internal: fill(sources?.internal),
     manualEmails: (sources?.manualEmails ?? []).join('\n'),
   }
 }
@@ -210,6 +214,12 @@ export function AudienceSourceFields({ audience, setAudience, yachts }: {
         enabled={audience.agentLeads.enabled} onToggle={v => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, enabled: v } }))}
         search={audience.agentLeads.search} onSearchChange={v => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, search: v } }))}
         excludeIds={audience.agentLeads.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, agentLeads: { ...a.agentLeads, excludeIds: ids } }))}
+      />
+      <AudiencePicker
+        source="internal" label="Internal" hint="Staff accounts (this ERP's own users)"
+        enabled={audience.internal.enabled} onToggle={v => setAudience(a => ({ ...a, internal: { ...a.internal, enabled: v } }))}
+        search={audience.internal.search} onSearchChange={v => setAudience(a => ({ ...a, internal: { ...a.internal, search: v } }))}
+        excludeIds={audience.internal.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, internal: { ...a.internal, excludeIds: ids } }))}
       />
       <div className="border rounded-lg p-4 space-y-2">
         <Label className="font-medium text-sm">Manual emails (optional)</Label>

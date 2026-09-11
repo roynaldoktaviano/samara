@@ -1134,6 +1134,8 @@ enum RecipientSourceType {
   AGENT
   AGENT_LEAD_CONTACT
   MANUAL
+  // Internal staff (the User table) — e.g. an all-hands announcement campaign.
+  INTERNAL
 }
 
 enum RecipientStatus {

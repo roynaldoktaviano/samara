@@ -19,13 +19,14 @@ export interface AudienceSources {
   leads?: AudienceSourceFilter | boolean
   agents?: AudienceSourceFilter | boolean
   agentLeads?: AudienceSourceFilter | boolean
+  internal?: AudienceSourceFilter | boolean
   manualEmails?: string[]
 }
 
 export interface AudienceMember {
   email: string
   name: string | null
-  sourceType: 'CUSTOMER' | 'LEAD' | 'AGENT' | 'AGENT_LEAD_CONTACT' | 'MANUAL'
+  sourceType: 'CUSTOMER' | 'LEAD' | 'AGENT' | 'AGENT_LEAD_CONTACT' | 'INTERNAL' | 'MANUAL'
   sourceId: string | null
 }
 
@@ -136,6 +137,26 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
     for (const c of contacts) {
       if (c.email && !excluded.has(c.id) && !byEmail.has(c.email.toLowerCase())) {
         byEmail.set(c.email.toLowerCase(), { email: c.email, name: c.name, sourceType: 'AGENT_LEAD_CONTACT', sourceId: c.id })
+      }
+    }
+  }
+
+  // Internal staff (User) — e.g. an all-hands announcement. User.email is required
+  // and unique, so no null/blank-email filtering needed here unlike the other sources.
+  const internalFilter = asFilter(sources.internal)
+  if (internalFilter) {
+    const excluded = excludeSet(internalFilter.excludeIds)
+    const where: Record<string, unknown> = {}
+    if (internalFilter.search) {
+      where.OR = [
+        { name: { contains: internalFilter.search, mode: 'insensitive' } },
+        { email: { contains: internalFilter.search, mode: 'insensitive' } },
+      ]
+    }
+    const users = await db.user.findMany({ where, select: { id: true, name: true, email: true } })
+    for (const u of users) {
+      if (u.email && !excluded.has(u.id) && !byEmail.has(u.email.toLowerCase())) {
+        byEmail.set(u.email.toLowerCase(), { email: u.email, name: u.name, sourceType: 'INTERNAL', sourceId: u.id })
       }
     }
   }
