@@ -597,7 +597,25 @@ function renderFooterSocialRow(block: FooterBlock): string {
   return `<table role="presentation" align="${tableAlign}" cellpadding="0" cellspacing="0" style="margin:${marginCss};"><tr>${links.map(cell).join('')}</tr></table>`
 }
 
+// Classic Outlook desktop (Word rendering engine) is famously unreliable at honoring
+// @media-based hide/show — even when the query itself matches, its `display:none`
+// support doesn't inherit into a nested <table> (see the columns/section cases below),
+// so a "hide on desktop" block can end up showing anyway, duplicating the "hide on
+// mobile" counterpart right above it. Outlook desktop DOES reliably honor MSO
+// conditional comments though (its HTML preprocessor strips them outright, before any
+// CSS is even considered) — wrapping "hide on desktop" content in the standard
+// `if !mso` idiom guarantees Outlook desktop never sees it at all, sidestepping the
+// display:none quirk entirely rather than hoping the CSS fix below is enough. This
+// only helps for hideOn:'desktop' (a mobile-only block) — there's no equivalent
+// Outlook-desktop-specific trick for hideOn:'mobile' (a desktop-only block), but
+// Outlook desktop is unambiguously a desktop context, so simply not hiding it there
+// (i.e. doing nothing) already gives the right answer.
 function renderBlock(block: EmailBlock): string {
+  const html = renderBlockInner(block)
+  return ('hideOn' in block && block.hideOn === 'desktop') ? `<!--[if !mso]><!-->${html}<!--<![endif]-->` : html
+}
+
+function renderBlockInner(block: EmailBlock): string {
   switch (block.type) {
     case 'text': {
       // Color lives on an inner <span>, not the <td> — Gmail's dark mode lightens
@@ -664,8 +682,12 @@ function renderBlock(block: EmailBlock): string {
         const padRight = i === n - 1 ? 0 : halfGap
         return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
       }).join('')
+      // The hide class also goes on the inner <table> itself, not just the outer <td> —
+      // Outlook's display:none doesn't inherit onto a nested <table> (see the comment on
+      // renderBlock above), so a client that does process @media but hits that specific
+      // quirk still hides the table directly instead of leaving it peeking out.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(hideOnClass(block.hideOn))}><tr>${cells}</tr></table>
       </td></tr>`
     }
 
@@ -674,8 +696,9 @@ function renderBlock(block: EmailBlock): string {
       const bg = block.backgroundImage
         ? `background-color:${sectionBg};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
         : `background-color:${sectionBg};`
+      // Same nested-<table> hide-class duplication as columns above.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`)} bgcolor="${sectionBg}" style="${bg}"><tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`, hideOnClass(block.hideOn))} bgcolor="${sectionBg}" style="${bg}"><tr>
           <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
         </tr></table>
       </td></tr>`

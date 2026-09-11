@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth-guard'
 import { getDb } from '@/lib/get-db'
-import { navigationItems } from '@/lib/nav-items'
+import { navigationItems, type View } from '@/lib/nav-items'
 import { ALL_ROLES, effectiveModulesFromOverride } from '@/lib/role-permissions'
 import type { Role } from '@prisma/client'
 
@@ -14,15 +14,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ role
   if (!ALL_ROLES.includes(role as Role)) return NextResponse.json({ error: 'Unknown role' }, { status: 400 })
 
   const { modules } = await req.json()
-  if (!Array.isArray(modules) || modules.some((m: unknown) => typeof m !== 'string' || !VALID_MODULE_IDS.has(m as never))) {
-    return NextResponse.json({ error: 'modules must be an array of valid module ids' }, { status: 400 })
+  if (!Array.isArray(modules) || modules.some((m: unknown) => typeof m !== 'string')) {
+    return NextResponse.json({ error: 'modules must be an array of strings' }, { status: 400 })
   }
+  // The client round-trips the role's whole existing module list back on every save
+  // (see RolesPermissions.tsx), so a stale id left over from a since-renamed/removed
+  // nav item (e.g. a module id that no longer exists in navigationItems) would
+  // otherwise hard-block every future save for that role, not just the one item that
+  // actually changed. Silently drop anything no longer recognized instead of
+  // rejecting the whole request — self-healing on the next save.
+  const validModules = (modules as string[]).filter(m => VALID_MODULE_IDS.has(m as View))
 
   const db = await getDb(auth.session)
   const saved = await db.roleModuleAccess.upsert({
     where: { role: role as Role },
-    create: { role: role as Role, modules },
-    update: { modules },
+    create: { role: role as Role, modules: validModules },
+    update: { modules: validModules },
   })
 
   return NextResponse.json({
