@@ -801,8 +801,8 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
     <style type="text/css">
-      @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
-      @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
+      @media only screen and (max-width:600px), only screen and (max-device-width:600px){.hide-mobile{display:none !important;}}
+      @media only screen and (min-width:601px), only screen and (min-device-width:601px){.hide-desktop{display:none !important;}}
       @media (prefers-color-scheme: dark){
         .email-page,.email-body{background:${pageBg} !important;}
         .email-content{background:${contentBg} !important;}

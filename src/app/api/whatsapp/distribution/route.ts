@@ -3,21 +3,30 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { getWhatsappDistributionMethod, setWhatsappDistributionMethod, type WhatsappDistributionMethod } from '@/lib/whatsapp-distribution'
+import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 // Admin-only settings screen for how new WhatsApp chats get handed out to sales —
-// either round-robin across a chosen pool, or a fixed percentage split. See
+// either round-robin across a chosen pool, or a fixed percentage split. Configured
+// separately per brand/number (Samara/Mischief/Otium each have their own pool). See
 // src/lib/whatsapp-distribution.ts for the assignment logic this configures.
 
-export async function GET() {
+function parseBrand(value: string | null): WhatsappBrand | null {
+  return (WHATSAPP_BRANDS as readonly string[]).includes(value ?? '') ? (value as WhatsappBrand) : null
+}
+
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const brand = parseBrand(req.nextUrl.searchParams.get('brand'))
+  if (!brand) return NextResponse.json({ error: 'Invalid or missing brand' }, { status: 400 })
+
   const db = await getDb(session)
   const [salesUsers, participants, method] = await Promise.all([
     db.user.findMany({ where: { role: 'SALES' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
-    db.whatsappDistributionParticipant.findMany({ orderBy: { createdAt: 'asc' }, select: { userId: true, percentage: true } }),
-    getWhatsappDistributionMethod(db),
+    db.whatsappDistributionParticipant.findMany({ where: { brand }, orderBy: { createdAt: 'asc' }, select: { userId: true, percentage: true } }),
+    getWhatsappDistributionMethod(db, brand),
   ])
 
   return NextResponse.json({ method, salesUsers, participants })
@@ -29,6 +38,9 @@ export async function PUT(req: NextRequest) {
   if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
+  const brand = parseBrand(typeof body.brand === 'string' ? body.brand : null)
+  if (!brand) return NextResponse.json({ error: 'Invalid or missing brand' }, { status: 400 })
+
   const method: string = body.method
   const rawParticipants: { userId?: string; percentage?: number }[] = Array.isArray(body.participants) ? body.participants : []
 
@@ -62,14 +74,14 @@ export async function PUT(req: NextRequest) {
 
   const keepIds = participants.map(p => p.userId)
   await db.$transaction([
-    db.whatsappDistributionParticipant.deleteMany({ where: { userId: { notIn: keepIds } } }),
+    db.whatsappDistributionParticipant.deleteMany({ where: { brand, userId: { notIn: keepIds } } }),
     ...participants.map(p => db.whatsappDistributionParticipant.upsert({
-      where: { userId: p.userId },
-      create: { userId: p.userId, percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
+      where: { userId_brand: { userId: p.userId, brand } },
+      create: { userId: p.userId, brand, percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
       update: { percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
     })),
   ])
-  await setWhatsappDistributionMethod(db, method as WhatsappDistributionMethod, session.user.id)
+  await setWhatsappDistributionMethod(db, brand, method as WhatsappDistributionMethod, session.user.id)
 
   return NextResponse.json({ ok: true })
 }

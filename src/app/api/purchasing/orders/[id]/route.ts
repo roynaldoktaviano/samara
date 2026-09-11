@@ -147,7 +147,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
     supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string
-    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string }[]
+    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
     transitStops?: string[]
   }
@@ -327,6 +327,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty), unitCost: Number(it.unitCost) || 0,
           inventoryRoomId: it.inventoryRoomId || null, inventoryCategoryId: it.inventoryCategoryId || null,
+          sourceInventoryItemId: it.sourceInventoryItemId || null,
         })),
       })
     }

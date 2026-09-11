@@ -8,7 +8,9 @@ import { roleMatches } from '@/lib/role-utils'
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // GET-only: Boat Captain/Cruise Director need the room list to run their own ship's
 // Stock Opname — never room/category create/edit.
-const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+// CREW included: they can create Purchase Requests and need to browse the Inventory
+// picker there (see src/components/purchasing/requests/RequestsPage.tsx) — read-only.
+const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'CREW']
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)

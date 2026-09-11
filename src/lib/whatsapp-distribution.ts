@@ -1,19 +1,19 @@
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient, WhatsappBrand } from '@prisma/client'
 
 export type WhatsappDistributionMethod = 'ROUND_ROBIN' | 'PERCENTAGE'
 
-const METHOD_KEY = 'whatsapp_distribution_method'
-const COUNTER_KEY = 'whatsapp_sales_round_robin'
+const methodKey = (brand: WhatsappBrand) => `whatsapp_distribution_method_${brand}`
+const counterKey = (brand: WhatsappBrand) => `whatsapp_sales_round_robin_${brand}`
 
-export async function getWhatsappDistributionMethod(db: PrismaClient): Promise<WhatsappDistributionMethod> {
-  const setting = await db.systemSetting.findUnique({ where: { key: METHOD_KEY } })
+export async function getWhatsappDistributionMethod(db: PrismaClient, brand: WhatsappBrand): Promise<WhatsappDistributionMethod> {
+  const setting = await db.systemSetting.findUnique({ where: { key: methodKey(brand) } })
   return setting?.textValue === 'PERCENTAGE' ? 'PERCENTAGE' : 'ROUND_ROBIN'
 }
 
-export async function setWhatsappDistributionMethod(db: PrismaClient, method: WhatsappDistributionMethod, updatedBy?: string): Promise<void> {
+export async function setWhatsappDistributionMethod(db: PrismaClient, brand: WhatsappBrand, method: WhatsappDistributionMethod, updatedBy?: string): Promise<void> {
   await db.systemSetting.upsert({
-    where: { key: METHOD_KEY },
-    create: { key: METHOD_KEY, textValue: method, updatedBy },
+    where: { key: methodKey(brand) },
+    create: { key: methodKey(brand), textValue: method, updatedBy },
     update: { textValue: method, updatedBy },
   })
 }
@@ -31,23 +31,24 @@ function pickWeighted(participants: { userId: string; percentage: number }[]): s
 
 // Picks who a brand-new WhatsApp conversation gets assigned to (see POST
 // /api/webhooks/whatsapp), per whatever the admin configured at Settings > Chat >
-// Pembagian WhatsApp (see /api/whatsapp/distribution). Returns null if the pool is
-// empty — e.g. nobody's been configured yet.
-export async function pickNextSalesUserId(db: PrismaClient): Promise<string | null> {
+// Pembagian WhatsApp (see /api/whatsapp/distribution) for that specific brand/number.
+// Returns null if that brand's pool is empty — e.g. nobody's been configured yet.
+export async function pickNextSalesUserId(db: PrismaClient, brand: WhatsappBrand): Promise<string | null> {
   const participants = await db.whatsappDistributionParticipant.findMany({
+    where: { brand },
     orderBy: { createdAt: 'asc' },
     select: { userId: true, percentage: true },
   })
   if (participants.length === 0) return null
 
-  const method = await getWhatsappDistributionMethod(db)
+  const method = await getWhatsappDistributionMethod(db, brand)
   if (method === 'PERCENTAGE') return pickWeighted(participants)
 
-  // ROUND_ROBIN — atomic increment on a shared counter row; the UPDATE row-locks in
-  // Postgres, so concurrent webhook deliveries still each get a distinct, gapless
-  // pointer value.
+  // ROUND_ROBIN — atomic increment on a shared counter row (one per brand); the
+  // UPDATE row-locks in Postgres, so concurrent webhook deliveries still each get a
+  // distinct, gapless pointer value.
   const rows = await db.$queryRaw<{ value: number }[]>`
-    INSERT INTO "Counter" (key, value) VALUES (${COUNTER_KEY}, 1)
+    INSERT INTO "Counter" (key, value) VALUES (${counterKey(brand)}, 1)
     ON CONFLICT (key) DO UPDATE SET value = "Counter".value + 1
     RETURNING value
   `

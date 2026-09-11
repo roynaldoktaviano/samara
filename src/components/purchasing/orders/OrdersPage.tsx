@@ -31,6 +31,7 @@ interface OrderItem {
   id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null
   inventoryRoomId?: string | null; inventoryCategoryId?: string | null
   inventoryRoom?: { name: string } | null; inventoryCategory?: { name: string } | null
+  sourceInventoryItemId?: string | null
 }
 interface TransitStop { locationId: string; sequence: number; location: { id: string; name: string; type: string } }
 interface TransitLegItem { id: string; itemId: string | null; itemName: string; requestedQty: number; dispatchedQty: number; receivedQty: number }
@@ -313,7 +314,15 @@ function EmployeeCombobox({ value, employees, onChange }: {
   )
 }
 
-type OrderLine = { itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number; search: string; open: boolean; inventoryRoomId: string; inventoryCategoryId: string }
+type OrderLine = {
+  itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number
+  search: string; open: boolean; inventoryRoomId: string; inventoryCategoryId: string
+  // Set only when this line came from a Purchase Request's "Inventory" picker (see
+  // RequestsPage.tsx) — not user-editable here, just carried through unchanged so
+  // editing this PO doesn't silently drop the link that tells Goods Receipt to top up
+  // that InventoryItem instead of creating a StockLot.
+  sourceInventoryItemId?: string | null
+}
 
 // Portal-based so the dropdown isn't clipped by the line-items table's
 // overflow-x-auto scroll container (a plain absolute/relative pair would get cut
@@ -1802,6 +1811,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         orderedQty: it.orderedQty, unitCost: it.unitCost,
         search: '', open: false,
         inventoryRoomId: it.inventoryRoomId ?? '', inventoryCategoryId: it.inventoryCategoryId ?? '',
+        sourceInventoryItemId: it.sourceInventoryItemId ?? null,
       }
     }) : [{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
     setExtraCharges(detail.extraCharges ?? [])
@@ -1835,6 +1845,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
             inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
+            sourceInventoryItemId: l.sourceInventoryItemId || undefined,
           })),
           extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
           discountType: discountValue > 0 ? discountType : undefined,

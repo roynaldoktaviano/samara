@@ -35,8 +35,12 @@ export async function GET(req: NextRequest) {
   let total = 0
 
   if (source === 'customers') {
+    // Only the actual lead/primary booker on a booking counts as a "Guest" subscriber —
+    // companions a lead typed into the multi-guest form (see booking-form/[token]) never
+    // opted in themselves, so they're excluded via BookingGuest.isLead.
     const where = {
-      deletedAt: null, email: { not: null },
+      deletedAt: null, email: { not: null, contains: '@' },
+      guestOf: { some: { isLead: true } },
       ...(yachtId && { bookings: { some: { yachtId } } }),
       ...searchOr(['name', 'email']),
     }
@@ -45,19 +49,19 @@ export async function GET(req: NextRequest) {
       db.customer.count({ where }),
     ])
   } else if (source === 'leads') {
-    const where = { deletedAt: null, email: { not: null }, ...searchOr(['name', 'email']) }
+    const where = { deletedAt: null, email: { not: null, contains: '@' }, ...searchOr(['name', 'email']) }
     ;[members, total] = await Promise.all([
       db.lead.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.lead.count({ where }),
     ])
   } else if (source === 'agents') {
-    const where = { email: { not: null }, ...searchOr(['name', 'email']) }
+    const where = { email: { not: null, contains: '@' }, ...searchOr(['name', 'email']) }
     ;[members, total] = await Promise.all([
       db.agent.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.agent.count({ where }),
     ])
   } else {
-    const where = { email: { not: null }, ...searchOr(['name', 'email']) }
+    const where = { email: { not: null, contains: '@' }, ...searchOr(['name', 'email']) }
     ;[members, total] = await Promise.all([
       db.agentLeadContact.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.agentLeadContact.count({ where }),

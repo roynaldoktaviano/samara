@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { deliveryLocationId, notes, items, requestedByEmployeeId, neededByDate, isUrgent, urgentReason, purpose, tripBookingId } = body as {
     deliveryLocationId?: string; notes?: string
-    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[] }[]
+    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
     requestedByEmployeeId?: string; neededByDate?: string; isUrgent?: boolean; urgentReason?: string
     purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
   }
@@ -146,6 +146,13 @@ export async function POST(req: NextRequest) {
   if (purpose === 'TRIP' && tripBookingId) {
     const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
     if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
+  }
+  const inventoryItemIds = [...new Set(items.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]
+  if (inventoryItemIds.length > 0) {
+    const foundInventoryItems = await db.inventoryItem.findMany({ where: { id: { in: inventoryItemIds } }, select: { id: true } })
+    if (foundInventoryItems.length !== inventoryItemIds.length) {
+      return NextResponse.json({ error: 'One or more selected inventory items were not found' }, { status: 400 })
+    }
   }
 
   // Route to the requester's manager for approval, same as the public /request-order
@@ -191,6 +198,7 @@ export async function POST(req: NextRequest) {
           supplierName: it.supplierName?.trim() || null,
           notes: it.notes?.trim() || null,
           imageKeys: Array.isArray(it.imageKeys) ? it.imageKeys.filter(Boolean) : [],
+          sourceInventoryItemId: it.sourceInventoryItemId || null,
         })),
       },
     },

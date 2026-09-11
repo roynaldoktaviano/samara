@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
               data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
             })
           : await db.whatsappConversation.create({
-              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: await pickNextSalesUserId(db), brand },
+              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: brand ? await pickNextSalesUserId(db, brand) : null, brand },
             })
 
         // Resolve the quoted message (if this is a reply) — Meta only gives us its WAMID,

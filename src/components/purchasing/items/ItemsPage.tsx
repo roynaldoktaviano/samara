@@ -178,6 +178,42 @@ export default function ItemsPage() {
     fetch(`/api/inventory/categories?roomId=${convertRoomId}`).then(r => r.json()).then(setConvertCategories)
   }, [convertRoomId])
 
+  // Convert to Stock Item — the other migration path for a legacy non-stock item:
+  // flips it into an ordinary Stock Item tracked in this same Purchasing module,
+  // instead of moving it into the room/category-based Inventory module.
+  const [convertStockItem, setConvertStockItem] = useState<PurchaseItem | null>(null)
+  const [convertStockLocationId, setConvertStockLocationId] = useState('')
+  const [convertStockQuantity, setConvertStockQuantity] = useState('0')
+  const [convertStockUnitCost, setConvertStockUnitCost] = useState('0')
+  const [convertStockSaving, setConvertStockSaving] = useState(false)
+  const [convertStockError, setConvertStockError] = useState('')
+
+  function openConvertStock(item: PurchaseItem) {
+    setConvertStockItem(item)
+    setConvertStockLocationId(item.currentLocation?.id ?? '')
+    setConvertStockQuantity(String(item.currentLocationQty || item.totalQty || 0))
+    setConvertStockUnitCost(String(item.standardCost || 0))
+    setConvertStockError('')
+  }
+
+  async function saveConvertStock() {
+    if (!convertStockItem) return
+    setConvertStockSaving(true); setConvertStockError('')
+    const res = await fetch(`/api/purchasing/items/${convertStockItem.id}/convert-to-stock`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        locationId: convertStockLocationId || null,
+        quantity: Number(convertStockQuantity) || 0,
+        unitCost: Number(convertStockUnitCost) || 0,
+      }),
+    })
+    const data = await res.json()
+    setConvertStockSaving(false)
+    if (!res.ok) { setConvertStockError(data.error ?? 'Failed to convert'); return }
+    setConvertStockItem(null)
+    load()
+  }
+
   async function saveConvert() {
     if (!convertItem) return
     if (!convertCategoryId) { setConvertError('Please select a category'); return }
@@ -668,7 +704,8 @@ export default function ItemsPage() {
                     <div className="flex items-center gap-2 justify-end">
                       {/* Non-Stock Item is a read-only legacy view now — no edit/delete,
                           only viewing its history (row click still opens openHistory) and
-                          converting it into a real InventoryItem in the Inventory module. */}
+                          converting it into either a Stock Item (stays in this module) or
+                          a real InventoryItem in the Inventory module. */}
                       {item.isStockTracked ? (
                         <>
                           <button onClick={() => openEdit(item)} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -679,10 +716,16 @@ export default function ItemsPage() {
                           </button>
                         </>
                       ) : !item.migratedInventoryItem && (
-                        <button onClick={() => openConvert(item)}
-                          className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900 border border-amber-200 hover:bg-amber-50 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
-                          <PackagePlus className="h-3.5 w-3.5" /> Convert to Inventory
-                        </button>
+                        <>
+                          <button onClick={() => openConvertStock(item)}
+                            className="flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-900 border border-blue-200 hover:bg-blue-50 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
+                            <Boxes className="h-3.5 w-3.5" /> Convert to Stock
+                          </button>
+                          <button onClick={() => openConvert(item)}
+                            className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900 border border-amber-200 hover:bg-amber-50 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
+                            <PackagePlus className="h-3.5 w-3.5" /> Convert to Inventory
+                          </button>
+                        </>
                       )}
                       <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
                     </div>
@@ -1018,6 +1061,57 @@ export default function ItemsPage() {
               <button onClick={() => setChangeLocationItem(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
               <button onClick={saveChangeLocation} disabled={changeLocationSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
                 {changeLocationSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Convert to Stock Modal — flips a legacy non-stock item into an ordinary
+          Stock Item, optionally seeding an opening StockLot so its existing quantity
+          isn't lost in the switch. */}
+      {convertStockItem && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="font-semibold mb-1">Convert to Stock Item</h3>
+            <p className="text-sm text-muted-foreground mb-4">{convertStockItem.name}</p>
+
+            {convertStockError && (
+              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {convertStockError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Opening Location</label>
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={convertStockLocationId} onChange={e => setConvertStockLocationId(e.target.value)}>
+                  <option value="">— None —</option>
+                  {renderLocationOptions(locations)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Opening Qty</label>
+                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    value={convertStockQuantity} onChange={e => setConvertStockQuantity(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit Cost</label>
+                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    value={convertStockUnitCost} onChange={e => setConvertStockUnitCost(e.target.value)} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This item will move to the Stock Item tab and start being tracked here going forward. Leave quantity at 0 if it has no physical stock right now.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-5">
+              <button onClick={() => setConvertStockItem(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={saveConvertStock} disabled={convertStockSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
+                {convertStockSaving ? 'Converting...' : 'Convert'}
               </button>
             </div>
           </div>

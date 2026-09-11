@@ -61,7 +61,10 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
   const customerFilter = asFilter(sources.customers)
   if (customerFilter) {
     const excluded = excludeSet(customerFilter.excludeIds)
-    const where: Record<string, unknown> = { deletedAt: null, email: { not: null } }
+    // Only the actual lead/primary booker on a booking counts as a "Guest" subscriber —
+    // companions a lead typed into the multi-guest form (see booking-form/[token]) never
+    // opted in themselves, so they're excluded via BookingGuest.isLead.
+    const where: Record<string, unknown> = { deletedAt: null, email: { not: null, contains: '@' }, guestOf: { some: { isLead: true } } }
     if (customerFilter.search) {
       where.OR = [
         { name: { contains: customerFilter.search, mode: 'insensitive' } },
@@ -86,7 +89,7 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
   const leadFilter = asFilter(sources.leads)
   if (leadFilter) {
     const excluded = excludeSet(leadFilter.excludeIds)
-    const where: Record<string, unknown> = { deletedAt: null, email: { not: null } }
+    const where: Record<string, unknown> = { deletedAt: null, email: { not: null, contains: '@' } }
     if (leadFilter.search) {
       where.OR = [
         { name: { contains: leadFilter.search, mode: 'insensitive' } },
@@ -104,7 +107,7 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
   const agentFilter = asFilter(sources.agents)
   if (agentFilter) {
     const excluded = excludeSet(agentFilter.excludeIds)
-    const where: Record<string, unknown> = { email: { not: null } }
+    const where: Record<string, unknown> = { email: { not: null, contains: '@' } }
     if (agentFilter.search) {
       where.OR = [
         { name: { contains: agentFilter.search, mode: 'insensitive' } },
@@ -122,7 +125,7 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
   const agentLeadFilter = asFilter(sources.agentLeads)
   if (agentLeadFilter) {
     const excluded = excludeSet(agentLeadFilter.excludeIds)
-    const where: Record<string, unknown> = { email: { not: null } }
+    const where: Record<string, unknown> = { email: { not: null, contains: '@' } }
     if (agentLeadFilter.search) {
       where.OR = [
         { name: { contains: agentLeadFilter.search, mode: 'insensitive' } },

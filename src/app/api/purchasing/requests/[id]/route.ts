@@ -37,6 +37,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           quotationApprovedBy: { select: { id: true, name: true } },
           quotationRejectedBy: { select: { id: true, name: true } },
           verifyRejectedBy: { select: { id: true, name: true } },
+          sourceInventoryItem: {
+            select: { id: true, itemNumber: true, name: true, room: { select: { name: true } }, category: { select: { name: true } } },
+          },
         },
       },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
@@ -156,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     edit?: boolean
     deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
-    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[] }[]
+    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
     purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
   }
 
@@ -193,6 +196,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
       if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
     }
+    const inventoryItemIds = [...new Set(editItems.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]
+    if (inventoryItemIds.length > 0) {
+      const foundInventoryItems = await db.inventoryItem.findMany({ where: { id: { in: inventoryItemIds } }, select: { id: true } })
+      if (foundInventoryItems.length !== inventoryItemIds.length) {
+        return NextResponse.json({ error: 'One or more selected inventory items were not found' }, { status: 400 })
+      }
+    }
 
     await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
     const updated = await db.purchaseRequest.update({
@@ -219,6 +229,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             supplierName: it.supplierName || null,
             notes: it.notes || null,
             imageKeys: it.imageKeys ?? [],
+            sourceInventoryItemId: it.sourceInventoryItemId || null,
           })),
         },
       },
@@ -346,19 +357,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // PR from fragmenting into a pile of near-duplicate POs.
   const poItems = readyItemIds ? request.items.filter(item => readyItemIds!.has(item.id) && !transferByRequestItemId.has(item.id)) : []
   const roomAssignmentByItemId = new Map((roomAssignments ?? []).map(ra => [ra.requestItemId, ra]))
+  // Items requested against a specific existing InventoryItem already know exactly which
+  // Room/Category they belong to (the InventoryItem's own) — they don't need (and
+  // shouldn't be asked for) a separate manual roomAssignment like ordinary stock items do.
+  const inventoryLinkedItems = poItems.filter(it => !!it.sourceInventoryItemId)
+  const sourceInventoryItemsById = inventoryLinkedItems.length > 0
+    ? new Map((await db.inventoryItem.findMany({
+        where: { id: { in: inventoryLinkedItems.map(it => it.sourceInventoryItemId!) } },
+        select: { id: true, roomId: true, categoryId: true },
+      })).map(inv => [inv.id, inv]))
+    : new Map<string, { id: string; roomId: string; categoryId: string }>()
+
   if (status === 'CONVERTED' && poItems.length > 0) {
     // A PR delivering to a ship must say, per item, which Inventory Room/Category it's
     // destined for — same rule as creating/editing a PO directly (see
-    // src/app/api/purchasing/orders/route.ts).
+    // src/app/api/purchasing/orders/route.ts). Doesn't apply to inventory-linked items
+    // (see above).
     if (request.deliveryLocationId) {
       const deliveryLocation = await db.stockLocation.findUnique({ where: { id: request.deliveryLocationId }, select: { type: true } })
       if (deliveryLocation?.type === 'VESSEL') {
-        const missing = poItems.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
+        const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId)
+        const missing = roomAssignable.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
         if (missing.length > 0) {
           return NextResponse.json({ error: `Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
         }
-        const roomIds = [...new Set(poItems.map(it => roomAssignmentByItemId.get(it.id)!.roomId))]
-        const categoryIds = [...new Set(poItems.map(it => roomAssignmentByItemId.get(it.id)!.categoryId))]
+        const roomIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.roomId))]
+        const categoryIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.categoryId))]
         const [validRooms, validCategories] = await Promise.all([
           db.inventoryRoom.count({ where: { id: { in: roomIds }, locationId: request.deliveryLocationId } }),
           db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: request.deliveryLocationId } } }),
@@ -388,16 +412,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const [supplierKey, groupItems] of groups) {
       const supplierId = supplierKey === '__none__' ? null : supplierKey
       const existingDraft = await db.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT', supplierId } })
-      const itemsCreate = groupItems.map((it) => ({
-        id: crypto.randomUUID(),
-        itemId: it.itemId ?? null,
-        itemName: it.itemName,
-        unit: it.itemId ? null : it.unit,
-        orderedQty: it.quantity,
-        unitCost: it.estimatedCost,
-        inventoryRoomId: roomAssignmentByItemId.get(it.id)?.roomId ?? null,
-        inventoryCategoryId: roomAssignmentByItemId.get(it.id)?.categoryId ?? null,
-      }))
+      const itemsCreate = groupItems.map((it) => {
+        const sourceInv = it.sourceInventoryItemId ? sourceInventoryItemsById.get(it.sourceInventoryItemId) : null
+        return {
+          id: crypto.randomUUID(),
+          itemId: it.itemId ?? null,
+          itemName: it.itemName,
+          unit: it.itemId ? null : it.unit,
+          orderedQty: it.quantity,
+          unitCost: it.estimatedCost,
+          inventoryRoomId: sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId ?? null),
+          inventoryCategoryId: sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId ?? null),
+          sourceInventoryItemId: it.sourceInventoryItemId ?? null,
+        }
+      })
 
       let groupPoId: string
       if (existingDraft) {

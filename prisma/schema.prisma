@@ -197,7 +197,7 @@ model User {
   inventoryItemsCreated                  InventoryItem[]
   inventoryOpnamesCounted                InventoryOpname[]
   assignedWhatsappConversations           WhatsappConversation[]      @relation("WhatsappConversationAssignedTo")
-  whatsappDistributionParticipant         WhatsappDistributionParticipant?
+  whatsappDistributionParticipants        WhatsappDistributionParticipant[]
 
   @@index([assignedYachtId])
 }
@@ -2584,15 +2584,22 @@ model PurchaseOrderItem {
   // this field existed.
   inventoryRoomId     String?
   inventoryCategoryId String?
+  // Set when this line was requested against a specific existing InventoryItem (see
+  // PurchaseRequestItem.sourceInventoryItemId, carried forward at PR->PO conversion) —
+  // receiveGoods.ts increments that InventoryItem's quantity on receipt instead of
+  // creating a StockLot, since this line has no PurchaseItem catalog link at all.
+  sourceInventoryItemId String?
 
   order             PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item              PurchaseItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
   inventoryRoom     InventoryRoom?     @relation(fields: [inventoryRoomId], references: [id], onDelete: SetNull)
   inventoryCategory InventoryCategory? @relation(fields: [inventoryCategoryId], references: [id], onDelete: SetNull)
+  sourceInventoryItem InventoryItem?   @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([inventoryRoomId])
   @@index([inventoryCategoryId])
+  @@index([sourceInventoryItemId])
 }
 
 model GoodsReceipt {
@@ -2636,11 +2643,17 @@ model GoodsReceiptItem {
   batch       String?
   expiryDate  DateTime?
   notes       String?
+  // Copied from PurchaseOrderItem.sourceInventoryItemId at receipt time — purely a
+  // traceability record on the receipt itself (which InventoryItem this line topped up);
+  // the actual InventoryItem.quantity increment already happened via that PO item.
+  sourceInventoryItemId String?
 
-  receipt GoodsReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  item    PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  receipt           GoodsReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item              PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  sourceInventoryItem InventoryItem? @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([receiptId])
+  @@index([sourceInventoryItemId])
 }
 
 // Ordered intermediate stops for a PO's shipping route, between the supplier and
@@ -2922,6 +2935,8 @@ model InventoryItem {
   createdBy           User                   @relation(fields: [createdById], references: [id])
   opnameEntries       InventoryOpnameEntry[]
   replacementRequests PurchaseRequestItem[]
+  poItems             PurchaseOrderItem[]
+  goodsReceiptItems   GoodsReceiptItem[]
 
   @@index([categoryId])
   @@index([roomId])
@@ -4042,18 +4057,23 @@ model WhatsappMessage {
   @@index([conversationId, createdAt])
 }
 
-// Admin-configured pool of sales reps that new WhatsApp chats get assigned to (see
-// src/lib/whatsapp-distribution.ts + /api/whatsapp/distribution UI). A row's mere
-// existence means that user is in the pool; `percentage` only matters when the
-// method (stored as SystemSetting key "whatsapp_distribution_method") is PERCENTAGE
-// — ROUND_ROBIN ignores it and cycles the pool in `createdAt` order instead.
+// Admin-configured pool of sales reps that new WhatsApp chats get assigned to, kept
+// separately per brand/number (see src/lib/whatsapp-distribution.ts +
+// /api/whatsapp/distribution UI) since each brand's leads should rotate among its own
+// pool of reps. A row's mere existence means that user is in that brand's pool;
+// `percentage` only matters when the method (stored as SystemSetting key
+// "whatsapp_distribution_method_<brand>") is PERCENTAGE — ROUND_ROBIN ignores it and
+// cycles the pool in `createdAt` order instead.
 model WhatsappDistributionParticipant {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  percentage Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand      WhatsappBrand @default(SAMARA)
+  percentage Int           @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([userId, brand])
 }
 
 // ─── Instagram DM (admin-only inbox) ───────────────────────────────────────────

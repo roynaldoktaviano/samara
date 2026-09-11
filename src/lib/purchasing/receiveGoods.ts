@@ -84,6 +84,14 @@ export async function receiveGoods(db: Db, params: {
   const stockTrackedMap = new Map(purchaseItemsData.map(i => [i.id, i.isStockTracked]))
 
   const { gr, newStatus } = await db.$transaction(async (tx) => {
+    // Resolved once up front (rather than per-item inside the loop below) so the same
+    // lookup can also seed GoodsReceiptItem.sourceInventoryItemId at create time.
+    const poItemsByLineIndex = await Promise.all(items.map(it =>
+      it.poItemId
+        ? tx.purchaseOrderItem.findUnique({ where: { id: it.poItemId } })
+        : tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } }),
+    ))
+
     const gr = await tx.goodsReceipt.create({
       data: {
         id: crypto.randomUUID(),
@@ -97,7 +105,7 @@ export async function receiveGoods(db: Db, params: {
         receivePhotoKey: params.receivePhotoKey || null,
         receivedAt: new Date(),
         items: {
-          create: items.map(it => ({
+          create: items.map((it, i) => ({
             id: crypto.randomUUID(),
             itemId: it.itemId || null,
             itemName: it.itemName,
@@ -108,24 +116,36 @@ export async function receiveGoods(db: Db, params: {
             batch: it.batch?.trim() || null,
             expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
             notes: it.notes?.trim() || null,
+            sourceInventoryItemId: poItemsByLineIndex[i]?.sourceInventoryItemId ?? null,
           })),
         },
       },
       include: { items: true },
     })
 
-    for (const it of items) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
       if (!it.receivedQty) continue
       const purchaseQty = Number(it.receivedQty)
       if (purchaseQty <= 0) continue
 
       // Advance the PO line's receivedQty regardless of whether it's linked to a master item —
       // custom/non-stock lines (e.g. one-off purchases) still need to reach RECEIVED status.
-      const poItem = it.poItemId
-        ? await tx.purchaseOrderItem.findUnique({ where: { id: it.poItemId } })
-        : await tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } })
+      const poItem = poItemsByLineIndex[i]
       if (poItem) {
         await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
+      }
+
+      // Lines requested against a specific existing InventoryItem (see "Convert to Stock"'s
+      // sibling picker in Purchase Request creation) never touch StockLot/StockMovement at
+      // all — they have no PurchaseItem catalog link, and their stock ledger IS the
+      // InventoryItem row itself, incremented directly by the physical quantity received.
+      if (poItem?.sourceInventoryItemId) {
+        await tx.inventoryItem.update({
+          where: { id: poItem.sourceInventoryItemId },
+          data: { quantity: { increment: Math.round(purchaseQty) } },
+        })
+        continue
       }
 
       // Stock lot / movement: applies to catalog items and to custom/non-catalog
@@ -238,17 +258,22 @@ export async function receiveGoods(db: Db, params: {
 
     // If this PO has a transit route, spawn the next leg (first stop -> next stop/final
     // destination) as a normal StockTransfer — still needs its own dispatch+receive.
+    // Inventory-linked lines are excluded: they already incremented their InventoryItem
+    // above (StockTransfer legs move StockLot balances, which these lines never touch),
+    // so forwarding them further isn't meaningful — a routed PO carrying such a line only
+    // makes sense if it's the sole/final stop, matching effectiveLocationId already.
     if (hasRoute) {
       const routeLocationIds = [...po.transitStops.map(s => s.locationId), po.deliveryLocationId!]
       const nextHop = resolveNextHop(routeLocationIds, effectiveLocationId)
-      if (nextHop) {
+      const transferableItems = gr.items.filter(i => !i.sourceInventoryItemId)
+      if (nextHop && transferableItems.length > 0) {
         await spawnNextTransitLeg(tx, {
           purchaseOrderId: orderId,
           originGoodsReceiptId: gr.id,
           legSequence: 1,
           fromLocationId: effectiveLocationId,
           toLocationId: nextHop,
-          items: gr.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, requestedQty: i.receivedQty })),
+          items: transferableItems.map(i => ({ itemId: i.itemId, itemName: i.itemName, requestedQty: i.receivedQty })),
         })
       }
     }

@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon, FileText } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon, FileText, Eye, EyeOff } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { usePasswordGate } from '@/components/ui/password-gate'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import type { OtherIncomeItem } from '@/lib/payroll'
 import AddFreelanceModal, { type FreelanceEmployee } from './AddFreelanceModal'
@@ -305,6 +306,19 @@ function DetailEmpty({ children }: { children: React.ReactNode }) {
   return <div className="text-sm text-muted-foreground text-center py-10 border-2 border-dashed rounded-xl">{children}</div>
 }
 
+function PrivateDataRevealButton({ revealed, onReveal, onHide, label = 'Show' }: { revealed: boolean; onReveal: () => void; onHide: () => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={revealed ? onHide : onReveal}
+      className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground border rounded-full px-3 py-1.5 transition-colors"
+    >
+      {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      {revealed ? 'Hide' : label}
+    </button>
+  )
+}
+
 function DetailBadge({ tone, children }: { tone: 'green' | 'gray' | 'amber' | 'blue' | 'red'; children: React.ReactNode }) {
   const TONES: Record<string, string> = {
     green: 'bg-green-100 text-green-700', gray: 'bg-gray-100 text-gray-600',
@@ -347,6 +361,7 @@ function EmployeeDetailModal({
 }) {
   const years = formatServiceYear(employee.joinDate, employee.resignedAt)
   const otherIncomeTotal = employee.otherIncome.reduce((sum, i) => sum + (i.amount || 0), 0)
+  const privateGate = usePasswordGate()
   const rangePosition = compensationBand && employee.basicSalary != null
     ? Math.min(100, Math.max(0, ((employee.basicSalary - compensationBand.minSalary) / Math.max(1, compensationBand.maxSalary - compensationBand.minSalary)) * 100))
     : null
@@ -442,55 +457,64 @@ function EmployeeDetailModal({
 
             {tab === 'compensation' && (
               <div className="space-y-6">
-                {employee.employmentStatus === 'Freelance' ? (
+                <div className="flex justify-end">
+                  <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
+                </div>
+
+                {!privateGate.revealed ? (
+                  <DetailEmpty>Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view them.</DetailEmpty>
+                ) : employee.employmentStatus === 'Freelance' ? (
                   <div className="grid grid-cols-2 gap-3">
                     <DetailStat label="Freelance Fee" value={employee.freelanceFee != null ? fmtMoney(employee.freelanceFee) : '—'} />
                     <DetailStat label="Fee Type" value={employee.freelanceFeeType ?? '—'} />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-3">
-                    <DetailStat label="Basic Salary" value={employee.basicSalary != null ? fmtMoney(employee.basicSalary) : '—'} />
-                    <DetailStat label="Allowance" value={employee.allowance != null ? fmtMoney(employee.allowance) : '—'} />
-                    <DetailStat label="Uang Layar (base)" value={employee.uangLayar != null ? fmtMoney(employee.uangLayar) : '—'} />
-                    <DetailStat label="Uang Makan (per day)" value={employee.uangMakan != null ? fmtMoney(employee.uangMakan) : '—'} />
-                    <DetailStat label="THR" value={employee.thr != null ? fmtMoney(employee.thr) : '—'} />
-                    <DetailStat label="Other Income" value={fmtMoney(otherIncomeTotal)} />
-                  </div>
-                )}
-
-                {employee.otherIncome.length > 0 && (
-                  <DetailSection title="Other Income Components">
-                    <div className="space-y-2.5">
-                      {employee.otherIncome.map(item => (
-                        <div key={item.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate">{item.name || 'Untitled'}</p>
-                            {item.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>}
-                          </div>
-                          <span className="text-sm font-bold shrink-0">{fmtMoney(item.amount)}</span>
-                        </div>
-                      ))}
+                  <>
+                    <div className="grid grid-cols-3 gap-3">
+                      <DetailStat label="Basic Salary" value={employee.basicSalary != null ? fmtMoney(employee.basicSalary) : '—'} />
+                      <DetailStat label="Allowance" value={employee.allowance != null ? fmtMoney(employee.allowance) : '—'} />
+                      <DetailStat label="Uang Layar (base)" value={employee.uangLayar != null ? fmtMoney(employee.uangLayar) : '—'} />
+                      <DetailStat label="Uang Makan (per day)" value={employee.uangMakan != null ? fmtMoney(employee.uangMakan) : '—'} />
+                      <DetailStat label="THR" value={employee.thr != null ? fmtMoney(employee.thr) : '—'} />
+                      <DetailStat label="Other Income" value={fmtMoney(otherIncomeTotal)} />
                     </div>
-                  </DetailSection>
-                )}
 
-                {employee.role && (
-                  <DetailSection title="Role Compensation Range">
-                    {compensationBand ? (
-                      <div className="border border-gray-100 rounded-xl px-5 py-4">
-                        <p className="text-sm font-bold">{fmtMoney(compensationBand.minSalary)} — {fmtMoney(compensationBand.maxSalary)}</p>
-                        <div className="relative h-2 bg-muted rounded-full mt-3.5">
-                          <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-[#bdac7e] border-2 border-white shadow" style={{ left: `calc(${rangePosition ?? 0}% - 7px)` }} />
+                    {employee.otherIncome.length > 0 && (
+                      <DetailSection title="Other Income Components">
+                        <div className="space-y-2.5">
+                          {employee.otherIncome.map(item => (
+                            <div key={item.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold truncate">{item.name || 'Untitled'}</p>
+                                {item.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>}
+                              </div>
+                              <span className="text-sm font-bold shrink-0">{fmtMoney(item.amount)}</span>
+                            </div>
+                          ))}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-2.5">
-                          {employee.basicSalary != null ? `Basic salary is positioned at ${Math.round(rangePosition ?? 0)}% of the approved range for ${employee.level?.toLowerCase() ?? 'unset'} level.` : 'No basic salary set.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <DetailEmpty>No compensation band set for this role{employee.level ? ` at ${employee.level.toLowerCase()} level` : ''}.</DetailEmpty>
+                      </DetailSection>
                     )}
-                  </DetailSection>
+
+                    {employee.role && (
+                      <DetailSection title="Role Compensation Range">
+                        {compensationBand ? (
+                          <div className="border border-gray-100 rounded-xl px-5 py-4">
+                            <p className="text-sm font-bold">{fmtMoney(compensationBand.minSalary)} — {fmtMoney(compensationBand.maxSalary)}</p>
+                            <div className="relative h-2 bg-muted rounded-full mt-3.5">
+                              <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-[#bdac7e] border-2 border-white shadow" style={{ left: `calc(${rangePosition ?? 0}% - 7px)` }} />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2.5">
+                              {employee.basicSalary != null ? `Basic salary is positioned at ${Math.round(rangePosition ?? 0)}% of the approved range for ${employee.level?.toLowerCase() ?? 'unset'} level.` : 'No basic salary set.'}
+                            </p>
+                          </div>
+                        ) : (
+                          <DetailEmpty>No compensation band set for this role{employee.level ? ` at ${employee.level.toLowerCase()} level` : ''}.</DetailEmpty>
+                        )}
+                      </DetailSection>
+                    )}
+                  </>
                 )}
+                {privateGate.dialog}
               </div>
             )}
 
@@ -565,20 +589,29 @@ function EmployeeDetailModal({
 
             {tab === 'documents' && (
               <div className="space-y-6">
-                {DOC_FIELDS.map(f => (
-                  <DetailSection key={f.key} title={f.label}>
-                    {employee[f.key].length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Not uploaded.</p>
-                    ) : (
-                      <div className="space-y-2.5">
-                        {employee[f.key].map((file, i) => (
-                          <DocFileRow key={i} name={`${f.label}${employee[f.key].length > 1 ? ` — file ${i + 1}` : ''}`}
-                            onDownload={() => downloadDataUrl(file, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-${f.key}-${i + 1}.${extFromDataUrl(file)}`)} />
-                        ))}
-                      </div>
-                    )}
-                  </DetailSection>
-                ))}
+                <div className="flex justify-end">
+                  <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
+                </div>
+
+                {!privateGate.revealed ? (
+                  <DetailEmpty>Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; download them.</DetailEmpty>
+                ) : (
+                  DOC_FIELDS.map(f => (
+                    <DetailSection key={f.key} title={f.label}>
+                      {employee[f.key].length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Not uploaded.</p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {employee[f.key].map((file, i) => (
+                            <DocFileRow key={i} name={`${f.label}${employee[f.key].length > 1 ? ` — file ${i + 1}` : ''}`}
+                              onDownload={() => downloadDataUrl(file, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-${f.key}-${i + 1}.${extFromDataUrl(file)}`)} />
+                          ))}
+                        </div>
+                      )}
+                    </DetailSection>
+                  ))
+                )}
+                {privateGate.dialog}
               </div>
             )}
           </div>
@@ -625,6 +658,7 @@ export default function EmployeesPage() {
   const [modal, setModal] = useState(false)
   const [modalTab, setModalTab] = useState<'details' | 'contact' | 'bank' | 'salary' | 'documents' | 'assets'>('details')
   const [editing, setEditing] = useState<Employee | null>(null)
+  const privateGate = usePasswordGate()
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -675,7 +709,7 @@ export default function EmployeesPage() {
 
   function openDetail(emp: Employee) { setDetailEmployee(emp); setDetailTab('overview') }
 
-  function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModalTab('details'); setModal(true) }
+  function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModalTab('details'); setModal(true); privateGate.hide() }
   function openEdit(emp: Employee) {
     setForm({
       fullName: emp.fullName, employeeNumber: emp.employeeNumber,
@@ -708,7 +742,7 @@ export default function EmployeesPage() {
       seamanBookFiles: emp.seamanBookFiles ?? [], bstFiles: emp.bstFiles ?? [], medicalCheckupFiles: emp.medicalCheckupFiles ?? [],
       ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [], contractFiles: emp.contractFiles ?? [],
     })
-    setEditing(emp); setFormError(''); setModalTab('details'); setModal(true)
+    setEditing(emp); setFormError(''); setModalTab('details'); setModal(true); privateGate.hide()
   }
 
   function addOtherIncomeRow() {
@@ -1574,6 +1608,16 @@ export default function EmployeesPage() {
 
                 {modalTab === 'salary' && (
                 <div className="space-y-5">
+                  <div className="flex justify-end">
+                    <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
+                  </div>
+
+                  {!privateGate.revealed ? (
+                    <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
+                      Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view &amp; edit.
+                    </div>
+                  ) : (
+                  <>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
@@ -1625,11 +1669,24 @@ export default function EmployeesPage() {
                       </button>
                     </div>
                   </div>
+                  </>
+                  )}
+                  {privateGate.dialog}
                 </div>
                 )}
 
                 {modalTab === 'documents' && (
                 <div className="space-y-5">
+                  <div className="flex justify-end">
+                    <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
+                  </div>
+
+                  {!privateGate.revealed ? (
+                    <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
+                      Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; upload.
+                    </div>
+                  ) : (
+                  <>
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buku Pelaut</label>
                     <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />
@@ -1655,6 +1712,9 @@ export default function EmployeesPage() {
                     <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} />
                     <p className="text-[11px] text-muted-foreground">Expiry is the Contract End date (Details tab, optional) — shows on HR Overview&apos;s Contracts Expiring Soon list.</p>
                   </div>
+                  </>
+                  )}
+                  {privateGate.dialog}
                 </div>
                 )}
 

@@ -35,8 +35,11 @@ export async function GET(request: NextRequest) {
           dietaryRequirements: true, allergies: true,
           drinkPreferences: true, equipmentSizes: true, operationalNotes: true,
           isChild: true, deletedAt: true, createdAt: true, updatedAt: true,
-          _count: { select: { bookings: true, guestOf: true } },
-          bookings: { select: { totalPrice: true } },
+          // A booking's own account holder also gets their own BookingGuest row (isLead:
+          // true, same bookingId) — so counting bookings + guestOf separately would double-
+          // count that one trip. Union the two sets of bookingIds instead (see below).
+          bookings: { select: { id: true, totalPrice: true } },
+          guestOf: { select: { isLead: true, bookingId: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -48,12 +51,22 @@ export async function GET(request: NextRequest) {
     const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
     const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
 
-    const result = customers.map(c => ({
-      ...c,
-      totalBookings: c._count.bookings + c._count.guestOf,
-      totalSpent: c.bookings.reduce((s, b) => s + b.totalPrice, 0),
-      isSubscribed: c.email ? !unsubscribedSet.has(c.email.toLowerCase()) : null,
-    }))
+    const result = customers.map(c => {
+      // "Subscribed" mirrors who the Marketing module's "Guest" audience actually
+      // includes (see resolveAudience() in src/lib/marketing.ts) — only the lead/
+      // primary booker on a booking, never a companion someone else typed into the
+      // multi-guest form (BookingGuest.isLead: false), so this badge doesn't claim
+      // someone opted in when they never had the chance to.
+      const isEligible = !!c.email && c.email.includes('@') && c.guestOf.some(g => g.isLead)
+      const { guestOf, bookings, ...rest } = c
+      const bookingIds = new Set([...bookings.map(b => b.id), ...guestOf.map(g => g.bookingId)])
+      return {
+        ...rest,
+        totalBookings: bookingIds.size,
+        totalSpent: bookings.reduce((s, b) => s + b.totalPrice, 0),
+        isSubscribed: isEligible ? !unsubscribedSet.has(c.email!.toLowerCase()) : null,
+      }
+    })
 
     // Body stays a plain array for existing callers (BookingWizard, calendar
     // search, etc.) that expect that shape; the true count (which can exceed

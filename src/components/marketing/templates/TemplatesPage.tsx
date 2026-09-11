@@ -42,6 +42,7 @@ export default function TemplatesPage() {
   const [settings, setSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null)
+  const [previewTarget, setPreviewTarget] = useState<Template | null>(null)
   const [pickModeOpen, setPickModeOpen] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [htmlMode, setHtmlMode] = useState(false)
@@ -209,6 +210,7 @@ export default function TemplatesPage() {
                   Updated {new Date(t.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · Used {t._count.campaigns}x
                 </p>
                 <div className="flex gap-1.5 pt-1">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setPreviewTarget(t)}><Eye className="h-3 w-3 mr-1" />Preview</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openEdit(t)}><Pencil className="h-3 w-3 mr-1" />Edit</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => duplicate(t)}><Copy className="h-3 w-3 mr-1" />Duplicate</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 ml-auto" onClick={() => setDeleteTarget(t)}><Trash2 className="h-3 w-3" /></Button>
@@ -361,6 +363,27 @@ export default function TemplatesPage() {
                 </div>
               </button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewTarget} onOpenChange={open => !open && setPreviewTarget(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="p-4 border-b shrink-0">
+            <DialogTitle>{previewTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 bg-white">
+            {previewTarget?.bodyHtml ? (
+              <iframe
+                title={`Preview ${previewTarget.name}`}
+                srcDoc={previewTarget.bodyHtml}
+                sandbox=""
+                className="w-full h-full"
+                style={{ border: 'none', minHeight: '70vh' }}
+              />
+            ) : (
+              <p className="p-6 text-sm text-muted-foreground">No preview available.</p>
+            )}
           </div>
         </DialogContent>
       </Dialog>

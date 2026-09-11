@@ -43,7 +43,11 @@ interface Supplier { id: string; name: string; locations: SupplierLocation[]; co
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean; parentId: string | null }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null }
+interface InventoryItemOption {
+  id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
+  category: { id: string; name: string }; room: { id: string; name: string }
+}
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -353,6 +357,49 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   const [catalogSearch, setCatalogSearch] = useState('')
   const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('BEVERAGE')
   const [catalogCategory, setCatalogCategory] = useState('All')
+
+  // Stock vs Inventory sub-choice, only meaningful while purpose === STOCK_INVENTORY and
+  // delivering to a vessel — "Stock" is the ordinary PurchaseItem catalog above, "Inventory"
+  // browses that vessel's own room/category-based InventoryItems instead (see
+  // InventoryPickerPanel below), for requesting more of something already tracked there.
+  const [catalogSource, setCatalogSource] = useState<'stock' | 'inventory'>('stock')
+  const [invRoomId, setInvRoomId] = useState('')
+  const [invCategoryId, setInvCategoryId] = useState('')
+  const [invSearch, setInvSearch] = useState('')
+  const [invPickerRooms, setInvPickerRooms] = useState<{ id: string; name: string }[]>([])
+  const [invCategories, setInvCategories] = useState<{ id: string; name: string }[]>([])
+  const [invItems, setInvItems] = useState<InventoryItemOption[]>([])
+  const [invLoading, setInvLoading] = useState(false)
+
+  // Fall back to Stock whenever the delivery location stops being a vessel (Inventory
+  // is per-vessel only) or purpose isn't Stock & Inventory, so a stale "Inventory" pick
+  // never gets left selected somewhere it no longer makes sense.
+  const deliveryIsVessel = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
+  useEffect(() => {
+    if (catalogSource === 'inventory' && (!deliveryIsVessel || purpose !== 'STOCK_INVENTORY')) setCatalogSource('stock')
+  }, [deliveryIsVessel, purpose, catalogSource])
+
+  useEffect(() => {
+    setInvRoomId(''); setInvCategories([])
+    if (!deliveryLocationId) { setInvPickerRooms([]); return }
+    fetch(`/api/inventory/rooms?locationId=${deliveryLocationId}`).then(r => r.ok ? r.json() : []).then(setInvPickerRooms)
+  }, [deliveryLocationId])
+
+  useEffect(() => {
+    setInvCategoryId('')
+    if (!invRoomId) { setInvCategories([]); return }
+    fetch(`/api/inventory/categories?roomId=${invRoomId}`).then(r => r.ok ? r.json() : []).then(setInvCategories)
+  }, [invRoomId])
+
+  useEffect(() => {
+    if (catalogSource !== 'inventory' || !deliveryLocationId) return
+    setInvLoading(true)
+    const qs = new URLSearchParams({ locationId: deliveryLocationId })
+    if (invRoomId) qs.set('roomId', invRoomId)
+    if (invCategoryId) qs.set('categoryId', invCategoryId)
+    if (invSearch) qs.set('search', invSearch)
+    fetch(`/api/inventory/items?${qs}`).then(r => r.ok ? r.json() : []).then(setInvItems).finally(() => setInvLoading(false))
+  }, [catalogSource, deliveryLocationId, invRoomId, invCategoryId, invSearch])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [supplierModal, setSupplierModal] = useState<'editItem' | 'quotation' | null>(null)
@@ -745,6 +792,28 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     toast.success(`${item.name} added to cart`)
   }
 
+  // Requesting more of an existing InventoryItem (see InventoryPickerPanel) — no
+  // PurchaseItem catalog link at all; sourceInventoryItemId is what tells Goods Receipt
+  // to top up that InventoryItem's quantity instead of creating a StockLot.
+  function addInventoryItemToCart(item: InventoryItemOption) {
+    const key = `inv-${item.id}-${requestedByEmployeeId || 'none'}`
+    setCart(prev => {
+      const existing = prev.find(l => l.key === key)
+      if (existing) return prev.map(l => l.key === key ? { ...l, quantity: l.quantity + 1 } : l)
+      return [...prev, {
+        key, itemId: '', itemName: item.name, baseUnit: 'pcs', purchaseUnit: 'pcs',
+        itemUnit: 'pcs', unit: 'pcs', quantity: 1, estimatedCost: item.unitPrice || 0,
+        supplierId: '', supplierName: '', supplierSearch: '', supplierOpen: false,
+        notes: '', search: '', open: false, isCustom: false,
+        imageKeys: item.photoKeys?.length ? [item.photoKeys[0]] : [],
+        sourceInventoryItemId: item.id,
+        sourceInventoryItem: { id: item.id, itemNumber: item.itemNumber, name: item.name, room: item.room, category: item.category },
+        requestedByEmployeeId: requestedByEmployeeId || undefined,
+      }]
+    })
+    toast.success(`${item.name} added to cart`)
+  }
+
   function changeCartQty(key: string, delta: number) {
     setCart(prev => prev.map(l => l.key === key ? { ...l, quantity: Math.max(1, l.quantity + delta) } : l))
   }
@@ -898,6 +967,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
             unit: l.itemUnit || l.baseUnit || 'pcs', estimatedCost: l.estimatedCost || undefined,
             supplierId: l.supplierId || undefined, supplierName: l.supplierName || undefined,
             notes: l.notes, imageKeys: l.imageKeys,
+            sourceInventoryItemId: l.sourceInventoryItemId || undefined,
           })),
         }),
       })
@@ -945,6 +1015,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
             unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
+            sourceInventoryItemId: l.sourceInventoryItemId || undefined,
           })),
         }),
       })
@@ -1358,6 +1429,10 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
         catalogSearch={catalogSearch} setCatalogSearch={setCatalogSearch}
         catalogType={catalogType} setCatalogType={setCatalogType}
         catalogCategory={catalogCategory} setCatalogCategory={setCatalogCategory}
+        catalogSource={catalogSource} setCatalogSource={setCatalogSource} deliveryIsVessel={deliveryIsVessel}
+        invRoomId={invRoomId} setInvRoomId={setInvRoomId} invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
+        invSearch={invSearch} setInvSearch={setInvSearch} invRooms={invPickerRooms} invCategories={invCategories}
+        invItems={invItems} invLoading={invLoading} addInventoryItemToCart={addInventoryItemToCart}
         customModal={customModal} setCustomModal={setCustomModal}
         customForm={customForm} setCustomForm={setCustomForm}
         compressingCustomImage={compressingCustomImage}
@@ -2540,6 +2615,9 @@ function CreateRequestView({
   catalogSearch, setCatalogSearch,
   catalogType, setCatalogType,
   catalogCategory, setCatalogCategory,
+  catalogSource, setCatalogSource, deliveryIsVessel,
+  invRoomId, setInvRoomId, invCategoryId, setInvCategoryId, invSearch, setInvSearch,
+  invRooms, invCategories, invItems, invLoading, addInventoryItemToCart,
   customModal, setCustomModal,
   customForm, setCustomForm,
   compressingCustomImage,
@@ -2566,6 +2644,13 @@ function CreateRequestView({
   catalogSearch: string; setCatalogSearch: (v: string) => void
   catalogType: 'All' | PurchaseItemType; setCatalogType: (v: 'All' | PurchaseItemType) => void
   catalogCategory: string; setCatalogCategory: (v: string) => void
+  catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void; deliveryIsVessel: boolean
+  invRoomId: string; setInvRoomId: (v: string) => void
+  invCategoryId: string; setInvCategoryId: (v: string) => void
+  invSearch: string; setInvSearch: (v: string) => void
+  invRooms: { id: string; name: string }[]; invCategories: { id: string; name: string }[]
+  invItems: InventoryItemOption[]; invLoading: boolean
+  addInventoryItemToCart: (item: InventoryItemOption) => void
   customModal: boolean; setCustomModal: (v: boolean) => void
   customForm: { itemName: string; quantity: number; unit: string; notes: string; images: string[] }
   setCustomForm: React.Dispatch<React.SetStateAction<{ itemName: string; quantity: number; unit: string; notes: string; images: string[] }>>
@@ -2631,6 +2716,18 @@ function CreateRequestView({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
         {/* ── Catalog ── */}
         <div className="space-y-4 min-w-0">
+          {catalogSource === 'inventory' ? (
+            <InventoryPickerPanel
+              invRoomId={invRoomId} setInvRoomId={setInvRoomId}
+              invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
+              invSearch={invSearch} setInvSearch={setInvSearch}
+              invRooms={invRooms} invCategories={invCategories}
+              invItems={invItems} invLoading={invLoading}
+              cart={cart} addInventoryItemToCart={addInventoryItemToCart} changeCartQty={changeCartQty}
+              requestedByEmployeeId={requestedByEmployeeId} setCustomModal={setCustomModal}
+            />
+          ) : (
+          <>
           <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -2770,6 +2867,8 @@ function CreateRequestView({
               </div>
             </div>
           )}
+          </>
+          )}
         </div>
 
         {/* ── Sidebar (desktop) ── */}
@@ -2785,6 +2884,7 @@ function CreateRequestView({
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
               purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+              catalogSource={catalogSource} setCatalogSource={setCatalogSource}
               submit={submit} saving={saving} editingPrNumber={editingPrNumber}
             />
           </div>
@@ -2809,6 +2909,7 @@ function CreateRequestView({
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
                 purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+                catalogSource={catalogSource} setCatalogSource={setCatalogSource}
                 submit={submit} saving={saving} editingPrNumber={editingPrNumber}
                 embedded
               />
@@ -2895,6 +2996,112 @@ function CreateRequestView({
   )
 }
 
+// Browses the delivery vessel's own room/category InventoryItems, for requesting more
+// of something already tracked there (a "Convert to Stock"-adjacent flow — see
+// ItemsPage.tsx — but the other direction: existing InventoryItem -> new PR line).
+function InventoryPickerPanel({
+  invRoomId, setInvRoomId, invCategoryId, setInvCategoryId, invSearch, setInvSearch,
+  invRooms, invCategories, invItems, invLoading,
+  cart, addInventoryItemToCart, changeCartQty, requestedByEmployeeId,
+  setCustomModal,
+}: {
+  invRoomId: string; setInvRoomId: (v: string) => void
+  invCategoryId: string; setInvCategoryId: (v: string) => void
+  invSearch: string; setInvSearch: (v: string) => void
+  invRooms: { id: string; name: string }[]; invCategories: { id: string; name: string }[]
+  invItems: InventoryItemOption[]; invLoading: boolean
+  cart: RequestLine[]; addInventoryItemToCart: (item: InventoryItemOption) => void
+  changeCartQty: (key: string, delta: number) => void
+  requestedByEmployeeId: string
+  setCustomModal: (v: boolean) => void
+}) {
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+            placeholder="Search inventory item name or number..."
+            value={invSearch} onChange={e => setInvSearch(e.target.value)}
+          />
+        </div>
+        <button
+          onClick={() => setCustomModal(true)}
+          className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
+        >
+          <ImagePlus className="h-4 w-4" /> Custom Request
+        </button>
+      </div>
+
+      <div className="bg-white border rounded-xl shadow-sm p-3.5 flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 space-y-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Room</label>
+          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            value={invRoomId} onChange={e => setInvRoomId(e.target.value)}>
+            <option value="">— All rooms —</option>
+            {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 space-y-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
+          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+            value={invCategoryId} onChange={e => setInvCategoryId(e.target.value)} disabled={!invRoomId}>
+            <option value="">— All categories —</option>
+            {invCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {invLoading ? (
+        <div className="text-center py-20 text-muted-foreground text-sm">Loading...</div>
+      ) : invItems.length === 0 ? (
+        <div className="text-center py-20 text-muted-foreground">
+          <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
+          <p className="text-sm">No inventory items found for this room/category.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+          {invItems.map(item => {
+            const key = `inv-${item.id}-${requestedByEmployeeId || 'none'}`
+            const line = cart.find(l => l.key === key)
+            return (
+              <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
+                <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
+                  {item.photoKeys?.[0] ? <img src={item.photoKeys[0]} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
+                </div>
+                <div className="p-2.5 flex flex-col flex-1">
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.room.name} · {item.category.name}</span>
+                  <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Currently {item.quantity} pcs</p>
+                  <div className="mt-auto pt-2">
+                    {line ? (
+                      <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
+                        <button onClick={() => changeCartQty(line.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="text-[11px] font-semibold tabular-nums">{line.quantity} pcs</span>
+                        <button onClick={() => changeCartQty(line.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => addInventoryItemToCart(item)}
+                        className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
+                        <Plus className="h-3 w-3" /> Add pcs
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
 function RequestCartPanel({
   cart, removeCartLine, changeCartQty,
   locations, deliveryLocationId, setDeliveryLocationId,
@@ -2902,6 +3109,7 @@ function RequestCartPanel({
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
   purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
+  catalogSource, setCatalogSource,
   submit, saving,
   editingPrNumber,
   embedded = false,
@@ -2916,10 +3124,12 @@ function RequestCartPanel({
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
   trips: TripOption[]
+  catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void
   submit: () => void; saving: boolean
   editingPrNumber?: string
   embedded?: boolean
 }) {
+  const deliveryIsVessel = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
   return (
     <div className={`bg-white rounded-xl border shadow-sm flex flex-col ${!embedded ? 'max-h-[calc(100vh-200px)]' : ''}`}>
       {!embedded && (
@@ -2958,6 +3168,22 @@ function RequestCartPanel({
           </div>
           {purpose === 'TRIP' && (
             <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
+          )}
+          {/* Stock vs Inventory — only meaningful once a vessel is picked as the delivery
+              location. "Stock" browses the ordinary Purchasing catalog below (as before);
+              "Inventory" instead browses that vessel's own room/category InventoryItems,
+              for requesting more of something already tracked there. */}
+          {purpose === 'STOCK_INVENTORY' && deliveryIsVessel && (
+            <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full mt-1.5">
+              <button type="button" onClick={() => setCatalogSource('stock')}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                Stock
+              </button>
+              <button type="button" onClick={() => setCatalogSource('inventory')}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${catalogSource === 'inventory' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                Inventory
+              </button>
+            </div>
           )}
         </div>
 
@@ -3016,7 +3242,11 @@ function RequestCartPanel({
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-medium truncate">{line.itemName}</p>
-                            <p className="text-[10px] text-muted-foreground">{line.isCustom ? 'Custom request' : line.itemUnit}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">
+                              {line.isCustom ? 'Custom request' : line.sourceInventoryItem
+                                ? `Inventory · ${line.sourceInventoryItem.room?.name ?? '—'} / ${line.sourceInventoryItem.category?.name ?? '—'}`
+                                : line.itemUnit}
+                            </p>
                           </div>
                           {line.isCustom ? (
                             <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.itemUnit}</span>
