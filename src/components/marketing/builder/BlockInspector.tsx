@@ -613,6 +613,10 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.whatsappNumber} onChange={e => onChange({ ...block, whatsappNumber: e.target.value })} placeholder="+62 ..." className="h-8 text-sm" />
           </div>
           <div className="space-y-1.5">
+            <Label className="text-xs">LinkedIn URL</Label>
+            <Input value={block.linkedinUrl} onChange={e => onChange({ ...block, linkedinUrl: e.target.value })} placeholder="https://linkedin.com/company/..." className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1.5">
             <Label className="text-xs">Website URL</Label>
             <Input value={block.websiteUrl} onChange={e => onChange({ ...block, websiteUrl: e.target.value })} placeholder="https://..." className="h-8 text-sm" />
           </div>

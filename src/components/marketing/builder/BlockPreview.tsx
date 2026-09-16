@@ -1,5 +1,5 @@
 import { paddingStyle, type EmailBlock } from '@/lib/email-builder'
-import { ImageOff, Play, Code2, Instagram, MessageCircle, Link2 } from 'lucide-react'
+import { ImageOff, Play, Code2, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
  * Editor-canvas approximation of a block (plain divs, not the table-based
@@ -156,6 +156,9 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
             )}
             {block.whatsappNumber && (
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><MessageCircle className="h-5 w-5" /></span>
+            )}
+            {block.linkedinUrl && (
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><LinkedinIcon className="h-5 w-5" /></span>
             )}
             {block.websiteUrl && (
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Link2 className="h-5 w-5" /></span>

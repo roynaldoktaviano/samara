@@ -228,6 +228,7 @@ export interface FooterBlock {
   instagramUrl: string
   whatsappNumber: string
   websiteUrl: string
+  linkedinUrl: string
   align: BlockAlign
   showUnsubscribe: boolean
   lineHeight: number
@@ -287,6 +288,7 @@ function fixedFooterBlock(): FooterBlock {
     instagramUrl: '',
     whatsappNumber: '+62 859-5495-1085',
     websiteUrl: 'https://samaraliveaboard.com',
+    linkedinUrl: '',
   }
 }
 
@@ -391,6 +393,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         instagramUrl: raw.instagramUrl || '',
         whatsappNumber: raw.whatsappNumber || '+62 859-5495-1085',
         websiteUrl: raw.websiteUrl || 'https://samaraliveaboard.com',
+        linkedinUrl: raw.linkedinUrl || '',
       }
   }
 }
@@ -556,22 +559,24 @@ function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
 // render at once, overlapping into a garbled/skewed-looking icon. One
 // mid-tone image sidesteps that risk entirely: legible-enough on both a black
 // and a white background, no toggle to fail.
-type FooterIconKind = 'instagram' | 'whatsapp' | 'link'
-const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website' }
+type FooterIconKind = 'instagram' | 'whatsapp' | 'link' | 'linkedin'
+const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website', linkedin: 'LinkedIn' }
 
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
   // no domain to resolve against inside an email and renders as a broken image —
   // fall back to the ERP's own live domain so this never silently breaks.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
-  // ?v=2 busts a stale CDN-cached 404 for icon-instagram.png from before the file
-  // existed (Cloudflare had cached a negative response for its 4h max-age) — bump
-  // this if a cached 404 ever gets stuck on any of these paths again.
+  // ?v=N busts a stale CDN-cached response for these paths (Cloudflare had cached a
+  // negative response for icon-instagram.png's 404 once, at v=2) — bump this if a
+  // stale cached version (a 404, or literally the old icon artwork) ever gets stuck
+  // on any of these paths again. Bumped to v=3 when the whatsapp/link artwork itself
+  // was replaced (real WhatsApp mark + globe glyph), since the filename didn't change.
   // A non-empty alt matters here specifically: Outlook and most corporate mail
   // clients block remote images by default until the recipient explicitly loads
   // them, and a blank alt="" renders as a bare broken-image box with no label —
   // a real word at least tells the recipient what's missing until then.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=2" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=3" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -583,6 +588,7 @@ function renderFooterSocialRow(block: FooterBlock): string {
   const allLinks: { url: string; icon: FooterIconKind }[] = [
     { url: block.instagramUrl, icon: 'instagram' },
     { url: block.whatsappNumber ? `https://wa.me/${block.whatsappNumber.replace(/[^0-9]/g, '')}` : '', icon: 'whatsapp' },
+    { url: block.linkedinUrl, icon: 'linkedin' },
     { url: block.websiteUrl, icon: 'link' },
   ]
   const links = allLinks.filter(l => l.url)
