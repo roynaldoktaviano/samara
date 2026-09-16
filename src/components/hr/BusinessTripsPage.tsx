@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plane, X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, FileText } from 'lucide-react'
+import { Plane, X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, FileText, Printer } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string }
@@ -10,6 +10,7 @@ interface BusinessTrip {
   employee: EmployeeLite
   destination: string
   purpose: string
+  remark: string | null
   startDate: string; endDate: string
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CLOSED'
   requestedBy: { id: string; name: string | null } | null
@@ -126,6 +127,13 @@ export default function BusinessTripsPage() {
                 <p className="text-sm">{selected.purpose}</p>
               </div>
 
+              {selected.remark && (
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Remark</p>
+                  <p className="text-sm">{selected.remark}</p>
+                </div>
+              )}
+
               {selected.requiresManagerApproval && (
                 <div className="text-xs">
                   <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Manager Approval</p>
@@ -173,7 +181,7 @@ export default function BusinessTripsPage() {
 
               {selected.reimbursements.length > 0 && (
                 <div className="text-xs border-t pt-3">
-                  <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1.5">Reimbursements</p>
+                  <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1.5">Business Claims</p>
                   <div className="space-y-1">
                     {selected.reimbursements.map(r => (
                       <p key={r.id} className="text-sm flex items-center justify-between">
@@ -197,6 +205,15 @@ export default function BusinessTripsPage() {
                 <button onClick={() => setDecision({ trip: selected, action: 'approve' })}
                   className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
                   <ThumbsUp className="h-3.5 w-3.5" /> Approve
+                </button>
+              </div>
+            )}
+
+            {(selected.status === 'APPROVED' || selected.status === 'CLOSED') && (
+              <div className="flex justify-end px-5 py-4 border-t">
+                <button onClick={() => window.open(`/print/business-trip-assignment/${selected.id}`, '_blank')}
+                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">
+                  <Printer className="h-3.5 w-3.5" /> Print Assignment Letter
                 </button>
               </div>
             )}

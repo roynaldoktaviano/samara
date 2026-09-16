@@ -12,27 +12,35 @@ import { roleMatches } from '@/lib/role-utils'
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const CREATE_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
-async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>) {
-  const prefix = `PO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
+async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>, orderType: 'GOODS' | 'SERVICE') {
+  // SV- for services keeps their document numbers visually distinct from goods POs (PO-)
+  // even though both share this table — helpful anywhere the two show up mixed together,
+  // like Finance's payment/reimbursement lists.
+  const prefix = `${orderType === 'SERVICE' ? 'SV' : 'PO'}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
   const last = await db.purchaseOrder.findFirst({ where: { poNumber: { startsWith: prefix } }, orderBy: { poNumber: 'desc' }, select: { poNumber: true } })
   const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  // Purchase Orders (goods) and Services share this table, distinguished by orderType — the
+  // two pages each only ever ask for their own kind. Defaults to GOODS so the existing
+  // Purchase Orders page (which never sends this param) keeps seeing exactly what it did before.
+  const orderType: 'GOODS' | 'SERVICE' = req.nextUrl.searchParams.get('orderType') === 'SERVICE' ? 'SERVICE' : 'GOODS'
   // Warehouse never sees the full company-wide PO queue — only POs from their own PR,
   // plus whatever delivers to or transits through their specific gudang. Boat Captain/
   // Cruise Director are scoped even tighter — only POs whose final destination is their
   // own assigned yacht (see yachtScope.ts).
-  const where = role === 'WAREHOUSE'
+  const roleWhere = role === 'WAREHOUSE'
     ? warehouseOrderWhere(session.user.id, await resolveWarehouseLocationId(db, session.user.id))
     : roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])
     ? yachtOrderWhere(await resolveAssignedYachtId(db, session.user.id))
     : undefined
+  const where = { ...roleWhere, orderType }
   const orders = await db.purchaseOrder.findMany({
     where,
     orderBy: { createdAt: 'desc' },
@@ -115,19 +123,21 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const body = await req.json()
   const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, transitStops } = body
+  const orderType = body.orderType === 'SERVICE' ? 'SERVICE' : 'GOODS'
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
   // A PO delivered to a ship must say, per item, which Inventory Room/Category it's
   // destined for — lets the Inventory module know where a purchase will live without
-  // Purchasing having to re-enter it later. Not required for non-vessel destinations.
+  // Purchasing having to re-enter it later. Not required for non-vessel destinations, and
+  // never applies to services (they don't have goods to shelve anywhere).
   type OrderItemInput = {
     itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string
     inventoryRoomId?: string; inventoryCategoryId?: string
   }
   const typedItems = items as OrderItemInput[]
-  if (deliveryLocationId) {
+  if (orderType !== 'SERVICE' && deliveryLocationId) {
     const deliveryLocation = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { type: true } })
     if (deliveryLocation?.type === 'VESSEL') {
       if (typedItems.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
@@ -185,13 +195,14 @@ export async function POST(req: NextRequest) {
   }
 
   const [poNumber, actingUser] = await Promise.all([
-    generatePoNumber(db),
+    generatePoNumber(db, orderType),
     db.user.findUnique({ where: { id: session.user.id }, select: { name: true } }),
   ])
   const order = await db.purchaseOrder.create({
     data: {
       id: crypto.randomUUID(),
       poNumber,
+      orderType,
       supplierId: resolvedSupplierId,
       supplierName: supplierName.trim(),
       deliveryLocationId: deliveryLocationId || null,

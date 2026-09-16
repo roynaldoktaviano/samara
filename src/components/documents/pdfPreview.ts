@@ -23,6 +23,29 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Versions created through the rich text editor store real HTML instead of the plain-text
+// **bold** convention above — detect that case and skip the line-based parser entirely.
+function isLikelyHtml(s: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(s)
+}
+
+// Splits rich-text HTML into the same kind of "unit" list parseContent produces, so the
+// existing pagination script (which measures and packs whole units) works unchanged. Each
+// top-level element of the editor's output becomes one unit.
+function htmlUnits(html: string): string[] {
+  const container = document.createElement('div')
+  container.innerHTML = html
+  const units: string[] = []
+  container.childNodes.forEach(node => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      units.push((node as HTMLElement).outerHTML)
+    } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+      units.push(`<p>${esc(node.textContent)}</p>`)
+    }
+  })
+  return units.length ? units : [html]
+}
+
 // Runs AFTER esc() — the source text uses a lightweight **bold** convention (same idea as
 // markdown) to mark the inline emphasis the real documents render with <strong>, e.g. clause
 // lead-ins like "**Deposit:** A non-refundable deposit...". Safe to run post-escape since `**`
@@ -186,6 +209,19 @@ const PREVIEW_STYLES = `
   .rate-tbl td.na { color: #999; }
   .tbl-note { font-size: 8.5pt; line-height: 1.55; margin-bottom: 4px; color: #444; }
   .unit { overflow: hidden; }
+  /* Raw output from the rich text editor (bare tags, no custom classes) */
+  .pg-body p { font-size: 10pt; line-height: 1.62; text-align: justify; margin-bottom: 8px; }
+  .pg-body h1 { font-size: 15pt; font-weight: 700; margin: 10px 0 6px; }
+  .pg-body h2 { font-size: 12.5pt; font-weight: 700; margin: 9px 0 5px; }
+  .pg-body h3 { font-size: 11pt; font-weight: 700; margin: 8px 0 4px; }
+  .pg-body ul { list-style: disc; padding-left: 14mm; margin-bottom: 8px; }
+  .pg-body ul li { font-size: 10pt; line-height: 1.6; margin-bottom: 3px; }
+  /* Nested legal/clause numbering (1., 1.1., 1.1.1., ...) — matches the editor's Tab-to-nest behavior */
+  .pg-body ol { counter-reset: rte-clause; list-style: none; padding-left: 9mm; margin-bottom: 8px; }
+  .pg-body ol > li { counter-increment: rte-clause; position: relative; font-size: 10pt; line-height: 1.6; margin-bottom: 3px; }
+  .pg-body ol > li::before { content: counters(rte-clause, ".") "."; position: absolute; left: -9mm; font-weight: 600; }
+  .pg-body blockquote { border-left: 2pt solid #bdac7e; padding-left: 4mm; font-style: italic; color: #555; margin-bottom: 8px; }
+  .pg-body a { color: #1a3050; text-decoration: underline; }
   #measure-wrap { position: absolute; left: -9999px; top: 0; width: 210mm; visibility: hidden; }
   @media print {
     html, body { background: #fff !important; }
@@ -196,8 +232,7 @@ const PREVIEW_STYLES = `
 `
 
 export function buildPreviewHtml(docTitle: string, versionNumber: number, isActive: boolean, content: string): string {
-  const blocks = parseContent(content)
-  const units = renderUnits(blocks)
+  const units = isLikelyHtml(content) ? htmlUnits(content) : renderUnits(parseContent(content))
 
   const coverHtml = `
     <div class="page">

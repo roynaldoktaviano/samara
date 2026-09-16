@@ -58,8 +58,8 @@ interface PurchaseOrder {
   transitStops?: TransitStop[]
   currentLegLabel?: string | null
 }
-interface SupplierOption { id: string; name: string }
-interface TripOption {
+export interface SupplierOption { id: string; name: string }
+export interface TripOption {
   id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
   destination: string | null; status: string
   yacht: { id: string; name: string } | null
@@ -70,8 +70,8 @@ interface FollowUp {
   escalatedTo: { name: string | null } | null; createdBy: { name: string | null }; createdAt: string
 }
 interface EscalationTarget { id: string; name: string | null }
-interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
-interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
+export interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
+export interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null }
 interface OrderDetail extends PurchaseOrder {
@@ -119,15 +119,15 @@ const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreg
 // status + dispatchedAt instead, since there's no per-leg data to draw from.
 const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid', REJECTED: 'Rejected' }
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700' }
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const toDateInputValue = (s: string) => {
+export const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+export const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+export const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+export const toDateInputValue = (s: string) => {
   const d = new Date(s)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
+export function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
   value: string; suppliers: SupplierOption[]; onChange: (name: string, id: string) => void; onAdded: (s: SupplierOption) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -210,7 +210,7 @@ function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
 // fresh account is still just done directly in those fields (see the "Save
 // this account" checkbox in the Reimburse modal) — this is purely a picker,
 // not an inline multi-field add like SupplierCombobox's single `name` field.
-function ReimburseAccountCombobox({ accounts, onPick }: {
+export function ReimburseAccountCombobox({ accounts, onPick }: {
   accounts: ReimburseAccountOption[]; onPick: (a: ReimburseAccountOption) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -257,7 +257,7 @@ function ReimburseAccountCombobox({ accounts, onPick }: {
   )
 }
 
-function EmployeeCombobox({ value, employees, onChange }: {
+export function EmployeeCombobox({ value, employees, onChange }: {
   value: string; employees: EmployeeOption[]; onChange: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -440,7 +440,7 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
   )
 }
 
-function TripCombobox({ value, valueLabel, trips, onChange }: {
+export function TripCombobox({ value, valueLabel, trips, onChange }: {
   value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
 }) {
   const [open, setOpen] = useState(false)

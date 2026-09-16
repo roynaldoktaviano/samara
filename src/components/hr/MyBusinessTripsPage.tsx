@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Plane, ClipboardList, ShieldAlert, ArrowLeft, Banknote, FileText, CheckCircle2 } from 'lucide-react'
+import { Plus, X, Plane, ClipboardList, ShieldAlert, ArrowLeft, Banknote, FileText, CheckCircle2, Printer } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 
 interface Reimbursement {
@@ -20,6 +20,7 @@ interface BusinessTrip {
   id: string
   destination: string
   purpose: string
+  remark: string | null
   startDate: string; endDate: string
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CLOSED'
   requestedAt: string
@@ -61,7 +62,7 @@ export default function MyBusinessTripsPage() {
   const [selected, setSelected] = useState<BusinessTrip | null>(null)
 
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState({ destination: '', purpose: '', startDate: '', endDate: '' })
+  const [form, setForm] = useState({ destination: '', purpose: '', remark: '', startDate: '', endDate: '' })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -101,7 +102,7 @@ export default function MyBusinessTripsPage() {
 
   useEffect(() => { reload() }, [reload])
 
-  function openAdd() { setForm({ destination: '', purpose: '', startDate: '', endDate: '' }); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ destination: '', purpose: '', remark: '', startDate: '', endDate: '' }); setFormError(''); setModal(true) }
 
   async function save() {
     if (!form.destination.trim()) { setFormError('Please enter a destination'); return }
@@ -228,6 +229,13 @@ export default function MyBusinessTripsPage() {
               <p className="text-sm font-medium mt-0.5">{fmtDate(selected.startDate)} – {fmtDate(selected.endDate)}</p>
             </div>
 
+            {selected.remark && (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Remark</p>
+                <p className="text-sm mt-0.5">{selected.remark}</p>
+              </div>
+            )}
+
             {selected.requiresManagerApproval && (
               <div className="text-xs">
                 <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Manager Approval</p>
@@ -261,6 +269,15 @@ export default function MyBusinessTripsPage() {
           </div>
 
           {(selected.status === 'APPROVED' || selected.status === 'CLOSED') && (
+            <div className="border-t p-5">
+              <button onClick={() => window.open(`/print/business-trip-assignment/${selected.id}`, '_blank')}
+                className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">
+                <Printer className="h-3.5 w-3.5" /> Print Assignment Letter
+              </button>
+            </div>
+          )}
+
+          {(selected.status === 'APPROVED' || selected.status === 'CLOSED') && (
             <div className="border-t p-5 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Trip Report <span className="normal-case font-normal">(optional)</span></p>
               {reportError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{reportError}</p>}
@@ -279,15 +296,15 @@ export default function MyBusinessTripsPage() {
           {(selected.status === 'APPROVED' || selected.status === 'CLOSED') && (
             <div className="border-t p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reimbursements</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Business Claims</p>
                 {selected.status === 'APPROVED' && (
                   <button onClick={openReimburse} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors">
-                    <Banknote className="h-3.5 w-3.5" /> Request Reimbursement
+                    <Banknote className="h-3.5 w-3.5" /> Request Business Claim
                   </button>
                 )}
               </div>
               {selected.reimbursements.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No reimbursement claims yet.</p>
+                <p className="text-sm text-muted-foreground">No business claims yet.</p>
               ) : (
                 <div className="space-y-2">
                   {selected.reimbursements.map(r => (
@@ -309,10 +326,10 @@ export default function MyBusinessTripsPage() {
                 return (
                   <div className="flex items-center justify-between pt-2 border-t">
                     <p className="text-xs text-muted-foreground">
-                      {hasUnpaid ? 'Close this trip once every reimbursement is paid.' : 'Done with this trip?'}
+                      {hasUnpaid ? 'Close this trip once every business claim is paid.' : 'Done with this trip?'}
                     </p>
                     <button onClick={() => { setCloseError(''); setCloseModal(true) }} disabled={hasUnpaid}
-                      title={hasUnpaid ? 'You still have a reimbursement waiting for payment' : undefined}
+                      title={hasUnpaid ? 'You still have a business claim waiting for payment' : undefined}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-green-50 hover:text-green-700 hover:border-green-200 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground disabled:hover:border-border transition-colors">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Close Trip
                     </button>
@@ -330,7 +347,7 @@ export default function MyBusinessTripsPage() {
               <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
                 <div className="flex items-center justify-between px-5 py-4 border-b">
                   <div>
-                    <h3 className="font-semibold">Request Reimbursement</h3>
+                    <h3 className="font-semibold">Request Business Claim</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">{selected.destination}</p>
                   </div>
                   <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
@@ -390,7 +407,7 @@ export default function MyBusinessTripsPage() {
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Notes</label>
                     <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      placeholder="What is this reimbursement for? (optional)" value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
+                      placeholder="What is this business claim for? (optional)" value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-4 border-t">
@@ -411,7 +428,7 @@ export default function MyBusinessTripsPage() {
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
               <div className="px-6 py-5 space-y-2">
                 <h3 className="font-bold text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-600" /> Close this trip?</h3>
-                <p className="text-sm text-muted-foreground">You won&apos;t be able to request another reimbursement for {selected.destination} after this.</p>
+                <p className="text-sm text-muted-foreground">You won&apos;t be able to request another business claim for {selected.destination} after this.</p>
                 {closeError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{closeError}</p>}
               </div>
               <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
@@ -444,11 +461,11 @@ export default function MyBusinessTripsPage() {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
+              <th className="text-left px-4 py-3 font-medium">Dates</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-left px-4 py-3 font-medium">Purpose</th>
-              <th className="text-left px-4 py-3 font-medium">Dates</th>
+              <th className="text-left px-4 py-3 font-medium">Remark</th>
               <th className="text-center px-4 py-3 font-medium">Status</th>
-              <th className="text-right px-4 py-3 font-medium">Reimbursements</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -459,13 +476,13 @@ export default function MyBusinessTripsPage() {
               </td></tr>
             ) : trips.map(t => (
               <tr key={t.id} className="hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => openDetail(t)}>
+                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</td>
                 <td className="px-4 py-3 font-medium flex items-center gap-1.5"><Plane className="h-3.5 w-3.5 text-muted-foreground shrink-0" />{t.destination}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={t.purpose}>{t.purpose}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</td>
+                <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={t.remark ?? undefined}>{t.remark || '—'}</td>
                 <td className="px-4 py-3 text-center">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[t.status]}`}>{statusLabel(t)}</span>
                 </td>
-                <td className="px-4 py-3 text-right text-xs text-muted-foreground">{t.reimbursements.length || '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -495,6 +512,11 @@ export default function MyBusinessTripsPage() {
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose</label>
                 <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
                   placeholder="What is this trip for?" value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Remark <span className="normal-case font-normal text-muted-foreground/70">(optional)</span></label>
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+                  placeholder="Any additional notes (optional)" value={form.remark} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">

@@ -8,10 +8,10 @@ import {
   ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate,
   UserPlus, LayoutDashboard, Zap, PenSquare, Globe, Image, LineChart, Layers, FileText,
   MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins,
-  Anchor, KeyRound, CalendarDays, Plane, Star, Clock, UserX, Target, Archive, DoorOpen, Shuffle,
+  Anchor, KeyRound, CalendarDays, Plane, Star, Clock, UserX, Target, Archive, DoorOpen, Shuffle, History,
 } from 'lucide-react'
 
-export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'my-overtime' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'chat-inbox' | 'chat-email' | 'chat-whatsapp-distribution' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-overtime' | 'hr-loans' | 'hr-boat-documents' | 'hr-separation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaign-hub' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing' | 'inventory-items' | 'inventory-rooms' | 'inventory-opname'
+export type View = 'dashboard' | 'my-approvals' | 'my-leave-requests' | 'my-business-trips' | 'my-overtime' | 'statistics' | 'sales-stats' | 'finance-stats' | 'leads-stats' | 'yachts' | 'destinations' | 'bookings' | 'customers' | 'leads' | 'calendar' | 'expenses' | 'maintenance' | 'open-trips' | 'users' | 'roles' | 'payments' | 'agents' | 'vouchers' | 'activity-log' | 'banks' | 'settings' | 'document-version-control' | 'chat-inbox' | 'chat-email' | 'chat-whatsapp-distribution' | 'purchasing-overview' | 'purchasing-requests' | 'purchasing-orders' | 'purchasing-services' | 'purchasing-stock' | 'purchasing-transfers' | 'purchasing-items' | 'purchasing-item-types' | 'purchasing-locations' | 'purchasing-stock-counts' | 'purchasing-exceptions' | 'purchasing-reports' | 'purchasing-suppliers' | 'purchasing-withdrawals' | 'hr-overview' | 'hr-employees' | 'hr-leave-requests' | 'hr-business-trips' | 'hr-candidates' | 'hr-entities-assignments' | 'hr-compensation' | 'hr-performance-reviews' | 'hr-payroll' | 'hr-attendance' | 'hr-national-holidays' | 'hr-overtime' | 'hr-loans' | 'hr-boat-documents' | 'hr-separation' | 'finance-po-payments' | 'finance-po-reimbursements' | 'finance-delivery-fee-payments' | 'finance-delivery-fee-reimbursements' | 'finance-business-trip-reimbursements' | 'finance-agent-clawback' | 'agent-leads' | 'trip-sheet' | 'marketing-campaign-hub' | 'marketing-campaigns' | 'marketing-templates' | 'marketing-dashboard' | 'marketing-calendar' | 'marketing-automations' | 'marketing-audiences' | 'marketing-content-studio' | 'marketing-publishing' | 'marketing-landing-pages' | 'marketing-assets' | 'marketing-performance' | 'marketing-reports' | 'marketing-settings' | 'pos-categories' | 'pos-menu' | 'pos-packages' | 'pos-discounts' | 'pos-billing' | 'inventory-items' | 'inventory-rooms' | 'inventory-opname'
 
 export type NavItem = {
   id: View
@@ -43,7 +43,7 @@ export const MARKETING_SUB_GROUPS = [
 ]
 
 export const navigationItems: NavItem[] = [
-  { id: 'calendar',      label: 'Dashboard',      icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
+  { id: 'calendar',      label: 'Calendar',       icon: Calendar,   roles: ['ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'my-approvals',  label: 'My Approvals',  icon: CheckCircle2, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'HR', 'PURCHASING', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'my-leave-requests', label: 'Leave Request', icon: CalendarDays, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'my-business-trips', label: 'Business Trip', icon: Plane, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
@@ -63,7 +63,7 @@ export const navigationItems: NavItem[] = [
   { id: 'finance-po-reimbursements', label: 'Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'],              group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-payments', label: 'Delivery Fee Payments', icon: Wallet,   roles: ['ADMIN', 'FINANCE'],   group: 'finance', feature: 'purchasing' },
   { id: 'finance-delivery-fee-reimbursements', label: 'Delivery Fee Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance', feature: 'purchasing' },
-  { id: 'finance-business-trip-reimbursements', label: 'Business Trip Reimbursements', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
+  { id: 'finance-business-trip-reimbursements', label: 'Business Trip Claims', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
   { id: 'finance-agent-clawback', label: 'Agent Clawback', icon: Banknote, roles: ['ADMIN', 'FINANCE'], group: 'finance' },
   { id: 'statistics',    label: 'Overview',        icon: TrendingUp, roles: ['ADMIN'],                                  group: 'statistics' },
   { id: 'finance-stats', label: 'Finance Stats',   icon: TrendingUp, roles: ['ADMIN', 'FINANCE'],                       group: 'statistics' },
@@ -89,10 +89,12 @@ export const navigationItems: NavItem[] = [
   { id: 'users',         label: 'Team',            icon: UserCog,    roles: ['ADMIN'],                                  group: 'management' },
   { id: 'roles',         label: 'Roles & Permissions', icon: KeyRound, roles: ['ADMIN', 'SUPER_ADMIN'],                 group: 'management' },
   { id: 'activity-log',  label: 'Activity Log',    icon: Shield,     roles: ['ADMIN'],                                  group: 'management' },
+  { id: 'document-version-control', label: 'Document Version Control', icon: History, roles: ['ADMIN', 'SUPER_ADMIN'], group: 'management' },
   { id: 'settings',      label: 'Settings',        icon: Settings,   roles: ['ADMIN', 'SUPER_ADMIN'],                   group: 'management' },
   { id: 'purchasing-overview',   label: 'Dashboard',        icon: ShoppingCart,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-requests',  label: 'Purchase Requests', icon: ClipboardList,  roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'],               group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-orders',    label: 'Purchase Orders',   icon: FileText,       roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-services',  label: 'Services',          icon: Briefcase,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-stock',     label: 'Item by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },

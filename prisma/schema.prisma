@@ -134,6 +134,7 @@ model User {
   businessTripsSubmitted                 BusinessTrip[]              @relation("BusinessTripRequestedBy")
   businessTripsDecided                   BusinessTrip[]              @relation("BusinessTripDecidedBy")
   businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
+  businessTripAssignmentLettersIssued    BusinessTrip[]              @relation("BusinessTripAssignmentLetterIssuedBy")
   overtimeRequestsSubmitted              OvertimeRequest[]           @relation("OvertimeRequestedBy")
   overtimeRequestsDecided                OvertimeRequest[]           @relation("OvertimeDecidedBy")
   businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
@@ -1751,11 +1752,23 @@ enum PurchaseOrderStatus {
   IN_TRANSIT
   PARTIALLY_RECEIVED
   RECEIVED
+  // Service orders only — set via the "Mark Completed" action instead of RECEIVED, since
+  // RECEIVED's permission check is gated on a delivery location's managedBy (Warehouse),
+  // which service orders don't have. See PurchaseOrderKind.
+  COMPLETED
   CANCELLED
   // Set automatically when Finance rejects one of this PO's payment requests
   // (see POPaymentRequestStatus.REJECTED) — surfaces the problem on the PO itself
   // and unlocks the Cancel PO action even though a payment record already exists.
   REJECTED
+}
+
+// Distinguishes a PurchaseOrder for physical goods (the original/default use of this model)
+// from one for a booked service (driver, photographer, guide, etc.) — services skip
+// inventory room/category, dispatch, goods receipt, and transit stops entirely.
+enum PurchaseOrderKind {
+  GOODS
+  SERVICE
 }
 
 enum TransferStatus {
@@ -2298,6 +2311,10 @@ model PurchaseOrder {
   id                 String              @id @default(cuid())
   poNumber           String              @unique
   requestId          String?
+  // GOODS (default) or SERVICE — see PurchaseOrderKind. Services are created directly
+  // through src/components/purchasing/services/ServicesPage.tsx and never populate the
+  // goods-only fields below (dispatch, delivery location, transit stops).
+  orderType          PurchaseOrderKind   @default(GOODS)
   supplierId         String?
   supplierName       String?
   deliveryLocationId String?
@@ -2315,6 +2332,9 @@ model PurchaseOrder {
   cancelledAt        DateTime?
   cancelledByName    String?
   cancellationReason String?
+  // Service orders only — set by the "Mark Completed" action (see PurchaseOrderStatus.COMPLETED).
+  completedAt        DateTime?
+  completedByName    String?
   createdById        String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
@@ -2369,6 +2389,7 @@ model PurchaseOrder {
   @@index([deliveryLocationId])
   @@index([requestedByEmployeeId])
   @@index([bookingId])
+  @@index([orderType])
 }
 
 // KPI 3 (follow-up & early escalation) — append-only-in-spirit log of chasing/escalation
@@ -3638,6 +3659,7 @@ model BusinessTrip {
 
   destination String
   purpose     String
+  remark      String?
   startDate   DateTime
   endDate     DateTime
 
@@ -3660,6 +3682,14 @@ model BusinessTrip {
   decidedBy    User?     @relation("BusinessTripDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedAt    DateTime?
   decisionNote String?
+
+  // Assignment letter ("Surat Tugas") — issued once an APPROVED trip's letter is first
+  // printed (see /print/business-trip-assignment/[id] and its API route), then reused on
+  // every reprint. Mirrors EmployeeSeparation.paklaringNumber's lazy-issuance pattern.
+  assignmentLetterNumber     String?
+  assignmentLetterIssuedAt   DateTime?
+  assignmentLetterIssuedById String?
+  assignmentLetterIssuedBy   User?     @relation("BusinessTripAssignmentLetterIssuedBy", fields: [assignmentLetterIssuedById], references: [id], onDelete: SetNull)
 
   // Optional post-trip report the requester can add once APPROVED — purely informational,
   // nothing downstream (including reimbursement) depends on it being filled in.

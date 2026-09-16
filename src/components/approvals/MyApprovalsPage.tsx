@@ -115,6 +115,7 @@ export default function MyApprovalsPage() {
   const [crewRejectNote, setCrewRejectNote] = useState('')
 
   const [businessTripApprovals, setBusinessTripApprovals] = useState<BusinessTripApproval[]>([])
+  const [tripDetailModal, setTripDetailModal] = useState<BusinessTripApproval | null>(null)
   const [tripRejectModal, setTripRejectModal] = useState<BusinessTripApproval | null>(null)
   const [tripRejectNote, setTripRejectNote] = useState('')
 
@@ -222,6 +223,7 @@ export default function MyApprovalsPage() {
     if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
     setTripRejectModal(null)
     setTripRejectNote('')
+    setTripDetailModal(null)
     setBusinessTripApprovals(prev => prev.filter(x => x.id !== t.id))
   }
 
@@ -331,30 +333,18 @@ export default function MyApprovalsPage() {
           No business trip requests waiting for your approval.
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 desktop:grid-cols-3 gap-3">
           {businessTripApprovals.map(t => (
-            <div key={t.id} className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-sm">{t.employee.fullName}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{t.employee.employeeNumber}</p>
-                </div>
-                <span className="text-xs text-muted-foreground shrink-0 text-right">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</span>
+            <button key={t.id} onClick={() => setTripDetailModal(t)}
+              className="text-left rounded-lg border p-4 space-y-2 hover:bg-muted/30 hover:border-amber-300 transition-colors">
+              <div>
+                <p className="font-semibold text-sm">{t.employee.fullName}</p>
+                <p className="text-xs text-muted-foreground font-mono">{t.employee.employeeNumber}</p>
               </div>
-              <p className="text-sm"><span className="font-medium">{t.destination}</span></p>
-              <p className="text-sm text-muted-foreground">{t.purpose}</p>
-
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button disabled={actingId === t.id} onClick={() => actOnBusinessTrip(t, 'approve')}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
-                  <CheckCircle2 className="h-3 w-3" /> Approve
-                </button>
-                <button disabled={actingId === t.id} onClick={() => { setTripRejectModal(t); setTripRejectNote('') }}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                  <XCircle className="h-3 w-3" /> Reject
-                </button>
-              </div>
-            </div>
+              <p className="text-sm font-medium">{t.destination}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{t.purpose}</p>
+              <p className="text-xs text-muted-foreground">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</p>
+            </button>
           ))}
         </div>
       )}
@@ -620,6 +610,46 @@ export default function MyApprovalsPage() {
                 onClick={() => actOnCrewLeave(crewRejectModal, 'reject', crewRejectNote)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tripDetailModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setTripDetailModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-base">{tripDetailModal.employee.fullName}</h3>
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">{tripDetailModal.employee.employeeNumber}</p>
+              </div>
+              <button onClick={() => setTripDetailModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none shrink-0">×</button>
+            </div>
+            <div className="px-6 py-4 space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Destination</p>
+                <p className="mt-0.5 flex items-center gap-1.5"><Plane className="h-3.5 w-3.5 text-muted-foreground shrink-0" />{tripDetailModal.destination}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dates</p>
+                <p className="mt-0.5">{fmtDate(tripDetailModal.startDate)} – {fmtDate(tripDetailModal.endDate)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Purpose</p>
+                <p className="mt-0.5">{tripDetailModal.purpose}</p>
+              </div>
+              <p className="text-xs text-muted-foreground border-t pt-2">Requested {fmtDate(tripDetailModal.requestedAt)}</p>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button disabled={actingId === tripDetailModal.id}
+                onClick={() => { setTripDetailModal(null); setTripRejectModal(tripDetailModal); setTripRejectNote('') }}
+                className="flex items-center gap-1 px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </button>
+              <button disabled={actingId === tripDetailModal.id} onClick={() => actOnBusinessTrip(tripDetailModal, 'approve')}
+                className="flex items-center gap-1 px-5 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Approve
               </button>
             </div>
           </div>

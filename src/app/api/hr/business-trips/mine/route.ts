@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { destination, purpose, startDate, endDate } = await req.json()
+  const { destination, purpose, remark, startDate, endDate } = await req.json()
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       employeeId: employee.id,
       destination: destination.trim(),
       purpose: purpose.trim(),
+      remark: remark?.trim() || null,
       startDate: start,
       endDate: end,
       requiresManagerApproval: !!managerUserId,

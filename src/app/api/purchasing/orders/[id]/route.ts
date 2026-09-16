@@ -197,6 +197,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         paymentRequests: { select: { id: true, amount: true, status: true } },
         reimbursements: { select: { id: true, amount: true, status: true } },
         deliveryLocationId: true,
+        orderType: true,
       },
     })
     if (!existing) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
@@ -218,9 +219,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!items || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
       // Same rule as PO creation: a ship-bound PO must say, per item, which Inventory
-      // Room/Category it's destined for.
+      // Room/Category it's destined for. Never applies to services.
       const effectiveDeliveryLocationId = deliveryLocationId !== undefined ? (deliveryLocationId || null) : existing.deliveryLocationId
-      if (effectiveDeliveryLocationId) {
+      if (existing.orderType !== 'SERVICE' && effectiveDeliveryLocationId) {
         const deliveryLocation = await db.stockLocation.findUnique({ where: { id: effectiveDeliveryLocationId }, select: { type: true } })
         if (deliveryLocation?.type === 'VESSEL') {
           if (items.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
@@ -243,7 +244,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // status is optional — when omitted, this just patches supplierName/expectedAt/notes
   // in place without touching status or triggering any status-transition side effects below
   if (status !== undefined) {
-    const valid = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']
+    const valid = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED', 'CANCELLED']
     if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
     if (status === 'ORDERED' && !supplierName?.trim())
@@ -252,14 +253,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (status === 'IN_TRANSIT' && !roleMatches(role, TRANSIT_ALLOWED))
       return NextResponse.json({ error: 'Only purchasing team can mark as In Transit' }, { status: 403 })
 
+    // Services skip the goods receive flow entirely (no delivery location to gate on) —
+    // Completed is their own equivalent of Received, open to the same purchasing team.
+    if (status === 'COMPLETED') {
+      if (!roleMatches(role, TRANSIT_ALLOWED))
+        return NextResponse.json({ error: 'Only purchasing team can complete a service order' }, { status: 403 })
+      const existing = await db.purchaseOrder.findUnique({ where: { id }, select: { orderType: true } })
+      if (existing?.orderType !== 'SERVICE')
+        return NextResponse.json({ error: 'Only service orders can be marked Completed' }, { status: 400 })
+    }
+
     if (status === 'CANCELLED') {
       if (!roleMatches(role, TRANSIT_ALLOWED))
         return NextResponse.json({ error: 'Only purchasing team can cancel a PO' }, { status: 403 })
       if (!cancellationReason?.trim())
         return NextResponse.json({ error: 'Cancellation reason is required' }, { status: 400 })
       const existing = await db.purchaseOrder.findUnique({ where: { id }, select: { status: true } })
-      if (existing && ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(existing.status))
-        return NextResponse.json({ error: 'Cannot cancel a PO that is already in transit or received' }, { status: 400 })
+      if (existing && ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED'].includes(existing.status))
+        return NextResponse.json({ error: 'Cannot cancel a PO that is already in transit, received, or completed' }, { status: 400 })
     }
   }
 
@@ -277,7 +288,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: `Only ${managedBy.toLowerCase()} team can receive items for this delivery location` }, { status: 403 })
   }
 
-  const actingUser = (status === 'IN_TRANSIT' || status === 'CANCELLED' || status === 'ORDERED')
+  const actingUser = (status === 'IN_TRANSIT' || status === 'CANCELLED' || status === 'ORDERED' || status === 'COMPLETED')
     ? await db.user.findUnique({ where: { id: session.user.id }, select: { name: true } })
     : null
 
@@ -342,7 +353,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return tx.purchaseOrder.update({
       where: { id },
       data: {
-        ...(status !== undefined && { status: status as 'DRAFT' | 'ORDERED' | 'IN_TRANSIT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED' }),
+        ...(status !== undefined && { status: status as 'DRAFT' | 'ORDERED' | 'IN_TRANSIT' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'COMPLETED' | 'CANCELLED' }),
         ...(supplierName !== undefined && { supplierName: supplierName.trim() || null }),
         ...(resolvedSupplierId !== undefined && { supplierId: resolvedSupplierId }),
         ...(deliveryLocationId !== undefined && { deliveryLocationId: deliveryLocationId || null }),
@@ -361,6 +372,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           cancelledByName: actingUser?.name ?? null,
           cancellationReason: (cancellationReason ?? '').trim(),
         }),
+        ...(status === 'COMPLETED' && { completedAt: new Date(), completedByName: actingUser?.name ?? null }),
         updatedAt: new Date(),
       },
     })

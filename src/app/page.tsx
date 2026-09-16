@@ -39,6 +39,7 @@ import AgentLeadsPage from '@/components/agents/AgentLeadsPage'
 import Agents from '@/components/agents/Agents'
 import Vouchers from '@/components/vouchers/Vouchers'
 import ActivityLog from '@/components/activity/ActivityLog'
+import DocumentVersionControlProto from '@/components/documents/DocumentVersionControlProto'
 import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
 import LeadsStats from '@/components/leads/LeadsStats'
@@ -49,6 +50,7 @@ import PurchasingLocationsPage from '@/components/purchasing/locations/Locations
 import PurchasingRequestsPage from '@/components/purchasing/requests/RequestsPage'
 import MyApprovalsPage from '@/components/approvals/MyApprovalsPage'
 import PurchasingOrdersPage from '@/components/purchasing/OrdersAndDeliveryFees'
+import PurchasingServicesPage from '@/components/purchasing/services/ServicesPage'
 import PurchasingStockPage from '@/components/purchasing/stock/StockPage'
 import PurchasingTransfersPage from '@/components/purchasing/transfers/TransfersPage'
 import PurchasingExceptionsPage from '@/components/purchasing/exceptions/ExceptionsPage'
@@ -844,6 +846,7 @@ export default function Home() {
       case 'my-business-trips': return <MyBusinessTripsPage />
       case 'my-overtime':    return <MyOvertimePage />
       case 'activity-log':   return <ActivityLog />
+      case 'document-version-control': return <DocumentVersionControlProto />
       case 'statistics':     return <Statistics />
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
@@ -851,6 +854,7 @@ export default function Home() {
       case 'purchasing-overview':   return <PurchasingOverview />
       case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} deepLinkId={deepLink?.view === 'purchasing-requests' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
+      case 'purchasing-services':  return <PurchasingServicesPage />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />

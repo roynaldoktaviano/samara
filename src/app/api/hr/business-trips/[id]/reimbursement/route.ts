@@ -53,8 +53,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   })
 
   const financeUsers = await db.user.findMany({ where: { role: { in: FINANCE_ROLES as never[] } }, select: { id: true } })
-  const title = 'Business trip reimbursement requested'
-  const body = `${requesterName.trim()} requested a reimbursement for their trip to ${trip.destination} (${amountFormatted}).`
+  const title = 'Business trip claim requested'
+  const body = `${requesterName.trim()} requested a business claim for their trip to ${trip.destination} (${amountFormatted}).`
   if (financeUsers.length) {
     await db.notification.createMany({
       data: financeUsers.map(u => ({ userId: u.id, type: 'BUSINESS_TRIP_REIMBURSEMENT_REQUESTED', title, body })),

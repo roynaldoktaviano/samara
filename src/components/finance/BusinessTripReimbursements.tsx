@@ -117,8 +117,8 @@ export default function BusinessTripReimbursements({ deepLinkId, onDeepLinkHandl
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Business Trip Reimbursements</h2>
-        <p className="text-muted-foreground text-sm mt-0.5">Review reimbursement claims from approved business trips and confirm transfers.</p>
+        <h2 className="text-2xl font-bold tracking-tight">Business Trip Claims</h2>
+        <p className="text-muted-foreground text-sm mt-0.5">Review business claims from approved business trips and confirm transfers.</p>
       </div>
 
       <div className="flex gap-1.5">
@@ -154,7 +154,7 @@ export default function BusinessTripReimbursements({ deepLinkId, onDeepLinkHandl
             ) : filtered.length === 0 ? (
               <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
                 <Banknote className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                No reimbursement requests{filterStatus !== 'ALL' ? ` with status "${filterStatus.toLowerCase()}"` : ''}.
+                No business claim requests{filterStatus !== 'ALL' ? ` with status "${filterStatus.toLowerCase()}"` : ''}.
               </td></tr>
             ) : filtered.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(r)}>

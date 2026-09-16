@@ -60,8 +60,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   })
 
   if (existing.businessTrip.employee.userId) {
-    const title = 'Business trip reimbursement paid'
-    const body = `Your reimbursement for the trip to ${existing.businessTrip.destination} has been paid (Rp ${new Intl.NumberFormat('id-ID').format(existing.amount)}).`
+    const title = 'Business trip claim paid'
+    const body = `Your business claim for the trip to ${existing.businessTrip.destination} has been paid (Rp ${new Intl.NumberFormat('id-ID').format(existing.amount)}).`
     await db.notification.create({ data: { userId: existing.businessTrip.employee.userId, type: 'BUSINESS_TRIP_REIMBURSEMENT_PAID', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.businessTrip.employee.userId], { title, body }).catch(() => {})
   }
