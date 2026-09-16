@@ -747,14 +747,20 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
         const padBottom = i === n - 1 ? 0 : mobileGap
-        return `<div style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
+        // The max-width cap (needed so columns wrap instead of just shrinking) sticks
+        // around after a column has actually wrapped to its own row, leaving it stuck
+        // at its desktop half-width instead of filling the row — collectExtraStyles
+        // adds a `@media max-width:600px` rule keyed on this class that relaxes the
+        // cap to 100% there. That's a pure enhancement on top of the wrap itself
+        // (which needs no media-query support to work at all): a client that ignores
+        // it still wraps correctly, just stays capped at its desktop width instead of
+        // filling the row — text-align:center below at least keeps that centered
+        // instead of flush against the left edge.
+        return `<div class="col-${block.id}-${i}" style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
       }).join('')
-      // Each column's max-width (plus its built-in padding, via box-sizing:border-box)
-      // sums to ~innerWidth across all n of them, so there's no meaningful leftover
-      // space for a wrapper text-align to distribute — left is fine.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <!--[if mso]>${tdTable}<![endif]-->
-        <!--[if !mso]><!--><div style="font-size:0;line-height:0;text-align:left;">${fluidCells}</div><!--<![endif]-->
+        <!--[if !mso]><!--><div style="font-size:0;line-height:0;text-align:center;">${fluidCells}</div><!--<![endif]-->
       </td></tr>`
     }
 
@@ -875,7 +881,13 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
-    if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
+    if (b.type === 'columns') {
+      if (b.stackOnMobile) {
+        const decls = b.columns.map((_, i) => `.col-${b.id}-${i}{max-width:100% !important;}`).join('')
+        rules.push(`@media only screen and (max-width:600px){${decls}}`)
+      }
+      rules.push(...collectExtraStyles(b.columns.flat()))
+    }
   }
   return rules
 }
