@@ -24,6 +24,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
+import { extFromDataUrl } from '@/lib/fileUpload'
+import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import TripSheet from './TripSheet'
 
@@ -1593,7 +1595,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             </Button>
                             <a
                               href={selected.proofOfTransfer}
-                              download={`bukti-${selected.invoiceNumber}.jpg`}
+                              download={`bukti-${selected.invoiceNumber}.${extFromDataUrl(selected.proofOfTransfer)}`}
                               className="inline-flex items-center gap-1 h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                             >
                               <Download className="h-3 w-3" /> Download
@@ -1601,7 +1603,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </div>
                         </div>
                         {proofPreview && (
-                          <img
+                          <FilePreview
                             src={proofPreview}
                             alt="Transfer Proof"
                             className="max-h-64 rounded-md border object-contain w-full"
@@ -1706,7 +1708,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <DialogHeader>
               <DialogTitle>Transfer Proof</DialogTitle>
             </DialogHeader>
-            <img src={proofPreview} alt="Transfer Proof" className="rounded-md border w-full object-contain" />
+            <FilePreview src={proofPreview} alt="Transfer Proof" className="rounded-md border w-full object-contain" />
           </DialogContent>
         </Dialog>
       )}

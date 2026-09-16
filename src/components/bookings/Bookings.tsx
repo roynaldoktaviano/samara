@@ -27,7 +27,8 @@ import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from './WaitingListManager'
 import { toast } from 'sonner'
-import { compressImage } from '@/lib/compressImage'
+import { readUploadFile } from '@/lib/fileUpload'
+import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -738,12 +739,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setPayLinkedExchangeRate(1)
   }
   const processPayProofFile = (file: File) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png']
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
     if (!allowed.includes(file.type)) {
-      toast.error('Only JPG and PNG files are allowed')
+      toast.error('Only JPG, PNG or PDF files are allowed')
       return
     }
-    compressImage(file).then(setPayProof).catch(() => toast.error('Failed to process image'))
+    readUploadFile(file).then(setPayProof).catch(() => toast.error('Failed to process file'))
   }
   const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1019,12 +1020,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   }
 
   const processProofFile = (file: File) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png']
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
     if (!allowed.includes(file.type)) {
-      toast.error('Only JPG and PNG files are allowed')
+      toast.error('Only JPG, PNG or PDF files are allowed')
       return
     }
-    compressImage(file).then(setProofPreview).catch(() => toast.error('Failed to process image'))
+    readUploadFile(file).then(setProofPreview).catch(() => toast.error('Failed to process file'))
   }
   const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1874,20 +1875,19 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       onClick={() => payProofInputRef.current?.click()}
                     >
                       {payProof ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={payProof} alt="Transfer proof" className="w-full max-h-72 object-contain" />
+                        <FilePreview src={payProof} alt="Transfer proof" className="w-full max-h-72 object-contain" />
                       ) : (
                         <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                           <ImageIcon className="h-10 w-10 opacity-30" />
-                          <p className="text-sm">{isDraggingPayProof ? 'Drop to upload' : 'Click or drag to select image'}</p>
-                          <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
+                          <p className="text-sm">{isDraggingPayProof ? 'Drop to upload' : 'Click or drag to select image or PDF'}</p>
+                          <p className="text-xs opacity-60">JPG, JPEG, PNG or PDF · Auto-compressed</p>
                         </div>
                       )}
                     </div>
-                    <input ref={payProofInputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" className="hidden" onChange={handlePayProofFile} />
+                    <input ref={payProofInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" className="hidden" onChange={handlePayProofFile} />
                     {payProof && (
                       <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => payProofInputRef.current?.click()}>
-                        Change image
+                        Change file
                       </Button>
                     )}
                   </div>
@@ -1970,20 +1970,19 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   onClick={() => proofInputRef.current?.click()}
                 >
                   {proofPreview ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
+                    <FilePreview src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
                   ) : (
                     <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                       <ImageIcon className="h-10 w-10 opacity-30" />
-                      <p className="text-sm">{isDraggingProof ? 'Drop to upload' : 'Click or drag to select image'}</p>
-                      <p className="text-xs opacity-60">JPG, JPEG or PNG · Auto-compressed</p>
+                      <p className="text-sm">{isDraggingProof ? 'Drop to upload' : 'Click or drag to select image or PDF'}</p>
+                      <p className="text-xs opacity-60">JPG, JPEG, PNG or PDF · Auto-compressed</p>
                     </div>
                   )}
                 </div>
-                <input ref={proofInputRef} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" className="hidden" onChange={handleProofFile} />
+                <input ref={proofInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" className="hidden" onChange={handleProofFile} />
                 {proofPreview && (
                   <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => proofInputRef.current?.click()}>
-                    Change image
+                    Change file
                   </Button>
                 )}
               </div>
