@@ -714,21 +714,48 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const width = (100 / n).toFixed(4)
       const innerWidth = contentWidth - block.padding.left - block.padding.right
       const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
-      // Fixed percentage-width <td> cells, one class per column so a `@media
-      // max-width:600px` rule (added in collectExtraStyles, only when
-      // stackOnMobile is on) can drop each one to a full-width block row —
-      // side by side on desktop, stacked only below the mobile breakpoint.
-      // Clients that strip <style>/@media entirely (Zoho Mail among them)
-      // never see that override and keep the side-by-side layout at every
-      // screen size instead of stacking — the content stays intact, just
-      // cramped on a phone there, which beats always-stacked on desktop too.
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td class="col-${block.id}-${i}" width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
+        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
+      if (!block.stackOnMobile) {
+        // Fixed percentage-width <td> cells never reflow on their own — identical
+        // markup for every client (Outlook included), so there's nothing conditional
+        // to branch on when the design intentionally keeps columns side by side.
+        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
+      }
+      // "Fluid hybrid" columns: each column is a `display:inline-block` div capped
+      // at its desktop pixel width (max-width) but fluid down to `width:100%` of
+      // whatever room is left. Side by side, the columns' natural inline-level
+      // wrapping keeps them on one line as long as they all fit; once the
+      // container gets too narrow for all of them (a phone screen) the same CSS
+      // wrapping drops the extras to their own line — one column per row, same as
+      // ordinary text wrapping. This needs no @media query to do that, so unlike
+      // an approach gated behind one, it stacks correctly even in clients that
+      // strip <style>/@media entirely (Gmail's Android app has historically been
+      // one) instead of leaving them stuck side-by-side on a phone. `font-size:0`
+      // on the wrapper kills the whitespace gap browsers render between adjacent
+      // inline-block elements (the whitespace/newlines between the divs in this
+      // template); each column div sets its own font-size back so that gap doesn't
+      // shrink its actual content. Outlook desktop (Word engine) doesn't wrap inline-block at all —
+      // it gets the plain `<table><td>` version instead, via the same
+      // MSO-conditional-comment idiom `renderBlock` uses for hideOn:'desktop' above.
+      const mobileGap = block.mobile?.gap ?? gap
+      const fluidCells = block.columns.map((list, i) => {
+        const padLeft = i === 0 ? 0 : halfGap
+        const padRight = i === n - 1 ? 0 : halfGap
+        const padBottom = i === n - 1 ? 0 : mobileGap
+        return `<div style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
+      }).join('')
+      // Each column's max-width (plus its built-in padding, via box-sizing:border-box)
+      // sums to ~innerWidth across all n of them, so there's no meaningful leftover
+      // space for a wrapper text-align to distribute — left is fine.
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
+        <!--[if mso]>${tdTable}<![endif]-->
+        <!--[if !mso]><!--><div style="font-size:0;line-height:0;text-align:left;">${fluidCells}</div><!--<![endif]-->
+      </td></tr>`
     }
 
     case 'section': {
@@ -848,18 +875,7 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
-    if (b.type === 'columns') {
-      if (b.stackOnMobile) {
-        const n = b.columns.length || 1
-        const mobileGap = b.mobile?.gap ?? b.gap ?? 24
-        const decls = b.columns.map((_, i) => {
-          const padBottom = i === n - 1 ? 0 : mobileGap
-          return `.col-${b.id}-${i}{display:block !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;padding-bottom:${padBottom}px !important;}`
-        }).join('')
-        rules.push(`@media only screen and (max-width:600px){${decls}}`)
-      }
-      rules.push(...collectExtraStyles(b.columns.flat()))
-    }
+    if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
   }
   return rules
 }
