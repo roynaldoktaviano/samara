@@ -709,37 +709,25 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // to branch on when the design intentionally keeps columns side by side.
         return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
       }
-      // "Fluid hybrid" columns: each column is a plain inline-block <div> with a
-      // pixel max-width, not a <td> gated behind an @media rule — Zoho Mail (and other
-      // webmail clients that strip <style>/@media out of the message body entirely)
-      // still honors this, since wrapping onto a new line here falls out of ordinary
-      // inline-block box behavior rather than any conditional CSS. Outlook desktop
-      // can't be trusted to lay out inline-block divs at all, so it never sees them —
-      // it gets the old <table><td> version instead via the same MSO-conditional-
-      // comment idiom `renderBlock` uses for hideOn:'desktop' above. Outlook is always
-      // a desktop context, so it never needed the stacking behavior in the first place.
-      // `text-align:center` on the wrapping <td> is what keeps a lone wrapped column
-      // centered instead of stuck against the left edge — inline-block boxes position
-      // themselves per their containing block's text-align, and centering here costs
-      // nothing when there's room for every column on one line (they already fill it).
-      // The `col-${block.id}-${i}` class carries no display/stacking logic at all (that's
-      // the inline max-width above, always in effect) — it only lets capable clients
-      // (anything that doesn't strip @media, i.e. most clients other than Zoho) widen a
-      // wrapped column to fill the full screen instead of keeping its side-by-side width;
-      // where the rule is stripped, the column still stacks, just centered at its
-      // designed width rather than edge-to-edge.
-      // Vertical spacing between stacked rows can only be expressed as padding *inside*
-      // each column (there's no way to target "only when wrapped" with plain CSS) — put
-      // on every column but the last, mirroring how the horizontal gap above only sits
-      // *between* columns rather than around all of them.
+      // "Stacked" columns: each column is a plain full-width <div>, not a <td> gated
+      // behind an @media rule — Zoho Mail (and other webmail clients that strip
+      // <style>/@media out of the message body entirely) still honors this, since it's
+      // plain block-level layout, not conditional CSS. Outlook desktop gets the old
+      // <table><td> version instead (via the same MSO-conditional-comment idiom
+      // `renderBlock` uses for hideOn:'desktop' above) so it still shows a real
+      // side-by-side table there; every other client always gets one column per row,
+      // full width — there's no per-client cap size left to get wrong.
+      // The horizontal gap (padLeft/padRight above) only means something when columns
+      // sit side by side — nothing here ever does anymore, so it doesn't carry over;
+      // vertical spacing between stacked rows is padding *inside* each column instead
+      // (there's no way to target "only when wrapped" with plain CSS), on every column
+      // but the last.
       const mobileGap = block.mobile?.gap ?? gap
       const fluidCells = block.columns.map((list, i) => {
-        const padLeft = i === 0 ? 0 : halfGap
-        const padRight = i === n - 1 ? 0 : halfGap
         const padBottom = i === n - 1 ? 0 : mobileGap
-        return `<div${classAttr(`col-${block.id}-${i}`)} style="display:inline-block;width:100%;max-width:${colMaxPx}px;vertical-align:top;box-sizing:border-box;padding-left:${padLeft}px;padding-right:${padRight}px;padding-bottom:${padBottom}px;">${renderColumnCell(list, colMaxPx)}</div>`
+        return `<div style="display:block;width:100%;box-sizing:border-box;padding-bottom:${padBottom}px;">${renderColumnCell(list, innerWidth)}</div>`
       }).join('')
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:center;">
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <!--[if mso]>${tdTable}<![endif]-->
         <!--[if !mso]><!-->${fluidCells}<!--<![endif]-->
       </td></tr>`
@@ -858,19 +846,7 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
-    if (b.type === 'columns') {
-      // Progressive enhancement only — the inline max-width on each column div (see the
-      // 'columns' case in renderBlockInner) is what actually makes stacking work everywhere,
-      // Zoho Mail included. Clients that keep this @media rule additionally let a wrapped
-      // column grow to fill the whole screen instead of sitting at its side-by-side width;
-      // clients that strip it (Zoho) still stack, just centered at the designed width.
-      if (b.stackOnMobile) {
-        b.columns.forEach((_, i) => {
-          rules.push(`@media only screen and (max-width:480px){.col-${b.id}-${i}{max-width:100% !important;}}`)
-        })
-      }
-      rules.push(...collectExtraStyles(b.columns.flat()))
-    }
+    if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
   }
   return rules
 }
