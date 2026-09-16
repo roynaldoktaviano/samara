@@ -714,40 +714,21 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const width = (100 / n).toFixed(4)
       const innerWidth = contentWidth - block.padding.left - block.padding.right
       const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
+      // Fixed percentage-width <td> cells, one class per column so a `@media
+      // max-width:600px` rule (added in collectExtraStyles, only when
+      // stackOnMobile is on) can drop each one to a full-width block row —
+      // side by side on desktop, stacked only below the mobile breakpoint.
+      // Clients that strip <style>/@media entirely (Zoho Mail among them)
+      // never see that override and keep the side-by-side layout at every
+      // screen size instead of stacking — the content stays intact, just
+      // cramped on a phone there, which beats always-stacked on desktop too.
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
+        return `<td class="col-${block.id}-${i}" width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
-      if (!block.stackOnMobile) {
-        // Fixed percentage-width <td> cells never reflow on their own — identical
-        // markup for every client (Outlook included), so there's nothing conditional
-        // to branch on when the design intentionally keeps columns side by side.
-        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
-      }
-      // "Stacked" columns: each column is a plain full-width <div>, not a <td> gated
-      // behind an @media rule — Zoho Mail (and other webmail clients that strip
-      // <style>/@media out of the message body entirely) still honors this, since it's
-      // plain block-level layout, not conditional CSS. Outlook desktop gets the old
-      // <table><td> version instead (via the same MSO-conditional-comment idiom
-      // `renderBlock` uses for hideOn:'desktop' above) so it still shows a real
-      // side-by-side table there; every other client always gets one column per row,
-      // full width — there's no per-client cap size left to get wrong.
-      // The horizontal gap (padLeft/padRight above) only means something when columns
-      // sit side by side — nothing here ever does anymore, so it doesn't carry over;
-      // vertical spacing between stacked rows is padding *inside* each column instead
-      // (there's no way to target "only when wrapped" with plain CSS), on every column
-      // but the last.
-      const mobileGap = block.mobile?.gap ?? gap
-      const fluidCells = block.columns.map((list, i) => {
-        const padBottom = i === n - 1 ? 0 : mobileGap
-        return `<div style="display:block;width:100%;box-sizing:border-box;padding-bottom:${padBottom}px;">${renderColumnCell(list, innerWidth)}</div>`
-      }).join('')
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
-        <!--[if mso]>${tdTable}<![endif]-->
-        <!--[if !mso]><!-->${fluidCells}<!--<![endif]-->
-      </td></tr>`
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
     }
 
     case 'section': {
@@ -867,7 +848,18 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
       rules.push(...collectExtraStyles(b.blocks))
     }
-    if (b.type === 'columns') rules.push(...collectExtraStyles(b.columns.flat()))
+    if (b.type === 'columns') {
+      if (b.stackOnMobile) {
+        const n = b.columns.length || 1
+        const mobileGap = b.mobile?.gap ?? b.gap ?? 24
+        const decls = b.columns.map((_, i) => {
+          const padBottom = i === n - 1 ? 0 : mobileGap
+          return `.col-${b.id}-${i}{display:block !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;padding-bottom:${padBottom}px !important;}`
+        }).join('')
+        rules.push(`@media only screen and (max-width:600px){${decls}}`)
+      }
+      rules.push(...collectExtraStyles(b.columns.flat()))
+    }
   }
   return rules
 }
