@@ -606,6 +606,10 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.address} onChange={e => onChange({ ...block, address: e.target.value })} className="h-8 text-sm" />
           </div>
           <div className="space-y-1.5">
+            <Label className="text-xs">Facebook URL</Label>
+            <Input value={block.facebookUrl} onChange={e => onChange({ ...block, facebookUrl: e.target.value })} placeholder="https://facebook.com/..." className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1.5">
             <Label className="text-xs">Instagram URL</Label>
             <Input value={block.instagramUrl} onChange={e => onChange({ ...block, instagramUrl: e.target.value })} placeholder="https://instagram.com/..." className="h-8 text-sm" />
           </div>

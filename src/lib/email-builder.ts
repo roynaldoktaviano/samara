@@ -226,6 +226,7 @@ export interface FooterBlock {
   companyName: string
   address: string
   logoUrl: string // shown centered above the social icon row, blank = no logo
+  facebookUrl: string
   instagramUrl: string
   whatsappNumber: string
   websiteUrl: string
@@ -288,6 +289,7 @@ function fixedFooterBlock(): FooterBlock {
     companyName: 'PT Samara Wisata Bahari',
     address: FIXED_FOOTER_ADDRESS,
     logoUrl: DEFAULT_FOOTER_LOGO_URL,
+    facebookUrl: '',
     instagramUrl: '',
     whatsappNumber: '+62 859-5495-1085',
     websiteUrl: 'https://samaraliveaboard.com',
@@ -394,6 +396,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         companyName: raw.companyName || 'PT Samara Wisata Bahari',
         address: raw.address || FIXED_FOOTER_ADDRESS,
         logoUrl: raw.logoUrl || DEFAULT_FOOTER_LOGO_URL,
+        facebookUrl: raw.facebookUrl || '',
         instagramUrl: raw.instagramUrl || '',
         whatsappNumber: raw.whatsappNumber || '+62 859-5495-1085',
         websiteUrl: raw.websiteUrl || 'https://samaraliveaboard.com',
@@ -563,8 +566,8 @@ function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
 // render at once, overlapping into a garbled/skewed-looking icon. One
 // mid-tone image sidesteps that risk entirely: legible-enough on both a black
 // and a white background, no toggle to fail.
-type FooterIconKind = 'instagram' | 'whatsapp' | 'link' | 'linkedin'
-const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website', linkedin: 'LinkedIn' }
+type FooterIconKind = 'facebook' | 'instagram' | 'whatsapp' | 'link' | 'linkedin'
+const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website', linkedin: 'LinkedIn' }
 
 function footerIcon(kind: FooterIconKind): string {
   // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
@@ -590,6 +593,7 @@ function footerIcon(kind: FooterIconKind): string {
 // which is how these icons ended up oversized in preview.
 function renderFooterSocialRow(block: FooterBlock): string {
   const allLinks: { url: string; icon: FooterIconKind }[] = [
+    { url: block.facebookUrl, icon: 'facebook' },
     { url: block.instagramUrl, icon: 'instagram' },
     { url: block.whatsappNumber ? `https://wa.me/${block.whatsappNumber.replace(/[^0-9]/g, '')}` : '', icon: 'whatsapp' },
     { url: block.linkedinUrl, icon: 'linkedin' },
