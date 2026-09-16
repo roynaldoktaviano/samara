@@ -225,6 +225,7 @@ export interface FooterBlock {
   type: 'footer'
   companyName: string
   address: string
+  logoUrl: string // shown centered above the social icon row, blank = no logo
   instagramUrl: string
   whatsappNumber: string
   websiteUrl: string
@@ -279,12 +280,14 @@ export interface EmailDesign {
 // template/campaign via BlockInspector, since different templates use
 // different sender identities.
 export const FIXED_FOOTER_ADDRESS = 'Jalan Tukad Badung IXB No.9, Renon, Denpasar Selatan, Kota Denpasar, Bali 80234'
+export const DEFAULT_FOOTER_LOGO_URL = 'https://samaraliveaboard.com/wp-content/uploads/2026/02/Element-4Logo-Smara-White-e1772086245612.png'
 
 function fixedFooterBlock(): FooterBlock {
   return {
     id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', lineHeight: 1.6,
     companyName: 'PT Samara Wisata Bahari',
     address: FIXED_FOOTER_ADDRESS,
+    logoUrl: DEFAULT_FOOTER_LOGO_URL,
     instagramUrl: '',
     whatsappNumber: '+62 859-5495-1085',
     websiteUrl: 'https://samaraliveaboard.com',
@@ -390,6 +393,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.6,
         companyName: raw.companyName || 'PT Samara Wisata Bahari',
         address: raw.address || FIXED_FOOTER_ADDRESS,
+        logoUrl: raw.logoUrl || DEFAULT_FOOTER_LOGO_URL,
         instagramUrl: raw.instagramUrl || '',
         whatsappNumber: raw.whatsappNumber || '+62 859-5495-1085',
         websiteUrl: raw.websiteUrl || 'https://samaraliveaboard.com',
@@ -760,6 +764,9 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
     case 'footer': {
       // Color lives on inner <span>s, not the <td> — same reason as text/heading/button above.
       const footerBg = darkModeSafe(block.backgroundColor || '#000000')
+      const logo = block.logoUrl
+        ? `<div style="margin-bottom:16px;"><img src="${esc(block.logoUrl)}" alt="${esc(block.companyName || 'Logo')}" width="120" style="max-width:120px;width:120px;height:auto;display:inline-block;border:0;" /></div>`
+        : ''
       const sent = block.companyName && block.address
         ? `<div style="margin-bottom:12px;"><span style="color:#9ca3af;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</span></div>`
         : ''
@@ -767,6 +774,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         ? `<div><span style="color:#9ca3af;">Don't want to receive emails from us? Manage your email preferences </span><a href="${UNSUBSCRIBE_TOKEN}" style="text-decoration:underline;"><span style="color:#9ca3af;">here</span></a><span style="color:#9ca3af;">.</span></div>`
         : ''
       return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};">
+        ${logo}
         ${renderFooterSocialRow(block)}
         ${sent}
         ${unsubscribe}

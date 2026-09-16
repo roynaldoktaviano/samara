@@ -596,6 +596,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
     case 'footer':
       return (
         <div className="space-y-3">
+          <ImageUploadField label="Logo (optional)" src={block.logoUrl} onChange={logoUrl => onChange({ ...block, logoUrl })} />
           <div className="space-y-1.5">
             <Label className="text-xs">Company name</Label>
             <Input value={block.companyName} onChange={e => onChange({ ...block, companyName: e.target.value })} className="h-8 text-sm" />

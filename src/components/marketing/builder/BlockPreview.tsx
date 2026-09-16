@@ -150,6 +150,12 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
           style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', color: '#9ca3af', lineHeight: block.lineHeight }}
           className="text-xs space-y-3"
         >
+          {block.logoUrl && (
+            <div style={{ textAlign: block.align }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={block.logoUrl} alt={block.companyName || 'Logo'} className="inline-block h-8 w-auto object-contain" />
+            </div>
+          )}
           <div className="flex items-center gap-2" style={{ justifyContent: block.align === 'left' ? 'flex-start' : block.align === 'right' ? 'flex-end' : 'center' }}>
             {block.instagramUrl && (
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/35"><Instagram className="h-5 w-5" /></span>
