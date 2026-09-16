@@ -524,9 +524,9 @@ function darkOverride(selector: string, decls: string): string {
   return `[data-ogsc] ${selector},${selector}[data-ogsc],[data-ogsb] ${selector},${selector}[data-ogsb]{${decls}}`
 }
 
-function renderColumnCell(list: EmailBlock[]): string {
+function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
   if (list.length === 0) return ''
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(renderBlock).join('')}</table>`
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
@@ -611,12 +611,12 @@ function renderFooterSocialRow(block: FooterBlock): string {
 // Outlook-desktop-specific trick for hideOn:'mobile' (a desktop-only block), but
 // Outlook desktop is unambiguously a desktop context, so simply not hiding it there
 // (i.e. doing nothing) already gives the right answer.
-function renderBlock(block: EmailBlock): string {
-  const html = renderBlockInner(block)
+function renderBlock(block: EmailBlock, contentWidth: number): string {
+  const html = renderBlockInner(block, contentWidth)
   return ('hideOn' in block && block.hideOn === 'desktop') ? `<!--[if !mso]><!-->${html}<!--<![endif]-->` : html
 }
 
-function renderBlockInner(block: EmailBlock): string {
+function renderBlockInner(block: EmailBlock, contentWidth: number): string {
   switch (block.type) {
     case 'text': {
       // Color lives on an inner <span>, not the <td> — Gmail's dark mode lightens
@@ -676,20 +676,40 @@ function renderBlockInner(block: EmailBlock): string {
 
     case 'columns': {
       const n = block.columns.length || 1
-      const halfGap = (block.gap ?? 24) / 2
+      const gap = block.gap ?? 24
+      const halfGap = gap / 2
       const width = (100 / n).toFixed(4)
-      const cells = block.columns.map((list, i) => {
+      const innerWidth = contentWidth - block.padding.left - block.padding.right
+      const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
+      const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        const stackClass = block.stackOnMobile ? `col-${block.id}-${i}` : ''
-        return `<td width="${width}%" valign="top"${classAttr(stackClass)} style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
+        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
-      // The hide class also goes on the inner <table> itself, not just the outer <td> —
-      // Outlook's display:none doesn't inherit onto a nested <table> (see the comment on
-      // renderBlock above), so a client that does process @media but hits that specific
-      // quirk still hides the table directly instead of leaving it peeking out.
+      const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
+      if (!block.stackOnMobile) {
+        // Fixed percentage-width <td> cells never reflow on their own — identical
+        // markup for every client (Outlook included), so there's nothing conditional
+        // to branch on when the design intentionally keeps columns side by side.
+        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
+      }
+      // "Fluid hybrid" columns: each column is a plain inline-block <div> with a
+      // pixel max-width, not a <td> gated behind an @media rule — Zoho Mail (and other
+      // webmail clients that strip <style>/@media out of the message body entirely)
+      // still honors this, since wrapping onto a new line here falls out of ordinary
+      // inline-block box behavior rather than any conditional CSS. Outlook desktop
+      // can't be trusted to lay out inline-block divs at all, so it never sees them —
+      // it gets the old <table><td> version instead via the same MSO-conditional-
+      // comment idiom `renderBlock` uses for hideOn:'desktop' above. Outlook is always
+      // a desktop context, so it never needed the stacking behavior in the first place.
+      const fluidCells = block.columns.map((list, i) => {
+        const padLeft = i === 0 ? 0 : halfGap
+        const padRight = i === n - 1 ? 0 : halfGap
+        return `<div style="display:inline-block;width:100%;max-width:${colMaxPx}px;vertical-align:top;box-sizing:border-box;padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</div>`
+      }).join('')
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(hideOnClass(block.hideOn))}><tr>${cells}</tr></table>
+        <!--[if mso]>${tdTable}<![endif]-->
+        <!--[if !mso]><!-->${fluidCells}<!--<![endif]-->
       </td></tr>`
     }
 
@@ -701,7 +721,7 @@ function renderBlockInner(block: EmailBlock): string {
       // Same nested-<table> hide-class duplication as columns above.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`, hideOnClass(block.hideOn))} bgcolor="${sectionBg}" style="${bg}"><tr>
-          <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks)}</td>
+          <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks, contentWidth - block.padding.left - block.padding.right)}</td>
         </tr></table>
       </td></tr>`
     }
@@ -741,10 +761,6 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
-    }
-    if (b.type === 'columns' && b.stackOnMobile && b.columns.length > 1) {
-      const selectors = b.columns.map((_, i) => `.col-${b.id}-${i}`).join(',')
-      rules.push(`@media only screen and (max-width:600px){${selectors}{display:block !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;}}`)
     }
     // Gmail/Apple Mail dark mode auto-inverts colors it thinks look wrong (e.g. white button
     // text flipping to black, or a light section background flipping dark) — pin every
@@ -819,7 +835,7 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
   const pageBg = darkModeSafe(s.pageBackground)
   const contentBg = darkModeSafe(s.contentBackground)
-  const rows = blocks.map(renderBlock).join('\n')
+  const rows = blocks.map(b => renderBlock(b, s.contentWidth)).join('\n')
   const extraStyles = collectExtraStyles(blocks).join('\n')
   return `<!doctype html>
 <html>

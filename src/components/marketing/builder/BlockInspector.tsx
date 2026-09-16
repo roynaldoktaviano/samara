@@ -523,7 +523,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Label className="text-xs">Stack on mobile</Label>
             <Switch checked={block.stackOnMobile} onCheckedChange={stackOnMobile => onChange({ ...block, stackOnMobile })} />
           </div>
-          <p className="text-xs text-muted-foreground -mt-2">Drops columns to one full-width column per row below 600px, instead of squeezing them side by side.</p>
+          <p className="text-xs text-muted-foreground -mt-2">Drops columns to one full-width column per row on a narrow screen, instead of squeezing them side by side — works in webmail clients like Zoho or Gmail without relying on a stylesheet. Outlook desktop always keeps columns side by side.</p>
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
