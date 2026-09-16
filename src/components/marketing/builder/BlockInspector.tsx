@@ -519,6 +519,11 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
           <NumberField label="Number of columns" value={count} onChange={setCount} min={1} max={6} />
           <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Stack on mobile</Label>
+            <Switch checked={block.stackOnMobile} onCheckedChange={stackOnMobile => onChange({ ...block, stackOnMobile })} />
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">Drops columns to one full-width column per row below 600px, instead of squeezing them side by side.</p>
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />

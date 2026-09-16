@@ -180,6 +180,7 @@ export interface ColumnsBlock {
   padding: Padding
   gap: number // total horizontal space between columns, in px
   hideOn: HideOn
+  stackOnMobile: boolean // below 600px, drop each column to full width, one per row
 }
 
 export type SectionBackgroundSize = 'cover' | 'contain' | 'repeat'
@@ -368,7 +369,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
     case 'spacer':
       return { ...raw, hideOn }
     case 'columns':
-      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, columns: raw.columns.map(list => list.map(migrateBlock)) }
+      return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, columns: raw.columns.map(list => list.map(migrateBlock)), stackOnMobile: raw.stackOnMobile ?? true }
     case 'section':
       return { ...raw, padding: migratePadding(raw.padding, 24), hideOn, blocks: raw.blocks.map(migrateBlock) }
     case 'footer':
@@ -425,7 +426,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'spacer':
       return { id: nextId(), type: 'spacer', height: 24, hideOn: 'none' }
     case 'columns':
-      return { id: nextId(), type: 'columns', padding: uniformPadding(16), gap: 24, columns: [[], []], hideOn: 'none' }
+      return { id: nextId(), type: 'columns', padding: uniformPadding(16), gap: 24, columns: [[], []], hideOn: 'none', stackOnMobile: true }
     case 'section':
       return { id: nextId(), type: 'section', padding: uniformPadding(24), backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', blocks: [], hideOn: 'none' }
     case 'social':
@@ -680,7 +681,8 @@ function renderBlockInner(block: EmailBlock): string {
       const cells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
+        const stackClass = block.stackOnMobile ? `col-${block.id}-${i}` : ''
+        return `<td width="${width}%" valign="top"${classAttr(stackClass)} style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list)}</td>`
       }).join('')
       // The hide class also goes on the inner <table> itself, not just the outer <td> —
       // Outlook's display:none doesn't inherit onto a nested <table> (see the comment on
@@ -739,6 +741,10 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
+    }
+    if (b.type === 'columns' && b.stackOnMobile && b.columns.length > 1) {
+      const selectors = b.columns.map((_, i) => `.col-${b.id}-${i}`).join(',')
+      rules.push(`@media only screen and (max-width:600px){${selectors}{display:block !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;}}`)
     }
     // Gmail/Apple Mail dark mode auto-inverts colors it thinks look wrong (e.g. white button
     // text flipping to black, or a light section background flipping dark) — pin every
