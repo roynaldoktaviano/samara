@@ -644,8 +644,16 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
 
     case 'image':
     case 'logo': {
+      // A bare CSS max-width with no HTML `width` attribute is exactly what leaves an
+      // image at its full native pixel size in clients that scale images off the width
+      // attribute rather than recomputing CSS layout (a common webmail image-rendering
+      // shortcut) — a multi-megapixel upload then blows way past its column, dragging a
+      // large empty gap in after it. The attribute is a hard cap sized to the column/
+      // content width; the inline max-width:100% still lets capable clients shrink it
+      // further if the real container ends up narrower still.
+      const autoWidthPx = Math.max(1, Math.round(contentWidth - block.padding.left - block.padding.right))
       const dims = block.autoWidth
-        ? 'style="max-width:100%;height:auto;display:inline-block;border:0;"'
+        ? `width="${autoWidthPx}" style="max-width:100%;height:auto;display:inline-block;border:0;"`
         : `width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(fwmClass)} ${dims} />`
