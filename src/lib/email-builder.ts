@@ -579,11 +579,12 @@ function footerIcon(kind: FooterIconKind): string {
   // stale cached version (a 404, or literally the old icon artwork) ever gets stuck
   // on any of these paths again. Bumped to v=3 when the whatsapp/link artwork itself
   // was replaced (real WhatsApp mark + globe glyph), since the filename didn't change.
+  // Bumped to v=4 when facebook/linkedin/whatsapp were recolored white, same reason.
   // A non-empty alt matters here specifically: Outlook and most corporate mail
   // clients block remote images by default until the recipient explicitly loads
   // them, and a blank alt="" renders as a bare broken-image box with no label —
   // a real word at least tells the recipient what's missing until then.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=3" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=4" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
