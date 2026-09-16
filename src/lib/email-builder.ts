@@ -234,6 +234,7 @@ export interface FooterBlock {
   align: BlockAlign
   showUnsubscribe: boolean
   lineHeight: number
+  fontFamily: string
   padding: number // position/behavior is fixed (can't move/delete/duplicate — see EmailBuilder.tsx), but its content fields above are editable per template/campaign via BlockInspector
   backgroundColor: string // fixed to black by default — not exposed as an editable field, so every footer stays visually consistent
 }
@@ -285,7 +286,7 @@ export const DEFAULT_FOOTER_LOGO_URL = 'https://samaraliveaboard.com/wp-content/
 
 function fixedFooterBlock(): FooterBlock {
   return {
-    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', lineHeight: 1.6,
+    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', lineHeight: 1.6, fontFamily: DEFAULT_FONT,
     companyName: 'PT Samara Wisata Bahari',
     address: FIXED_FOOTER_ADDRESS,
     logoUrl: DEFAULT_FOOTER_LOGO_URL,
@@ -393,6 +394,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         padding: typeof raw.padding === 'number' ? raw.padding : 20,
         backgroundColor: raw.backgroundColor || '#000000',
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.6,
+        fontFamily: migrateFontFamily(raw.fontFamily) ?? raw.fontFamily ?? DEFAULT_FONT,
         companyName: raw.companyName || 'PT Samara Wisata Bahari',
         address: raw.address || FIXED_FOOTER_ADDRESS,
         logoUrl: raw.logoUrl || DEFAULT_FOOTER_LOGO_URL,
@@ -778,7 +780,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const unsubscribe = block.showUnsubscribe
         ? `<div><span style="color:#9ca3af;">Don't want to receive emails from us? Manage your email preferences </span><a href="${UNSUBSCRIBE_TOKEN}" style="text-decoration:underline;"><span style="color:#9ca3af;">here</span></a><span style="color:#9ca3af;">.</span></div>`
         : ''
-      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};">
+      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:${block.fontFamily};font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};">
         ${logo}
         ${renderFooterSocialRow(block)}
         ${sent}

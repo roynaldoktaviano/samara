@@ -625,6 +625,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Label className="text-xs">Website URL</Label>
             <Input value={block.websiteUrl} onChange={e => onChange({ ...block, websiteUrl: e.target.value })} placeholder="https://..." className="h-8 text-sm" />
           </div>
+          <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
           <NumberField label="Padding" value={block.padding} onChange={padding => onChange({ ...block, padding })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
         </div>
