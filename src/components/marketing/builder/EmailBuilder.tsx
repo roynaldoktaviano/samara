@@ -493,7 +493,7 @@ function SortableCanvasBlock({
 }
 
 function BlockList({
-  containerId, blocks, selectedId, onSelect, onDelete, onDuplicate, emptyLabel,
+  containerId, blocks, selectedId, onSelect, onDelete, onDuplicate, emptyLabel, mobile,
 }: {
   containerId: ContainerId
   blocks: EmailBlock[]
@@ -502,6 +502,7 @@ function BlockList({
   onDelete: (id: string) => void
   onDuplicate: (id: string) => void
   emptyLabel?: string
+  mobile: boolean
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId })
   return (
@@ -522,9 +523,9 @@ function BlockList({
             onDuplicate={() => onDuplicate(block.id)}
           >
             {block.type === 'columns' ? (
-              <div style={{ ...paddingStyle(block.padding), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+              <div style={{ ...paddingStyle(block.padding), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
                 {block.columns.map((colList, i) => (
-                  <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" />
+                  <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
                 ))}
               </div>
             ) : block.type === 'section' ? (
@@ -539,7 +540,7 @@ function BlockList({
                 }}
                 className="rounded-md"
               >
-                <BlockList containerId={childContainerId(containerId, `sec:${block.id}`)} blocks={block.blocks} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop blocks here" />
+                <BlockList containerId={childContainerId(containerId, `sec:${block.id}`)} blocks={block.blocks} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop blocks here" mobile={mobile} />
               </div>
             ) : null}
           </SortableCanvasBlock>
@@ -595,7 +596,9 @@ export default function EmailBuilder({
   const footerBlock = blocks.find((b): b is FooterBlock => b.type === 'footer')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
-  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
+  // Drives both the Preview iframe's width and the live edit canvas's width/column-stacking —
+  // one toggle for "what device am I looking at" regardless of which mode you're in.
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [search, setSearch] = useState('')
   const [paletteTab, setPaletteTab] = useState<'content' | 'layouts' | 'templates' | 'settings'>('content')
   const [activeDrag, setActiveDrag] = useState<{ kind: 'palette'; blockType: EmailBlock['type'] } | { kind: 'block'; block: EmailBlock } | null>(null)
@@ -791,24 +794,22 @@ export default function EmailBuilder({
               </button>
             </div>
 
-            {showPreview && (
-              <div className="flex items-center gap-0.5 rounded-full border p-0.5 mr-1">
-                <button
-                  onClick={() => setPreviewDevice('desktop')}
-                  className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${previewDevice === 'desktop' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
-                  title="Desktop preview"
-                >
-                  <Monitor className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setPreviewDevice('mobile')}
-                  className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${previewDevice === 'mobile' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
-                  title="Mobile preview"
-                >
-                  <Smartphone className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-0.5 rounded-full border p-0.5 mr-1">
+              <button
+                onClick={() => setDevice('desktop')}
+                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'desktop' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
+                title={showPreview ? 'Desktop preview' : 'Edit at desktop width'}
+              >
+                <Monitor className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setDevice('mobile')}
+                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'mobile' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
+                title={showPreview ? 'Mobile preview' : 'Edit at mobile width'}
+              >
+                <Smartphone className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <button
               onClick={() => setShowPreview(v => !v)}
               className="flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
@@ -826,7 +827,7 @@ export default function EmailBuilder({
               title="Email preview"
               srcDoc={renderBlocksToHtml(blocks, emailSettings)}
               className="bg-white shadow-lg rounded-md transition-[width] duration-200"
-              style={{ width: previewDevice === 'desktop' ? 640 : 375, height: '100%', minHeight: 600, border: 'none' }}
+              style={{ width: device === 'desktop' ? 640 : 375, height: '100%', minHeight: 600, border: 'none' }}
               sandbox=""
             />
           </div>
@@ -931,9 +932,9 @@ export default function EmailBuilder({
               {/* Mirrors the exported table cell (padding:${contentPadding}px 12px; background:pageBackground)
                   so "Outer padding" is visible here, not just in the sent email. */}
               <div
-                className="mx-auto"
+                className="mx-auto transition-[max-width] duration-200"
                 style={{
-                  maxWidth: emailSettings.contentWidth + 24,
+                  maxWidth: (device === 'mobile' ? 375 : emailSettings.contentWidth) + 24,
                   padding: `${emailSettings.contentPadding}px 12px`,
                   background: emailSettings.pageBackground,
                 }}
@@ -951,6 +952,7 @@ export default function EmailBuilder({
                       onDelete={deleteBlock}
                       onDuplicate={duplicateBlock}
                       emptyLabel="Drag blocks here to start designing"
+                      mobile={device === 'mobile'}
                     />
                   </div>
                   {footerBlock && (
@@ -986,7 +988,7 @@ export default function EmailBuilder({
           )
         })()}
         {activeDrag?.kind === 'block' && (
-          <div className="rounded-lg border-2 shadow-2xl bg-white" style={{ width: 640, borderColor: ACCENT }}>
+          <div className="rounded-lg border-2 shadow-2xl bg-white" style={{ width: device === 'mobile' ? 375 : 640, borderColor: ACCENT }}>
             <BlockPreview block={activeDrag.block} />
           </div>
         )}

@@ -518,7 +518,15 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
           <NumberField label="Number of columns" value={count} onChange={setCount} min={1} max={6} />
-          <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
+          ) : (
+            <>
+              <NumberField label="Gap between columns" value={block.mobile?.gap ?? block.gap ?? 24} onChange={gap => onChange({ ...block, mobile: { ...block.mobile, gap } })} max={80} />
+              {block.mobile?.gap !== undefined && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+            </>
+          )}
           <div className="flex items-center justify-between">
             <Label className="text-xs">Stack on mobile</Label>
             <Switch checked={block.stackOnMobile} onCheckedChange={stackOnMobile => onChange({ ...block, stackOnMobile })} />

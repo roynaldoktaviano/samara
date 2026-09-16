@@ -171,6 +171,13 @@ export interface SpacerBlock {
   hideOn: HideOn
 }
 
+// See TextMobileOverride — same mobile-only-override mechanism: the vertical space
+// between stacked columns often needs to be smaller (or larger) than the horizontal
+// gap used when they sit side by side on desktop.
+export interface ColumnsMobileOverride {
+  gap?: number
+}
+
 // A column holds a nested list of content blocks — anything except another
 // 'columns' or 'section' block (no nested containers, keeps the drag & drop tree 2 levels deep).
 export interface ColumnsBlock {
@@ -178,9 +185,10 @@ export interface ColumnsBlock {
   type: 'columns'
   columns: EmailBlock[][] // 1-6 columns, evenly split
   padding: Padding
-  gap: number // total horizontal space between columns, in px
+  gap: number // total horizontal space between side-by-side columns, in px
   hideOn: HideOn
   stackOnMobile: boolean // below 600px, drop each column to full width, one per row
+  mobile?: ColumnsMobileOverride // gap: vertical space between stacked columns, in px
 }
 
 export type SectionBackgroundSize = 'cover' | 'contain' | 'repeat'
@@ -712,10 +720,16 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // wrapped column to fill the full screen instead of keeping its side-by-side width;
       // where the rule is stripped, the column still stacks, just centered at its
       // designed width rather than edge-to-edge.
+      // Vertical spacing between stacked rows can only be expressed as padding *inside*
+      // each column (there's no way to target "only when wrapped" with plain CSS) — put
+      // on every column but the last, mirroring how the horizontal gap above only sits
+      // *between* columns rather than around all of them.
+      const mobileGap = block.mobile?.gap ?? gap
       const fluidCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<div${classAttr(`col-${block.id}-${i}`)} style="display:inline-block;width:100%;max-width:${colMaxPx}px;vertical-align:top;box-sizing:border-box;padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</div>`
+        const padBottom = i === n - 1 ? 0 : mobileGap
+        return `<div${classAttr(`col-${block.id}-${i}`)} style="display:inline-block;width:100%;max-width:${colMaxPx}px;vertical-align:top;box-sizing:border-box;padding-left:${padLeft}px;padding-right:${padRight}px;padding-bottom:${padBottom}px;">${renderColumnCell(list, colMaxPx)}</div>`
       }).join('')
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:center;">
         <!--[if mso]>${tdTable}<![endif]-->
