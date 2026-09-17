@@ -181,10 +181,13 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
 
 /**
  * Fast, synchronous phase of sending: validates the campaign, flips it to SENDING,
- * resolves the audience, and upserts a PENDING CampaignRecipient row per recipient
- * (idempotent — re-running a partially-failed send won't duplicate rows). Safe to
- * await from an HTTP handler since it does no outbound email calls itself — the
- * actual dispatch (the slow part) is a separate step, see `dispatchCampaignEmails`.
+ * resolves the audience, and bulk-inserts a PENDING CampaignRecipient row per
+ * recipient (idempotent via skipDuplicates — re-running a partially-failed send
+ * won't duplicate rows). Safe to await from an HTTP handler since it does no
+ * outbound email calls itself and inserts in chunks (not one row at a time, which
+ * for a large audience took long enough to trip the reverse proxy's request
+ * timeout) — the actual dispatch (the slow part) is a separate step, see
+ * `dispatchCampaignEmails`.
  */
 export async function prepareCampaignSend(db: PrismaClient, campaignId: string, apiKey: string): Promise<{ totalRecipients: number }> {
   const campaign = await db.emailCampaign.findUnique({ where: { id: campaignId } })
@@ -197,17 +200,23 @@ export async function prepareCampaignSend(db: PrismaClient, campaignId: string, 
 
   const audience = await resolveAudience(db, campaign.audienceSources as AudienceSources)
 
-  for (const member of audience) {
-    await db.campaignRecipient.upsert({
-      where: { campaignId_email: { campaignId, email: member.email } },
-      update: {},
-      create: {
+  // Bulk-insert in chunks rather than one upsert per recipient — for a large audience
+  // (tens of thousands), a round-trip per row can take minutes and blow past the
+  // reverse-proxy's request timeout before this function (which the HTTP handler
+  // awaits) ever returns. skipDuplicates keeps this idempotent for a re-run, same as
+  // the upsert it replaces (campaignId+email is unique).
+  const CHUNK_SIZE = 2000
+  for (let i = 0; i < audience.length; i += CHUNK_SIZE) {
+    const chunk = audience.slice(i, i + CHUNK_SIZE)
+    await db.campaignRecipient.createMany({
+      data: chunk.map(member => ({
         campaignId,
         email: member.email,
         name: member.name,
         sourceType: member.sourceType,
         sourceId: member.sourceId,
-      },
+      })),
+      skipDuplicates: true,
     })
   }
 

@@ -40,6 +40,11 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const MIN_GAP_MS = 550
 const RATE_LIMIT_RETRIES = 3
 const RATE_LIMIT_BACKOFF_MS = 1100
+// The Resend SDK's fetch call has no built-in timeout — if the request to
+// api.resend.com ever hangs (network blip, DNS, etc.) with neither a response nor
+// a thrown error, the whole bulk loop stalls forever on that one recipient with no
+// error ever recorded. Force it to fail out after this long so the loop moves on.
+const REQUEST_TIMEOUT_MS = 20_000
 
 function isRateLimitError(error: { name?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -83,7 +88,9 @@ export async function sendBulkEmail(params: {
               'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
             }
           : undefined,
-      }))
+      // `signal` isn't in the SDK's PostOptions type, but it spreads options straight
+      // into the underlying fetch() call — this works at runtime despite the cast.
+      }, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } as Parameters<typeof resend.emails.send>[1]))
       if (!isRateLimitError(error) || attempt === RATE_LIMIT_RETRIES) break
       await sleep(RATE_LIMIT_BACKOFF_MS * (attempt + 1))
     }
