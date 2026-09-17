@@ -898,15 +898,13 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   const contentBg = darkModeSafe(s.contentBackground)
   const rows = blocks.map(b => renderBlock(b, s.contentWidth)).join('\n')
   const extraStyles = collectExtraStyles(blocks).join('\n')
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="color-scheme" content="light">
-    <meta name="supported-color-schemes" content="light">
-    <style type="text/css">
+  // Every @media rule (mobile hide/show, columns stacking, dark mode) lives in this
+  // one block, repeated verbatim right after <body> opens. Gmail's iOS/Android apps
+  // are the reason: they strip <style> out of <head> entirely (any @media there is
+  // silently dropped) but do honor a <style> tag placed in the body — this is the
+  // standard, widely-documented workaround, not decoration. Other clients just
+  // parse the same rules twice, which is harmless.
+  const styleBlock = `
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
       @media (prefers-color-scheme: dark){
@@ -916,10 +914,21 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
       ${darkOverride('.email-page', `background:${pageBg} !important;`)}
       ${darkOverride('.email-body', `background:${pageBg} !important;`)}
       ${darkOverride('.email-content', `background:${contentBg} !important;`)}
-      ${extraStyles}
+      ${extraStyles}`
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <style type="text/css">${styleBlock}
     </style>
   </head>
   <body class="email-body" style="margin:0;padding:0;background:${pageBg};">
+    <style type="text/css">${styleBlock}
+    </style>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${pageBg}" style="background:${pageBg};">
       <tr>
         <td align="center" style="padding:${s.contentPadding}px 12px;">
