@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import { withRetry } from '@/lib/db'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 const guestInclude = {
   guests: {
@@ -12,7 +13,7 @@ const guestInclude = {
   services: { select: { price: true, quantity: true } },
   payments: { orderBy: { createdAt: 'asc' as const } },
   customer: { select: { name: true } },
-  agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+  agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
   salespersonUser: { select: { name: true } },
 }
 
@@ -27,7 +28,8 @@ function bookingFinancials(booking: {
   tripType: string
   currency: string
   exchangeRate: number | null
-  agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null
+  useB2BCommission?: boolean
+  agent: { commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null
   services: { price: number; quantity: number }[]
   payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date }[]
 }) {
@@ -39,9 +41,7 @@ function bookingFinancials(booking: {
   const publish = baseAfterDiscount + discount // reconstructed pre-discount price, for display only
   const discountPct = publish > 0 ? (discount / publish) * 100 : 0
 
-  const commPct = booking.source === 'AGENT'
-    ? (booking.tripType === 'OPEN_TRIP' ? (booking.agent?.commissionOpenTrip ?? 0) : (booking.agent?.commissionPrivateCharter ?? 0))
-    : 0
+  const commPct = booking.source === 'AGENT' ? getAgentCommissionPct(booking.agent, booking.tripType, booking.useB2BCommission) : 0
   const agentCommission = baseAfterDiscount * (Math.max(0, Math.min(commPct, 100)) / 100)
 
   // TRIP = published price net of discount AND agent commission
@@ -79,7 +79,8 @@ function bookingRows(booking: {
   tripType: string
   currency: string
   exchangeRate: number | null
-  agent: { name: string; commissionOpenTrip: number; commissionPrivateCharter: number } | null
+  useB2BCommission?: boolean
+  agent: { name: string; commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null
   salesperson: string | null
   salespersonUser: { name: string | null } | null
   customer: { name: string }

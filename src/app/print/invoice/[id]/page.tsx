@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 interface CompanyInfo {
   name:    string
@@ -67,7 +68,8 @@ interface PaymentDetail {
     yacht?: { name: string; model?: string }
     openTrip?: { title: string; destination?: string; yacht?: { name: string } }
     source?: string
-    agent?: { name: string; address?: string | null; commissionOpenTrip?: number; commissionPrivateCharter?: number }
+    useB2BCommission?: boolean
+    agent?: { name: string; address?: string | null; commissionOpenTrip?: number; commissionPrivateCharter?: number; commissionB2B?: number }
     agentContact?: { name: string } | null
     services: Array<{ name: string; price: number; quantity: number }>
     guests: Array<{
@@ -187,7 +189,7 @@ export default function InvoicePage() {
   const showNet        = showNetOverride ?? payment.showNetAmount
   const showCommissionNote = showNet && (showNoteOverride ?? payment.showCommissionNote ?? false)
   const commissionPct  = isAgentBooking && showNet
-    ? (b.tripType === 'OPEN_TRIP' ? (b.agent!.commissionOpenTrip ?? 0) : (b.agent!.commissionPrivateCharter ?? 0))
+    ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission)
     : 0
   // totalPrice is already net of discount and VAT-inclusive (see Bookings.tsx: total =
   // (base - discount + services) + VAT) — strip VAT back out first (it's shown as its own

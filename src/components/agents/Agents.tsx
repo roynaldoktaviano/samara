@@ -81,6 +81,7 @@ interface AgentRecord {
   commission: number
   commissionOpenTrip: number
   commissionPrivateCharter: number
+  commissionB2B: number
   isActive: boolean
   country: string | null
   address: string | null
@@ -127,7 +128,7 @@ interface AgentContact {
   addedByName: string | null
 }
 
-const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', website: '', instagram: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
+const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', commissionB2B: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', website: '', instagram: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
 const ACCENT = '#bdac7e'
 const TODAY = new Date().toISOString().split('T')[0]
@@ -448,6 +449,7 @@ export default function Agents() {
       commission:               String(a.commission),
       commissionOpenTrip:       String(a.commissionOpenTrip),
       commissionPrivateCharter: String(a.commissionPrivateCharter),
+      commissionB2B:            String(a.commissionB2B),
       salespersonId: a.salespersonId ?? '',
       country:       a.country    ?? '',
       address:       a.address    ?? '',
@@ -486,6 +488,7 @@ export default function Agents() {
           commission:               parseFloat(form.commission) || 0,
           commissionOpenTrip:       parseFloat(form.commissionOpenTrip) || 0,
           commissionPrivateCharter: parseFloat(form.commissionPrivateCharter) || 0,
+          commissionB2B:            parseFloat(form.commissionB2B) || 0,
           salespersonId: isSales ? userId : (form.salespersonId || null),
           country:          form.country          || null,
           address:          form.address          || null,
@@ -650,7 +653,7 @@ export default function Agents() {
     if (!a.address?.trim()) missing.push('Address')
     if (!a.country?.trim()) missing.push('Country')
     if (!a.email?.trim())   missing.push('Email')
-    const hasCommission = (a.commission ?? 0) > 0 || (a.commissionOpenTrip ?? 0) > 0 || (a.commissionPrivateCharter ?? 0) > 0
+    const hasCommission = (a.commission ?? 0) > 0 || (a.commissionOpenTrip ?? 0) > 0 || (a.commissionPrivateCharter ?? 0) > 0 || (a.commissionB2B ?? 0) > 0
     if (!hasCommission)     missing.push('Commission')
     // always show confirmation modal (with or without missing fields)
     setContractConfirmModal({ agent: a, missing })
@@ -682,14 +685,14 @@ export default function Agents() {
 
   const AGENT_CSV_HEADER = [
     'name', 'salesperson', 'country', 'address', 'email', 'whatsapp', 'website', 'instagram',
-    'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'contract', 'isActive', 'note',
+    'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'commissionB2B', 'contract', 'isActive', 'note',
     'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
   ]
 
   const downloadTemplate = () => {
     const sample = [
       'Navelia LLC', 'Efrinda', 'United States', '123 Main St, Miami, FL', 'info@navelia.com', '+1 305 555 0100',
-      'https://navelia.com', '@navelia', 'Referral', 'Active', '20', '15', 'Yes', 'true', 'Long-time partner agent',
+      'https://navelia.com', '@navelia', 'Referral', 'Active', '20', '15', '0', 'Yes', 'true', 'Long-time partner agent',
       'Philip D De Wilde', 'philip@navelia.com', '+62 853 3351 4655', 'Charter Manager', '1985-04-12',
     ]
     const csv = [AGENT_CSV_HEADER.join(','), sample.map(v => `"${v.replace(/"/g, '""')}"`).join(',')].join('\n')
@@ -1146,6 +1149,12 @@ export default function Agents() {
                               <span className="text-muted-foreground/60">PC</span>
                               <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionPrivateCharter}%</span>
                             </div>
+                            {a.commissionB2B > 0 && (
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <span className="text-muted-foreground/60">B2B</span>
+                                <span className="font-semibold" style={{ color: ACCENT }}>{a.commissionB2B}%</span>
+                              </div>
+                            )}
                           </div>
                         ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                       </td>
@@ -1483,7 +1492,7 @@ export default function Agents() {
               {/* Commission */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Commission</Label>
-                <div className="grid grid-cols-2 gap-2 p-3 rounded-lg bg-muted/40 border">
+                <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-muted/40 border">
                   <div className="space-y-1">
                     <p className="text-[11px] text-muted-foreground">Open Trip</p>
                     <div className="relative">
@@ -1505,6 +1514,18 @@ export default function Agents() {
                         className="pl-8 h-9 text-sm"
                         value={form.commissionPrivateCharter}
                         onChange={e => setForm(f => ({ ...f, commissionPrivateCharter: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-muted-foreground">B2B</p>
+                    <div className="relative">
+                      <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        type="number" min="0" max="100" step="0.5"
+                        className="pl-8 h-9 text-sm"
+                        value={form.commissionB2B}
+                        onChange={e => setForm(f => ({ ...f, commissionB2B: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -2531,8 +2552,9 @@ export default function Agents() {
                         a.commission           ? `General ${a.commission}%`              : null,
                         a.commissionOpenTrip   ? `Open Trip ${a.commissionOpenTrip}%`    : null,
                         a.commissionPrivateCharter ? `Charter ${a.commissionPrivateCharter}%` : null,
+                        a.commissionB2B        ? `B2B ${a.commissionB2B}%`               : null,
                       ].filter(Boolean).join(' · ') || null,
-                      missing: (a.commission ?? 0) === 0 && (a.commissionOpenTrip ?? 0) === 0 && (a.commissionPrivateCharter ?? 0) === 0,
+                      missing: (a.commission ?? 0) === 0 && (a.commissionOpenTrip ?? 0) === 0 && (a.commissionPrivateCharter ?? 0) === 0 && (a.commissionB2B ?? 0) === 0,
                     },
                   ]
                   return (

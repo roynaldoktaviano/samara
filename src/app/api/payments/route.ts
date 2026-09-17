@@ -60,6 +60,7 @@ export async function GET(_: NextRequest) {
             destination: true,
             tripType: true,
             source: true,
+            useB2BCommission: true,
             currency: true,
             exchangeRate: true,
             salesperson: true,
@@ -69,7 +70,7 @@ export async function GET(_: NextRequest) {
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true } },
-            agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+            agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
             // Only ever populated for the automatic per-booking deduction (see
             // src/app/api/bookings/route.ts) — manual ledger adjustments have no bookingId,
             // so this relation can't accidentally pull in unrelated entries.

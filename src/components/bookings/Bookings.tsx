@@ -30,6 +30,7 @@ import { toast } from 'sonner'
 import { readUploadFile } from '@/lib/fileUpload'
 import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
@@ -71,8 +72,9 @@ interface BookingRecord {
   yacht?: { id: string; name: string; model?: string; canDiving?: boolean; canSurfing?: boolean; capacity?: number }
   openTrip?: { id: string; title: string; destination?: string }
   customer: { id: string; name: string; email?: string; phone?: string }
-  agent?:        { id: string; name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number }
+  agent?:        { id: string; name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number; commissionB2B?: number }
   agentContact?: { id: string; name: string; email?: string | null; whatsapp?: string | null } | null
+  useB2BCommission?: boolean
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
   salespersonId?: string | null
   guests: Array<{
@@ -127,9 +129,7 @@ const netBook = (b: BookingRecord) => {
   // commission below isn't computed on top of it, then discount is already netted.
   const { subtotalBeforeVat, vatAmt } = splitVat(b.totalPrice, b.vatType, b.vatValue)
   const afterDisc = Math.max(0, subtotalBeforeVat - svcTotal)
-  const commPct   = b.source === 'AGENT'
-    ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
-    : 0
+  const commPct   = b.source === 'AGENT' ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission) : 0
   const commAmt   = afterDisc * commPct / 100
   return afterDisc + svcTotal + vatAmt - commAmt
 }
@@ -269,6 +269,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [editDepDue,   setEditDepDue]  = useState('')
   const [editFinalDue, setEditFinalDue]= useState('')
   const [editNotes,    setEditNotes]   = useState('')
+  const [editUseB2BCommission, setEditUseB2BCommission] = useState(false)
   const [guestTravel,  setGuestTravel] = useState<Record<string, {
     arrivalPickupTime: string; arrivalHotel: string; arrivalFlight: string
     departurePickupTime: string; departureHotel: string; departureFlight: string
@@ -480,6 +481,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setEditNotes(b.notes ?? '')
     setEditCurrency((b.currency as CurrencyCode) || 'USD')
     setEditExchangeRate(b.exchangeRate || 1)
+    setEditUseB2BCommission(!!b.useB2BCommission)
     setRescheduleMode(false); setRescheduleStart(''); setRescheduleEnd(''); setRescheduleReason('')
     setRescheduleOTId(''); setRescheduleOpenTrips([]); setRescheduleNewCabinId('')
     setRescheduleYachtId(''); setRescheduleYachts([])
@@ -531,6 +533,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
         services: editServices.filter(s => s.name.trim()),
         currency: editCurrency,
         exchangeRate: editCurrency !== 'USD' ? editExchangeRate : undefined,
+        ...(editBooking.source === 'AGENT' && { useB2BCommission: editUseB2BCommission }),
       }
       if (canEditTrip) {
         if (editStartDate) body.startDate = editStartDate
@@ -2326,6 +2329,35 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       )}
                     </div>
 
+                    {/* ── Agent Commission Type — only when this agent has a B2B rate configured ── */}
+                    {editBooking.source === 'AGENT' && (editBooking.agent?.commissionB2B ?? 0) > 0 && (
+                      <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+                        <span className="text-sm font-medium text-muted-foreground">Agent Commission</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditUseB2BCommission(false)}
+                            className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors bg-background"
+                            style={!editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` } : {}}
+                          >
+                            <span className="font-medium">{editBooking.tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'} Rate</span>
+                            <span className="text-xs text-muted-foreground">
+                              {editBooking.tripType === 'OPEN_TRIP' ? editBooking.agent?.commissionOpenTrip : editBooking.agent?.commissionPrivateCharter}%
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditUseB2BCommission(true)}
+                            className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors bg-background"
+                            style={editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` } : {}}
+                          >
+                            <span className="font-medium">B2B Rate</span>
+                            <span className="text-xs text-muted-foreground">{editBooking.agent?.commissionB2B}%</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* ── Additional Services ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -2674,9 +2706,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             const { subtotalBeforeVat, vatAmt } = splitVat(db_.totalPrice, db_.vatType, db_.vatValue)
             const afterDisc  = Math.max(0, subtotalBeforeVat - svcTotal)
             const basePrice  = afterDisc + db_.discount // reconstructed pre-discount price, for display only
-            const commPct    = db_.source === 'AGENT'
-              ? (db_.tripType === 'OPEN_TRIP' ? (db_.agent?.commissionOpenTrip ?? 0) : (db_.agent?.commissionPrivateCharter ?? 0))
-              : 0
+            const commPct    = db_.source === 'AGENT' ? getAgentCommissionPct(db_.agent, db_.tripType, db_.useB2BCommission) : 0
             const commAmt    = commPct > 0 ? afterDisc * commPct / 100 : 0
             const net        = afterDisc + svcTotal + vatAmt - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)

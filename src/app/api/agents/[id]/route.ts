@@ -58,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json(agent)
     }
 
-    const { name, commission, commissionOpenTrip, commissionPrivateCharter, isActive, salespersonId, country, address, email, whatsapp, note, website, instagram, source, currentCondition, contract, contractFile, contractFileName } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, commissionB2B, isActive, salespersonId, country, address, email, whatsapp, note, website, instagram, source, currentCondition, contract, contractFile, contractFileName } = body
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
@@ -79,6 +79,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         commission:                  commission               !== undefined ? parseFloat(String(commission)) || 0               : undefined,
         commissionOpenTrip:          commissionOpenTrip       !== undefined ? parseFloat(String(commissionOpenTrip)) || 0       : undefined,
         commissionPrivateCharter:    commissionPrivateCharter !== undefined ? parseFloat(String(commissionPrivateCharter)) || 0 : undefined,
+        commissionB2B:               commissionB2B            !== undefined ? parseFloat(String(commissionB2B)) || 0            : undefined,
         isActive:                    isActive                 !== undefined ? Boolean(isActive)                                : undefined,
         salespersonId: salespersonId !== undefined ? (salespersonId || null)          : undefined,
         country:          country          !== undefined ? (country          || null) : undefined,

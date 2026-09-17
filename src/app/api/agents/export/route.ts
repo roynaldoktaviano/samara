@@ -15,7 +15,7 @@ function csvCell(value: string | number | null | undefined) {
 // Kept in sync with the Add/Edit Agent form fields (Agents.tsx) — see import/route.ts for the same header.
 export const CSV_HEADER = [
   'name', 'salesperson', 'country', 'address', 'email', 'whatsapp', 'website', 'instagram',
-  'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'contract', 'isActive', 'note',
+  'source', 'currentCondition', 'commissionOpenTrip', 'commissionPrivateCharter', 'commissionB2B', 'contract', 'isActive', 'note',
   'contactName', 'contactEmail', 'contactWhatsapp', 'contactJobTitle', 'contactDateOfBirth',
 ]
 
@@ -30,7 +30,7 @@ export async function GET(_: NextRequest) {
   const agents = await db.agent.findMany({
     select: {
       name: true, country: true, address: true, email: true, whatsapp: true, website: true, instagram: true,
-      source: true, currentCondition: true, commissionOpenTrip: true, commissionPrivateCharter: true,
+      source: true, currentCondition: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true,
       contract: true, isActive: true, note: true,
       salesperson: { select: { name: true } },
       contacts: {
@@ -56,6 +56,7 @@ export async function GET(_: NextRequest) {
       csvCell(a.currentCondition),
       csvCell(a.commissionOpenTrip),
       csvCell(a.commissionPrivateCharter),
+      csvCell(a.commissionB2B),
       csvCell(a.contract),
       csvCell(a.isActive ? 'true' : 'false'),
       csvCell(a.note),

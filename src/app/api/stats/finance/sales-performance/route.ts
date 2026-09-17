@@ -3,20 +3,19 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function netBooking(b: {
-  totalPrice: number; discount: number; source: string; tripType: string;
-  agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
+  totalPrice: number; discount: number; source: string; tripType: string; useB2BCommission?: boolean;
+  agent: { commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null;
   services: { price: number; quantity: number }[]
 }) {
   // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
   const svc     = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   const disc    = Math.max(0, b.totalPrice - svc)
-  const commPct = b.source === 'AGENT'
-    ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
-    : 0
+  const commPct = b.source === 'AGENT' ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission) : 0
   return disc + svc - disc * commPct / 100
 }
 
@@ -46,9 +45,9 @@ export async function GET(request: NextRequest) {
           confirmedAt: true,
           booking: {
             select: {
-              totalPrice: true, discount: true, source: true, tripType: true,
+              totalPrice: true, discount: true, source: true, tripType: true, useB2BCommission: true,
               salesperson: true, salespersonId: true,
-              agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
+              agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
               services: { select: { price: true, quantity: true } },
             },
           },

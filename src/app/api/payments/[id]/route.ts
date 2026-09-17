@@ -9,6 +9,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { requireRole } from '@/lib/auth-guard'
 import { BookingStatus } from '@prisma/client'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
   if (depositPaid <= 0)          return BookingStatus.pending
@@ -31,7 +32,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             customer: { select: { name: true, email: true, phone: true, address: true, gender: true } },
             yacht:    { select: { name: true, model: true } },
             openTrip: { select: { title: true, destination: true, yacht: { select: { name: true } } } },
-            agent:    { select: { name: true, address: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+            agent:    { select: { name: true, address: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
             agentContact: { select: { name: true } },
             services: true,
             guests: {
@@ -312,8 +313,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           booking: {
             select: {
               id: true, bookingCode: true, totalPrice: true, discount: true, depositPaid: true,
-              salespersonId: true, source: true, tripType: true,
-              agent: { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
+              salespersonId: true, source: true, tripType: true, useB2BCommission: true,
+              agent: { select: { commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
               services: { select: { price: true, quantity: true } },
             },
           },
@@ -329,9 +330,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       if (action === 'confirm') {
         const commPct = payment.booking.source === 'AGENT'
-          ? (payment.booking.tripType === 'OPEN_TRIP'
-              ? (payment.booking.agent?.commissionOpenTrip ?? 0)
-              : (payment.booking.agent?.commissionPrivateCharter ?? 0))
+          ? getAgentCommissionPct(payment.booking.agent, payment.booking.tripType, payment.booking.useB2BCommission)
           : 0
         const commPctSafe = Math.max(0, Math.min(commPct, 100))
         // Commission applies only to the TRIP portion (price excl. additional services), not the whole total.

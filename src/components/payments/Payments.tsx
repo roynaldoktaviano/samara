@@ -28,6 +28,7 @@ import { extFromDataUrl } from '@/lib/fileUpload'
 import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import TripSheet from './TripSheet'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 interface Bank {
   id: string
@@ -80,6 +81,7 @@ interface Payment {
     destination: string | null
     tripType: string
     source: string | null
+    useB2BCommission?: boolean | null
     salesperson: string | null
     depositDueDate: string | null
     finalDueDate: string | null
@@ -88,7 +90,7 @@ interface Payment {
     customer: { name: string; email: string | null; phone: string | null }
     yacht: { name: string; model: string | null } | null
     openTrip: { title: string; destination: string } | null
-    agent: { name: string; commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
+    agent: { name: string; commissionOpenTrip: number | null; commissionPrivateCharter: number | null; commissionB2B?: number | null } | null
     clawbackEntries: { amount: number }[]
   }
 }
@@ -423,9 +425,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setShowRejectInput(false)
     setRejectNotes('')
     setProofPreview(null)
-    const commPct = p.booking.source === 'AGENT'
-      ? (p.booking.tripType === 'OPEN_TRIP' ? (p.booking.agent?.commissionOpenTrip ?? 0) : (p.booking.agent?.commissionPrivateCharter ?? 0))
-      : 0
+    const commPct = p.booking.source === 'AGENT' ? getAgentCommissionPct(p.booking.agent, p.booking.tripType, p.booking.useB2BCommission) : 0
     const net = netOfCommission(p.booking, commPct)
     const remaining = Math.max(0, net - p.previouslyPaid)
     const isFullPayment = p.amount > 0 && Math.abs(p.amount - remaining) < 0.01
@@ -1032,9 +1032,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <p className="font-semibold text-sm">${fmt(
                       (() => {
                         const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
-                        const commPct = isNet
-                          ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
-                          : 0
+                        const commPct = isNet ? getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission) : 0
                         return netOfCommission(selected.booking, commPct)
                       })()
                     )}</p>
@@ -1055,9 +1053,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 }, [])
                 const currentRow = historyRows.find(h => h.id === selected.id)
                 const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
-                const commPct = isNet
-                  ? (selected.booking.tripType === 'OPEN_TRIP' ? (selected.booking.agent?.commissionOpenTrip ?? 0) : (selected.booking.agent?.commissionPrivateCharter ?? 0))
-                  : 0
+                const commPct = isNet ? getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission) : 0
                 const packageTotal = netOfCommission(selected.booking, commPct)
                 const isClosingPayment = !!currentRow && currentRow.cumAfter >= packageTotal - 0.01
                 const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : selected.amount
@@ -1390,9 +1386,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                     {/* Published / Net toggle — always interactive, AGENT bookings only */}
                     {selected.booking.source === 'AGENT' && (() => {
-                      const commPct   = selected.booking.tripType === 'OPEN_TRIP'
-                        ? (selected.booking.agent?.commissionOpenTrip ?? 0)
-                        : (selected.booking.agent?.commissionPrivateCharter ?? 0)
+                      const commPct   = getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission)
                       const grossAmt  = selected.booking.totalPrice // already net of discount
                       const netAmt    = netOfCommission(selected.booking, commPct)
                       const fmtN = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { NATIONALITIES } from '@/lib/nationalities'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type Source  = 'AGENT' | 'DIRECT'
@@ -37,7 +38,7 @@ type Phase   = 'source' | 'agentInfo' | 'tripType' | 'steps'
 
 interface YachtOpt   { id: string; name: string; model?: string; capacity: number; dailyRate: number; status: string; canDiving?: boolean; canSurfing?: boolean; extraBedTiers?: { nights: number; price: number }[]; destinationPrices?: { destinationId: string; price: number; relocationFee: number | null }[] }
 interface DestinationOpt { id: string; name: string; region?: string | null }
-interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number }
+interface AgentOpt        { id: string; name: string; commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B: number }
 interface AgentContactOpt { id: string; name: string; email?: string | null; whatsapp?: string | null }
 interface CustomerOpt{ id: string; name: string; phone?: string; email?: string; isChild?: boolean; dateOfBirth?: string | null }
 interface LeadOpt { id: string; name: string; phone?: string; email?: string }
@@ -126,6 +127,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* agent state */
   const [agentId,        setAgentId]        = useState('')
   const [agentContactId, setAgentContactId] = useState('')
+  const [useB2BCommission, setUseB2BCommission] = useState(false)
   const [agentContacts,  setAgentContacts]  = useState<AgentContactOpt[]>([])
   const [agentOpen,      setAgentOpen]      = useState(false)
   const [contactOpen,    setContactOpen]    = useState(false)
@@ -284,6 +286,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         setNotes(b.notes ?? '')
         setAgentId(b.agentId ?? '')
         setAgentContactId(b.agentContactId ?? '')
+        setUseB2BCommission(b.useB2BCommission ?? false)
         setIsOnHold(false)
         setPhase('steps')
 
@@ -824,6 +827,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         tripType,
         source,
         agentId: source === 'AGENT' ? agentId : undefined,
+        useB2BCommission: source === 'AGENT' ? useB2BCommission : undefined,
         yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
         openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
         startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
@@ -935,6 +939,7 @@ notes:         resolvedNotes,
         source,
         agentId:        resolvedAgentId,
         agentContactId: resolvedContactId,
+        useB2BCommission: source === 'AGENT' ? useB2BCommission : undefined,
         yachtId: tripType === 'PRIVATE_CHARTER' ? yachtId : ot?.yachtId,
         openTripId: tripType === 'OPEN_TRIP' ? openTripId : undefined,
         startDate: tripType === 'OPEN_TRIP' ? ot?.startDate : startDate,
@@ -1113,7 +1118,7 @@ notes:         resolvedNotes,
                   <span className="font-medium truncate">{selectedAgent.name}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full shrink-0 font-medium"
                     style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
-                    {tripType === 'OPEN_TRIP' ? selectedAgent.commissionOpenTrip : selectedAgent.commissionPrivateCharter}%
+                    {getAgentCommissionPct(selectedAgent, tripType, useB2BCommission)}%
                   </span>
                 </div>
               ) : (
@@ -1134,7 +1139,7 @@ notes:         resolvedNotes,
                     <CommandItem
                       key={a.id}
                       value={a.name}
-                      onSelect={() => { setAgentId(a.id); setAgentContactId(''); setAgentOpen(false) }}
+                      onSelect={() => { setAgentId(a.id); setAgentContactId(''); setUseB2BCommission(false); setAgentOpen(false) }}
                       className="flex items-center gap-2 cursor-pointer"
                     >
                       <Check className={cn('w-4 h-4 shrink-0', agentId === a.id ? 'opacity-100' : 'opacity-0')}
@@ -1157,6 +1162,39 @@ notes:         resolvedNotes,
           </p>
         )}
       </div>
+
+      {/* Commission type — shown only when this agent has a B2B rate configured */}
+      {selectedAgent && selectedAgent.commissionB2B > 0 && (
+        <div className="space-y-1.5">
+          <Label>Commission Type</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setUseB2BCommission(false)}
+              className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors"
+              style={!useB2BCommission
+                ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` }
+                : { borderColor: 'var(--border)' }}
+            >
+              <span className="font-medium">{tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'} Rate</span>
+              <span className="text-xs text-muted-foreground">
+                {tripType === 'OPEN_TRIP' ? selectedAgent.commissionOpenTrip : selectedAgent.commissionPrivateCharter}%
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseB2BCommission(true)}
+              className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors"
+              style={useB2BCommission
+                ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` }
+                : { borderColor: 'var(--border)' }}
+            >
+              <span className="font-medium">B2B Rate</span>
+              <span className="text-xs text-muted-foreground">{selectedAgent.commissionB2B}%</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Contact Person combobox — shown after agent selected */}
       {agentId && (
@@ -2639,7 +2677,7 @@ notes:         resolvedNotes,
 
     // Agent commission deduction — applied on base price only, not additional services/VAT
     const selectedAgent = source === 'AGENT' ? agents.find(a => a.id === agentId) : undefined
-    const commPct  = tripType === 'OPEN_TRIP' ? (selectedAgent?.commissionOpenTrip ?? 0) : (selectedAgent?.commissionPrivateCharter ?? 0)
+    const commPct  = getAgentCommissionPct(selectedAgent, tripType, useB2BCommission)
     const commAmt  = commPct > 0 ? Math.max(0, b - da) * commPct / 100 : 0
     const netTot   = tot - commAmt
 

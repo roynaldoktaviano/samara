@@ -11,6 +11,7 @@ interface AgentData {
   email: string | null
   commissionOpenTrip: number
   commissionPrivateCharter: number
+  commissionB2B: number
 }
 
 
@@ -655,8 +656,11 @@ export default function AgentAgreementPrint() {
             <ul className="clauses">
               <li><span className="cn">3.1.</span><span className="ct"><strong>Open Trip:</strong> The Agency is entitled to a commission of <strong>{agent.commissionOpenTrip}%</strong> on the total charter price for each successful <strong>Open Trip</strong> booking.</span></li>
               <li><span className="cn">3.2.</span><span className="ct"><strong>Private Charter:</strong> The Agency is entitled to a commission of <strong>{agent.commissionPrivateCharter}%</strong> on the total charter price for each successful <strong>Private Charter</strong> booking.</span></li>
-              <li><span className="cn">3.3.</span><span className="ct"><strong>Net Basis:</strong> Commission is calculated on the <strong>net booking value</strong>, excluding government taxes, port fees, and any APA (Advance Provisioning Allowance) if applicable.</span></li>
-              <li><span className="cn">3.4.</span><span className="ct"><strong>Performance-Based or Exceptional Adjustments:</strong> Higher commissions may apply based on sales volume, prepayment agreements, or other specific conditions. These must be confirmed <strong>in writing</strong> and approved by the Principal on a <strong>case-by-case basis.</strong></span></li>
+              {agent.commissionB2B > 0 && (
+                <li><span className="cn">3.3.</span><span className="ct"><strong>B2B:</strong> The Agency is entitled to a commission of <strong>{agent.commissionB2B}%</strong> on the total charter price for each successful booking made under the <strong>B2B</strong> rate.</span></li>
+              )}
+              <li><span className="cn">{agent.commissionB2B > 0 ? '3.4.' : '3.3.'}</span><span className="ct"><strong>Net Basis:</strong> Commission is calculated on the <strong>net booking value</strong>, excluding government taxes, port fees, and any APA (Advance Provisioning Allowance) if applicable.</span></li>
+              <li><span className="cn">{agent.commissionB2B > 0 ? '3.5.' : '3.4.'}</span><span className="ct"><strong>Performance-Based or Exceptional Adjustments:</strong> Higher commissions may apply based on sales volume, prepayment agreements, or other specific conditions. These must be confirmed <strong>in writing</strong> and approved by the Principal on a <strong>case-by-case basis.</strong></span></li>
             </ul>
 
             <div className="sec-h">4. Payment Terms</div>

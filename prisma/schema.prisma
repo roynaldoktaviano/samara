@@ -367,6 +367,9 @@ model Agent {
   commission               Float                  @default(0)
   commissionOpenTrip       Float                  @default(0)
   commissionPrivateCharter Float                  @default(0)
+  // B2B commission rate — an alternate rate a booking can opt into (chosen by sales at
+  // booking time via Booking.useB2BCommission) instead of the trip-type-based OT/PC rate above.
+  commissionB2B            Float                  @default(0)
   isActive                 Boolean                @default(true)
   country                  String?
   address                  String?
@@ -790,6 +793,9 @@ model Booking {
   openTripId                    String?
   source                        BookingSource             @default(DIRECT)
   tripType                      TripType                  @default(PRIVATE_CHARTER)
+  // When true, this booking's agent commission uses Agent.commissionB2B instead of the
+  // tripType-derived OT/PC rate — chosen by sales at booking creation/edit time.
+  useB2BCommission              Boolean                   @default(false)
   yachtId                       String?
   startDate                     DateTime
   endDate                       DateTime

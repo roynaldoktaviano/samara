@@ -82,10 +82,11 @@ export async function GET(request: NextRequest) {
         guestCount: true, destination: true, destinationId: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
+        useB2BCommission: true,
         salespersonUser: { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true, canSurfing: true, capacity: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
-        agent:        { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+        agent:        { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
         agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
         openTrip:  { select: { id: true, title: true, destination: true } },
         guests: {
@@ -161,7 +162,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      tripType, source, agentId, agentContactId, yachtId, openTripId,
+      tripType, source, agentId, agentContactId, useB2BCommission, yachtId, openTripId,
       startDate, endDate, destination, destinationId,
       totalPrice, depositPaid, discount, vatType, vatValue, voucherCode,
       currency, exchangeRate,
@@ -385,6 +386,7 @@ export async function POST(request: NextRequest) {
         customerId:    leadCustomerId,
         agentId:        agentId        || null,
         agentContactId: agentContactId || null,
+        useB2BCommission: agentId ? !!useB2BCommission : false,
         openTripId:    openTripId || null,
         source:        source || 'DIRECT',
         tripType:      tripType || 'PRIVATE_CHARTER',

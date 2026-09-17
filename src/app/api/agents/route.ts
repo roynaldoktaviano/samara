@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const agents = await db.agent.findMany({
       where: all ? undefined : { isActive: true },
       select: {
-        id: true, name: true, commission: true, commissionOpenTrip: true, commissionPrivateCharter: true, isActive: true, createdAt: true,
+        id: true, name: true, commission: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true, isActive: true, createdAt: true,
         country: true, address: true, email: true, whatsapp: true, note: true, website: true, instagram: true, source: true, currentCondition: true, contract: true, contractFileName: true,
         calendarToken: true, calendarActive: true,
         portalPasswordHash: true, portalActive: true,
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { name, commission, commissionOpenTrip, commissionPrivateCharter, salespersonId, country, address, email, whatsapp, note, website, instagram, source, currentCondition, contract, contractFile, contractFileName } = body
+    const { name, commission, commissionOpenTrip, commissionPrivateCharter, commissionB2B, salespersonId, country, address, email, whatsapp, note, website, instagram, source, currentCondition, contract, contractFile, contractFileName } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
         commission:                   commission ? parseFloat(commission) : 0,
         commissionOpenTrip:           commissionOpenTrip ? parseFloat(commissionOpenTrip) : 0,
         commissionPrivateCharter:     commissionPrivateCharter ? parseFloat(commissionPrivateCharter) : 0,
+        commissionB2B:                commissionB2B ? parseFloat(commissionB2B) : 0,
         salespersonId: isSales ? (session!.user.id ?? null) : (salespersonId || null),
         country:          country          || null,
         address:          address          || null,

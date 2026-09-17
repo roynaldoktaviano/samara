@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const VESSEL_ORDER = ['samara i','samara 1','samara ii','samara 2','otium','mischief']
@@ -14,15 +15,13 @@ function vesselSort(name: string) {
 }
 
 function netBooking(b: {
-  source: string; tripType: string;
-  agent: { commissionOpenTrip: number; commissionPrivateCharter: number } | null;
+  source: string; tripType: string; useB2BCommission?: boolean;
+  agent: { commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null;
   confirmedAmount: number; // sum of confirmed payments
   totalPrice: number; discount: number;
   services: { price: number; quantity: number }[];
 }) {
-  const commPct = b.source === 'AGENT'
-    ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
-    : 0
+  const commPct = b.source === 'AGENT' ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission) : 0
   if (commPct <= 0) return b.confirmedAmount
 
   // Commission only applies to the TRIP portion (price excl. additional services), not the whole amount paid.
@@ -68,9 +67,9 @@ export async function GET(request: NextRequest) {
         },
         select: {
           id: true, tripType: true, source: true, startDate: true, yachtId: true,
-          totalPrice: true, discount: true, depositPaid: true,
+          totalPrice: true, discount: true, depositPaid: true, useB2BCommission: true,
           services: { select: { price: true, quantity: true } },
-          agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true } },
+          agent:    { select: { commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
           payments: { where: { status: { in: ['confirmed', 'refunded'] } }, select: { amount: true } },
           guests: {
             where:  { cabinId: { not: null } },

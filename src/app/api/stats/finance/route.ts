@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -36,8 +37,8 @@ export async function GET(request: NextRequest) {
         id: true, totalPrice: true, depositPaid: true, discount: true,
         tripType: true, startDate: true,
         source: true, salesperson: true, salespersonId: true,
-        yachtId: true,
-        agent:   { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true } },
+        yachtId: true, useB2BCommission: true,
+        agent:   { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
         services: { select: { price: true, quantity: true } },
       },
     })
@@ -47,9 +48,7 @@ export async function GET(request: NextRequest) {
     function calcNet(b: typeof bookings[0]) {
       const svcTotal  = b.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
       const afterDisc = Math.max(0, b.totalPrice - svcTotal)
-      const commPct   = b.source === 'AGENT'
-        ? (b.tripType === 'OPEN_TRIP' ? (b.agent?.commissionOpenTrip ?? 0) : (b.agent?.commissionPrivateCharter ?? 0))
-        : 0
+      const commPct   = b.source === 'AGENT' ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission) : 0
       return afterDisc + svcTotal - (afterDisc * commPct / 100)
     }
 

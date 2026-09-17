@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   const agentMeta: Map<string, {
     name: string; country: string | null; address: string | null; email: string | null; whatsapp: string | null
     website: string | null; instagram: string | null; source: string | null; currentCondition: string | null
-    commissionOpenTrip: number; commissionPrivateCharter: number
+    commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B: number
     note: string | null; contract: string | null
     isActive: boolean; salespersonId: string | null
   }> = new Map()
@@ -133,6 +133,12 @@ export async function POST(request: NextRequest) {
     const commissionPrivateCharter = commissionPrivateCharterRaw ? parseFloat(commissionPrivateCharterRaw) : 0
     if (commissionPrivateCharterRaw && isNaN(commissionPrivateCharter)) {
       errors.push(`Row ${rowNum}: invalid commissionPrivateCharter "${commissionPrivateCharterRaw}"`)
+      continue
+    }
+    const commissionB2BRaw = col(row, 'commissionB2B')
+    const commissionB2B = commissionB2BRaw ? parseFloat(commissionB2BRaw) : 0
+    if (commissionB2BRaw && isNaN(commissionB2B)) {
+      errors.push(`Row ${rowNum}: invalid commissionB2B "${commissionB2BRaw}"`)
       continue
     }
 
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
     if (!agentMeta.has(key)) {
       agentMeta.set(key, {
         name, country, address, email, whatsapp, website, instagram, source, currentCondition,
-        commissionOpenTrip, commissionPrivateCharter, note, contract, isActive, salespersonId,
+        commissionOpenTrip, commissionPrivateCharter, commissionB2B, note, contract, isActive, salespersonId,
       })
     } else {
       // Update meta only if new row provides non-empty values
@@ -183,6 +189,7 @@ export async function POST(request: NextRequest) {
       if (contract)         prev.contract         = contract
       if (commissionOpenTripRaw)        prev.commissionOpenTrip        = commissionOpenTrip
       if (commissionPrivateCharterRaw)  prev.commissionPrivateCharter  = commissionPrivateCharter
+      if (commissionB2BRaw)             prev.commissionB2B             = commissionB2B
       if (salespersonId)    prev.salespersonId    = salespersonId
     }
   }
@@ -201,7 +208,7 @@ export async function POST(request: NextRequest) {
           data: {
             country: meta.country, address: meta.address, email: meta.email, whatsapp: meta.whatsapp,
             website: meta.website, instagram: meta.instagram, source: meta.source, currentCondition: meta.currentCondition,
-            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter,
+            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter, commissionB2B: meta.commissionB2B,
             note: meta.note, contract: meta.contract, isActive: meta.isActive,
             ...(meta.salespersonId ? { salespersonId: meta.salespersonId } : {}),
           },
@@ -218,7 +225,7 @@ export async function POST(request: NextRequest) {
             name: meta.name,
             country: meta.country, address: meta.address, email: meta.email, whatsapp: meta.whatsapp,
             website: meta.website, instagram: meta.instagram, source: meta.source, currentCondition: meta.currentCondition,
-            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter,
+            commissionOpenTrip: meta.commissionOpenTrip, commissionPrivateCharter: meta.commissionPrivateCharter, commissionB2B: meta.commissionB2B,
             note: meta.note, contract: meta.contract, isActive: meta.isActive,
             salespersonId: meta.salespersonId,
           },

@@ -56,7 +56,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, totalPriceManualOverride, depositPaid, discount, vatType, vatValue, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, services, currency, exchangeRate } = body
+    const { status, totalPrice, totalPriceManualOverride, depositPaid, discount, vatType, vatValue, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, useB2BCommission, services, currency, exchangeRate } = body
 
     // A manual total-price override (bypassing the auto-calculated base+services-discount+VAT
     // total, and — for Open Trip — skipping the cabin-derived recalc below) is Admin-only.
@@ -142,6 +142,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(hasSurfing       !== undefined && { hasSurfing:       Boolean(hasSurfing) }),
         ...(hasPhotoPackage  !== undefined && { hasPhotoPackage:  Boolean(hasPhotoPackage) }),
         ...(agentContactId  !== undefined && { agentContactId:  agentContactId || null }),
+        ...(useB2BCommission !== undefined && { useB2BCommission: !!useB2BCommission }),
         ...(holdUntil       !== undefined && { holdUntil:       holdUntil ? new Date(holdUntil) : null }),
         ...(currency        !== undefined && {
           currency:     currency || 'USD',
