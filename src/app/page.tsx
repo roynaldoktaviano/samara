@@ -8,7 +8,7 @@ import { getTenantBranding } from '@/lib/tenant-branding'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, Settings, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
+import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -88,6 +88,7 @@ import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import WhatsappDistributionSettings from '@/components/whatsapp/WhatsappDistributionSettings'
 import Banks from '@/components/banks/Banks'
+import MarketingBrands from '@/components/marketing/brands/Brands'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
 import ResetBookingCounter from '@/components/settings/ResetBookingCounter'
 import CompanySettings from '@/components/settings/CompanySettings'
@@ -840,7 +841,7 @@ export default function Home() {
       case 'marketing-assets': return <MediaKit />
       case 'marketing-performance': return <PerformancePage />
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
-      case 'marketing-settings': return <MarketingComingSoon title="Marketing Settings" desc="Brands, integrations, attribution rules, and approval policies." icon={Settings} />
+      case 'marketing-settings': return <MarketingBrands />
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'my-business-trips': return <MyBusinessTripsPage />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FONT_OPTIONS, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle, Search, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
@@ -284,7 +284,7 @@ function RichTextField({ label = 'Text', html, onChange, linkColor, variant = 'f
   )
 }
 
-function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; src: string; onChange: (url: string) => void }) {
+export function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; src: string; onChange: (url: string) => void }) {
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -316,6 +316,75 @@ function ImageUploadField({ label = 'Image', src, onChange }: { label?: string; 
         </Button>
         <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) upload(f) }} />
       </div>
+    </div>
+  )
+}
+
+interface BrandOption {
+  id: string
+  name: string
+  companyName: string
+  address: string | null
+  logoUrl: string | null
+  facebookUrl: string | null
+  instagramUrl: string | null
+  whatsappNumber: string | null
+  linkedinUrl: string | null
+  websiteUrl: string | null
+}
+
+// Pick a saved brand preset and copy its identity fields onto the footer block
+// in one shot — same idea as the "saved sender" picker in CampaignEditor for
+// From email/name pairs. Not a live link: editing/deleting the Brand later
+// never touches footers it was already applied to.
+function BrandCombobox({ onPick }: { onPick: (brand: BrandOption) => void }) {
+  const [brands, setBrands] = useState<BrandOption[]>([])
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    fetch('/api/marketing/brands').then(r => r.ok ? r.json() : []).then(setBrands).catch(() => {})
+  }, [])
+
+  const q = search.trim().toLowerCase()
+  const opts = q ? brands.filter(b => b.name.toLowerCase().includes(q) || b.companyName.toLowerCase().includes(q)) : brands
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-8 border rounded-md px-2.5 text-xs text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e] transition-colors">
+        <span className="text-muted-foreground">Apply a saved brand...</span>
+        <Palette className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+            {brands.length > 0 && (
+              <div className="p-2 border-b shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                    placeholder="Search brands..." value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+              </div>
+            )}
+            <div className="overflow-y-auto">
+              {brands.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No brands saved yet — add one under Marketing → Settings.</p>
+              )}
+              {brands.length > 0 && opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
+              {opts.map(b => (
+                <button key={b.id} type="button" onClick={() => { onPick(b); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#bdac7e]/10 transition-colors">
+                  <p className="font-medium">{b.name}</p>
+                  <p className="text-xs text-muted-foreground">{b.companyName}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -596,6 +665,17 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
     case 'footer':
       return (
         <div className="space-y-3">
+          <BrandCombobox onPick={brand => onChange({
+            ...block,
+            companyName: brand.companyName,
+            address: brand.address ?? '',
+            logoUrl: brand.logoUrl ?? '',
+            facebookUrl: brand.facebookUrl ?? '',
+            instagramUrl: brand.instagramUrl ?? '',
+            whatsappNumber: brand.whatsappNumber ?? '',
+            linkedinUrl: brand.linkedinUrl ?? '',
+            websiteUrl: brand.websiteUrl ?? '',
+          })} />
           <ImageUploadField label="Logo (optional)" src={block.logoUrl} onChange={logoUrl => onChange({ ...block, logoUrl })} />
           <div className="space-y-1.5">
             <Label className="text-xs">Company name</Label>
@@ -614,8 +694,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.instagramUrl} onChange={e => onChange({ ...block, instagramUrl: e.target.value })} placeholder="https://instagram.com/..." className="h-8 text-sm" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">WhatsApp number</Label>
-            <Input value={block.whatsappNumber} onChange={e => onChange({ ...block, whatsappNumber: e.target.value })} placeholder="+62 ..." className="h-8 text-sm" />
+            <Label className="text-xs">WhatsApp number or link</Label>
+            <Input value={block.whatsappNumber} onChange={e => onChange({ ...block, whatsappNumber: e.target.value })} placeholder="+62 ... or https://wa.me/..." className="h-8 text-sm" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">LinkedIn URL</Label>

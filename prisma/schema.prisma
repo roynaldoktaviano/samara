@@ -105,11 +105,11 @@ enum PaymentStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id                                     String                      @id @default(cuid())
-  email                                  String                      @unique
+  id                                     String                            @id @default(cuid())
+  email                                  String                            @unique
   name                                   String?
   password                               String
-  role                                   Role                        @default(SALES)
+  role                                   Role                              @default(SALES)
   // For PURCHASING-role users only: which division's PRs they're responsible for (see
   // PurchaseRequestDivision). Null means unassigned — an unassigned Purchasing user sees
   // and gets notified about every PR regardless of division, same as before this field
@@ -119,86 +119,86 @@ model User {
   // of — used to route auto-generated PO/Transfer receive links to the right person only
   // (e.g. Otium's captain never gets notified about a delivery to another yacht).
   assignedYachtId                        String?
-  assignedYacht                          Yacht?                      @relation(fields: [assignedYachtId], references: [id], onDelete: SetNull)
-  createdAt                              DateTime                    @default(now())
-  updatedAt                              DateTime                    @updatedAt
-  bookings                               Booking[]                   @relation("SalespersonBookings")
-  managedAgents                          Agent[]                     @relation("AgentSalesperson")
+  assignedYacht                          Yacht?                            @relation(fields: [assignedYachtId], references: [id], onDelete: SetNull)
+  createdAt                              DateTime                          @default(now())
+  updatedAt                              DateTime                          @updatedAt
+  bookings                               Booking[]                         @relation("SalespersonBookings")
+  managedAgents                          Agent[]                           @relation("AgentSalesperson")
   waitingListItems                       WaitingList[]
   stockMovements                         StockMovement[]
-  purchaseRequests                       PurchaseRequest[]           @relation("PRRequestedBy")
-  purchaseRequestsApproved               PurchaseRequest[]           @relation("PRApprovedBy")
-  leaveRequestsSubmitted                 LeaveRequest[]              @relation("LeaveRequestedBy")
-  leaveRequestsDecided                   LeaveRequest[]              @relation("LeaveDecidedBy")
-  leaveRequestsCrewApproved              LeaveRequest[]              @relation("LeaveCrewApprovedBy")
-  businessTripsSubmitted                 BusinessTrip[]              @relation("BusinessTripRequestedBy")
-  businessTripsDecided                   BusinessTrip[]              @relation("BusinessTripDecidedBy")
-  businessTripsManagerApproved           BusinessTrip[]              @relation("BusinessTripManagerApprovedBy")
-  businessTripAssignmentLettersIssued    BusinessTrip[]              @relation("BusinessTripAssignmentLetterIssuedBy")
-  overtimeRequestsSubmitted              OvertimeRequest[]           @relation("OvertimeRequestedBy")
-  overtimeRequestsDecided                OvertimeRequest[]           @relation("OvertimeDecidedBy")
-  businessTripReimbursementsMade         BusinessTripReimbursement[] @relation("BusinessTripReimbursementRequestedBy")
-  businessTripReimbursementsPaid         BusinessTripReimbursement[] @relation("BusinessTripReimbursementPaidBy")
-  performanceReviewsRequested            PerformanceReview[]         @relation("PerformanceReviewRequestedBy")
-  performanceReviewsReviewed             PerformanceReview[]         @relation("PerformanceReviewReviewedBy")
-  employeeSeparationsCleared             EmployeeSeparation[]        @relation("SeparationClearedBy")
-  employeeSeparationsPaklaringIssued     EmployeeSeparation[]        @relation("SeparationPaklaringIssuedBy")
-  candidateOfferLettersIssued            Candidate[]                 @relation("CandidateOfferLetterIssuedBy")
-  purchaseRequestsVerified               PurchaseRequest[]           @relation("PRVerifiedBy")
-  purchaseRequestsConverted              PurchaseRequest[]           @relation("PRConvertedBy")
-  purchaseRequestsRejected               PurchaseRequest[]           @relation("PRRejectedBy")
-  purchaseRequestsCancelled              PurchaseRequest[]           @relation("PRCancelledBy")
-  purchaseRequestItemQuotationsSubmitted PurchaseRequestItem[]       @relation("PRItemQuotationSubmittedBy")
-  purchaseRequestItemQuotationsToApprove PurchaseRequestItem[]       @relation("PRItemQuotationApprover")
-  purchaseRequestItemQuotationsApproved  PurchaseRequestItem[]       @relation("PRItemQuotationApprovedBy")
-  purchaseRequestItemQuotationsRejected  PurchaseRequestItem[]       @relation("PRItemQuotationRejectedBy")
-  purchaseRequestItemsVerifyRejected     PurchaseRequestItem[]       @relation("PRItemVerifyRejectedBy")
+  purchaseRequests                       PurchaseRequest[]                 @relation("PRRequestedBy")
+  purchaseRequestsApproved               PurchaseRequest[]                 @relation("PRApprovedBy")
+  leaveRequestsSubmitted                 LeaveRequest[]                    @relation("LeaveRequestedBy")
+  leaveRequestsDecided                   LeaveRequest[]                    @relation("LeaveDecidedBy")
+  leaveRequestsCrewApproved              LeaveRequest[]                    @relation("LeaveCrewApprovedBy")
+  businessTripsSubmitted                 BusinessTrip[]                    @relation("BusinessTripRequestedBy")
+  businessTripsDecided                   BusinessTrip[]                    @relation("BusinessTripDecidedBy")
+  businessTripsManagerApproved           BusinessTrip[]                    @relation("BusinessTripManagerApprovedBy")
+  businessTripAssignmentLettersIssued    BusinessTrip[]                    @relation("BusinessTripAssignmentLetterIssuedBy")
+  overtimeRequestsSubmitted              OvertimeRequest[]                 @relation("OvertimeRequestedBy")
+  overtimeRequestsDecided                OvertimeRequest[]                 @relation("OvertimeDecidedBy")
+  businessTripReimbursementsMade         BusinessTripReimbursement[]       @relation("BusinessTripReimbursementRequestedBy")
+  businessTripReimbursementsPaid         BusinessTripReimbursement[]       @relation("BusinessTripReimbursementPaidBy")
+  performanceReviewsRequested            PerformanceReview[]               @relation("PerformanceReviewRequestedBy")
+  performanceReviewsReviewed             PerformanceReview[]               @relation("PerformanceReviewReviewedBy")
+  employeeSeparationsCleared             EmployeeSeparation[]              @relation("SeparationClearedBy")
+  employeeSeparationsPaklaringIssued     EmployeeSeparation[]              @relation("SeparationPaklaringIssuedBy")
+  candidateOfferLettersIssued            Candidate[]                       @relation("CandidateOfferLetterIssuedBy")
+  purchaseRequestsVerified               PurchaseRequest[]                 @relation("PRVerifiedBy")
+  purchaseRequestsConverted              PurchaseRequest[]                 @relation("PRConvertedBy")
+  purchaseRequestsRejected               PurchaseRequest[]                 @relation("PRRejectedBy")
+  purchaseRequestsCancelled              PurchaseRequest[]                 @relation("PRCancelledBy")
+  purchaseRequestItemQuotationsSubmitted PurchaseRequestItem[]             @relation("PRItemQuotationSubmittedBy")
+  purchaseRequestItemQuotationsToApprove PurchaseRequestItem[]             @relation("PRItemQuotationApprover")
+  purchaseRequestItemQuotationsApproved  PurchaseRequestItem[]             @relation("PRItemQuotationApprovedBy")
+  purchaseRequestItemQuotationsRejected  PurchaseRequestItem[]             @relation("PRItemQuotationRejectedBy")
+  purchaseRequestItemsVerifyRejected     PurchaseRequestItem[]             @relation("PRItemVerifyRejectedBy")
   purchaseOrdersCreated                  PurchaseOrder[]
   goodsReceipts                          GoodsReceipt[]
-  transfersDispatched                    StockTransfer[]             @relation("TransferDispatch")
-  transfersReceived                      StockTransfer[]             @relation("TransferReceive")
-  transfersExpectedReceive               StockTransfer[]             @relation("TransferExpectedReceive")
-  inventoryExceptionsResolved            InventoryException[]        @relation("ExceptionResolvedBy")
+  transfersDispatched                    StockTransfer[]                   @relation("TransferDispatch")
+  transfersReceived                      StockTransfer[]                   @relation("TransferReceive")
+  transfersExpectedReceive               StockTransfer[]                   @relation("TransferExpectedReceive")
+  inventoryExceptionsResolved            InventoryException[]              @relation("ExceptionResolvedBy")
   crewRequests                           CrewRequest[]
-  stockCountsBy                          StockCount[]                @relation("StockCountBy")
-  stockCountsApproved                    StockCount[]                @relation("StockCountApprove")
-  poPaymentRequestsMade                  POPaymentRequest[]          @relation("POPaymentRequestedBy")
-  poPaymentRequestsPaid                  POPaymentRequest[]          @relation("POPaymentPaidBy")
-  poPaymentRequestsRejected              POPaymentRequest[]          @relation("POPaymentRejectedBy")
-  poReimbursementsMade                   POReimbursement[]           @relation("POReimbursementRequestedBy")
-  poReimbursementsPaid                   POReimbursement[]           @relation("POReimbursementPaidBy")
-  poFollowUpsCreated                     PurchaseFollowUp[]          @relation("POFollowUpCreatedBy")
-  poFollowUpsEscalatedTo                 PurchaseFollowUp[]          @relation("POFollowUpEscalatedTo")
-  prFollowUpsCreated                     PurchaseRequestFollowUp[]   @relation("PRFollowUpCreatedBy")
-  prFollowUpsEscalatedTo                 PurchaseRequestFollowUp[]   @relation("PRFollowUpEscalatedTo")
+  stockCountsBy                          StockCount[]                      @relation("StockCountBy")
+  stockCountsApproved                    StockCount[]                      @relation("StockCountApprove")
+  poPaymentRequestsMade                  POPaymentRequest[]                @relation("POPaymentRequestedBy")
+  poPaymentRequestsPaid                  POPaymentRequest[]                @relation("POPaymentPaidBy")
+  poPaymentRequestsRejected              POPaymentRequest[]                @relation("POPaymentRejectedBy")
+  poReimbursementsMade                   POReimbursement[]                 @relation("POReimbursementRequestedBy")
+  poReimbursementsPaid                   POReimbursement[]                 @relation("POReimbursementPaidBy")
+  poFollowUpsCreated                     PurchaseFollowUp[]                @relation("POFollowUpCreatedBy")
+  poFollowUpsEscalatedTo                 PurchaseFollowUp[]                @relation("POFollowUpEscalatedTo")
+  prFollowUpsCreated                     PurchaseRequestFollowUp[]         @relation("PRFollowUpCreatedBy")
+  prFollowUpsEscalatedTo                 PurchaseRequestFollowUp[]         @relation("PRFollowUpEscalatedTo")
   purchaseQuotationsCreated              PurchaseQuotation[]
   deliveryFeesCreated                    DeliveryFee[]
-  deliveryFeePaymentRequestsMade         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentRequestedBy")
-  deliveryFeePaymentRequestsPaid         DeliveryFeePaymentRequest[] @relation("DeliveryFeePaymentPaidBy")
-  deliveryFeeReimbursementsMade          DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementRequestedBy")
-  deliveryFeeReimbursementsPaid          DeliveryFeeReimbursement[]  @relation("DeliveryFeeReimbursementPaidBy")
-  agentLeadsPromoted                     AgentLead[]                 @relation("AgentLeadPromotedBy")
+  deliveryFeePaymentRequestsMade         DeliveryFeePaymentRequest[]       @relation("DeliveryFeePaymentRequestedBy")
+  deliveryFeePaymentRequestsPaid         DeliveryFeePaymentRequest[]       @relation("DeliveryFeePaymentPaidBy")
+  deliveryFeeReimbursementsMade          DeliveryFeeReimbursement[]        @relation("DeliveryFeeReimbursementRequestedBy")
+  deliveryFeeReimbursementsPaid          DeliveryFeeReimbursement[]        @relation("DeliveryFeeReimbursementPaidBy")
+  agentLeadsPromoted                     AgentLead[]                       @relation("AgentLeadPromotedBy")
   mediaFilesUploaded                     MediaFile[]
   promosCreated                          Promo[]
   employeeProfile                        Employee?
   pushSubscriptions                      PushSubscription[]
-  payrollPeriodsCreated                  PayrollPeriod[]             @relation("PayrollCreatedBy")
-  payrollPeriodsSubmitted                PayrollPeriod[]             @relation("PayrollSubmittedBy")
-  payrollPeriodsApproved                 PayrollPeriod[]             @relation("PayrollApprovedBy")
-  payrollPeriodsRejected                 PayrollPeriod[]             @relation("PayrollRejectedBy")
-  payrollPeriodsPaid                     PayrollPeriod[]             @relation("PayrollPaidBy")
-  payrollSettingsUpdated                 PayrollSettings[]           @relation("PayrollSettingsUpdatedBy")
-  attendanceRecordsSet                   AttendanceRecord[]          @relation("AttendanceSetBy")
+  payrollPeriodsCreated                  PayrollPeriod[]                   @relation("PayrollCreatedBy")
+  payrollPeriodsSubmitted                PayrollPeriod[]                   @relation("PayrollSubmittedBy")
+  payrollPeriodsApproved                 PayrollPeriod[]                   @relation("PayrollApprovedBy")
+  payrollPeriodsRejected                 PayrollPeriod[]                   @relation("PayrollRejectedBy")
+  payrollPeriodsPaid                     PayrollPeriod[]                   @relation("PayrollPaidBy")
+  payrollSettingsUpdated                 PayrollSettings[]                 @relation("PayrollSettingsUpdatedBy")
+  attendanceRecordsSet                   AttendanceRecord[]                @relation("AttendanceSetBy")
   nationalHolidaysCreated                NationalHoliday[]
-  loanRequestsMade                       LoanRequest[]               @relation("LoanRequestedBy")
-  loanHrDecisions                        LoanRequest[]               @relation("LoanHrDecidedBy")
-  loanFinanceDecisions                   LoanRequest[]               @relation("LoanFinanceDecidedBy")
-  loanSpecialDecisions                   LoanRequest[]               @relation("LoanSpecialDecidedBy")
+  loanRequestsMade                       LoanRequest[]                     @relation("LoanRequestedBy")
+  loanHrDecisions                        LoanRequest[]                     @relation("LoanHrDecidedBy")
+  loanFinanceDecisions                   LoanRequest[]                     @relation("LoanFinanceDecidedBy")
+  loanSpecialDecisions                   LoanRequest[]                     @relation("LoanSpecialDecidedBy")
   internalEventsCreated                  InternalEvent[]
   inventoryItemsCreated                  InventoryItem[]
   inventoryOpnamesCounted                InventoryOpname[]
-  assignedWhatsappConversations           WhatsappConversation[]      @relation("WhatsappConversationAssignedTo")
-  whatsappDistributionParticipants        WhatsappDistributionParticipant[]
+  assignedWhatsappConversations          WhatsappConversation[]            @relation("WhatsappConversationAssignedTo")
+  whatsappDistributionParticipants       WhatsappDistributionParticipant[]
 
   @@index([assignedYachtId])
 }
@@ -782,27 +782,27 @@ model OpenTrip {
 }
 
 model Booking {
-  id                            String               @id @default(cuid())
-  bookingCode                   String               @unique
+  id                            String                    @id @default(cuid())
+  bookingCode                   String                    @unique
   customerId                    String
   agentId                       String?
   agentContactId                String?
   openTripId                    String?
-  source                        BookingSource        @default(DIRECT)
-  tripType                      TripType             @default(PRIVATE_CHARTER)
+  source                        BookingSource             @default(DIRECT)
+  tripType                      TripType                  @default(PRIVATE_CHARTER)
   yachtId                       String?
   startDate                     DateTime
   endDate                       DateTime
   destination                   String?
   destinationId                 String?
-  status                        BookingStatus        @default(pending)
+  status                        BookingStatus             @default(pending)
   totalPrice                    Float
-  depositPaid                   Float                @default(0)
-  discount                      Float                @default(0)
+  depositPaid                   Float                     @default(0)
+  discount                      Float                     @default(0)
   // Surcharge added on top of (base + services - discount). null/FIXED means vatValue is a
   // flat USD amount; 'PERCENT' means vatValue is a percentage of that subtotal.
   vatType                       String?
-  vatValue                      Float                @default(0)
+  vatValue                      Float                     @default(0)
   depositDueDate                DateTime?
   finalDueDate                  DateTime?
   // When set, the invoice PDF shows this date instead of the live depositDueDate/finalDueDate above —
@@ -810,12 +810,12 @@ model Booking {
   depositDueDateInvoiceOverride DateTime?
   finalDueDateInvoiceOverride   DateTime?
   holdUntil                     DateTime?
-  guestCount                    Int                  @default(1)
-  crewRequired                  Boolean              @default(false)
-  hasDiving                     Boolean              @default(false)
-  hasSurfing                    Boolean              @default(false)
-  hasPhotoPackage               Boolean              @default(false)
-  masterFormToken               String?              @unique
+  guestCount                    Int                       @default(1)
+  crewRequired                  Boolean                   @default(false)
+  hasDiving                     Boolean                   @default(false)
+  hasSurfing                    Boolean                   @default(false)
+  hasPhotoPackage               Boolean                   @default(false)
+  masterFormToken               String?                   @unique
   masterFormExpiresAt           DateTime?
   travelingWith                 String?
   salesperson                   String?
@@ -829,26 +829,26 @@ model Booking {
   refundConfirmedAt             DateTime?
   refundConfirmedBy             String?
   voucherCode                   String?
-  currency                      String               @default("USD")
+  currency                      String                    @default("USD")
   exchangeRate                  Float?
-  createdAt                     DateTime             @default(now())
-  updatedAt                     DateTime             @updatedAt
-  customer                      Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  agent                         Agent?               @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  agentContact                  AgentContact?        @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
-  yacht                         Yacht?               @relation(fields: [yachtId], references: [id])
-  openTrip                      OpenTrip?            @relation(fields: [openTripId], references: [id], onDelete: SetNull)
-  destinationRef                Destination?         @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  salespersonUser               User?                @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
+  createdAt                     DateTime                  @default(now())
+  updatedAt                     DateTime                  @updatedAt
+  customer                      Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  agent                         Agent?                    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentContact                  AgentContact?             @relation(fields: [agentContactId], references: [id], onDelete: SetNull)
+  yacht                         Yacht?                    @relation(fields: [yachtId], references: [id])
+  openTrip                      OpenTrip?                 @relation(fields: [openTripId], references: [id], onDelete: SetNull)
+  destinationRef                Destination?              @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  salespersonUser               User?                     @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
   guests                        BookingGuest[]
   services                      BookingService[]
   payments                      Payment[]
   expenses                      Expense[]
   notifications                 Notification[]
-  waitingList                   WaitingList[]        @relation("BookingWaitingList")
+  waitingList                   WaitingList[]             @relation("BookingWaitingList")
   clawbackEntries               AgentClawbackEntry[]
-  slotHistory                   WaitingListHistory[] @relation("BookingSlotHistory")
-  promotedWaitingLists          WaitingList[]        @relation("WaitingListPromotedBooking")
+  slotHistory                   WaitingListHistory[]      @relation("BookingSlotHistory")
+  promotedWaitingLists          WaitingList[]             @relation("WaitingListPromotedBooking")
   cashierSales                  CashierSale[]
   purchaseOrders                PurchaseOrder[]
   purchaseRequests              PurchaseRequest[]
@@ -1255,6 +1255,25 @@ model EmailSenderIdentity {
   @@index([fromEmail])
 }
 
+// A saved brand preset (logo, company name, address, social links) that can be
+// applied to an email footer block in one click — same idea as
+// EmailSenderIdentity for From email/name pairs.
+model Brand {
+  id             String   @id @default(cuid())
+  name           String
+  companyName    String
+  address        String?
+  logoUrl        String?
+  facebookUrl    String?
+  instagramUrl   String?
+  whatsappNumber String?
+  linkedinUrl    String?
+  websiteUrl     String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model EmailCampaign {
   id              String              @id @default(cuid())
   name            String
@@ -1413,21 +1432,21 @@ model Campaign {
 }
 
 model CampaignChannel {
-  id              String                @id @default(cuid())
-  campaignId      String
-  campaign        Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  type            CampaignChannelType
-  status          CampaignChannelStatus @default(NOT_STARTED)
-  ownerName       String?
-  notes           String?
-  plannedBudget   Float?
-  actualSpend     Float?
+  id                   String                @id @default(cuid())
+  campaignId           String
+  campaign             Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  type                 CampaignChannelType
+  status               CampaignChannelStatus @default(NOT_STARTED)
+  ownerName            String?
+  notes                String?
+  plannedBudget        Float?
+  actualSpend          Float?
   externalUrl          String? // LANDING_PAGE: the published page's URL (typed in manually — the actual page lives outside this app)
   externalCampaignName String? // META_ADS/GOOGLE_ADS: the campaign's name inside that ad platform (no live API integration — kept as a manual reference)
-  emailCampaignId String?               @unique
-  emailCampaign   EmailCampaign?        @relation(fields: [emailCampaignId], references: [id], onDelete: SetNull)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  emailCampaignId      String?               @unique
+  emailCampaign        EmailCampaign?        @relation(fields: [emailCampaignId], references: [id], onDelete: SetNull)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([campaignId])
 }
@@ -1512,14 +1531,14 @@ model ContentVersion {
 // request-changes / submit / publish) — action carries the event type so the UI can render
 // both in one chronological thread without a second query.
 model ContentComment {
-  id              String      @id @default(cuid())
-  contentItemId   String
-  contentItem     ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
-  authorUserId    String?
-  authorName      String
-  text            String
-  action          String?
-  createdAt       DateTime    @default(now())
+  id            String      @id @default(cuid())
+  contentItemId String
+  contentItem   ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  authorUserId  String?
+  authorName    String
+  text          String
+  action        String?
+  createdAt     DateTime    @default(now())
 
   @@index([contentItemId])
 }
@@ -1824,18 +1843,18 @@ model PurchaseItem {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  stockLots        StockLot[]
-  requestItems     PurchaseRequestItem[]
-  orderItems       PurchaseOrderItem[]
-  receiptItems     GoodsReceiptItem[]
-  transferItems    StockTransferItem[]
-  crewRequestItems CrewRequestItem[]
-  movements        StockMovement[]
-  stockCountItems  StockCountItem[]
-  cashierSaleItems CashierSaleItem[]
-  currentLocation  StockLocation?        @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
-  posMenuItems     PosMenuItem[]
-  posPackageItems  PosPackageItem[]
+  stockLots             StockLot[]
+  requestItems          PurchaseRequestItem[]
+  orderItems            PurchaseOrderItem[]
+  receiptItems          GoodsReceiptItem[]
+  transferItems         StockTransferItem[]
+  crewRequestItems      CrewRequestItem[]
+  movements             StockMovement[]
+  stockCountItems       StockCountItem[]
+  cashierSaleItems      CashierSaleItem[]
+  currentLocation       StockLocation?        @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  posMenuItems          PosMenuItem[]
+  posPackageItems       PosPackageItem[]
   // Set by the one-time migration script when this legacy non-stock item is converted
   // into a proper InventoryItem (see InventoryItem.sourcePurchaseItemId) — back-relation only.
   migratedInventoryItem InventoryItem?
@@ -2266,18 +2285,18 @@ model PurchaseRequestItem {
   // show every replacement PR ever raised against it, and this line's own status.
   sourceInventoryItemId String?
 
-  request              PurchaseRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  sourceInventoryItem  InventoryItem?      @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
+  request              PurchaseRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sourceInventoryItem  InventoryItem?        @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
   sourceOpnameEntry    InventoryOpnameEntry?
-  item                 PurchaseItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  supplier             Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  convertedPo          PurchaseOrder?      @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  item                 PurchaseItem?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier             Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  convertedPo          PurchaseOrder?        @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
   quotations           PurchaseQuotation[]
-  quotationSubmittedBy User?               @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
-  quotationApprover    User?               @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
-  quotationApprovedBy  User?               @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
-  quotationRejectedBy  User?               @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
-  verifyRejectedBy     User?               @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
+  quotationSubmittedBy User?                 @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
+  quotationApprover    User?                 @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
+  quotationApprovedBy  User?                 @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
+  quotationRejectedBy  User?                 @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
+  verifyRejectedBy     User?                 @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([quotationApproverId])
@@ -2592,32 +2611,32 @@ model DeliveryFeeReimbursement {
 }
 
 model PurchaseOrderItem {
-  id          String  @id @default(cuid())
-  orderId     String
-  itemId      String?
-  itemName    String
-  unit        String?
-  orderedQty  Float
-  receivedQty Float   @default(0)
-  unitCost    Float   @default(0)
+  id                    String  @id @default(cuid())
+  orderId               String
+  itemId                String?
+  itemName              String
+  unit                  String?
+  orderedQty            Float
+  receivedQty           Float   @default(0)
+  unitCost              Float   @default(0)
   // Which Inventory Room/Category this item is destined for — required (enforced at the
   // API layer) whenever the PO's deliveryLocation is a ship (StockLocation.type ===
   // 'VESSEL'), so goods purchased for a vessel already know where they'll live in the
   // Inventory module. Null for POs to non-vessel locations, and for POs created before
   // this field existed.
-  inventoryRoomId     String?
-  inventoryCategoryId String?
+  inventoryRoomId       String?
+  inventoryCategoryId   String?
   // Set when this line was requested against a specific existing InventoryItem (see
   // PurchaseRequestItem.sourceInventoryItemId, carried forward at PR->PO conversion) —
   // receiveGoods.ts increments that InventoryItem's quantity on receipt instead of
   // creating a StockLot, since this line has no PurchaseItem catalog link at all.
   sourceInventoryItemId String?
 
-  order             PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  item              PurchaseItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  inventoryRoom     InventoryRoom?     @relation(fields: [inventoryRoomId], references: [id], onDelete: SetNull)
-  inventoryCategory InventoryCategory? @relation(fields: [inventoryCategoryId], references: [id], onDelete: SetNull)
-  sourceInventoryItem InventoryItem?   @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
+  order               PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item                PurchaseItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  inventoryRoom       InventoryRoom?     @relation(fields: [inventoryRoomId], references: [id], onDelete: SetNull)
+  inventoryCategory   InventoryCategory? @relation(fields: [inventoryCategoryId], references: [id], onDelete: SetNull)
+  sourceInventoryItem InventoryItem?     @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([inventoryRoomId])
@@ -2655,24 +2674,24 @@ model GoodsReceipt {
 }
 
 model GoodsReceiptItem {
-  id          String    @id @default(cuid())
-  receiptId   String
-  itemId      String?
-  itemName    String
-  receivedQty Float
-  unitCost    Float     @default(0)
-  outcome     String    @default("ACCEPTED")
-  condition   String    @default("good")
-  batch       String?
-  expiryDate  DateTime?
-  notes       String?
+  id                    String    @id @default(cuid())
+  receiptId             String
+  itemId                String?
+  itemName              String
+  receivedQty           Float
+  unitCost              Float     @default(0)
+  outcome               String    @default("ACCEPTED")
+  condition             String    @default("good")
+  batch                 String?
+  expiryDate            DateTime?
+  notes                 String?
   // Copied from PurchaseOrderItem.sourceInventoryItemId at receipt time — purely a
   // traceability record on the receipt itself (which InventoryItem this line topped up);
   // the actual InventoryItem.quantity increment already happened via that PO item.
   sourceInventoryItemId String?
 
-  receipt           GoodsReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  item              PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  receipt             GoodsReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item                PurchaseItem?  @relation(fields: [itemId], references: [id], onDelete: SetNull)
   sourceInventoryItem InventoryItem? @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([receiptId])
@@ -2752,13 +2771,13 @@ model StockTransfer {
 }
 
 model StockTransferItem {
-  id            String  @id @default(cuid())
-  transferId    String
-  itemId        String?
-  itemName      String
-  requestedQty  Float
-  dispatchedQty Float   @default(0)
-  receivedQty   Float   @default(0)
+  id                  String  @id @default(cuid())
+  transferId          String
+  itemId              String?
+  itemName            String
+  requestedQty        Float
+  dispatchedQty       Float   @default(0)
+  receivedQty         Float   @default(0)
   // Who requested/ordered this specific line — shown per row on the printed Packing
   // List ("Ordered by"), distinct per item within the same transfer/box.
   orderedByEmployeeId String?
@@ -2996,9 +3015,9 @@ model InventoryOpname {
 }
 
 model InventoryOpnameEntry {
-  id       String @id @default(cuid())
-  opnameId String
-  itemId   String
+  id        String   @id @default(cuid())
+  opnameId  String
+  itemId    String
   // 1..item.quantity at the time this session was created — a display/ordering label
   // within this session only, not a persistent per-unit identity across sessions (if
   // Jumlah changes between sessions, the next session just generates a fresh 1..N set).
@@ -3016,7 +3035,7 @@ model InventoryOpnameEntry {
 
   opname                 InventoryOpname      @relation(fields: [opnameId], references: [id], onDelete: Cascade)
   item                   InventoryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  replacementRequestItem  PurchaseRequestItem? @relation(fields: [replacementRequestItemId], references: [id], onDelete: SetNull)
+  replacementRequestItem PurchaseRequestItem? @relation(fields: [replacementRequestItemId], references: [id], onDelete: SetNull)
 
   @@index([opnameId])
   @@index([itemId])
@@ -3195,17 +3214,17 @@ model Employee {
   bpjsTkNumber        String?
 
   // Compensation
-  basicSalary Float?
-  allowance   Float?
+  basicSalary      Float?
+  allowance        Float?
   // Base daily rate. For shore-based staff (work location doesn't match a Yacht name)
   // this is paid flat each period. For crew stationed on a yacht (location name matches
   // a Yacht.name), Payroll multiplies this by the number of days that yacht had a trip
   // within the payroll period — see countTripDaysInPeriod in src/lib/payroll.ts.
-  uangLayar   Float?
-  uangMakan   Float?
+  uangLayar        Float?
+  uangMakan        Float?
   // THR (Tunjangan Hari Raya) — pre-fills PayslipEntry.thr at generation time, still
   // manually overridable per period like every other payroll figure.
-  thr         Float?
+  thr              Float?
   // Freelance only (employmentStatus = 'Freelance') — the one-off/per-engagement fee
   // agreed for this booking, distinct from basicSalary which flows through the
   // recurring monthly payroll-period cycle a freelancer was never enrolled in.
@@ -3216,7 +3235,7 @@ model Employee {
   // Recurring named income lines beyond the fixed columns above (e.g. a fixed monthly
   // allowance HR wants itemized on the payslip) — array of { id, name, description, amount }.
   // Snapshotted onto PayslipEntry.otherIncomeSnap at generation time.
-  otherIncome Json   @default("[]")
+  otherIncome      Json    @default("[]")
 
   // Documents — each stored as data-URL strings, same pattern as PurchaseQuotation.fileKey
   seamanBookFiles     String[] @default([]) // Buku Pelaut
@@ -3257,8 +3276,8 @@ model Employee {
   // Freelance only — which regular employee this person is covering for while they're
   // away (e.g. crew on leave). Same self-relation shape as managerId/manager above.
   replacingEmployeeId  String?
-  replacingEmployee    Employee?  @relation("EmployeeFreelanceReplacement", fields: [replacingEmployeeId], references: [id], onDelete: SetNull)
-  coveredByFreelancers Employee[] @relation("EmployeeFreelanceReplacement")
+  replacingEmployee    Employee?                 @relation("EmployeeFreelanceReplacement", fields: [replacingEmployeeId], references: [id], onDelete: SetNull)
+  coveredByFreelancers Employee[]                @relation("EmployeeFreelanceReplacement")
   tripAssignments      FreelanceTripAssignment[]
 
   // Links this Employee record to their login account — lets the system resolve
@@ -3967,36 +3986,36 @@ enum CandidateStatus {
 // Talent pool — a lightweight recruitment pipeline, not a full ATS. HIRED/REJECTED are
 // terminal states excluded from the "active pipeline" count shown on HR Overview.
 model Candidate {
-  id                  String          @id @default(cuid())
-  fullName            String
-  appliedRoleId       String?
-  appliedRole         EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
-  phone               String?
-  email               String?
-  source              String?
-  resumeFiles         String[]        @default([])
-  expectedSalary      Float?
-  location            String?
-  readyJoinDate       DateTime?
-  additionalDocuments Json            @default("[]") // named extra docs — array of { id, name, description, fileKey }
-  notes               String?
-  status              CandidateStatus @default(TALENT_POOL)
-  assessmentScore     Int? // 0-100, set once an assessment/interview has actually happened
-  skills              String[]        @default([])
-  languages           String[]        @default([])
+  id                    String          @id @default(cuid())
+  fullName              String
+  appliedRoleId         String?
+  appliedRole           EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
+  phone                 String?
+  email                 String?
+  source                String?
+  resumeFiles           String[]        @default([])
+  expectedSalary        Float?
+  location              String?
+  readyJoinDate         DateTime?
+  additionalDocuments   Json            @default("[]") // named extra docs — array of { id, name, description, fileKey }
+  notes                 String?
+  status                CandidateStatus @default(TALENT_POOL)
+  assessmentScore       Int? // 0-100, set once an assessment/interview has actually happened
+  skills                String[]        @default([])
+  languages             String[]        @default([])
   // Assigned once (first "Generate Offering Letter" click) and reused on every reprint —
   // same pattern as EmployeeSeparation.paklaringNumber. Only ever set once status has
   // reached OFFER; see src/app/api/hr/candidates/[id]/offer-letter/route.ts.
-  offerLetterNumber   String?
-  offerLetterIssuedAt DateTime?
+  offerLetterNumber     String?
+  offerLetterIssuedAt   DateTime?
   offerLetterIssuedById String?
-  offerLetterIssuedBy   User?   @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
+  offerLetterIssuedBy   User?           @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
   // Set via the "Schedule Interview" action in Talent Pool — a real date/time plus the
   // meeting link the candidate joins with, not just a status flip.
-  interviewScheduledAt DateTime?
-  interviewMeetingLink String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  interviewScheduledAt  DateTime?
+  interviewMeetingLink  String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   // Set once this candidate is converted into a real Employee (on probation) from
   // the Talent Pool — prevents converting the same hire twice and links back to

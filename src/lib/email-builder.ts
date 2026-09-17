@@ -594,11 +594,22 @@ function footerIcon(kind: FooterIconKind): string {
 // sizing (e.g. display:inline-block + width on an <a>) is exactly the kind
 // of thing Gmail/Outlook/Apple Mail can render inconsistently or ignore,
 // which is how these icons ended up oversized in preview.
+// The field accepts either a raw phone number ("+62 859-...") or an
+// already-formed WhatsApp link (e.g. https://api.whatsapp.com/send/?phone=...,
+// pasted straight from WhatsApp's own "click to chat" tool) — treat anything
+// that already looks like a URL as-is instead of mangling it by stripping
+// digits out of the whole string.
+function whatsappUrl(value: string): string {
+  const v = value.trim()
+  if (!v) return ''
+  return /^https?:\/\//i.test(v) ? v : `https://wa.me/${v.replace(/[^0-9]/g, '')}`
+}
+
 function renderFooterSocialRow(block: FooterBlock): string {
   const allLinks: { url: string; icon: FooterIconKind }[] = [
     { url: block.facebookUrl, icon: 'facebook' },
     { url: block.instagramUrl, icon: 'instagram' },
-    { url: block.whatsappNumber ? `https://wa.me/${block.whatsappNumber.replace(/[^0-9]/g, '')}` : '', icon: 'whatsapp' },
+    { url: whatsappUrl(block.whatsappNumber), icon: 'whatsapp' },
     { url: block.linkedinUrl, icon: 'linkedin' },
     { url: block.websiteUrl, icon: 'link' },
   ]
@@ -904,7 +915,21 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   // silently dropped) but do honor a <style> tag placed in the body — this is the
   // standard, widely-documented workaround, not decoration. Other clients just
   // parse the same rules twice, which is harmless.
+  // Mirrors the `.email-rich-text` reset in globals.css (used by the builder's own
+  // RichTextField) so a <p>/<ul>/<blockquote> from rich-text content looks the same
+  // here as it did while editing — the exported HTML has no Tailwind Preflight to
+  // undo, so left alone these tags would fall back to the browser's own default
+  // margins/bullets (typically top+bottom on every <p>, not just a bottom gap
+  // between paragraphs), reading as noticeably more padding than what was set.
   const styleBlock = `
+      p{margin:0 0 1em;}
+      p:last-child{margin-bottom:0;}
+      ul,ol{margin:0 0 1em;padding-left:1.5em;}
+      ul:last-child,ol:last-child{margin-bottom:0;}
+      ul{list-style:disc;}
+      ol{list-style:decimal;}
+      li{display:list-item;}
+      blockquote{margin:0 0 1em;padding-left:1em;border-left:3px solid currentColor;opacity:.85;}
       @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
       @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
       @media (prefers-color-scheme: dark){
