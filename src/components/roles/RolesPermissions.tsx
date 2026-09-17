@@ -25,7 +25,7 @@ const ROLE_META: Record<RoleKey, { label: string; desc: string; color: string }>
   MARKETING:         { label: 'Marketing',          desc: 'Trips & customer reach',                            color: 'bg-orange-100 text-orange-700' },
   MARKETING_DIRECTOR:{ label: 'Marketing Director',  desc: 'Marketing + approval authority',                    color: 'bg-fuchsia-100 text-fuchsia-700' },
   PURCHASING:        { label: 'Purchasing',         desc: 'Manage procurement',                                color: 'bg-amber-100 text-amber-700' },
-  WAREHOUSE:         { label: 'Warehouse',          desc: 'Receive & check incoming goods',                    color: 'bg-teal-100 text-teal-700' },
+  WAREHOUSE:         { label: 'Warehouse',          desc: 'Check stock for requests, receive & check incoming goods', color: 'bg-teal-100 text-teal-700' },
   HR:                { label: 'HR',                 desc: 'People & employee records',                         color: 'bg-pink-100 text-pink-700' },
   FINANCE_DIRECTOR:  { label: 'Finance Director',   desc: 'Combined role',                                     color: 'bg-cyan-100 text-cyan-700' },
   CREW:              { label: 'Crew',               desc: 'Ship crew — Purchase Request only',                 color: 'bg-sky-100 text-sky-700' },

@@ -7,6 +7,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApproval'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
+import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 // WAREHOUSE sits in VIEW_ALLOWED, which (see GET below) skips the per-request ownership
@@ -108,12 +109,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const items = request.items.map(item => {
     const master = item.itemId ? itemMasterMap.get(item.itemId) : null
 
-    // Convert the requested quantity to base units for comparison against StockLot
-    // quantities (which are always denominated in base units) — same conversion used
-    // when adding items to a cart in CreateRequestView / the /request-order catalog.
-    const requiredBaseQty = master && item.unit === master.purchaseUnit && master.purchaseUnit !== master.baseUnit
-      ? item.quantity * (master.conversionFactor || 1)
-      : item.quantity
+    const requiredBaseQty = toBaseQty(item.quantity, item.unit, master)
 
     const warehouseStock = (canTransfer && item.itemId)
       ? [...warehouseIds]
@@ -328,9 +324,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: `Lokasi asal tidak valid untuk "${item.itemName}"` }, { status: 400 })
       }
       const master = masterMap.get(item.itemId)
-      const baseQty = master && item.unit === master.purchaseUnit && master.purchaseUnit !== master.baseUnit
-        ? item.quantity * (master.conversionFactor || 1)
-        : item.quantity
+      const baseQty = toBaseQty(item.quantity, item.unit, master)
       const lots = await db.stockLot.findMany({ where: { itemId: item.itemId, locationId: tf.fromLocationId }, select: { quantity: true } })
       const available = lots.reduce((s, l) => s + l.quantity, 0)
       if (available < baseQty) {
@@ -483,39 +477,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       transferGroups.get(tf.fromLocationId)!.push(item)
     }
 
-    const trPrefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
-
     for (const [fromLocationId, groupItems] of transferGroups) {
-      const existingTransfer = await db.stockTransfer.findFirst({ where: { purchaseRequestId: id, fromLocationId, status: 'PENDING' } })
-      const itemsCreate = groupItems.map(it => ({
-        id: crypto.randomUUID(),
-        itemId: it.itemId,
-        itemName: it.itemName,
-        requestedQty: transferByRequestItemId.get(it.id)!.baseQty,
-      }))
-
-      if (existingTransfer) {
-        await db.stockTransfer.update({ where: { id: existingTransfer.id }, data: { items: { create: itemsCreate } } })
-        createdTransferNumbers.push(existingTransfer.transferNumber)
-      } else {
-        const last = await db.stockTransfer.findFirst({ where: { transferNumber: { startsWith: trPrefix } }, orderBy: { transferNumber: 'desc' }, select: { transferNumber: true } })
-        const seq = last ? (parseInt(last.transferNumber.split('-').pop() ?? '0') || 0) + 1 : 1
-        const transferNumber = `${trPrefix}${String(seq).padStart(3, '0')}`
-        await db.stockTransfer.create({
-          data: {
-            id: crypto.randomUUID(),
-            transferNumber,
-            fromLocationId,
-            toLocationId: request.deliveryLocationId!,
-            purchaseRequestId: id,
-            status: 'PENDING',
-            notes: `Auto-created from ${request.prNumber}`,
-            updatedAt: new Date(),
-            items: { create: itemsCreate },
-          },
-        })
-        createdTransferNumbers.push(transferNumber)
-      }
+      const transferNumber = await createOrAppendTransfer(db, {
+        requestId: id,
+        prNumber: request.prNumber,
+        deliveryLocationId: request.deliveryLocationId!,
+        fromLocationId,
+        items: groupItems.map(it => ({ itemId: it.itemId, itemName: it.itemName, baseQty: transferByRequestItemId.get(it.id)!.baseQty })),
+      })
+      createdTransferNumbers.push(transferNumber)
       for (const it of groupItems) processedItemIds.add(it.id)
     }
   }

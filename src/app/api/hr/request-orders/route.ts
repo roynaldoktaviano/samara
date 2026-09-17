@@ -3,7 +3,9 @@ import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '@prisma/client'
 import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
 import { sendPushToUser } from '@/lib/push'
-import { notifyPurchasingForRequest } from '@/lib/notify-purchasing'
+import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
+
+const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
 // Public, unauthenticated: internal employees (who may not have an ERP login) submit
 // requests here. Each submission becomes a PurchaseRequest routed to the requester's
@@ -138,7 +140,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (approverEmployeeId && manager?.userId) {
-    // Route the notification to the assigned manager — Purchasing hears about this
+    // Route the notification to the assigned manager — Warehouse hears about this
     // request only after it's approved (see approval/route.ts).
     await db.notification.create({
       data: {
@@ -155,17 +157,17 @@ export async function POST(req: NextRequest) {
       url: '/',
     })
   } else {
-    // No usable manager on file — fall back to notifying Purchasing directly, same as
+    // No usable manager on file — fall back to notifying Warehouse directly, same as
     // before, so the request doesn't sit unseen. Flag why it skipped manager approval
-    // so Purchasing knows to chase it up manually rather than assume it's a mistake.
+    // so Warehouse knows to chase it up manually rather than assume it's a mistake.
     const skipReason = !employee.managerId
       ? ' (no manager on file for this employee — skipped manager approval)'
       : ' (assigned manager has no ERP login yet — skipped manager approval)'
-    await notifyPurchasingForRequest(
-      db, division,
+    await notifyByRoleForRequest(
+      db, WAREHOUSE_ROLES,
       isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
       isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
-      `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for review.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+      `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for a stock check.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
       request.id,
     )
   }

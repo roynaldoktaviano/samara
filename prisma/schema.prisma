@@ -153,6 +153,7 @@ model User {
   purchaseRequestItemQuotationsApproved  PurchaseRequestItem[]             @relation("PRItemQuotationApprovedBy")
   purchaseRequestItemQuotationsRejected  PurchaseRequestItem[]             @relation("PRItemQuotationRejectedBy")
   purchaseRequestItemsVerifyRejected     PurchaseRequestItem[]             @relation("PRItemVerifyRejectedBy")
+  purchaseRequestItemsWarehouseChecked   PurchaseRequestItem[]             @relation("PRItemWarehouseCheckedBy")
   purchaseOrdersCreated                  PurchaseOrder[]
   goodsReceipts                          GoodsReceipt[]
   transfersDispatched                    StockTransfer[]                   @relation("TransferDispatch")
@@ -1771,6 +1772,13 @@ enum PurchaseRequestPurpose {
   REPLACEMENT
 }
 
+// Warehouse's physical stock-check decision on a PurchaseRequestItem, made before
+// Purchasing ever sees it — see PurchaseRequestItem.warehouseDecision.
+enum PurchaseRequestItemWarehouseDecision {
+  TRANSFER
+  PURCHASE
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   ORDERED
@@ -2285,6 +2293,17 @@ model PurchaseRequestItem {
   verifyRejectedAt      DateTime?
   verifyRejectionReason String?
 
+  // Physical stock check by Warehouse, before Purchasing ever sees the item. Settable only
+  // while the request is DRAFT and only once (never once convertedAt is set) — mirrors
+  // verifyRejectedById/At above. TRANSFER immediately creates a StockTransfer and stamps
+  // convertedAt (item is done, no PO needed). PURCHASE leaves convertedAt null so the item
+  // proceeds to Purchasing once the PR is forwarded. See PATCH
+  // /api/purchasing/requests/[id]/items/[itemId]/warehouse-check.
+  warehouseDecision    PurchaseRequestItemWarehouseDecision?
+  warehouseCheckedById String?
+  warehouseCheckedAt   DateTime?
+  warehouseCheckNote   String?
+
   // Set only when this line was created by "Request for Replacement" during an
   // Inventory Stock Opname (the other half of the link is
   // InventoryOpnameEntry.replacementRequestItemId) — lets an InventoryItem's history
@@ -2303,10 +2322,12 @@ model PurchaseRequestItem {
   quotationApprovedBy  User?                 @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
   quotationRejectedBy  User?                 @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
   verifyRejectedBy     User?                 @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
+  warehouseCheckedBy   User?                 @relation("PRItemWarehouseCheckedBy", fields: [warehouseCheckedById], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([quotationApproverId])
   @@index([verifyRejectedById])
+  @@index([warehouseCheckedById])
   @@index([convertedPoId])
   @@index([sourceInventoryItemId])
 }

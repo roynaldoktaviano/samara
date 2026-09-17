@@ -7,6 +7,73 @@ import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNext
 type Db = Awaited<ReturnType<typeof getDb>>
 
 /**
+ * Converts a PurchaseRequestItem's requested quantity into base units for comparison
+ * against StockLot quantities (always denominated in base units) — same conversion used
+ * when adding items to a cart in CreateRequestView / the /request-order catalog. `unit` is
+ * the request item's own unit; `master` is its PurchaseItem catalog record (null for
+ * custom/non-catalog items, which always pass through unconverted).
+ */
+export function toBaseQty(
+  quantity: number,
+  unit: string,
+  master: { baseUnit: string; purchaseUnit: string; conversionFactor: number } | null | undefined,
+): number {
+  return master && unit === master.purchaseUnit && master.purchaseUnit !== master.baseUnit
+    ? quantity * (master.conversionFactor || 1)
+    : quantity
+}
+
+/**
+ * Creates a PENDING StockTransfer for a PurchaseRequest's items fulfilled from warehouse
+ * stock instead of bought — or appends to an existing PENDING transfer already open for
+ * the same PR + source location, so a trickle of per-item decisions from the same PR
+ * doesn't fragment into a pile of near-duplicate transfers. Shared by Purchasing's bulk
+ * convert-to-PO/Transfer step (PATCH /api/purchasing/requests/[id]) and Warehouse's
+ * one-item-at-a-time physical stock check (PATCH .../items/[itemId]/warehouse-check).
+ * Returns the transfer number (new or appended-to).
+ */
+export async function createOrAppendTransfer(db: Db, params: {
+  requestId: string
+  prNumber: string
+  deliveryLocationId: string
+  fromLocationId: string
+  items: { itemId: string | null; itemName: string; baseQty: number }[]
+}): Promise<string> {
+  const { requestId, prNumber, deliveryLocationId, fromLocationId, items } = params
+  const itemsCreate = items.map(it => ({
+    id: crypto.randomUUID(),
+    itemId: it.itemId,
+    itemName: it.itemName,
+    requestedQty: it.baseQty,
+  }))
+
+  const existingTransfer = await db.stockTransfer.findFirst({ where: { purchaseRequestId: requestId, fromLocationId, status: 'PENDING' } })
+  if (existingTransfer) {
+    await db.stockTransfer.update({ where: { id: existingTransfer.id }, data: { items: { create: itemsCreate } } })
+    return existingTransfer.transferNumber
+  }
+
+  const trPrefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
+  const last = await db.stockTransfer.findFirst({ where: { transferNumber: { startsWith: trPrefix } }, orderBy: { transferNumber: 'desc' }, select: { transferNumber: true } })
+  const seq = last ? (parseInt(last.transferNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const transferNumber = `${trPrefix}${String(seq).padStart(3, '0')}`
+  await db.stockTransfer.create({
+    data: {
+      id: crypto.randomUUID(),
+      transferNumber,
+      fromLocationId,
+      toLocationId: deliveryLocationId,
+      purchaseRequestId: requestId,
+      status: 'PENDING',
+      notes: `Auto-created from ${prNumber}`,
+      updatedAt: new Date(),
+      items: { create: itemsCreate },
+    },
+  })
+  return transferNumber
+}
+
+/**
  * Marks a StockTransfer RECEIVED: increments/creates stock lots at the destination,
  * records the TRANSFER_IN movement, updates StockTransferItem.receivedQty, raises a
  * discrepancy exception on mismatch, then continues the PO transit chain if this leg

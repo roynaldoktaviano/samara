@@ -10,9 +10,11 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
-const PURCHASING_ROLES = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
-// Roles that only ever see/create their own submissions — never Purchasing's full queue.
-const OWN_ONLY_ROLES = ['WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+// Roles that only ever see/create their own submissions — never the full queue. Warehouse
+// is deliberately NOT here: they now need to see every DRAFT PR pending their stock check,
+// not just ones they happened to submit themselves (see the Warehouse stock-check flow).
+const OWN_ONLY_ROLES = ['CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()
@@ -206,7 +208,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (approverEmployeeId && manager?.userId) {
-    // Awaiting manager sign-off — Purchasing hears about this request only after it's
+    // Awaiting manager sign-off — Warehouse hears about this request only after it's
     // approved (see [id]/approval/route.ts), not now.
     db.notification.create({
       data: {
@@ -222,13 +224,13 @@ export async function POST(req: NextRequest) {
       body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.`,
       url: '/',
     }).catch(() => {})
-  } else if (!roleMatches(role, PURCHASING_ROLES)) {
-    // No usable manager on file — fall back to notifying Purchasing directly, same as
-    // before, so the request doesn't sit unseen. Skip when Purchasing/Admin themselves
-    // created it, since they don't need to be told about their own action.
+  } else if (!roleMatches(role, WAREHOUSE_ROLES)) {
+    // No usable manager on file — notify Warehouse directly so they can check stock,
+    // same as after a manager approves. Skip when Warehouse/Admin themselves created it,
+    // since they don't need to be told about their own action.
     notifyByRoleForRequest(
-      db, PURCHASING_ROLES, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
-      `${prNumber} was submitted with ${request.items.length} item${request.items.length !== 1 ? 's' : ''} and is waiting for review.`,
+      db, WAREHOUSE_ROLES, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
+      `${prNumber} was submitted with ${request.items.length} item${request.items.length !== 1 ? 's' : ''} and is waiting for a stock check.`,
       request.id,
     ).catch(() => {})
   }

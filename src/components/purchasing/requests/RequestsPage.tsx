@@ -47,7 +47,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -102,7 +102,7 @@ interface FollowUp {
 interface EscalationTarget { id: string; name: string | null }
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Cek Gudang', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
   PENDING_APPROVAL: 'bg-purple-100 text-purple-700', DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
@@ -129,7 +129,7 @@ function leastAdvancedPo(orders: PurchaseRequest['orders']): { po: NonNullable<P
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
-  { key: 'DRAFT', label: 'Draft' },
+  { key: 'DRAFT', label: 'Cek Gudang' },
   { key: 'ON_PROCESS', label: 'On Process' },
   { key: 'CONVERTED', label: 'Converted' },
   { key: 'REJECTED', label: 'Rejected' },
@@ -274,6 +274,11 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   // "Requested by Me" only makes sense for Admin — Purchasing/Warehouse's whole job here
   // is processing everyone else's requests, not filtering down to their own.
   const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
+  // The actual Warehouse role specifically (not Crew/Boat Captain/Cruise Director, who
+  // only share the isWarehouse read-only bucket above because they're requesters too),
+  // plus Admin/Super Admin as a manual override — gates the physical stock-check step at
+  // DRAFT (see PATCH .../items/[itemId]/warehouse-check and .../warehouse-forward).
+  const canWarehouseCheck = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [items, setItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -302,6 +307,13 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   // routes onBack to the detail view instead of the list.
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null)
   const [fulfillment, setFulfillment] = useState<Record<string, string | null>>({})
+  // Warehouse's own physical stock-check inputs, per item — the source location they
+  // pick for a Transfer decision, an optional discrepancy note, and which item's request
+  // is currently in flight (disables its buttons while saving).
+  const [warehouseFrom, setWarehouseFrom] = useState<Record<string, string>>({})
+  const [warehouseNote, setWarehouseNote] = useState<Record<string, string>>({})
+  const [warehouseBusyItemId, setWarehouseBusyItemId] = useState<string | null>(null)
+  const [warehouseForwarding, setWarehouseForwarding] = useState(false)
   // Per-item Inventory Room/Category, required before converting an item into a PO when
   // the PR's delivery location is a ship (not needed for items fulfilled via transfer
   // instead — see convertToPO). Mirrors OrdersPage.tsx's own Room/Category pickers.
@@ -1094,6 +1106,43 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     if (ok) setRejectItemModal(null)
   }
 
+  // Warehouse's physical stock-check decision on a single item — TRANSFER creates the
+  // Transfer immediately server-side, PURCHASE just flags it to move on with everything
+  // else once the PR is forwarded. See PATCH .../items/[itemId]/warehouse-check.
+  async function warehouseCheckItem(item: RequestLine, decision: 'TRANSFER' | 'PURCHASE') {
+    if (!detail || !item.id) return
+    if (decision === 'TRANSFER' && !warehouseFrom[item.id]) { toast.error('Pilih lokasi gudang dulu'); return }
+    setWarehouseBusyItemId(item.id)
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        decision,
+        fromLocationId: decision === 'TRANSFER' ? warehouseFrom[item.id] : undefined,
+        note: warehouseNote[item.id]?.trim() || undefined,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setWarehouseBusyItemId(null)
+    if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan keputusan'); return }
+    toast.success(decision === 'TRANSFER' ? `Transfer dibuat (${data.transferNumber}) untuk ${item.itemName}` : `${item.itemName} diteruskan ke Purchasing`)
+    await fetchDetail(detail.id)
+  }
+
+  // Warehouse's "done checking" action — closes the PR straight to CONVERTED if every
+  // item was resolved from stock, or forwards the rest to Purchasing (ON_PROCESS)
+  // otherwise. See PATCH .../warehouse-forward.
+  async function warehouseForward() {
+    if (!detail) return
+    setWarehouseForwarding(true)
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/warehouse-forward`, { method: 'PATCH' })
+    const data = await res.json().catch(() => ({}))
+    setWarehouseForwarding(false)
+    if (!res.ok) { toast.error(data.error ?? 'Gagal meneruskan request'); return }
+    toast.success(data.remainingItems?.length ? 'Diteruskan ke Purchasing' : 'Request selesai — semua dari stok gudang')
+    await fetchDetail(detail.id)
+    load()
+  }
+
   async function deleteReq(req: PurchaseRequest) {
     if (!confirm(`Delete ${req.prNumber}?`)) return
     const res = await fetch(`/api/purchasing/requests/${req.id}`, { method: 'DELETE' })
@@ -1309,11 +1358,12 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   })()}
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'DRAFT' && !isWarehouse ? (
+                  {r.status === 'DRAFT' && isAdmin ? (
                     <button
                       onClick={() => changeStatus(r.id, 'ON_PROCESS')}
+                      title="Skip Warehouse's stock check and send straight to Purchasing"
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors whitespace-nowrap">
-                      <CheckCircle2 className="h-3 w-3" /> Verify
+                      <CheckCircle2 className="h-3 w-3" /> Force Verify
                     </button>
                   ) : (
                     <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />
@@ -1491,12 +1541,18 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
           <div className="flex items-center gap-2 shrink-0 pt-1">
             {selected.status === 'DRAFT' && (
               <>
+                {isWarehouse && !canWarehouseCheck && (
+                  <span className="text-sm text-muted-foreground italic">Sedang dicek oleh Gudang</span>
+                )}
                 {!isWarehouse && (
                   <>
-                    <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
-                      className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
-                      Verify
-                    </button>
+                    {isAdmin && (
+                      <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
+                        title="Skip Warehouse's stock check and send straight to Purchasing"
+                        className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
+                        Force Verify
+                      </button>
+                    )}
                     <button onClick={openEditRequest}
                       className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
                       Edit
@@ -1507,6 +1563,18 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                     </button>
                   </>
                 )}
+                {canWarehouseCheck && (() => {
+                  const catalogItems = detail?.items.filter(it => it.itemId) ?? []
+                  const undecided = catalogItems.filter(it => !it.convertedAt && !it.warehouseDecision)
+                  const remaining = (detail?.items ?? []).filter(it => !it.convertedAt)
+                  return (
+                    <button onClick={warehouseForward} disabled={undecided.length > 0 || warehouseForwarding}
+                      title={undecided.length > 0 ? `Belum dicek: ${undecided.map(it => it.itemName).join(', ')}` : undefined}
+                      className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                      {remaining.length === 0 ? 'Selesai — Semua dari Stok' : 'Teruskan ke Purchasing'}
+                    </button>
+                  )
+                })()}
                 <button onClick={() => deleteReq(selected)}
                   className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                   Delete
@@ -1719,6 +1787,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   <th className="text-right px-5 py-2.5 font-medium">Requested</th>
                   <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium">Decision</th>}
+                  {detail.status === 'DRAFT' && canWarehouseCheck && <th className="text-left px-5 py-2.5 font-medium">Cek Gudang</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium">Room / Category</th>}
                   <th className="w-10" />
@@ -1866,10 +1935,65 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                           )}
                         </td>
                       )}
+                      {detail.status === 'DRAFT' && canWarehouseCheck && (
+                        <td className="px-5 py-3 min-w-[220px]" onClick={e => e.stopPropagation()}>
+                          {isRejected ? (
+                            <span className="text-xs text-muted-foreground italic">Ditolak — tidak perlu dicek</span>
+                          ) : isCustom ? (
+                            <span className="text-xs text-muted-foreground italic">Custom — otomatis ke Purchasing</span>
+                          ) : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
+                            <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">✓ Transfer dari stok</span>
+                          ) : (() => {
+                            const busy = warehouseBusyItemId === item.id
+                            const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
+                            const defaultFrom = item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+                            const fromValue = warehouseFrom[item.id!] ?? defaultFrom
+                            return (
+                              <div className="space-y-1.5">
+                                {item.warehouseDecision === 'PURCHASE' && (
+                                  <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap inline-block">Ke Purchasing (bisa diubah)</span>
+                                )}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <div className="relative inline-block">
+                                    <select
+                                      className="appearance-none text-xs pl-2 pr-5 py-1 rounded-md border bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      value={fromValue}
+                                      onChange={e => setWarehouseFrom(f => ({ ...f, [item.id!]: e.target.value }))}
+                                    >
+                                      <option value="">Pilih lokasi...</option>
+                                      {warehouseLocations.map(loc => {
+                                        const hint = item.warehouseStock?.find(w => w.locationId === loc.id)
+                                        return <option key={loc.id} value={loc.id}>{loc.name}{hint ? ` (sistem: ${hint.qty})` : ''}</option>
+                                      })}
+                                    </select>
+                                    <ChevronDown className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+                                  </div>
+                                  <button disabled={busy || !fromValue} onClick={() => warehouseCheckItem(item, 'TRANSFER')}
+                                    className="text-xs font-medium px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                                    Ada — Transfer
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text" placeholder="Catatan (opsional)"
+                                    className="text-xs border rounded-md px-2 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    value={warehouseNote[item.id!] ?? ''}
+                                    onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
+                                  />
+                                  <button disabled={busy} onClick={() => warehouseCheckItem(item, 'PURCHASE')}
+                                    className="text-xs font-medium px-2 py-1 rounded-md border text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                                    Tidak Ada
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </td>
+                      )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {!item.transferEligible || !item.warehouseStock?.length ? (
-                            <span className="text-xs text-muted-foreground">Purchase Order</span>
+                          {item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
+                            <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Gudang sudah cek fisik — tidak ada stok' : undefined}>Purchase Order</span>
                           ) : (
                             <div className="relative inline-block">
                               <select
