@@ -737,38 +737,37 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // to branch on when the design intentionally keeps columns side by side.
         return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
       }
-      // "Fluid hybrid" columns: each column is a `display:inline-block` div, fluid
-      // down to `width:100%` of whatever room is left. Side by side, the columns'
-      // natural inline-level wrapping keeps them on one line as long as they all
-      // fit; once the container gets too narrow for all of them (a phone screen)
-      // the same CSS wrapping drops the extras to their own line — one column per
-      // row, same as ordinary text wrapping. This needs no @media query to do
-      // that, so it stacks correctly even in clients that strip <style>/@media
-      // entirely (Gmail's Android app has historically been one).
-      //
-      // The div's own inline max-width defaults to the full block width
-      // (innerWidth), not its desktop per-column share (colMaxPx) — so once
-      // wrapped onto its own row on a narrow phone, it actually fills that row
-      // instead of staying stuck at half-width with a mismatched-color gutter
-      // down the side. collectExtraStyles adds a `@media (min-width:601px)` rule
-      // that shrinks it back down to colMaxPx there, restoring the side-by-side
-      // desktop layout — that rule is what stops columns wrapping at all on wide
-      // (non-Outlook) clients. A client that ignores every @media rule (only
-      // Gmail's app, always phone-width in practice) just keeps the mobile-width
-      // default, which is exactly what's wanted there anyway. `font-size:0` on the
-      // wrapper kills the whitespace gap browsers render between adjacent
+      // "Fluid hybrid" columns: each column is a `display:inline-block` div capped
+      // at its desktop pixel width (max-width) but fluid down to `width:100%` of
+      // whatever room is left. Side by side, the columns' natural inline-level
+      // wrapping keeps them on one line as long as they all fit; once the
+      // container gets too narrow for all of them (a phone screen) the same CSS
+      // wrapping drops the extras to their own line — one column per row, same as
+      // ordinary text wrapping. This needs no @media query to do that, so unlike
+      // an approach gated behind one, it stacks correctly even in clients that
+      // strip <style>/@media entirely (Gmail's Android app has historically been
+      // one) instead of leaving them stuck side-by-side on a phone. `font-size:0`
+      // on the wrapper kills the whitespace gap browsers render between adjacent
       // inline-block elements (the whitespace/newlines between the divs in this
       // template); each column div sets its own font-size back so that gap doesn't
-      // shrink its actual content. Outlook desktop (Word engine) doesn't wrap
-      // inline-block at all — it gets the plain `<table><td>` version instead, via
-      // the same MSO-conditional-comment idiom `renderBlock` uses for
-      // hideOn:'desktop' above.
+      // shrink its actual content. Outlook desktop (Word engine) doesn't wrap inline-block at all —
+      // it gets the plain `<table><td>` version instead, via the same
+      // MSO-conditional-comment idiom `renderBlock` uses for hideOn:'desktop' above.
       const mobileGap = block.mobile?.gap ?? gap
       const fluidCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
         const padBottom = i === n - 1 ? 0 : mobileGap
-        return `<div class="col-${block.id}-${i}" style="display:inline-block;vertical-align:top;width:100%;max-width:${innerWidth}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
+        // The max-width cap (needed so columns wrap instead of just shrinking) sticks
+        // around after a column has actually wrapped to its own row, leaving it stuck
+        // at its desktop half-width instead of filling the row — collectExtraStyles
+        // adds a `@media max-width:600px` rule keyed on this class that relaxes the
+        // cap to 100% there. That's a pure enhancement on top of the wrap itself
+        // (which needs no media-query support to work at all): a client that ignores
+        // it still wraps correctly, just stays capped at its desktop width instead of
+        // filling the row — text-align:center below at least keeps that centered
+        // instead of flush against the left edge.
+        return `<div class="col-${block.id}-${i}" style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
       }).join('')
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <!--[if mso]>${tdTable}<![endif]-->
@@ -818,10 +817,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
 
 // Per-instance CSS (link color, full-width-on-mobile images) that can't be expressed
 // as inline styles alone — collected once and emitted in the exported HTML's <head>.
-// `contentWidth` mirrors the same value threaded through renderBlock/renderColumnCell,
-// narrowed the same way on each recursive call, so a nested columns/section block's
-// derived pixel widths match what was actually rendered for it.
-function collectExtraStyles(blocks: EmailBlock[], contentWidth: number): string[] {
+function collectExtraStyles(blocks: EmailBlock[]): string[] {
   const rules: string[] = []
   for (const b of blocks) {
     if (b.type === 'text' || b.type === 'heading') {
@@ -894,29 +890,14 @@ function collectExtraStyles(blocks: EmailBlock[], contentWidth: number): string[
       const bg = darkModeSafe(b.backgroundColor)
       rules.push(`@media (prefers-color-scheme: dark){.sec-${b.id}{background-color:${bg} !important;}}`)
       rules.push(darkOverride(`.sec-${b.id}`, `background-color:${bg} !important;`))
-      rules.push(...collectExtraStyles(b.blocks, contentWidth - b.padding.left - b.padding.right))
+      rules.push(...collectExtraStyles(b.blocks))
     }
     if (b.type === 'columns') {
-      const n = b.columns.length || 1
-      const gap = b.gap ?? 24
-      const innerWidth = contentWidth - b.padding.left - b.padding.right
-      const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
       if (b.stackOnMobile) {
-        const decls100 = b.columns.map((_, i) => `.col-${b.id}-${i}{max-width:100% !important;}`).join('')
-        rules.push(`@media only screen and (max-width:600px){${decls100}}`)
-        // The div's own inline max-width defaults to the full block width (see the
-        // 'columns' render case) so a wrapped-to-its-own-row mobile column fills
-        // the row instead of sticking at its desktop half-width. This restores the
-        // narrower per-column width on genuinely wide (non-Outlook) clients, which
-        // all support @media — Outlook renders the separate <table><td> version
-        // instead and never sees this class at all — so columns still sit side by
-        // side there instead of each claiming the full row.
-        if (n > 1) {
-          const declsHalf = b.columns.map((_, i) => `.col-${b.id}-${i}{max-width:${colMaxPx}px !important;}`).join('')
-          rules.push(`@media only screen and (min-width:601px){${declsHalf}}`)
-        }
+        const decls = b.columns.map((_, i) => `.col-${b.id}-${i}{max-width:100% !important;}`).join('')
+        rules.push(`@media only screen and (max-width:600px){${decls}}`)
       }
-      rules.push(...collectExtraStyles(b.columns.flat(), colMaxPx))
+      rules.push(...collectExtraStyles(b.columns.flat()))
     }
   }
   return rules
@@ -927,7 +908,7 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
   const pageBg = darkModeSafe(s.pageBackground)
   const contentBg = darkModeSafe(s.contentBackground)
   const rows = blocks.map(b => renderBlock(b, s.contentWidth)).join('\n')
-  const extraStyles = collectExtraStyles(blocks, s.contentWidth).join('\n')
+  const extraStyles = collectExtraStyles(blocks).join('\n')
   // Every @media rule (mobile hide/show, columns stacking, dark mode) lives in this
   // one block, repeated verbatim right after <body> opens. Gmail's iOS/Android apps
   // are the reason: they strip <style> out of <head> entirely (any @media there is
