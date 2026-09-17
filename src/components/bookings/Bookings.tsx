@@ -2687,7 +2687,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               ? `Rp ${Math.round(v * bdrRate).toLocaleString('id-ID')}`
               : `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             const detailPmts      = payments.filter(p => p.bookingId === db_.id)
-            const detailActivePmt = detailPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation'].includes(p.status))
+            const detailActivePmt = detailPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation', 'rejected'].includes(p.status))
             const detailConfirmed = detailPmts.filter(p => p.status === 'confirmed')
             const detailHasPmt    = detailConfirmed.length > 0
             const detailHasLunas  = detailPmts.some(p => p.paymentType === 'PELUNASAN')
@@ -2921,6 +2921,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {detailActivePmt?.status === 'rejected' && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-center gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        Payment proof was rejected by Finance — upload a new one to resubmit.
                       </div>
                     )}
 
@@ -3337,7 +3344,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <CreditCard className="h-3.5 w-3.5" /> Request Invoice
                         </button>
                       )}
-                      {detailActivePmt?.status === 'invoice_ready' && (() => {
+                      {(detailActivePmt?.status === 'invoice_ready' || detailActivePmt?.status === 'rejected') && (() => {
                         const hasIDR = db_.currency === 'IDR' && !!db_.exchangeRate
                         return hasIDR ? (
                           <>
@@ -3357,9 +3364,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </button>
                         )
                       })()}
-                      {detailActivePmt?.status === 'invoice_ready' && (
+                      {(detailActivePmt?.status === 'invoice_ready' || detailActivePmt?.status === 'rejected') && (
                         <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors" onClick={() => { setDetailBooking(null); openProofUpload(detailActivePmt) }}>
-                          <Upload className="h-3.5 w-3.5" /> Submit Proof
+                          <Upload className="h-3.5 w-3.5" /> {detailActivePmt?.status === 'rejected' ? 'Resubmit Proof' : 'Submit Proof'}
                         </button>
                       )}
                       {db_.guests.length > 0 && (

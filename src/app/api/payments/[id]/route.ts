@@ -252,8 +252,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         include: { booking: { select: { id: true, bookingCode: true } } },
       }))
       if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-      if (existing.status !== 'invoice_ready') {
-        return NextResponse.json({ error: 'Proof can only be submitted when status is "invoice_ready"' }, { status: 400 })
+      // A rejected payment can always take a new proof — this is the resubmit path
+      // (Sales fixes/replaces the transfer proof and sends it back to Finance).
+      if (existing.status !== 'invoice_ready' && existing.status !== 'rejected') {
+        return NextResponse.json({ error: 'Proof can only be submitted when status is "invoice_ready" or "rejected"' }, { status: 400 })
       }
 
       await withRetry(db, () => db.payment.update({
@@ -262,6 +264,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           proofOfTransfer,
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
           status: 'pending_confirmation',
+          // Clear the previous rejection's stamp so the UI doesn't keep showing
+          // "Rejected by ..." while the payment is actually pending again.
+          confirmedBy: null,
+          confirmedAt: null,
         },
       }))
 

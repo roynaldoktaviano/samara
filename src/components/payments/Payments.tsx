@@ -1567,7 +1567,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               })()}
 
               {/* Proof of transfer */}
-              {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready' || selected.status === 'confirmed') && (
+              {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready' || selected.status === 'confirmed' || selected.status === 'rejected') && (
                 <>
                   <Separator />
                   <div>
