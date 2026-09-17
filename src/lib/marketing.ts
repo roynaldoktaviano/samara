@@ -239,6 +239,9 @@ export async function dispatchCampaignEmails(db: PrismaClient, campaignId: strin
   if (!apiKey) throw new Error('RESEND_API_KEY not configured')
 
   const pending = await db.campaignRecipient.findMany({ where: { campaignId, status: 'PENDING' } })
+  // O(1) lookup in onSent below instead of a linear pending.find() per recipient —
+  // that's O(n) per call otherwise, O(n²) overall for a large audience.
+  const pendingByEmail = new Map(pending.map(r => [r.email, r]))
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
   await sendBulkEmail({
@@ -246,21 +249,24 @@ export async function dispatchCampaignEmails(db: PrismaClient, campaignId: strin
     from: campaign.fromEmail,
     fromName: campaign.fromName ?? undefined,
     subject: campaign.subject,
-    recipients: pending.map(r => {
-      const unsubscribePageUrl = `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`
-      let html = injectUnsubscribeUrl(campaign.bodyHtml, unsubscribePageUrl)
-      if (campaign.previewText) html = injectPreviewText(html, campaign.previewText)
-      return {
-        email: r.email,
-        htmlFor: html,
-        // List-Unsubscribe header must point at the API route, not the confirm page —
-        // Gmail/Outlook's native one-click button POSTs straight to this URL with no
-        // page load, so a page component (no POST handler) would 405 and silently fail.
-        unsubscribeUrl: `${appUrl}/api/marketing/unsubscribe?token=${r.unsubscribeToken}`,
-      }
-    }),
+    // htmlFor is a thunk (not a pre-rendered string) so a large audience (thousands
+    // of recipients) doesn't require holding every recipient's fully-rendered HTML
+    // body in memory at once for the whole send — see sendBulkEmail/BulkRecipient.
+    recipients: pending.map(r => ({
+      email: r.email,
+      htmlFor: () => {
+        const unsubscribePageUrl = `${appUrl}/unsubscribe?token=${r.unsubscribeToken}`
+        let html = injectUnsubscribeUrl(campaign.bodyHtml, unsubscribePageUrl)
+        if (campaign.previewText) html = injectPreviewText(html, campaign.previewText)
+        return html
+      },
+      // List-Unsubscribe header must point at the API route, not the confirm page —
+      // Gmail/Outlook's native one-click button POSTs straight to this URL with no
+      // page load, so a page component (no POST handler) would 405 and silently fail.
+      unsubscribeUrl: `${appUrl}/api/marketing/unsubscribe?token=${r.unsubscribeToken}`,
+    })),
     onSent: async (email, itemResult) => {
-      const r = pending.find(p => p.email === email)
+      const r = pendingByEmail.get(email)
       if (!r) return
       if (itemResult.resendId) {
         await db.campaignRecipient.update({

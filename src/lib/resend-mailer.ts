@@ -2,7 +2,12 @@ import { Resend } from 'resend'
 
 export interface BulkRecipient {
   email: string
-  htmlFor: string // final per-recipient HTML (unsubscribe link already injected)
+  // Final per-recipient HTML (unsubscribe link already injected). Accepts a thunk
+  // so a large batch (thousands of recipients) doesn't have to hold every
+  // recipient's fully-rendered HTML string in memory at once for the whole send —
+  // pass a function and it's only materialized right before that recipient's send,
+  // then eligible for GC again immediately after.
+  htmlFor: string | (() => string)
   unsubscribeUrl?: string // adds a List-Unsubscribe header (one-click) when present
 }
 
@@ -74,14 +79,15 @@ export async function sendBulkEmail(params: {
     const r = params.recipients[i]
     if (i > 0) await sleep(MIN_GAP_MS)
 
+    const html = typeof r.htmlFor === 'function' ? r.htmlFor() : r.htmlFor
     let data, error
     for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
       ;({ data, error } = await resend.emails.send({
         from,
         to: r.email,
         subject: params.subject,
-        html: r.htmlFor,
-        text: htmlToText(r.htmlFor),
+        html,
+        text: htmlToText(html),
         headers: r.unsubscribeUrl
           ? {
               'List-Unsubscribe': `<${r.unsubscribeUrl}>`,
