@@ -609,11 +609,12 @@ function footerIcon(kind: FooterIconKind): string {
   // on any of these paths again. Bumped to v=3 when the whatsapp/link artwork itself
   // was replaced (real WhatsApp mark + globe glyph), since the filename didn't change.
   // Bumped to v=4 when facebook/linkedin/whatsapp were recolored white, same reason.
+  // Bumped to v=5 when instagram/link (globe) were recolored white to match them.
   // A non-empty alt matters here specifically: Outlook and most corporate mail
   // clients block remote images by default until the recipient explicitly loads
   // them, and a blank alt="" renders as a bare broken-image box with no label —
   // a real word at least tells the recipient what's missing until then.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=4" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=5" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
@@ -975,10 +976,20 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
         // `columns` case), not the `display:inline-block` div the other branch
         // relaxes here — it needs `display:block` to actually stack instead of
         // just widening while stuck in its table cell.
-        const hasFillImage = b.columns.some(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
-        const decls = b.columns.map((_, i) =>
-          hasFillImage ? `.col-${b.id}-${i}{display:block !important;width:100% !important;}` : `.col-${b.id}-${i}{max-width:100% !important;}`
-        ).join('')
+        const fillImageIndex = b.columns.findIndex(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
+        const hasFillImage = fillImageIndex !== -1
+        const decls = b.columns.map((_, i) => {
+          if (!hasFillImage) return `.col-${b.id}-${i}{max-width:100% !important;}`
+          if (i !== fillImageIndex) return `.col-${b.id}-${i}{display:block !important;width:100% !important;}`
+          // Stacking also strips away the equal-height table row this column's
+          // background-image relied on for its height (see renderFillHeightCell),
+          // leaving it ~0px tall — just whatever padding it was given. A width-based
+          // aspect-ratio box (padding-top:%, height:0) gives it a real height again
+          // on its own terms: percentage padding reliably resolves against width
+          // alone in every client, unlike percentage height. font-size/line-height:0
+          // keep the cell's own "&nbsp;" content from adding any stray height on top.
+          return `.col-${b.id}-${i}{display:block !important;width:100% !important;height:0 !important;padding-top:56.25% !important;padding-bottom:0 !important;overflow:hidden !important;font-size:0 !important;line-height:0 !important;}`
+        }).join('')
         rules.push(`@media only screen and (max-width:600px){${decls}}`)
       }
       rules.push(...collectExtraStyles(b.columns.flat()))
