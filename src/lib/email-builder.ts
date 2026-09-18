@@ -91,6 +91,7 @@ export interface ImageBlock {
   link?: string
   autoWidth: boolean
   fullWidthOnMobile: boolean // only meaningful when autoWidth is off
+  fillHeight: boolean // stretch + crop (object-fit:cover) to match the height of sibling blocks in the same column row — ignores width/autoWidth
   padding: Padding
   hideOn: HideOn
 }
@@ -105,6 +106,7 @@ export interface LogoBlock {
   link?: string
   autoWidth: boolean
   fullWidthOnMobile: boolean
+  fillHeight: boolean
   padding: Padding
   hideOn: HideOn
 }
@@ -353,6 +355,7 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
         hideOn,
         autoWidth: typeof raw.autoWidth === 'boolean' ? raw.autoWidth : false,
         fullWidthOnMobile: typeof raw.fullWidthOnMobile === 'boolean' ? raw.fullWidthOnMobile : false,
+        fillHeight: typeof raw.fillHeight === 'boolean' ? raw.fillHeight : false,
       }
     case 'divider':
       return {
@@ -432,9 +435,9 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'heading':
       return { id: nextId(), type: 'heading', html: '<p><strong>Your Heading</strong></p>', align: 'left', fontSize: 26, fontFamily: DEFAULT_FONT, color: '#1f2937', linkColor: '#2563eb', lineHeight: 1.3, letterSpacing: 0, padding: uniformPadding(16), hideOn: 'none' }
     case 'image':
-      return { id: nextId(), type: 'image', src: '', alt: '', width: 100, align: 'center', autoWidth: false, fullWidthOnMobile: false, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'image', src: '', alt: '', width: 100, align: 'center', autoWidth: false, fullWidthOnMobile: false, fillHeight: false, padding: uniformPadding(16), hideOn: 'none' }
     case 'logo':
-      return { id: nextId(), type: 'logo', src: '', alt: 'Logo', width: 30, align: 'center', autoWidth: false, fullWidthOnMobile: false, padding: uniformPadding(16), hideOn: 'none' }
+      return { id: nextId(), type: 'logo', src: '', alt: 'Logo', width: 30, align: 'center', autoWidth: false, fullWidthOnMobile: false, fillHeight: false, padding: uniformPadding(16), hideOn: 'none' }
     case 'video':
       return { id: nextId(), type: 'video', videoUrl: '', thumbnailSrc: '', width: 100, align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'html':
@@ -546,7 +549,13 @@ function darkOverride(selector: string, decls: string): string {
 
 function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
   if (list.length === 0) return ''
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
+  // A "fill height" image needs a definite height to stretch against — a plain
+  // auto-height nested <table> gives it nothing to fill. Stretching this table
+  // to 100% is harmless for every other block type (they're all top-aligned
+  // and don't opt into height:100% themselves), so it's applied unconditionally
+  // whenever the column contains a fill-height image/logo.
+  const stretch = list.some(b => (b.type === 'image' || b.type === 'logo') && b.fillHeight)
+  return `<table role="presentation" width="100%"${stretch ? ' height="100%" style="height:100%;"' : ''} cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
@@ -680,13 +689,18 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // content width; the inline max-width:100% still lets capable clients shrink it
       // further if the real container ends up narrower still.
       const autoWidthPx = Math.max(1, Math.round(contentWidth - block.padding.left - block.padding.right))
-      const dims = block.autoWidth
+      const dims = block.fillHeight
+        ? `width="100%" height="100%" style="width:100%;height:100%;object-fit:cover;display:block;border:0;"`
+        : block.autoWidth
         ? `width="${autoWidthPx}" style="max-width:100%;height:auto;display:inline-block;border:0;"`
         : `width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(fwmClass)} ${dims} />`
-      const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
+      const inner = block.link
+        ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer"${block.fillHeight ? ' style="display:block;height:100%;"' : ''}>${img}</a>`
+        : img
+      const fillStyle = block.fillHeight ? 'height:100%;' : ''
+      return `<tr${block.fillHeight ? ' style="height:100%;"' : ''}><td${classAttr(hideOnClass(block.hideOn))}${block.fillHeight ? ' height="100%"' : ''} style="padding:${paddingCss(block.padding)};text-align:${block.align};${fillStyle}">${inner}</td></tr>`
     }
 
     case 'video': {
@@ -728,7 +742,8 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
+        const stretch = list.some(b => (b.type === 'image' || b.type === 'logo') && b.fillHeight)
+        return `<td width="${width}%" valign="top"${stretch ? ' height="100%"' : ''} style="padding-left:${padLeft}px;padding-right:${padRight}px;${stretch ? 'height:100%;' : ''}">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
       if (!block.stackOnMobile) {

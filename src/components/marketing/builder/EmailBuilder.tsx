@@ -453,13 +453,14 @@ function SortableCanvasBlock({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
   const hideOn = 'hideOn' in block ? block.hideOn : 'none'
+  const fillHeight = (block.type === 'image' || block.type === 'logo') && block.fillHeight
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       onClick={e => { e.stopPropagation(); onSelect() }}
-      className={`group relative rounded-lg border-2 transition-all ${selected ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'} ${isDragging ? 'opacity-40' : ''} ${hideOn !== 'none' ? 'opacity-60' : ''}`}
+      className={`group relative rounded-lg border-2 transition-all ${fillHeight ? 'h-full' : ''} ${selected ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'} ${isDragging ? 'opacity-40' : ''} ${hideOn !== 'none' ? 'opacity-60' : ''}`}
     >
       {selected && (
         <span className="absolute -top-2.5 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm" style={{ backgroundColor: ACCENT }}>
@@ -506,7 +507,7 @@ function BlockList({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId })
   return (
-    <div ref={setNodeRef} className={`space-y-1 min-h-[56px] rounded-md transition-colors ${isOver ? 'ring-2 ring-[#bdac7e]/50' : ''}`}>
+    <div ref={setNodeRef} className={`space-y-1 min-h-[56px] h-full rounded-md transition-colors ${isOver ? 'ring-2 ring-[#bdac7e]/50' : ''}`}>
       <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
         {blocks.length === 0 && (
           <div className="flex items-center justify-center h-14 text-xs text-muted-foreground border-2 border-dashed rounded-md">

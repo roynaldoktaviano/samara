@@ -123,6 +123,7 @@ model User {
   createdAt                              DateTime                          @default(now())
   updatedAt                              DateTime                          @updatedAt
   bookings                               Booking[]                         @relation("SalespersonBookings")
+  leadStageUpdates                       Lead[]                            @relation("LeadStageUpdatedBy")
   managedAgents                          Agent[]                           @relation("AgentSalesperson")
   waitingListItems                       WaitingList[]
   stockMovements                         StockMovement[]
@@ -253,6 +254,22 @@ model Customer {
   @@index([createdAt])
 }
 
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  OPPORTUNITY
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum LeadQuality {
+  HOT
+  WARM
+  COLD
+}
+
 model Lead {
   id                  String    @id @default(cuid())
   name                String
@@ -267,6 +284,23 @@ model Lead {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  // Pipeline / qualification
+  stage             LeadStage    @default(NEW)
+  stageUpdatedAt    DateTime?
+  stageUpdatedById  String?
+  stageUpdatedBy    User?        @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
+  productInterest   String? // yacht / product interest, free text
+  destinationId     String?
+  destination       Destination? @relation("LeadDestination", fields: [destinationId], references: [id])
+  travelStartDate   DateTime?
+  travelEndDate     DateTime?
+  travelSeason      String? // free-text fallback when exact dates aren't known yet
+  guestCount        Int?
+  leadQuality       LeadQuality?
+  budgetMin         Float? // optional — never required to advance stage
+  budgetMax         Float?
+  budgetCurrency    String?
+
   inquiries Inquiry[]
   pageViews PageView[]
 
@@ -274,6 +308,7 @@ model Lead {
   @@index([name])
   @@index([email])
   @@index([createdAt])
+  @@index([stage])
 }
 
 // One row per page load on the tenant's website, reported by the client-side
@@ -709,6 +744,7 @@ model Destination {
   openTrips         OpenTrip[]
   bookings          Booking[]
   cabinPricingTiers CabinPricingTier[]
+  leads             Lead[]                  @relation("LeadDestination")
 }
 
 model YachtDestinationPrice {

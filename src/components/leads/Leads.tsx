@@ -16,6 +16,8 @@ import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, T
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
+import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
+import { toast } from 'sonner'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Lead {
@@ -29,6 +31,17 @@ interface Lead {
   notes?: string
   createdAt: string
   isSubscribed: boolean | null
+  stage: LeadStage
+  productInterest?: string | null
+  destinationId?: string | null
+  travelStartDate?: string | null
+  travelEndDate?: string | null
+  travelSeason?: string | null
+  guestCount?: number | null
+  leadQuality?: string | null
+  budgetMin?: number | null
+  budgetMax?: number | null
+  budgetCurrency?: string | null
 }
 
 interface Inquiry {
@@ -104,6 +117,9 @@ export default function Leads() {
   const [websites, setWebsites] = useState<string[]>([])
   const [sourceFilter, setSourceFilter] = useState('all')
   const [sources, setSources] = useState<string[]>([])
+  const [stageFilter, setStageFilter] = useState<LeadStage | 'all'>('all')
+  const [stageBusy, setStageBusy] = useState(false)
+  const [destinationMap, setDestinationMap] = useState<Record<string, string>>({})
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -139,6 +155,7 @@ export default function Leads() {
       if (search) params.set('search', search)
       if (websiteFilter !== 'all') params.set('website', websiteFilter)
       if (sourceFilter !== 'all') params.set('source', sourceFilter)
+      if (stageFilter !== 'all') params.set('stage', stageFilter)
       const res = await fetch(`/api/leads?${params}`)
       if (res.ok) {
         setLeads(await res.json())
@@ -147,7 +164,7 @@ export default function Leads() {
     } finally {
       setLoading(false)
     }
-  }, [search, websiteFilter, sourceFilter, sortDir])
+  }, [search, websiteFilter, sourceFilter, stageFilter, sortDir])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
 
@@ -166,6 +183,7 @@ export default function Leads() {
   useEffect(() => {
     fetch('/api/leads/websites').then(r => r.ok ? r.json() : []).then(setWebsites).catch(() => {})
     fetch('/api/leads/sources').then(r => r.ok ? r.json() : []).then(setSources).catch(() => {})
+    fetch('/api/destinations').then(r => r.ok ? r.json() : []).then((d: { id: string; name: string }[]) => setDestinationMap(Object.fromEntries(d.map(x => [x.id, x.name])))).catch(() => {})
   }, [])
 
   const toggleSort = () => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
@@ -186,6 +204,27 @@ export default function Leads() {
   }
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
+
+  const changeStage = async (lead: Lead, stage: LeadStage) => {
+    setStageBusy(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/stage`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data?.missingFields?.length
+          ? `Missing required fields: ${data.missingFields.join(', ')}`
+          : (data?.error ?? 'Failed to update stage'))
+        return
+      }
+      toast.success(`Stage updated to ${LEAD_STAGE_LABEL[stage]}`)
+      setDetail(data)
+      fetchLeads(page)
+    } finally {
+      setStageBusy(false)
+    }
+  }
 
   const openEdit = (l: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -356,6 +395,17 @@ export default function Leads() {
               </div>
             )}
           </div>
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {(['all', ...LEAD_STAGES] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setStageFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${stageFilter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+              >
+                {s === 'all' ? 'All Stages' : LEAD_STAGE_LABEL[s]}
+              </button>
+            ))}
+          </div>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -372,9 +422,10 @@ export default function Leads() {
                     </TableHead>
                   )}
                   <TableHead>Name</TableHead>
+                  <TableHead>Stage</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Subscribed</TableHead>
-                  <TableHead>Nationality</TableHead>
+                  <TableHead>Country</TableHead>
                   <TableHead>
                     <button onClick={toggleSort} className="flex items-center gap-1 hover:text-foreground transition-colors">
                       Created
@@ -398,6 +449,7 @@ export default function Leads() {
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell><Skeleton className="h-4 w-20 rounded-full" /></TableCell>
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
                       <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
@@ -407,7 +459,7 @@ export default function Leads() {
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -431,6 +483,9 @@ export default function Leads() {
                         </div>
                         <p className="font-medium text-sm">{l.name}</p>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={`${LEAD_STAGE_COLOR[l.stage]} border-transparent`}>{LEAD_STAGE_LABEL[l.stage]}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-0.5">
@@ -548,13 +603,49 @@ export default function Leads() {
           {detail && (
             <Card>
               <CardContent className="pt-6 space-y-4">
+                <div className="rounded-lg border bg-muted/20 px-4 py-3 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Pipeline Stage</p>
+                      <Badge className={`${LEAD_STAGE_COLOR[detail.stage]} border-transparent`}>{LEAD_STAGE_LABEL[detail.stage]}</Badge>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {LEAD_TRANSITIONS[detail.stage].length === 0 ? (
+                        <span className="text-xs text-muted-foreground italic">Final stage</span>
+                      ) : LEAD_TRANSITIONS[detail.stage].map(next => (
+                        <Button
+                          key={next}
+                          size="sm"
+                          variant={next.startsWith('CLOSED') || next === 'UNQUALIFIED' ? 'outline' : 'default'}
+                          disabled={stageBusy}
+                          onClick={() => changeStage(detail, next)}
+                        >
+                          {next === 'CONTACTED' && detail.stage === 'UNQUALIFIED' ? 'Reopen to Contacted' : `Mark ${LEAD_STAGE_LABEL[next]}`}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Yacht/product interest, destination, country, travel dates/season, guest count, and lead quality are required before this lead can be marked Qualified. Budget is optional.
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                   {[
                     ['Email', detail.email],
                     ['Phone', detail.phone],
-                    ['Nationality', detail.nationality],
+                    ['Country', detail.nationality],
+                    ['Yacht / Product Interest', detail.productInterest],
+                    ['Destination', detail.destinationId ? destinationMap[detail.destinationId] : null],
+                    ['Travel Dates', (detail.travelStartDate && detail.travelEndDate)
+                      ? `${new Date(detail.travelStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} → ${new Date(detail.travelEndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                      : detail.travelSeason],
+                    ['Number of Guests', detail.guestCount],
+                    ['Lead Quality', detail.leadQuality],
+                    ['Budget', (detail.budgetMin || detail.budgetMax)
+                      ? `${detail.budgetCurrency ?? ''} ${detail.budgetMin ?? '?'} - ${detail.budgetMax ?? '?'}`.trim()
+                      : null],
                   ].filter(([, v]) => v).map(([label, value]) => (
-                    <div key={label}>
+                    <div key={label as string}>
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
                       <p className="font-medium mt-0.5">{value}</p>
                     </div>

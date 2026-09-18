@@ -52,14 +52,30 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body = await request.json()
-    const { firstName, lastName, nationality, email, phone, notes } = body
+    const {
+      firstName, lastName, nationality, email, phone, notes,
+      productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
+      guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
+    } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
     const lead = await db.lead.update({
       where: { id },
-      data: { name, firstName, lastName, nationality, email, phone, notes },
+      data: {
+        name, firstName, lastName, nationality, email, phone, notes,
+        productInterest: productInterest || null,
+        destinationId: destinationId || null,
+        travelStartDate: travelStartDate ? new Date(travelStartDate) : null,
+        travelEndDate: travelEndDate ? new Date(travelEndDate) : null,
+        travelSeason: travelSeason || null,
+        guestCount: guestCount ? Number(guestCount) : null,
+        leadQuality: leadQuality || null,
+        budgetMin: budgetMin != null && budgetMin !== '' ? Number(budgetMin) : null,
+        budgetMax: budgetMax != null && budgetMax !== '' ? Number(budgetMax) : null,
+        budgetCurrency: budgetCurrency || null,
+      },
     })
 
     logActivity({

@@ -263,22 +263,20 @@ export default function StockCountsPage() {
                   <th className="text-right px-4 py-2.5 font-medium">System</th>
                   <th className="text-right px-4 py-2.5 font-medium">Counted</th>
                   <th className="text-right px-4 py-2.5 font-medium">Variance</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {detailLoading ? (
                   [...Array(5)].map((_, i) => (
                     <tr key={i}>
-                      {[...Array(5)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}
+                      {[...Array(4)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}
                     </tr>
                   ))
                 ) : detail.items?.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No stock at this location.</td></tr>
+                  <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No stock at this location.</td></tr>
                 ) : detail.items?.map(ci => {
                   const variance = ci.countedQty - ci.systemQty
                   const unit = ci.item?.baseUnit ?? ''
-                  const varianceRp = variance * (ci.item?.standardCost ?? 0)
                   const hasVariance = variance !== 0
                   return (
                     <Fragment key={ci.id}>
@@ -312,19 +310,10 @@ export default function StockCountsPage() {
                             <span className="text-muted-foreground/40 text-sm">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {hasVariance
-                            ? (
-                              <span className={`font-semibold text-sm ${varianceRp < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                {varianceRp > 0 ? '+' : ''}{fmtMoney(varianceRp)}
-                              </span>
-                            )
-                            : <span className="text-muted-foreground/40 text-sm">—</span>}
-                        </td>
                       </tr>
                       {hasVariance && !isApproved && (
                         <tr className="bg-amber-50/20">
-                          <td colSpan={5} className="px-4 py-2">
+                          <td colSpan={4} className="px-4 py-2">
                             <textarea
                               rows={2}
                               placeholder="Reason for variance (required) *"
@@ -337,7 +326,7 @@ export default function StockCountsPage() {
                       )}
                       {hasVariance && isApproved && ci.reason && (
                         <tr className="bg-muted/10">
-                          <td colSpan={5} className="px-4 pt-1 pb-3 text-xs text-muted-foreground italic">
+                          <td colSpan={4} className="px-4 pt-1 pb-3 text-xs text-muted-foreground italic">
                             Reason: {ci.reason}
                           </td>
                         </tr>

@@ -13,11 +13,13 @@ export async function GET(request: NextRequest) {
     const search  = searchParams.get('search')
     const website = searchParams.get('website')
     const source  = searchParams.get('source')
+    const stage   = searchParams.get('stage')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
 
     const where: Record<string, unknown> = { deletedAt: null }
+    if (stage) where.stage = stage
     if (search) {
       where.OR = [
         { name:  { contains: search, mode: 'insensitive' } },
@@ -69,7 +71,11 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { firstName, lastName, nationality, email, phone, notes } = body
+    const {
+      firstName, lastName, nationality, email, phone, notes,
+      productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
+      guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
+    } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) {
@@ -77,7 +83,19 @@ export async function POST(request: NextRequest) {
     }
 
     const lead = await db.lead.create({
-      data: { name, firstName, lastName, nationality, email, phone, notes },
+      data: {
+        name, firstName, lastName, nationality, email, phone, notes,
+        productInterest: productInterest || null,
+        destinationId: destinationId || null,
+        travelStartDate: travelStartDate ? new Date(travelStartDate) : null,
+        travelEndDate: travelEndDate ? new Date(travelEndDate) : null,
+        travelSeason: travelSeason || null,
+        guestCount: guestCount ? Number(guestCount) : null,
+        leadQuality: leadQuality || null,
+        budgetMin: budgetMin != null && budgetMin !== '' ? Number(budgetMin) : null,
+        budgetMax: budgetMax != null && budgetMax !== '' ? Number(budgetMax) : null,
+        budgetCurrency: budgetCurrency || null,
+      },
     })
 
     logActivity({

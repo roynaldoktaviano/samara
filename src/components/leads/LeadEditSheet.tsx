@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -15,10 +16,18 @@ import { NATIONALITIES } from '@/lib/nationalities'
 export interface LeadFormState {
   firstName: string; lastName: string; nationality: string
   email: string; phone: string; notes: string
+  productInterest: string; destinationId: string
+  travelStartDate: string; travelEndDate: string; travelSeason: string
+  guestCount: string; leadQuality: string
+  budgetMin: string; budgetMax: string; budgetCurrency: string
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
   firstName: '', lastName: '', nationality: '', email: '', phone: '', notes: '',
+  productInterest: '', destinationId: '',
+  travelStartDate: '', travelEndDate: '', travelSeason: '',
+  guestCount: '', leadQuality: '',
+  budgetMin: '', budgetMax: '', budgetCurrency: 'USD',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -30,6 +39,16 @@ export function toLeadFormState(data: any): LeadFormState {
     email:       data.email       ?? '',
     phone:       data.phone       ?? '',
     notes:       data.notes       ?? '',
+    productInterest: data.productInterest ?? '',
+    destinationId:   data.destinationId   ?? '',
+    travelStartDate: data.travelStartDate ? data.travelStartDate.slice(0, 10) : '',
+    travelEndDate:   data.travelEndDate   ? data.travelEndDate.slice(0, 10)   : '',
+    travelSeason:    data.travelSeason    ?? '',
+    guestCount:      data.guestCount != null ? String(data.guestCount) : '',
+    leadQuality:     data.leadQuality     ?? '',
+    budgetMin:       data.budgetMin != null ? String(data.budgetMin) : '',
+    budgetMax:       data.budgetMax != null ? String(data.budgetMax) : '',
+    budgetCurrency:  data.budgetCurrency  ?? 'USD',
   }
 }
 
@@ -89,6 +108,71 @@ function NationalitySelect({ value, onChange }: { value: string; onChange: (v: s
   )
 }
 
+interface IdNameOption { id: string; name: string }
+
+function DestinationSelect({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<IdNameOption[]>([])
+
+  useEffect(() => {
+    fetch('/api/destinations').then(r => r.ok ? r.json() : []).then(setOptions).catch(() => {})
+  }, [])
+
+  const filtered = query.trim()
+    ? options.filter(o => o.name.toLowerCase().includes(query.toLowerCase()))
+    : options
+  const selected = options.find(o => o.id === value)
+
+  return (
+    <Popover open={open} onOpenChange={v => { setOpen(v); if (!v) setQuery('') }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-8 w-full justify-between text-sm font-normal px-3"
+        >
+          <span className={selected ? '' : 'text-muted-foreground'}>{selected?.name || 'Select destination'}</span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              placeholder="Search destination…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div
+            className="overflow-y-scroll p-1 overscroll-contain"
+            style={{ maxHeight: 208 }}
+            onWheel={e => e.stopPropagation()}
+          >
+            {filtered.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Not found.</p>
+            ) : filtered.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => { onChange(o.id === value ? '' : o.id); setOpen(false); setQuery('') }}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground text-left"
+              >
+                <Check className={`h-3.5 w-3.5 shrink-0 ${value === o.id ? 'opacity-100' : 'opacity-0'}`} />
+                {o.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /* ── Small helpers ── */
 function getInitials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
@@ -128,7 +212,7 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
         <Field label="Last Name">
           <Input value={form.lastName} onChange={set('lastName')} placeholder="Last name" className="h-8 text-sm" />
         </Field>
-        <Field label="Nationality" col2>
+        <Field label="Country" col2>
           <NationalitySelect value={form.nationality} onChange={v => setForm({ ...form, nationality: v })} />
         </Field>
         <Field label="Email">
@@ -139,6 +223,64 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
         </Field>
         <Field label="Notes" col2>
           <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Any additional context about this lead…" rows={3} className="text-sm" />
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+function QualificationFields({ form, setForm }: { form: LeadFormState; setForm: (f: LeadFormState) => void }) {
+  const set = (k: keyof LeadFormState) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm({ ...form, [k]: e.target.value })
+
+  const [yachtNames, setYachtNames] = useState<string[]>([])
+  useEffect(() => {
+    fetch('/api/yachts').then(r => r.ok ? r.json() : []).then((yachts: { name: string }[]) => setYachtNames(yachts.map(y => y.name))).catch(() => {})
+  }, [])
+
+  return (
+    <div>
+      <SectionTitle>Trip Qualification</SectionTitle>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Yacht / Product Interest" col2 hint="Required before this lead can be marked Qualified.">
+          <Input list="lead-yacht-options" value={form.productInterest} onChange={set('productInterest')} placeholder="e.g. Phinisi charter, day trip…" className="h-8 text-sm" />
+          <datalist id="lead-yacht-options">
+            {yachtNames.map(n => <option key={n} value={n} />)}
+          </datalist>
+        </Field>
+        <Field label="Destination" col2>
+          <DestinationSelect value={form.destinationId} onChange={v => setForm({ ...form, destinationId: v })} />
+        </Field>
+        <Field label="Travel Start Date">
+          <Input type="date" value={form.travelStartDate} onChange={set('travelStartDate')} className="h-8 text-sm" />
+        </Field>
+        <Field label="Travel End Date">
+          <Input type="date" value={form.travelEndDate} onChange={set('travelEndDate')} className="h-8 text-sm" />
+        </Field>
+        <Field label="Season (if dates unknown)" col2 hint="Fill this if exact dates aren't fixed yet, e.g. “High season Aug 2026”.">
+          <Input value={form.travelSeason} onChange={set('travelSeason')} placeholder="e.g. High season, Aug 2026" className="h-8 text-sm" />
+        </Field>
+        <Field label="Number of Guests">
+          <Input type="number" min={1} value={form.guestCount} onChange={set('guestCount')} placeholder="e.g. 6" className="h-8 text-sm" />
+        </Field>
+        <Field label="Lead Quality">
+          <Select value={form.leadQuality || undefined} onValueChange={v => setForm({ ...form, leadQuality: v })}>
+            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select quality" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="HOT">Hot</SelectItem>
+              <SelectItem value="WARM">Warm</SelectItem>
+              <SelectItem value="COLD">Cold</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Budget Range (optional)" col2 hint="Only fill if the guest's budget was actually discussed — never required to progress the pipeline.">
+          <div className="flex items-center gap-2">
+            <Input type="number" min={0} value={form.budgetMin} onChange={set('budgetMin')} placeholder="Min" className="h-8 text-sm" />
+            <span className="text-muted-foreground text-xs">to</span>
+            <Input type="number" min={0} value={form.budgetMax} onChange={set('budgetMax')} placeholder="Max" className="h-8 text-sm" />
+            <Input value={form.budgetCurrency} onChange={set('budgetCurrency')} placeholder="USD" className="h-8 text-sm w-20" />
+          </div>
         </Field>
       </div>
     </div>
@@ -231,8 +373,9 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
             <ProfileFields form={form} setForm={setForm} />
+            <QualificationFields form={form} setForm={setForm} />
           </div>
         )}
 

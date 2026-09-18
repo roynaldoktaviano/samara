@@ -436,24 +436,36 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.alt} onChange={e => onChange({ ...block, alt: e.target.value })} className="h-8 text-sm" />
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-xs">Auto width</Label>
-            <Switch checked={block.autoWidth} onCheckedChange={autoWidth => onChange({ ...block, autoWidth })} />
+            <Label className="text-xs">Fill column height</Label>
+            <Switch checked={block.fillHeight} onCheckedChange={fillHeight => onChange({ ...block, fillHeight })} />
           </div>
-          {block.autoWidth ? (
-            <div className="flex items-center justify-between opacity-50">
-              <Label className="text-xs">Full width on mobile</Label>
-              <Switch checked={false} disabled />
-            </div>
+          {block.fillHeight ? (
+            <p className="text-[11px] text-muted-foreground">
+              Stretches and crops the image (via object-fit) to match the height of whatever is next to it in this row — best when this is the only block in its column, like a photo beside a text column. Width/auto-width options are ignored while this is on.
+            </p>
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Full width on mobile</Label>
-                <Switch checked={block.fullWidthOnMobile} onCheckedChange={fullWidthOnMobile => onChange({ ...block, fullWidthOnMobile })} />
+                <Label className="text-xs">Auto width</Label>
+                <Switch checked={block.autoWidth} onCheckedChange={autoWidth => onChange({ ...block, autoWidth })} />
               </div>
-              <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
+              {block.autoWidth ? (
+                <div className="flex items-center justify-between opacity-50">
+                  <Label className="text-xs">Full width on mobile</Label>
+                  <Switch checked={false} disabled />
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Full width on mobile</Label>
+                    <Switch checked={block.fullWidthOnMobile} onCheckedChange={fullWidthOnMobile => onChange({ ...block, fullWidthOnMobile })} />
+                  </div>
+                  <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
+                </>
+              )}
+              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
             </>
           )}
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Action" />
           <div className="space-y-1.5">
             <Label className="text-xs">Link (optional)</Label>

@@ -29,11 +29,15 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'image':
     case 'logo':
       return (
-        <div style={{ ...paddingStyle(block.padding), textAlign: block.align }}>
+        <div style={{ ...paddingStyle(block.padding), textAlign: block.align, ...(block.fillHeight ? { height: '100%' } : {}) }} className={block.fillHeight ? 'h-full' : ''}>
           {block.src ? (
-            <img src={block.src} alt={block.alt} style={block.autoWidth ? { maxWidth: '100%', display: 'inline-block' } : { width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
+            block.fillHeight ? (
+              <img src={block.src} alt={block.alt} className="h-full w-full object-cover block" />
+            ) : (
+              <img src={block.src} alt={block.alt} style={block.autoWidth ? { maxWidth: '100%', display: 'inline-block' } : { width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
+            )
           ) : (
-            <div className="inline-flex flex-col items-center justify-center gap-1 text-muted-foreground bg-muted rounded-md py-8 px-6 w-full">
+            <div className={`inline-flex flex-col items-center justify-center gap-1 text-muted-foreground bg-muted rounded-md py-8 px-6 w-full ${block.fillHeight ? 'h-full' : ''}`}>
               <ImageOff className="h-6 w-6" />
               <span className="text-xs">{block.type === 'logo' ? 'No logo set' : 'No image set'}</span>
             </div>
