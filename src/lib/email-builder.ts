@@ -598,11 +598,15 @@ function renderFillHeightCell(block: ImageBlock | LogoBlock, widthPct: string, p
 type FooterIconKind = 'facebook' | 'instagram' | 'whatsapp' | 'link' | 'linkedin'
 const FOOTER_ICON_LABEL: Record<FooterIconKind, string> = { facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', link: 'Website', linkedin: 'LinkedIn' }
 
+// A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has no
+// domain to resolve against inside an email and renders as a broken image — fall
+// back to the ERP's own live domain so this never silently breaks.
+function appDomain(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
+}
+
 function footerIcon(kind: FooterIconKind): string {
-  // A relative src (what an unset/misconfigured NEXT_PUBLIC_APP_URL produces) has
-  // no domain to resolve against inside an email and renders as a broken image —
-  // fall back to the ERP's own live domain so this never silently breaks.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.samarayachting.com'
+  const appUrl = appDomain()
   // ?v=N busts a stale CDN-cached response for these paths (Cloudflare had cached a
   // negative response for icon-instagram.png's 404 once, at v=2) — bump this if a
   // stale cached version (a 404, or literally the old icon artwork) ever gets stuck
@@ -879,8 +883,21 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
     case 'footer': {
       // Color lives on inner <span>s, not the <td> — same reason as text/heading/button above.
       const footerBg = darkModeSafe(block.backgroundColor || '#000000')
+      // The stock Samara logo has a white wordmark, meant to sit on this dark footer —
+      // Gmail's iOS app forcing that footer to white (see the comment further down)
+      // leaves it invisible with nothing to fall back on, since a baked-in white PNG
+      // can't be recolored by the CSS that rescues the footer's own text. A second,
+      // dark-text logo (public/email/samara-logo-dark.png, same gold wave icon) sits
+      // hidden underneath it and only the dark-mode override swaps which one shows —
+      // the same "swap on forced recolor" idea as the footer text/badge colors below,
+      // just via two images instead of one recolorable one. Only wired up for the
+      // stock logo, since there's no way to auto-generate a matching dark variant of
+      // whatever a tenant uploads as their own.
+      const isDefaultLogo = block.logoUrl === DEFAULT_FOOTER_LOGO_URL
       const logo = block.logoUrl
-        ? `<div style="margin-bottom:16px;"><img src="${esc(block.logoUrl)}" alt="${esc(block.companyName || 'Logo')}" width="120" style="max-width:120px;width:120px;height:auto;display:inline-block;border:0;" /></div>`
+        ? isDefaultLogo
+          ? `<div style="margin-bottom:16px;"><img src="${esc(block.logoUrl)}" alt="${esc(block.companyName || 'Logo')}" width="120" class="footer-logo-light" style="max-width:120px;width:120px;height:auto;display:inline-block;border:0;" /><img src="${appDomain()}/email/samara-logo-dark.png" alt="${esc(block.companyName || 'Logo')}" width="120" class="footer-logo-dark" style="max-width:120px;width:120px;height:auto;display:none;border:0;" /></div>`
+          : `<div style="margin-bottom:16px;"><img src="${esc(block.logoUrl)}" alt="${esc(block.companyName || 'Logo')}" width="120" style="max-width:120px;width:120px;height:auto;display:inline-block;border:0;" /></div>`
         : ''
       const sent = block.companyName && block.address
         ? `<div style="margin-bottom:12px;"><span style="color:#9ca3af;">Message sent by ${esc(block.companyName)} at ${esc(block.address)}.</span></div>`
@@ -968,6 +985,13 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
       rules.push(darkOverride('.footer-block span', `color:${darkText} !important;`))
       rules.push(darkOverride('.footer-badge', 'border-color:rgba(55,65,81,.35) !important;'))
+      if (b.logoUrl === DEFAULT_FOOTER_LOGO_URL) {
+        // See the comment where these are rendered: swap to the dark-text logo variant
+        // in lockstep with the footer background itself flipping to white.
+        rules.push(`@media (prefers-color-scheme: dark){.footer-logo-light{display:none !important;}.footer-logo-dark{display:inline-block !important;}}`)
+        rules.push(darkOverride('.footer-logo-light', 'display:none !important;'))
+        rules.push(darkOverride('.footer-logo-dark', 'display:inline-block !important;'))
+      }
     }
     if (b.type === 'section') {
       const bg = darkModeSafe(b.backgroundColor)
@@ -983,6 +1007,7 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
         // just widening while stuck in its table cell.
         const fillImageIndex = b.columns.findIndex(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
         const hasFillImage = fillImageIndex !== -1
+        const fillImage = hasFillImage ? (b.columns[fillImageIndex][0] as ImageBlock | LogoBlock) : null
         const decls = b.columns.map((_, i) => {
           if (!hasFillImage) return `.col-${b.id}-${i}{max-width:100% !important;}`
           if (i !== fillImageIndex) return `.col-${b.id}-${i}{display:block !important;width:100% !important;}`
@@ -993,7 +1018,14 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
           // on its own terms: percentage padding reliably resolves against width
           // alone in every client, unlike percentage height. font-size/line-height:0
           // keep the cell's own "&nbsp;" content from adding any stray height on top.
-          return `.col-${b.id}-${i}{display:block !important;width:100% !important;height:0 !important;padding-top:56.25% !important;padding-bottom:0 !important;overflow:hidden !important;font-size:0 !important;line-height:0 !important;}`
+          // padding-left/right also need overriding here: the cell's inline padding
+          // bakes in half the inter-column gap on top of the image's own configured
+          // padding (asymmetric on purpose, so the two columns' gap sits between
+          // them) — meaningless once stacked to full width, and left uncorrected it
+          // shows up as a lopsided gap on one side of the image. Only the image's
+          // own padding should remain.
+          const p = fillImage!.padding
+          return `.col-${b.id}-${i}{display:block !important;width:100% !important;height:0 !important;padding:0 ${p.right}px 0 ${p.left}px !important;padding-top:56.25% !important;overflow:hidden !important;font-size:0 !important;line-height:0 !important;}`
         }).join('')
         rules.push(`@media only screen and (max-width:600px){${decls}}`)
       }
