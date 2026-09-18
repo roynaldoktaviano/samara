@@ -610,11 +610,16 @@ function footerIcon(kind: FooterIconKind): string {
   // was replaced (real WhatsApp mark + globe glyph), since the filename didn't change.
   // Bumped to v=4 when facebook/linkedin/whatsapp were recolored white, same reason.
   // Bumped to v=5 when instagram/link (globe) were recolored white to match them.
+  // Bumped to v=6 when facebook/linkedin were replaced outright: the "v=4 recolor"
+  // had actually swapped them for a filled white badge with the logo cut out in
+  // solid black, not a real recolor — inconsistent with the plain white outline
+  // (Lucide "feather-style") look every other icon here actually has. Redrawn from
+  // the same Lucide facebook/linkedin glyphs, stroked in white, to match.
   // A non-empty alt matters here specifically: Outlook and most corporate mail
   // clients block remote images by default until the recipient explicitly loads
   // them, and a blank alt="" renders as a bare broken-image box with no label —
   // a real word at least tells the recipient what's missing until then.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=5" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=6" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the
