@@ -441,7 +441,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </div>
           {block.fillHeight ? (
             <p className="text-[11px] text-muted-foreground">
-              Stretches and crops the image (via object-fit) to match the height of whatever is next to it in this row — best when this is the only block in its column, like a photo beside a text column. Width/auto-width options are ignored while this is on.
+              Stretches and crops the image (via object-fit) to match the height of whatever is next to it in this row — only works when this is the only block in its column, like a photo beside a text column. Width/auto-width options are ignored while this is on, and the parent columns block will always stay side-by-side (its own &quot;Stack on mobile&quot; is ignored) since matching heights needs real side-by-side table cells.
             </p>
           ) : (
             <>

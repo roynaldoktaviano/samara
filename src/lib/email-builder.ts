@@ -549,13 +549,18 @@ function darkOverride(selector: string, decls: string): string {
 
 function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
   if (list.length === 0) return ''
-  // A "fill height" image needs a definite height to stretch against — a plain
-  // auto-height nested <table> gives it nothing to fill. Stretching this table
-  // to 100% is harmless for every other block type (they're all top-aligned
-  // and don't opt into height:100% themselves), so it's applied unconditionally
-  // whenever the column contains a fill-height image/logo.
-  const stretch = list.some(b => (b.type === 'image' || b.type === 'logo') && b.fillHeight)
-  return `<table role="presentation" width="100%"${stretch ? ' height="100%" style="height:100%;"' : ''} cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
+}
+
+// A lone "fill column height" image is positioned absolutely against its own
+// table cell rather than sized with a percentage height (see the long comment
+// at its call site in the `columns` case for why percentage heights don't
+// reliably reach it there).
+function renderFillHeightImage(block: ImageBlock | LogoBlock): string {
+  const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}" style="position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;display:block;border:0;" />`
+  return block.link
+    ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer" style="position:absolute;top:0;right:0;bottom:0;left:0;display:block;">${img}</a>`
+    : img
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
@@ -688,19 +693,19 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // large empty gap in after it. The attribute is a hard cap sized to the column/
       // content width; the inline max-width:100% still lets capable clients shrink it
       // further if the real container ends up narrower still.
+      // fillHeight is only actually achievable when this image is the sole block in
+      // a column next to another column — the `columns` case below detects that and
+      // renders it via renderFillHeightImage() instead of ever reaching this branch.
+      // Anywhere else (no sibling column to match) there's nothing to fill against,
+      // so it just falls back to ordinary sizing.
       const autoWidthPx = Math.max(1, Math.round(contentWidth - block.padding.left - block.padding.right))
-      const dims = block.fillHeight
-        ? `width="100%" height="100%" style="width:100%;height:100%;object-fit:cover;display:block;border:0;"`
-        : block.autoWidth
+      const dims = block.autoWidth
         ? `width="${autoWidthPx}" style="max-width:100%;height:auto;display:inline-block;border:0;"`
         : `width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(fwmClass)} ${dims} />`
-      const inner = block.link
-        ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer"${block.fillHeight ? ' style="display:block;height:100%;"' : ''}>${img}</a>`
-        : img
-      const fillStyle = block.fillHeight ? 'height:100%;' : ''
-      return `<tr${block.fillHeight ? ' style="height:100%;"' : ''}><td${classAttr(hideOnClass(block.hideOn))}${block.fillHeight ? ' height="100%"' : ''} style="padding:${paddingCss(block.padding)};text-align:${block.align};${fillStyle}">${inner}</td></tr>`
+      const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
+      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
     }
 
     case 'video': {
@@ -742,11 +747,41 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        const stretch = list.some(b => (b.type === 'image' || b.type === 'logo') && b.fillHeight)
-        return `<td width="${width}%" valign="top"${stretch ? ' height="100%"' : ''} style="padding-left:${padLeft}px;padding-right:${padRight}px;${stretch ? 'height:100%;' : ''}">${renderColumnCell(list, colMaxPx)}</td>`
+        const soleFillImage = list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight ? list[0] : null
+        if (soleFillImage) {
+          // Table cells in the same <tr> already come out the same height as each
+          // other — that part needs no CSS trick at all. The only real problem is
+          // getting the <img> (sized by its own intrinsic aspect ratio) to actually
+          // fill that already-equal cell instead of leaving empty space under it.
+          // A plain height:100% on the image doesn't do it: percentage heights only
+          // resolve against an ancestor with a *specified* height, and this cell's
+          // height is exactly the auto/content-driven kind — even though its real
+          // rendered size is already fixed by the row. Positioning the image
+          // absolutely against the cell sidesteps that CSS rule entirely: an
+          // absolutely positioned box's containing block is the ancestor's actual
+          // laid-out padding box, auto height and all, so inset:0 really does fill
+          // it. It also takes the image out of the cell's own content flow, which
+          // is what stops it from ever inflating the row's height in the first
+          // place — leaving the *other* column's content the one driving it, which
+          // is the whole point. This only applies when the image is the column's
+          // only block; combined with other content there'd be nothing meaningful
+          // for the image to "fill" against.
+          const p = soleFillImage.padding
+          const style = `padding:${p.top}px ${padRight + p.right}px ${p.bottom}px ${padLeft + p.left}px;position:relative;`
+          return `<td width="${width}%" valign="top" style="${style}">${renderFillHeightImage(soleFillImage)}</td>`
+        }
+        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
-      if (!block.stackOnMobile) {
+      // A fill-height image relies on real <td> cells being equal-height siblings in
+      // one <tr> — the "fluid hybrid" mobile-stacking markup below renders each column
+      // as an independent `display:inline-block` div instead, which has no equivalent
+      // equal-height guarantee (and no flexbox/grid to fall back on either, since that's
+      // exactly what the hybrid markup avoids for client compatibility). So a fill-height
+      // image forces the plain always-side-by-side table for this block, the same as
+      // turning "Stack on mobile" off — the two are incompatible.
+      const hasFillImage = block.columns.some(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
+      if (!block.stackOnMobile || hasFillImage) {
         // Fixed percentage-width <td> cells never reflow on their own — identical
         // markup for every client (Outlook included), so there's nothing conditional
         // to branch on when the design intentionally keeps columns side by side.
