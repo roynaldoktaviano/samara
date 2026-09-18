@@ -523,22 +523,13 @@ function BlockList({
             onDelete={() => onDelete(block.id)}
             onDuplicate={() => onDuplicate(block.id)}
           >
-            {block.type === 'columns' ? (() => {
-              // A fill-height image forces its parent columns block to stay side-by-side
-              // in the real export regardless of "Stack on mobile" (see the matching
-              // comment in email-builder.ts's `columns` case) — mirrored here so the
-              // mobile-preview toggle doesn't show a stacked layout the sent email won't
-              // actually have.
-              const hasFillImage = block.columns.some(colList => colList.length === 1 && (colList[0].type === 'image' || colList[0].type === 'logo') && colList[0].fillHeight)
-              const stacksOnMobile = mobile && block.stackOnMobile && !hasFillImage
-              return (
-                <div style={{ ...paddingStyle(block.padding), gap: stacksOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: stacksOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
-                  {block.columns.map((colList, i) => (
-                    <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
-                  ))}
-                </div>
-              )
-            })() : block.type === 'section' ? (
+            {block.type === 'columns' ? (
+              <div style={{ ...paddingStyle(block.padding), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+                {block.columns.map((colList, i) => (
+                  <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
+                ))}
+              </div>
+            ) : block.type === 'section' ? (
               <div
                 style={{
                   ...paddingStyle(block.padding),

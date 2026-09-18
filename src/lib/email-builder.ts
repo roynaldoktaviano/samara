@@ -552,15 +552,28 @@ function renderColumnCell(list: EmailBlock[], contentWidth: number): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${list.map(b => renderBlock(b, contentWidth)).join('')}</table>`
 }
 
-// A lone "fill column height" image is positioned absolutely against its own
-// table cell rather than sized with a percentage height (see the long comment
-// at its call site in the `columns` case for why percentage heights don't
-// reliably reach it there).
-function renderFillHeightImage(block: ImageBlock | LogoBlock): string {
-  const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}" style="position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;display:block;border:0;" />`
-  return block.link
-    ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer" style="position:absolute;top:0;right:0;bottom:0;left:0;display:block;">${img}</a>`
-    : img
+// A lone "fill column height" image is painted as the <td>'s own background
+// rather than sized as a foreground <img> — two earlier approaches (percentage
+// height, then position:absolute) both failed in real-world testing. Percentage
+// heights only resolve against an ancestor with a *specified* height, and a
+// table cell's height here is exactly the auto/content-driven kind — even
+// though its *rendered* size is already fixed by the row. position:absolute
+// sidesteps that rule on paper, but Gmail's CSS sanitizer drops `position`
+// from inline styles entirely, silently undoing it. `background-image` +
+// `background-size:cover` sidesteps both problems at once: a background always
+// paints across the element's own real rendered box directly — no percentage
+// resolution or positioning math involved — and both properties are on
+// Gmail's supported CSS list. Outlook (Word engine) doesn't render
+// background-image on a <td> at all without a VML fallback, and can't match
+// an unknown sibling height either way, so it gets a separate plain <img> at
+// natural size instead (see the `columns` case's mso branch) rather than a
+// missing image.
+function renderFillHeightCell(block: ImageBlock | LogoBlock, widthPct: string, padding: string, cls: string): string {
+  const src = esc(block.src)
+  const inner = block.link
+    ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer" style="display:block;">&nbsp;</a>`
+    : '&nbsp;'
+  return `<td width="${widthPct}%" valign="top" class="${cls}" background="${src}" style="${padding}background-image:url('${src}');background-size:cover;background-position:center;background-repeat:no-repeat;">${inner}</td>`
 }
 
 // Feather-style line icons for the footer's social row. Rendered as hosted PNG
@@ -695,7 +708,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // further if the real container ends up narrower still.
       // fillHeight is only actually achievable when this image is the sole block in
       // a column next to another column — the `columns` case below detects that and
-      // renders it via renderFillHeightImage() instead of ever reaching this branch.
+      // renders it via renderFillHeightCell() instead of ever reaching this branch.
       // Anywhere else (no sibling column to match) there's nothing to fill against,
       // so it just falls back to ordinary sizing.
       const autoWidthPx = Math.max(1, Math.round(contentWidth - block.padding.left - block.padding.right))
@@ -744,44 +757,58 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const width = (100 / n).toFixed(4)
       const innerWidth = contentWidth - block.padding.left - block.padding.right
       const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
+      const soleFillImageOf = (list: EmailBlock[]) =>
+        list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight ? (list[0] as ImageBlock | LogoBlock) : null
+      const hasFillImage = block.columns.some(list => soleFillImageOf(list) !== null)
+
+      if (hasFillImage) {
+        // A fill-height image needs a real table row — cells in the same <tr> are
+        // always equal height, no CSS required for that part at all. The "fluid
+        // hybrid" mobile-stacking markup used below for ordinary columns instead
+        // renders each column as an independent `display:inline-block` div, which
+        // has no equal-height guarantee between siblings (no flexbox/grid to lean
+        // on either, since avoiding those is the whole reason that markup exists),
+        // so it's skipped entirely here. Stacking on narrow screens instead comes
+        // from a @media override in collectExtraStyles that turns these same cells
+        // into full-width blocks — a pure enhancement on top of the always-side-by-
+        // side base, same idea as the fluid columns' own @media relaxation below: a
+        // client that ignores it just stays side-by-side instead of failing to stack.
+        const cellsFor = (mso: boolean) => block.columns.map((list, i) => {
+          const padLeft = i === 0 ? 0 : halfGap
+          const padRight = i === n - 1 ? 0 : halfGap
+          const cls = `col-${block.id}-${i}`
+          const fillImage = soleFillImageOf(list)
+          if (fillImage) {
+            const p = fillImage.padding
+            const padding = `padding:${p.top}px ${padRight + p.right}px ${p.bottom}px ${padLeft + p.left}px;`
+            if (mso) {
+              // Outlook (Word engine) doesn't render background-image on a <td>
+              // without a VML fallback, and can't match an unknown sibling height
+              // either way — natural size is a better fallback than a blank cell.
+              const autoWidthPx = Math.max(1, Math.round(colMaxPx - p.left - p.right))
+              const img = `<img src="${esc(fillImage.src)}" alt="${esc(fillImage.alt)}" width="${autoWidthPx}" style="max-width:100%;height:auto;display:block;border:0;" />`
+              const inner = fillImage.link ? `<a href="${esc(fillImage.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
+              return `<td width="${width}%" valign="top" class="${cls}" style="${padding}">${inner}</td>`
+            }
+            return renderFillHeightCell(fillImage, width, padding, cls)
+          }
+          return `<td width="${width}%" valign="top" class="${cls}" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
+        }).join('')
+        const msoTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(true)}</tr></table>`
+        const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(false)}</tr></table>`
+        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
+          <!--[if mso]>${msoTable}<![endif]-->
+          <!--[if !mso]><!-->${table}<!--<![endif]-->
+        </td></tr>`
+      }
+
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        const soleFillImage = list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight ? list[0] : null
-        if (soleFillImage) {
-          // Table cells in the same <tr> already come out the same height as each
-          // other — that part needs no CSS trick at all. The only real problem is
-          // getting the <img> (sized by its own intrinsic aspect ratio) to actually
-          // fill that already-equal cell instead of leaving empty space under it.
-          // A plain height:100% on the image doesn't do it: percentage heights only
-          // resolve against an ancestor with a *specified* height, and this cell's
-          // height is exactly the auto/content-driven kind — even though its real
-          // rendered size is already fixed by the row. Positioning the image
-          // absolutely against the cell sidesteps that CSS rule entirely: an
-          // absolutely positioned box's containing block is the ancestor's actual
-          // laid-out padding box, auto height and all, so inset:0 really does fill
-          // it. It also takes the image out of the cell's own content flow, which
-          // is what stops it from ever inflating the row's height in the first
-          // place — leaving the *other* column's content the one driving it, which
-          // is the whole point. This only applies when the image is the column's
-          // only block; combined with other content there'd be nothing meaningful
-          // for the image to "fill" against.
-          const p = soleFillImage.padding
-          const style = `padding:${p.top}px ${padRight + p.right}px ${p.bottom}px ${padLeft + p.left}px;position:relative;`
-          return `<td width="${width}%" valign="top" style="${style}">${renderFillHeightImage(soleFillImage)}</td>`
-        }
         return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
-      // A fill-height image relies on real <td> cells being equal-height siblings in
-      // one <tr> — the "fluid hybrid" mobile-stacking markup below renders each column
-      // as an independent `display:inline-block` div instead, which has no equivalent
-      // equal-height guarantee (and no flexbox/grid to fall back on either, since that's
-      // exactly what the hybrid markup avoids for client compatibility). So a fill-height
-      // image forces the plain always-side-by-side table for this block, the same as
-      // turning "Stack on mobile" off — the two are incompatible.
-      const hasFillImage = block.columns.some(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
-      if (!block.stackOnMobile || hasFillImage) {
+      if (!block.stackOnMobile) {
         // Fixed percentage-width <td> cells never reflow on their own — identical
         // markup for every client (Outlook included), so there's nothing conditional
         // to branch on when the design intentionally keeps columns side by side.
@@ -944,7 +971,14 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     }
     if (b.type === 'columns') {
       if (b.stackOnMobile) {
-        const decls = b.columns.map((_, i) => `.col-${b.id}-${i}{max-width:100% !important;}`).join('')
+        // A column holding a fill-height image is rendered as a real <td> (see the
+        // `columns` case), not the `display:inline-block` div the other branch
+        // relaxes here — it needs `display:block` to actually stack instead of
+        // just widening while stuck in its table cell.
+        const hasFillImage = b.columns.some(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
+        const decls = b.columns.map((_, i) =>
+          hasFillImage ? `.col-${b.id}-${i}{display:block !important;width:100% !important;}` : `.col-${b.id}-${i}{max-width:100% !important;}`
+        ).join('')
         rules.push(`@media only screen and (max-width:600px){${decls}}`)
       }
       rules.push(...collectExtraStyles(b.columns.flat()))
