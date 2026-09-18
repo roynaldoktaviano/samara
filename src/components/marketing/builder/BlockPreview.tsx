@@ -1,4 +1,4 @@
-import { paddingStyle, type EmailBlock } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, type EmailBlock } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -34,7 +34,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
             block.fillHeight ? (
               <img src={block.src} alt={block.alt} className="h-full w-full object-cover block" />
             ) : (
-              <img src={block.src} alt={block.alt} style={block.autoWidth ? { maxWidth: '100%', display: 'inline-block' } : { width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
+              <img src={block.src} alt={block.alt} style={block.autoWidth ? { ...marginStyle(block.margin), maxWidth: '100%', display: 'inline-block' } : { ...marginStyle(block.margin), width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
             )
           ) : (
             <div className={`inline-flex flex-col items-center justify-center gap-1 text-muted-foreground bg-muted rounded-md py-8 px-6 w-full ${block.fillHeight ? 'h-full' : ''}`}>
@@ -81,6 +81,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
         <div style={{ ...paddingStyle(block.padding), textAlign: block.align }}>
           <span
             style={{
+              ...marginStyle(block.margin),
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
               padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight,
             }}

@@ -20,6 +20,11 @@ export function paddingStyle(p: Padding): { paddingTop: number; paddingRight: nu
   return { paddingTop: p.top, paddingRight: p.right, paddingBottom: p.bottom, paddingLeft: p.left }
 }
 
+/** Margin object → React inline-style fields, for the canvas preview (the sent HTML uses `marginCss` instead). Undefined margin = 0 on every side, matching every block saved before this field existed. */
+export function marginStyle(m?: Padding): { marginTop: number; marginRight: number; marginBottom: number; marginLeft: number } {
+  return { marginTop: m?.top ?? 0, marginRight: m?.right ?? 0, marginBottom: m?.bottom ?? 0, marginLeft: m?.left ?? 0 }
+}
+
 /** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
 export type HideOn = 'none' | 'desktop' | 'mobile'
 
@@ -81,6 +86,13 @@ export interface HeadingBlock {
   mobile?: TextMobileOverride
 }
 
+// Mobile-only override for an image/logo/button's margin — same mechanism as
+// TextMobileOverride, applied via a max-width:600px media query on top of the
+// block's own (desktop) margin. Undefined means "use the desktop margin."
+export interface MarginMobileOverride {
+  margin?: Padding
+}
+
 export interface ImageBlock {
   id: string
   type: 'image'
@@ -93,6 +105,8 @@ export interface ImageBlock {
   fullWidthOnMobile: boolean // only meaningful when autoWidth is off
   fillHeight: boolean // stretch + crop (object-fit:cover) to match the height of sibling blocks in the same column row — ignores width/autoWidth
   padding: Padding
+  margin?: Padding // space around the <img> itself, separate from padding on its wrapping cell — optional, undefined = 0 on every side
+  mobile?: MarginMobileOverride
   hideOn: HideOn
 }
 
@@ -108,6 +122,8 @@ export interface LogoBlock {
   fullWidthOnMobile: boolean
   fillHeight: boolean
   padding: Padding
+  margin?: Padding
+  mobile?: MarginMobileOverride
   hideOn: HideOn
 }
 
@@ -136,6 +152,7 @@ export interface ButtonMobileOverride {
   align?: BlockAlign
   bgColor?: string
   textColor?: string
+  margin?: Padding
 }
 
 export interface ButtonBlock {
@@ -151,6 +168,7 @@ export interface ButtonBlock {
   align: BlockAlign
   borderRadius: number
   padding: Padding
+  margin?: Padding // space around the <a> button itself, separate from padding on its wrapping cell — optional, undefined = 0 on every side
   hideOn: HideOn
   mobile?: ButtonMobileOverride
 }
@@ -510,6 +528,12 @@ function paddingCss(p: Padding): string {
   return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`
 }
 
+// Button/image margin is optional (undefined = no margin, the pre-existing behavior
+// for every block saved before this field existed) — falls back to zero on every side.
+function marginCss(m?: Padding): string {
+  return paddingCss(m ?? { top: 0, right: 0, bottom: 0, left: 0 })
+}
+
 // A link inserted into rich text (via RichTextField's createLink) is a bare
 // <a href="..."> with no styling of its own — several mobile mail clients
 // (iOS Mail and Outlook mobile chief among them) don't let an inline <a>
@@ -722,11 +746,12 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // Anywhere else (no sibling column to match) there's nothing to fill against,
       // so it just falls back to ordinary sizing.
       const autoWidthPx = Math.max(1, Math.round(contentWidth - block.padding.left - block.padding.right))
+      const marginDecl = `margin:${marginCss(block.margin)};`
       const dims = block.autoWidth
-        ? `width="${autoWidthPx}" style="max-width:100%;height:auto;display:inline-block;border:0;"`
-        : `width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
+        ? `width="${autoWidthPx}" style="${marginDecl}max-width:100%;height:auto;display:inline-block;border:0;"`
+        : `width="${block.width}%" style="${marginDecl}max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;"`
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
-      const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(fwmClass)} ${dims} />`
+      const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(`img-${block.id}`, fwmClass)} ${dims} />`
       const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
     }
@@ -749,7 +774,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
       return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;margin:${marginCss(block.margin)};"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
       </td></tr>`
 
     case 'divider': {
@@ -928,6 +953,9 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
     }
+    if ((b.type === 'image' || b.type === 'logo') && b.mobile?.margin) {
+      rules.push(`@media only screen and (max-width:600px){.img-${b.id}{margin:${marginCss(b.mobile.margin)} !important;}}`)
+    }
     // Gmail/Apple Mail dark mode auto-inverts colors it thinks look wrong (e.g. white button
     // text flipping to black, or a light section background flipping dark) — pin every
     // authored color so dark mode can't touch any of them, matching the built template exactly.
@@ -945,6 +973,7 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
         const btnDecls = [
           b.mobile.fontSize ? `font-size:${b.mobile.fontSize}px !important;` : '',
           b.mobile.bgColor ? `background:${darkModeSafe(b.mobile.bgColor)} !important;` : '',
+          b.mobile.margin ? `margin:${marginCss(b.mobile.margin)} !important;` : '',
         ].join('')
         const wrapDecl = b.mobile.align ? `.btn-wrap-${b.id}{text-align:${b.mobile.align} !important;}` : ''
         const spanDecl = b.mobile.textColor ? `.btn-${b.id} span{color:${darkModeSafe(b.mobile.textColor)} !important;}` : ''

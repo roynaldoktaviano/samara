@@ -121,19 +121,19 @@ function NumberField({ label, value, onChange, min = 0, max = 200, step = 1 }: {
   )
 }
 
-function PaddingField({ value, onChange }: { value: Padding; onChange: (p: Padding) => void }) {
+function PaddingField({ value, onChange, label = 'Padding', min = 0 }: { value: Padding; onChange: (p: Padding) => void; label?: string; min?: number }) {
   const allEqual = value.top === value.right && value.right === value.bottom && value.bottom === value.left
   const [expanded, setExpanded] = useState(!allEqual)
-  const side = (key: keyof Padding, label: string) => (
+  const side = (key: keyof Padding, sideLabel: string) => (
     <div className="space-y-1">
-      <Label className="text-[10px] text-muted-foreground">{label}</Label>
-      <Stepper value={value[key]} onChange={n => onChange({ ...value, [key]: n })} />
+      <Label className="text-[10px] text-muted-foreground">{sideLabel}</Label>
+      <Stepper value={value[key]} onChange={n => onChange({ ...value, [key]: n })} min={min} />
     </div>
   )
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label className="text-xs">Padding</Label>
+        <Label className="text-xs">{label}</Label>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground">More options</span>
           <Switch checked={expanded} onCheckedChange={setExpanded} />
@@ -149,7 +149,7 @@ function PaddingField({ value, onChange }: { value: Padding; onChange: (p: Paddi
       ) : (
         <div className="space-y-1">
           <Label className="text-[10px] text-muted-foreground">All sides</Label>
-          <Stepper value={value.top} onChange={n => onChange(uniformPadding(n))} />
+          <Stepper value={value.top} onChange={n => onChange(uniformPadding(n))} min={min} />
         </div>
       )}
     </div>
@@ -473,6 +473,16 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </div>
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Margin" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <PaddingField label="Margin" min={-100} value={block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, margin })} />
+          ) : (
+            <>
+              <PaddingField label="Margin (mobile)" min={-100} value={block.mobile?.margin ?? block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, mobile: { ...block.mobile, margin } })} />
+              {block.mobile?.margin && <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, margin: undefined } })} />}
+            </>
+          )}
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -554,6 +564,16 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
           <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <SectionHeader label="Margin" />
+          <DeviceToggle device={device} onChange={setDevice} />
+          {device === 'desktop' ? (
+            <PaddingField label="Margin" min={-100} value={block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, margin })} />
+          ) : (
+            <>
+              <PaddingField label="Margin (mobile)" min={-100} value={block.mobile?.margin ?? block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, mobile: { ...block.mobile, margin } })} />
+              {block.mobile?.margin && <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, margin: undefined } })} />}
+            </>
+          )}
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
