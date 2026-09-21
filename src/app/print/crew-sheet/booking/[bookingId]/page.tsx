@@ -210,24 +210,24 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
         <div className="samara-page">
           <Banner name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '16px 32px' }}>
-            <p style={{ fontSize: 11, color: '#555', lineHeight: 1.8, marginBottom: 18 }}>
-              Please fill in carefully the details in this sheet in order to prepare your departure the best possible way.
+            <p style={{ fontSize: 11, color: '#555', lineHeight: 1.8, marginBottom: 6 }}>
+              Thank you for choosing Samara Yachting.
             </p>
+            <p style={{ fontSize: 11, color: '#555', lineHeight: 1.8, marginBottom: 18 }}>
+              Every journey is personal, and we look forward to making yours truly your own. The details you share with us will help our team understand your preferences, interests, and expectations, allowing us to thoughtfully prepare for your time onboard and create an experience tailored to you.
+            </p>
+            <p style={{ fontWeight: 700, fontSize: 12, color: GOLD, marginBottom: 8 }}>*Before your Journey</p>
             {[
-              ['Harbor Clearance', "Please either fill in the clearance sheet with all data or send copies of all passengers' passport (for some ports, passport copies will be required)."],
-              ['Sailing Itineraries', "Our itineraries are based on the best highlight spots and are always determined by factors such as weather and ocean conditions. Please re-confirm with the Boat's Manager onboard if a certain site or activity can be included."],
-              ['Departure & Arrival Time', 'Departure and arrival times are flexible depending on your flight schedule — please check with us before booking flights and keep us updated about your flight details.'],
+              ['Arrival & Departure Transfers', 'We are pleased to arrange your transfer from your hotel or the airport to the harbour for your arrival. At the end of your journey, we can also arrange your transfer from the harbour to your hotel or the airport.'],
+              ['Sailing Itineraries', 'Our itineraries are thoughtfully planned to make the most of each destination. As every journey at sea is guided by nature, the itinerary may be adjusted according to sea, weather, and local conditions, without prior notice.'],
+              ['Wifi Onboard', 'While your journey takes you to remote islands and secluded waters, staying connected is still within reach. Wi-Fi is available onboard through Starlink.'],
+              ['A Few Essentials', 'To help you settle in comfortably, we recommend bringing sun protection, light clothing, swimwear, and a camera to capture the moments along the way. Toiletries, drinking water, and snorkeling equipment are provided onboard, while diving equipment is available for diving trips. You are also welcome to bring your preferred personal items and snorkeling gear.'],
             ].map(([t, b]) => (
               <div key={t} style={{ marginBottom: 14 }}>
                 <p style={{ fontWeight: 700, fontSize: 12, marginBottom: 3 }}>*{t}</p>
                 <p style={{ color: '#444', lineHeight: 1.7, fontSize: 11 }}>{b}</p>
               </div>
             ))}
-            <p style={{ fontWeight: 700, fontSize: 12, color: GOLD, marginBottom: 8 }}>*Things to bring</p>
-            <ul style={{ paddingLeft: 16, color: '#444', lineHeight: 1.9, fontSize: 11 }}>
-              {['Sun Protection (Hat / Sunglasses / Sunscreen)', 'Cash for National Park entrance fees', 'Pocket Cash — for snacks, crew tips, souvenirs, etc.', 'Camera', 'Light Clothing / Swimwear', 'Towels / basic toiletries are provided — you may bring your own if needed.', 'Snorkeling gear is provided onboard — personal gear always fits best.', 'Mineral water provided. Special beverage requests (Wines / Spirit) can be purchased onboard with advance notice.', 'Corkage fee IDR 150,000 / bottle for personal alcoholic beverages.']
-              .map((item, i) => <li key={i}>{item}</li>)}
-            </ul>
           </div>
         </div>,
         true

@@ -22,29 +22,43 @@ export async function GET(req: NextRequest) {
   const roomId = searchParams.get('roomId') || undefined
   const categoryId = searchParams.get('categoryId') || undefined
   const search = searchParams.get('search')?.trim() || undefined
+  // Pagination is opt-in (only applied when `page` is present) so existing callers that
+  // expect the old plain-array response (InventoryQuickAdd, RequestsPage's item picker —
+  // both scoped to a single room, never hundreds of rows) keep working unchanged.
+  const pageParam = searchParams.get('page')
+  const page = pageParam ? Math.max(1, Number(pageParam) || 1) : null
+  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize')) || 50))
 
-  const items = await db.inventoryItem.findMany({
-    where: {
-      ...(locationId && { locationId }),
-      ...(roomId && { roomId }),
-      ...(categoryId && { categoryId }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { itemNumber: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    },
-    include: {
-      category: { select: { id: true, name: true } },
-      room: { select: { id: true, name: true } },
-      location: { select: { id: true, name: true, type: true } },
-      _count: { select: { opnameEntries: true } },
-    },
-    orderBy: { name: 'asc' },
-  })
+  const where = {
+    ...(locationId && { locationId }),
+    ...(roomId && { roomId }),
+    ...(categoryId && { categoryId }),
+    ...(search && {
+      OR: [
+        { name: { contains: search, mode: 'insensitive' as const } },
+        { itemNumber: { contains: search, mode: 'insensitive' as const } },
+      ],
+    }),
+  }
 
-  return NextResponse.json(items.map(item => ({ ...item, total: item.quantity * item.unitPrice })))
+  const [items, total] = await Promise.all([
+    db.inventoryItem.findMany({
+      where,
+      include: {
+        category: { select: { id: true, name: true } },
+        room: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true, type: true } },
+        _count: { select: { opnameEntries: true } },
+      },
+      orderBy: { name: 'asc' },
+      ...(page && { skip: (page - 1) * pageSize, take: pageSize }),
+    }),
+    page ? db.inventoryItem.count({ where }) : Promise.resolve(null),
+  ])
+
+  const mapped = items.map(item => ({ ...item, total: item.quantity * item.unitPrice }))
+  if (!page) return NextResponse.json(mapped)
+  return NextResponse.json({ items: mapped, total, page, pageSize })
 }
 
 export async function POST(req: NextRequest) {

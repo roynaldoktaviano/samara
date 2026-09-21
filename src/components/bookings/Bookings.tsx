@@ -76,6 +76,7 @@ interface BookingRecord {
   agentContact?: { id: string; name: string; email?: string | null; whatsapp?: string | null } | null
   useB2BCommission?: boolean
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
+  clawbackEntries?: Array<{ id: string; amount: number; bookingId: string | null }>
   salespersonId?: string | null
   guests: Array<{
     id: string; isLead: boolean; customerId: string | null
@@ -129,9 +130,13 @@ const netBook = (b: BookingRecord) => {
   // commission below isn't computed on top of it, then discount is already netted.
   const { subtotalBeforeVat, vatAmt } = splitVat(b.totalPrice, b.vatType, b.vatValue)
   const afterDisc = Math.max(0, subtotalBeforeVat - svcTotal)
+  // Clawback entries auto-deducted for this booking are stored as negative amounts.
+  const clawbackAmt = b.source === 'AGENT'
+    ? Math.abs((b.clawbackEntries ?? []).reduce((s, e) => s + Math.min(0, e.amount), 0))
+    : 0
   const commPct   = b.source === 'AGENT' ? getAgentCommissionPct(b.agent, b.tripType, b.useB2BCommission) : 0
-  const commAmt   = afterDisc * commPct / 100
-  return afterDisc + svcTotal + vatAmt - commAmt
+  const commAmt   = commPct > 0 ? Math.max(0, afterDisc - clawbackAmt) * commPct / 100 : 0
+  return afterDisc + svcTotal + vatAmt - clawbackAmt - commAmt
 }
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -2706,9 +2711,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             const { subtotalBeforeVat, vatAmt } = splitVat(db_.totalPrice, db_.vatType, db_.vatValue)
             const afterDisc  = Math.max(0, subtotalBeforeVat - svcTotal)
             const basePrice  = afterDisc + db_.discount // reconstructed pre-discount price, for display only
+            // Clawback entries auto-deducted for this booking are stored as negative amounts.
+            const clawbackAmt = db_.source === 'AGENT'
+              ? Math.abs((db_.clawbackEntries ?? []).reduce((s, e) => s + Math.min(0, e.amount), 0))
+              : 0
             const commPct    = db_.source === 'AGENT' ? getAgentCommissionPct(db_.agent, db_.tripType, db_.useB2BCommission) : 0
-            const commAmt    = commPct > 0 ? afterDisc * commPct / 100 : 0
-            const net        = afterDisc + svcTotal + vatAmt - commAmt
+            const commAmt    = commPct > 0 ? Math.max(0, afterDisc - clawbackAmt) * commPct / 100 : 0
+            const net        = afterDisc + svcTotal + vatAmt - clawbackAmt - commAmt
             const remaining  = Math.max(0, net - db_.depositPaid)
             const bdrRate    = (db_.currency === 'IDR' && db_.exchangeRate && db_.exchangeRate > 1) ? db_.exchangeRate : 0
             const hasDetailIDR = bdrRate > 0
@@ -2883,6 +2892,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">VAT{db_.vatType === 'PERCENT' ? ` (${db_.vatValue}%)` : ''}</span>
                             <span className="font-medium">+{fmtAmt(vatAmt)}</span>
+                          </div>
+                        )}
+                        {clawbackAmt > 0 && (
+                          <div className="flex justify-between text-muted-foreground italic">
+                            <span>Clawback</span>
+                            <span>(−{fmtAmt(clawbackAmt)})</span>
                           </div>
                         )}
                         {commAmt > 0 && (

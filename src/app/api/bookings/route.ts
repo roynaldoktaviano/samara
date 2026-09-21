@@ -99,6 +99,7 @@ export async function GET(request: NextRequest) {
           },
         },
         services: { select: { id: true, name: true, price: true, quantity: true } },
+        clawbackEntries: { select: { id: true, amount: true, bookingId: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 500,

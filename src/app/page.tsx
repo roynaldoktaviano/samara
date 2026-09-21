@@ -1196,10 +1196,14 @@ export default function Home() {
               // as Sales & Marketing above — instead of one flat, unlabeled list.
               if (userRole === 'FINANCE_DIRECTOR') {
                 const divisionOf = (item: NavItem): 'purchasing' | 'finance' | 'hr' | null => {
-                  if (item.group === 'main') return null
-                  if (item.roles.includes('PURCHASING')) return 'purchasing'
-                  if (item.roles.includes('FINANCE')) return 'finance'
-                  if (item.roles.includes('HR')) return 'hr'
+                  // Keyed off the item's own declared `group` rather than its `roles` array —
+                  // some Finance-Director-only items (e.g. "Stock Opname Awal") deliberately
+                  // exclude PURCHASING/WAREHOUSE from `roles` (no approval step for those
+                  // roles), which made the old roles-based inference silently drop them from
+                  // every division here even though they passed the outer visibility check.
+                  if (item.group === 'purchasing' || item.group === 'inventory') return 'purchasing'
+                  if (item.group === 'finance') return 'finance'
+                  if (item.group === 'hr') return 'hr'
                   return null
                 }
                 const DIVISIONS = NAV_GROUPS.filter((g): g is typeof g & { key: 'purchasing' | 'finance' | 'hr'; icon: React.ElementType } =>

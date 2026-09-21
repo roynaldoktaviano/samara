@@ -112,16 +112,25 @@ const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2,
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 const fmtDateTime = (d: string) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-/** Total price net of agent commission. Commission applies only to the TRIP portion (price excl. additional services). */
+/** Total price net of agent commission and clawback. Commission applies only to the TRIP portion (price excl. additional services). */
 function netOfCommission(booking: {
   totalPrice: number; discount: number; tripType: string
   services: { price: number; quantity: number }[]
   agent: { commissionOpenTrip: number | null; commissionPrivateCharter: number | null } | null
+  source?: string | null
+  clawbackEntries?: { amount: number }[]
 }, commPct: number) {
   const svcTotal = booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
   const trip = Math.max(0, booking.totalPrice - svcTotal)
-  return (trip - trip * commPct / 100) + svcTotal
+  // Clawback entries auto-deducted for this booking are stored as negative amounts. Only
+  // surfaced when commission itself is being applied (commPct > 0, i.e. the "net" view) —
+  // a "Published" total shouldn't leak this internal agent/company ledger detail either.
+  const clawbackAmt = commPct > 0
+    ? Math.abs((booking.clawbackEntries ?? []).reduce((s, e) => s + Math.min(0, e.amount), 0))
+    : 0
+  const commAmt = commPct > 0 ? Math.max(0, trip - clawbackAmt) * commPct / 100 : 0
+  return trip - clawbackAmt - commAmt + svcTotal
 }
 
 export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
@@ -1164,15 +1173,16 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     </div>
                   </div>
                 )}
-                {/* Internal-only (never shown on the invoice/nota) — how much of this agent's
-                    clawback debt got auto-deducted when this booking was created. */}
-                {selected.booking.agent && selected.booking.clawbackEntries.length > 0 && (
+                {/* How much of this agent's clawback debt got auto-deducted when this booking
+                    was created — also reflected in Balance Due above and, when disclosed, on
+                    the invoice itself. */}
+                {selected.booking.agent && selected.booking.clawbackEntries.some(e => e.amount < 0) && (
                   <div className="flex items-start gap-2">
                     <Banknote className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Clawback Deducted</p>
                       <p className="font-medium text-red-600">
-                        -${fmt(Math.abs(selected.booking.clawbackEntries.reduce((s, e) => s + e.amount, 0)))}
+                        -${fmt(Math.abs(selected.booking.clawbackEntries.reduce((s, e) => s + Math.min(0, e.amount), 0)))}
                       </p>
                     </div>
                   </div>

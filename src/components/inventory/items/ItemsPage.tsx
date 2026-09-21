@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Pencil, Trash2, X, Package, Search, AlertTriangle, History, Star, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Package, Search, AlertTriangle, History, Star, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { MultiFilePicker, FilePreview } from '@/components/ui/file-preview'
 
@@ -44,6 +44,8 @@ const PR_STATUS_COLOR: Record<string, string> = {
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
+const PAGE_SIZE = 50
+
 const BLANK_FORM = {
   name: '', categoryId: '', brand: '', purchaseDate: '', webLink: '', phone: '', vendorName: '',
   quantity: '1', unitPrice: '0', notes: '', photoKeys: [] as string[], sourcePoId: '',
@@ -61,7 +63,11 @@ export default function InventoryItemsPage() {
   const [search, setSearch] = useState('')
 
   const [items, setItems] = useState<InventoryItem[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+
+  const topLevelLocations = useMemo(() => locations.filter(l => !l.parentId), [locations])
 
   const [modal, setModal] = useState(false)
   const [editing, setEditing] = useState<InventoryItem | null>(null)
@@ -81,6 +87,15 @@ export default function InventoryItemsPage() {
     fetch('/api/purchasing/orders').then(r => r.ok ? r.json() : []).then((data: PurchaseOrder[]) => setOrders(Array.isArray(data) ? data : []))
   }, [])
 
+  // No "All Places" tab — a vessel/place must always be selected, so default to the
+  // first one as soon as the location list loads (mirrors RoomsPage's picker).
+  useEffect(() => {
+    if (!filterLocationId && topLevelLocations.length) setFilterLocationId(topLevelLocations[0].id)
+  }, [topLevelLocations, filterLocationId])
+
+  // Filters/search changing invalidates the current page.
+  useEffect(() => { setPage(1) }, [filterLocationId, filterRoomId, filterCategoryId, search])
+
   useEffect(() => {
     if (!filterLocationId) { setRooms([]); setFilterRoomId(''); return }
     fetch(`/api/inventory/rooms?locationId=${filterLocationId}`).then(r => r.json()).then(setRooms)
@@ -94,16 +109,24 @@ export default function InventoryItemsPage() {
   }, [filterRoomId])
 
   const load = useCallback(async () => {
+    // No vessel selected yet (locations still loading) — nothing to fetch.
+    if (!filterLocationId) return
     setLoading(true)
     const params = new URLSearchParams()
-    if (filterLocationId) params.set('locationId', filterLocationId)
+    params.set('locationId', filterLocationId)
     if (filterRoomId) params.set('roomId', filterRoomId)
     if (filterCategoryId) params.set('categoryId', filterCategoryId)
     if (search.trim()) params.set('search', search.trim())
+    params.set('page', String(page))
+    params.set('pageSize', String(PAGE_SIZE))
     const res = await fetch(`/api/inventory/items?${params.toString()}`)
-    if (res.ok) setItems(await res.json())
+    if (res.ok) {
+      const data = await res.json()
+      setItems(data.items)
+      setTotalCount(data.total)
+    }
     setLoading(false)
-  }, [filterLocationId, filterRoomId, filterCategoryId, search])
+  }, [filterLocationId, filterRoomId, filterCategoryId, search, page])
 
   useEffect(() => { load() }, [load])
 
@@ -205,13 +228,20 @@ export default function InventoryItemsPage() {
         </button>
       </div>
 
+      {/* Vessel/place tabs — one place is always selected, no "All" tab */}
+      <div className="flex items-center gap-1 border-b overflow-x-auto">
+        {topLevelLocations.map(loc => (
+          <button key={loc.id} onClick={() => setFilterLocationId(loc.id)}
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+              filterLocationId === loc.id ? 'border-amber-600 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}>
+            {loc.name}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
-        <select className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-          value={filterLocationId} onChange={e => setFilterLocationId(e.target.value)}>
-          <option value="">All Places</option>
-          {renderLocationOptions(locations, { topLevelOnly: true })}
-        </select>
         <select className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
           value={filterRoomId} onChange={e => setFilterRoomId(e.target.value)} disabled={!filterLocationId}>
           <option value="">All Rooms</option>
@@ -288,6 +318,24 @@ export default function InventoryItemsPage() {
               ))}
             </tbody>
           </table></div>
+          {totalCount > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+              <span>
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                  className="p-1.5 border rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted transition-colors">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span>Page {page} of {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}</span>
+                <button onClick={() => setPage(p => (p * PAGE_SIZE < totalCount ? p + 1 : p))} disabled={page * PAGE_SIZE >= totalCount}
+                  className="p-1.5 border rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-muted transition-colors">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

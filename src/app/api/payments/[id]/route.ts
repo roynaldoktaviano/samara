@@ -35,6 +35,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             agent:    { select: { name: true, address: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
             agentContact: { select: { name: true } },
             services: true,
+            clawbackEntries: { select: { amount: true } },
             guests: {
               select: {
                 isLead: true,
@@ -316,6 +317,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               salespersonId: true, source: true, tripType: true, useB2BCommission: true,
               agent: { select: { commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
               services: { select: { price: true, quantity: true } },
+              clawbackEntries: { select: { amount: true } },
             },
           },
         },
@@ -337,7 +339,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
         const svcTotal = payment.booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
         const trip = Math.max(0, payment.booking.totalPrice - svcTotal)
-        const effectiveTotal = (trip - trip * commPctSafe / 100) + svcTotal
+        // Clawback entries auto-deducted for this booking are stored as negative amounts.
+        const clawbackAmt = payment.booking.source === 'AGENT'
+          ? Math.abs(payment.booking.clawbackEntries.reduce((s, e) => s + Math.min(0, e.amount), 0))
+          : 0
+        const commAmt = commPctSafe > 0 ? Math.max(0, trip - clawbackAmt) * commPctSafe / 100 : 0
+        const effectiveTotal = trip - clawbackAmt - commAmt + svcTotal
         const paymentAmount  = payment.amount
 
         // Atomic: update payment only if still pending_confirmation (prevents double-confirm race)

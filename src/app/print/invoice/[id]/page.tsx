@@ -72,6 +72,7 @@ interface PaymentDetail {
     agent?: { name: string; address?: string | null; commissionOpenTrip?: number; commissionPrivateCharter?: number; commissionB2B?: number }
     agentContact?: { name: string } | null
     services: Array<{ name: string; price: number; quantity: number }>
+    clawbackEntries: Array<{ amount: number }>
     guests: Array<{
       isLead: boolean
       customer: { name: string } | null
@@ -199,9 +200,13 @@ export default function InvoicePage() {
   const vatAmt         = b.totalPrice - subtotalBeforeVat
   const baseAfterDisc  = subtotalBeforeVat - servicesTotal
   const baseRaw        = baseAfterDisc + discountAmt // reconstructed pre-discount price, for display only
-  const commissionAmt  = baseAfterDisc * commissionPct / 100
-  const afterDiscount  = b.totalPrice - commissionAmt
-  const displayBase    = baseAfterDisc - commissionAmt
+  // Clawback entries auto-deducted for this booking are stored as negative amounts.
+  const clawbackAmt    = isAgentBooking && showNet
+    ? Math.abs((b.clawbackEntries ?? []).reduce((s, e) => s + Math.min(0, e.amount), 0))
+    : 0
+  const commissionAmt  = commissionPct > 0 ? Math.max(0, baseAfterDisc - clawbackAmt) * commissionPct / 100 : 0
+  const afterDiscount  = b.totalPrice - clawbackAmt - commissionAmt
+  const displayBase    = baseAfterDisc - clawbackAmt - commissionAmt
 
   type HistoryEntry = NonNullable<PaymentDetail['history']>[number] & { ordinal: number; cumAfter: number }
   const historyRows = (payment.history ?? []).reduce<HistoryEntry[]>((acc, h, i) => {
@@ -521,6 +526,16 @@ export default function InvoicePage() {
               {fmtAmt(showCommissionNote ? baseAfterDisc : displayBase)}
             </div>
           </div>
+
+          {/* Clawback breakdown — only when explicitly disclosed on the invoice */}
+          {showCommissionNote && clawbackAmt > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px 9px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>Less: Clawback</span>
+              <span style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', marginLeft: 16 }}>
+                −{fmtAmt(clawbackAmt)}
+              </span>
+            </div>
+          )}
 
           {/* Commission breakdown — only when explicitly disclosed on the invoice */}
           {showCommissionNote && (
