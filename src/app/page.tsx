@@ -57,6 +57,7 @@ import PurchasingExceptionsPage from '@/components/purchasing/exceptions/Excepti
 import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
 import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
+import PurchasingInitialStockOpnamePage from '@/components/purchasing/initial-stock-opname/InitialStockOpnamePage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
 import InventoryItemsPage from '@/components/inventory/items/ItemsPage'
 import InventoryRoomsPage from '@/components/inventory/rooms/RoomsPage'
@@ -862,6 +863,7 @@ export default function Home() {
       case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-transfers':    return <PurchasingTransfersPage />
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
+      case 'purchasing-initial-stock-opname': return <PurchasingInitialStockOpnamePage />
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
       case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />

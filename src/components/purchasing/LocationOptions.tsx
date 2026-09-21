@@ -43,7 +43,7 @@ export function renderLocationOptions<T extends LocationOptionLike>(
     }
     return (
       <optgroup key={loc.id} label={loc.name}>
-        {parentVisible && <option value={loc.id}>General</option>}
+        {parentVisible && <option value={loc.id}>{loc.name}</option>}
         {children.map(c => <option key={c.id} value={c.id}>{renderLabel(c)}</option>)}
       </optgroup>
     )

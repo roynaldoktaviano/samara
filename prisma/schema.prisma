@@ -1862,6 +1862,16 @@ enum StockCountStatus {
   APPROVED
 }
 
+// NORMAL counts (existing Stock Count menu) reconcile against StockLot and require
+// approval. INITIAL counts (Stock Opname Awal — temporary onboarding feature, see
+// memory project-initial-stock-opname-temporary) seed the very first baseline for a
+// location: free add/remove of items, no approval step, `COMPLETED` is the terminal
+// state (APPROVED is never used for this type).
+enum StockCountType {
+  NORMAL
+  INITIAL
+}
+
 model PurchaseItem {
   id                String   @id @default(cuid())
   sku               String   @unique
@@ -2857,6 +2867,7 @@ model StockCount {
   countNumber  String           @unique
   locationId   String
   status       StockCountStatus @default(DRAFT)
+  type         StockCountType   @default(NORMAL)
   notes        String?
   photoKey     String?
   countedById  String
@@ -2873,6 +2884,7 @@ model StockCount {
   @@index([status])
   @@index([locationId])
   @@index([createdAt])
+  @@index([type])
 }
 
 model StockCountItem {
