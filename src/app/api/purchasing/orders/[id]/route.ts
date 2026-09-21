@@ -255,12 +255,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Services skip the goods receive flow entirely (no delivery location to gate on) —
     // Completed is their own equivalent of Received, open to the same purchasing team.
+    // Also gated on being fully paid first — Completed is meant to close the order out,
+    // not to happen before Finance has actually settled it.
     if (status === 'COMPLETED') {
       if (!roleMatches(role, TRANSIT_ALLOWED))
         return NextResponse.json({ error: 'Only purchasing team can complete a service order' }, { status: 403 })
-      const existing = await db.purchaseOrder.findUnique({ where: { id }, select: { orderType: true } })
+      const existing = await db.purchaseOrder.findUnique({
+        where: { id },
+        select: {
+          orderType: true, discountType: true, discountValue: true, extraCharges: true,
+          items: { select: { orderedQty: true, unitCost: true } },
+          paymentRequests: { select: { amount: true, status: true } },
+          reimbursements: { select: { amount: true, status: true } },
+        },
+      })
       if (existing?.orderType !== 'SERVICE')
         return NextResponse.json({ error: 'Only service orders can be marked Completed' }, { status: 400 })
+      const grandTotal = computePOGrandTotal(existing)
+      const { paymentStatus } = summarizePOPayments(grandTotal, existing.paymentRequests, existing.reimbursements)
+      if (paymentStatus !== 'PAID')
+        return NextResponse.json({ error: 'This service order must be fully paid before it can be marked Completed' }, { status: 400 })
     }
 
     if (status === 'CANCELLED') {

@@ -10,7 +10,7 @@
 // generic, keyed only by order id).
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, Search, Trash2, Wallet, Banknote, CheckCircle2, XCircle, Briefcase } from 'lucide-react'
+import { Plus, X, Search, Trash2, Wallet, Banknote, CheckCircle2, XCircle, Briefcase, Pencil } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
@@ -171,6 +171,40 @@ export default function ServicesPage() {
     })
     setCompleting(false)
     if (res.ok) { openDetail(detail); load() }
+  }
+
+  // Edit modal — Service Lines + Notes only, and only while the order is still ORDERED
+  // with no payment recorded yet (same guard the PATCH endpoint enforces server-side).
+  const [editModal, setEditModal] = useState(false)
+  const [editLines, setEditLines] = useState<ServiceLine[]>([])
+  const [editNotes, setEditNotes] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+
+  function openEditModal() {
+    if (!detail) return
+    setEditLines(detail.items.map(i => ({ itemName: i.itemName, unit: i.unit ?? '', orderedQty: i.orderedQty, unitCost: i.unitCost })))
+    setEditNotes(detail.notes ?? '')
+    setEditError(''); setEditModal(true)
+  }
+  function addEditLine() { setEditLines(l => [...l, { itemName: '', unit: '', orderedQty: 1, unitCost: 0 }]) }
+  function removeEditLine(i: number) { setEditLines(l => l.filter((_, idx) => idx !== i)) }
+
+  async function submitEdit() {
+    if (!detail) return
+    if (editLines.every(l => !l.itemName.trim())) { setEditError('At least one service line is required'); return }
+    setEditSaving(true); setEditError('')
+    const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: editLines.filter(l => l.itemName.trim()).map(l => ({ itemName: l.itemName.trim(), orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.unit || undefined })),
+        notes: editNotes,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setEditError(data.error ?? 'Failed to save'); setEditSaving(false); return }
+    setEditSaving(false); setEditModal(false)
+    openDetail(detail); load()
   }
 
   async function submitCancel() {
@@ -573,7 +607,12 @@ export default function ServicesPage() {
                     </button>
                   </>
                 )}
-                {detail.status === 'ORDERED' && (
+                {detail.status === 'ORDERED' && detail.paymentRequests.length === 0 && detail.reimbursements.length === 0 && (
+                  <button onClick={openEditModal} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </button>
+                )}
+                {detail.status === 'ORDERED' && detail.paymentStatus === 'PAID' && (
                   <button onClick={markCompleted} disabled={completing} className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 transition-colors">
                     <CheckCircle2 className="h-3.5 w-3.5" /> {completing ? 'Saving...' : 'Mark Completed'}
                   </button>
@@ -792,6 +831,81 @@ export default function ServicesPage() {
               <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={submitReimbursement} disabled={reimburseSaving} className="px-5 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-40 font-semibold">
                 {reimburseSaving ? 'Saving...' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal — Service Lines + Notes */}
+      {editModal && detail && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 className="font-semibold">Edit Service Order</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{detail.poNumber}</p>
+              </div>
+              <button onClick={() => setEditModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {editError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{editError}</div>}
+              <div className="rounded-xl border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
+                  <h4 className="text-sm font-semibold">Service Lines</h4>
+                  <button onClick={addEditLine} className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                    <Plus className="h-3.5 w-3.5" /> Add Row
+                  </button>
+                </div>
+                <div className="overflow-x-auto"><table className="w-full text-sm">
+                  <thead className="text-xs text-muted-foreground border-b bg-muted/20">
+                    <tr>
+                      <th className="text-left px-3 py-2.5 font-medium">Description</th>
+                      <th className="text-left px-3 py-2.5 font-medium w-20">Qty</th>
+                      <th className="text-left px-3 py-2.5 font-medium w-24">Unit</th>
+                      <th className="text-left px-3 py-2.5 font-medium w-32">Unit Price</th>
+                      <th className="w-10" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {editLines.map((line, idx) => {
+                      const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-right`
+                      return (
+                        <tr key={idx}>
+                          <td className="px-2 py-2">
+                            <input className={inp} value={line.itemName} onChange={e => setEditLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemName: e.target.value }))} />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input type="number" min={0.01} step="any" className={numInp} value={line.orderedQty}
+                              onChange={e => setEditLines(l => l.map((li, i) => i !== idx ? li : { ...li, orderedQty: Number(e.target.value) }))} />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input className={inp} value={line.unit} onChange={e => setEditLines(l => l.map((li, i) => i !== idx ? li : { ...li, unit: e.target.value }))} />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0"
+                              onChange={e => setEditLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <button onClick={() => removeEditLine(idx)} disabled={editLines.length === 1} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table></div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Notes</label>
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <button onClick={() => setEditModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
+              <button onClick={submitEdit} disabled={editSaving} className="px-5 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-40 font-semibold">
+                {editSaving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
