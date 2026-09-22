@@ -94,8 +94,8 @@ export default async function OpenTripBulkGuestSheetPage({ params }: { params: P
 
   if (!trip) notFound()
 
-  const days   = Math.ceil((trip.endDate.getTime() - trip.startDate.getTime()) / 86400000)
-  const nights = Math.max(days - 1, 0)
+  const nights = Math.max(Math.round((trip.endDate.getTime() - trip.startDate.getTime()) / 86400000), 0)
+  const days   = nights + 1
   const tripTitle = `Open Trip ${days}D${nights}N — ${trip.title}`
   const dateRange = fmtRange(new Date(trip.startDate), new Date(trip.endDate))
   const sub       = `${dateRange}  ·  ${tripTitle}${trip.yacht ? `  ·  ${trip.yacht.name}` : ''}`

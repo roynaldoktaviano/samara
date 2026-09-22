@@ -102,8 +102,8 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
   const yachtName = ot ? ot.yacht?.name : b.yacht?.name
   const tripTitle = ot
     ? (() => {
-        const days   = Math.ceil((ot.endDate.getTime() - ot.startDate.getTime()) / 86400000)
-        const nights = Math.max(days - 1, 0)
+        const nights = Math.max(Math.round((ot.endDate.getTime() - ot.startDate.getTime()) / 86400000), 0)
+        const days   = nights + 1
         return `Open Trip ${days}D${nights}N — ${ot.title}`
       })()
     : `Private Charter — ${b.destination ?? ''}`

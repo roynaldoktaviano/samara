@@ -2,6 +2,7 @@ import { cache } from 'react'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { PrintButton } from '../../../PrintButton'
+import { AttachmentPages } from '../../../AttachmentPages'
 import { getPrintContext } from '@/lib/print-helpers'
 
 function fmtRange(start: Date, end: Date) {
@@ -120,6 +121,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     emergencyContact: string; dietaryRequirements: string; allergies: string; drinkPreferences: string
     operationalNotes: string
     medicalData: any; foodData: any; drinksData: any; divingData: any; surfingData: any
+    passportImage: string
   }
 
   const salesperson = booking.salesperson || booking.agent?.name || 'Direct'
@@ -158,14 +160,16 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
     drinksData:  (g.customer as any).drinksData  ?? {},
     divingData:  (g.customer as any).divingData  ?? {},
     surfingData: (g.customer as any).surfingData ?? {},
+    passportImage: (g.customer as any).passportImage ?? '',
   }))
 
-  const totalDays   = Math.ceil((new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000)
-  const totalNights = Math.max(totalDays - 1, 0)
+  const totalNights = Math.max(Math.round((new Date(booking.endDate).getTime() - new Date(booking.startDate).getTime()) / 86400000), 0)
+  const totalDays   = totalNights + 1
   const dateRange   = fmtRange(new Date(booking.startDate), new Date(booking.endDate))
   const yachtName   = booking.yacht?.name ?? ''
   const sub         = `${dateRange}  ·  Private Charter ${totalDays}D${totalNights}N  ·  ${yachtName}`
   const BLANK       = Math.max(0, 12 - guests.length)
+  const hasCabins   = guests.some(g => g.cabin)
   const showDiving   = (booking as any).hasDiving  === true
   const showSurfing  = (booking as any).hasSurfing === true
   const adultCount  = guests.filter(g => !g.isChild).length
@@ -179,6 +183,21 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
       {content}
     </div>
   )
+
+  // Documents a guest uploaded via the guest form — attached right after that guest's
+  // own data page, in this order: passport, then diving certifications.
+  const guestAttachments = (g: GuestRow): { label: string; value: string }[] => {
+    const atts: { label: string; value: string }[] = []
+    if (g.passportImage) atts.push({ label: 'Passport / ID', value: g.passportImage })
+    const div = g.divingData ?? {}
+    const pushAll = (label: string, arr: unknown) => {
+      const files = Array.isArray(arr) ? arr : []
+      files.forEach((v, i) => atts.push({ label: files.length > 1 ? `${label} (${i + 1})` : label, value: v }))
+    }
+    pushAll('Nitrox Certificate', div.nitroxCertImages)
+    pushAll('Diving Certification', div.certImages)
+    return atts
+  }
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, color: DARK, background: 'white' }}>
@@ -233,38 +252,6 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
         true
       )}
 
-      {/* PAGE 2 — DO's & DON'Ts */}
-      {page(
-        <div className="samara-page">
-          <Banner name={company.name} logo={company.logoUrl} />
-          <div className="samara-page-body" style={{ padding: '16px 32px' }}>
-            <p style={{ fontWeight: 700, marginBottom: 14, fontSize: 13 }}>
-              <span style={{ color: '#27ae60' }}>*DO</span> and <span style={{ color: '#e74c3c' }}>DONT&apos;S</span> while sailing in Komodo National Park Area
-            </p>
-            <p style={{ marginBottom: 8, fontSize: 11 }}>You can enjoy visiting Komodo National Park if you <strong style={{ color: '#27ae60' }}>DO</strong> below:</p>
-            <ul style={{ paddingLeft: 16, fontSize: 11, lineHeight: 1.9, marginBottom: 16, color: '#333' }}>
-              {[['Stay hydrated.', ' The highest temperature in Komodo National Park is 55°C. Always bring water during activities (Trekking / beach time).'],
-                ['Use Sunscreen, hat, light and comfortable clothes.', ''],
-                ['Doing trekking only in Visiting Hour,', ' which must be booked in advance via online registration.'],
-                ['Take nothing but pictures, Leave nothing but footprints.', ' Keep the islands clean and safe for all life-beings.'],
-                ['Be in good condition to enjoy the trip at its fullest!', ' Personal medicine or vitamins should be brought along.'],
-              ].map(([b, r], i) => <li key={i}><em><strong>{b}</strong></em>{r}</li>)}
-            </ul>
-            <p style={{ marginBottom: 8, fontSize: 11 }}>Things you <strong style={{ color: '#e74c3c' }}>should NOT do</strong>:</p>
-            <ul style={{ paddingLeft: 16, fontSize: 11, lineHeight: 1.9, marginBottom: 20, color: '#333' }}>
-              {[['Feeding wild Komodo Dragons are prohibited.', ' Do not feed or directly interact with any wildlife.'],
-                ['Fireworks are not allowed inside Komodo National Park area.', ''],
-                ['Fishing inside Komodo National Park area is prohibited.', ' Do not bring professional fishing gear.'],
-                ['Do not litter.', ' Use rubbish bins on site or bring trash back to the boat.'],
-                ['Do not step or touch the corals or any sea creatures', ' while snorkeling.'],
-                ['Drones are NOT allowed above Komodo National Park area.', ' Advance permit + IDR 1,000,000 fee required.'],
-              ].map(([b, r], i) => <li key={i}><em><strong>{b}</strong></em>{r}</li>)}
-            </ul>
-            <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic' }}>Samara Yachting Team</p>
-          </div>
-        </div>
-      )}
-
       {/* PAGE 3 — Guest Overview */}
       {page(
         <div className="samara-page">
@@ -287,7 +274,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
               <thead>
                 <tr style={{ backgroundColor: DARK, color: 'white' }}>
-                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', 'CABIN', 'ALLERGIES', 'SALES'].map((h, i, arr) => (
+                  {['NO', 'GUEST NAME', 'CITIZENSHIP', 'ID NUMBER', 'EXP DATE', 'DOB', ...(hasCabins ? ['CABIN'] : []), 'ALLERGIES', 'SALES'].map((h, i, arr) => (
                     <th key={i} style={{ ...th, borderRight: i === arr.length - 1 ? 'none' : undefined, ...(h === 'ALLERGIES' ? { width: 62, textAlign: 'center' } : {}), ...(h === 'CABIN' ? { width: 72 } : {}) }}>{h}</th>
                   ))}
                 </tr>
@@ -309,7 +296,9 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                     <td style={td}>{g.passport || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.passportExpiry || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
                     <td style={td}>{g.dateOfBirth || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
-                    <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.cabin || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    {hasCabins && (
+                      <td style={{ ...td, fontSize: 10, color: '#555' }}>{g.cabin || <span style={{ color: '#ccc' }}>&nbsp;</span>}</td>
+                    )}
                     <td style={{ ...td, textAlign: 'center', fontWeight: 700, fontSize: 10, color: g.allergies ? '#c0392b' : '#27ae60' }}>
                       {g.allergies ? 'YES' : 'NO'}
                     </td>
@@ -319,7 +308,7 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
                 {Array.from({ length: BLANK }).map((_, i) => (
                   <tr key={`b${i}`}>
                     <td style={{ ...td, textAlign: 'center', color: '#ccc', width: 28 }}>{guests.length + i + 1}</td>
-                    {[...Array(7)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
+                    {[...Array(hasCabins ? 7 : 6)].map((_, j) => <td key={j} style={td}>&nbsp;</td>)}
                     <td style={{ ...td, borderRight: 'none' }}>&nbsp;</td>
                   </tr>
                 ))}
@@ -343,8 +332,9 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
         </div>
       )}
 
-      {/* PAGES 4+ — One per guest */}
-      {guests.map((g) => page(
+      {/* PAGES 4+ — One per guest, followed immediately by that guest's own attachments */}
+      {guests.flatMap((g) => [
+        page(
         <div className="samara-page">
           <Banner sub={sub} name={company.name} logo={company.logoUrl} />
           <div className="samara-page-body" style={{ padding: '14px 32px' }}>
@@ -529,7 +519,11 @@ export default async function CrewSheetBookingPage({ params }: { params: Promise
         </div>,
         false,
         g.no
-      ))}
+        ),
+        ...guestAttachments(g).map((a, i) => (
+          <AttachmentPages key={`${g.no}-att-${i}`} label={a.label} value={a.value} sub={g.name} />
+        )),
+      ])}
     </div>
   )
 }
