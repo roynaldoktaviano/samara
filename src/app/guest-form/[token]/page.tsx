@@ -8,7 +8,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const TEAL = '#1a5f6e'
-const GOLD = '#bdac7e'
+const GOLD = '#bdac7e'  
 
 type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'surfing'
 
