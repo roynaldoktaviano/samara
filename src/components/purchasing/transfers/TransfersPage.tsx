@@ -1,12 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User, FileDown } from 'lucide-react'
+import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User, FileDown, Ship } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 
-interface StockLocation { id: string; name: string; type: string; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
+interface TripOption {
+  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
+  destination: string | null; status: string
+  yacht: { id: string; name: string } | null
+  leadGuestName: string; guestNames: string[]
+}
 
 interface StockPickerRow {
   kind: 'stock' | 'non-stock'
@@ -44,6 +50,9 @@ interface StockTransfer {
   // fulfillment) — lets warehouse see who to follow up with about receipt confirmation.
   purchaseRequestId?: string | null
   purchaseRequest?: { id: string; prNumber: string; requestedByName: string | null } | null
+  // Optional link to the charter/departure this transfer's cargo is for.
+  tripBookingId?: string | null
+  tripBooking?: { id: string; bookingCode: string; startDate: string; endDate: string; yacht: { id: string; name: string } | null } | null
 }
 interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null }
 
@@ -148,6 +157,83 @@ function EmployeeCombobox({ employees, value, onChange }: {
   )
 }
 
+// Trip picker for the "Trip" field on Create Transfer — scoped to the yacht of the
+// selected TO location (when it's a vessel) so it only shows that ship's trips.
+function TripCombobox({ value, valueLabel, trips, yachtId, onChange }: {
+  value: string; valueLabel: string; trips: TripOption[]; yachtId?: string | null; onChange: (id: string, label: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const scoped = yachtId ? trips.filter(t => t.yacht?.id === yachtId) : trips
+  const opts = scoped.filter(t => {
+    if (!q) return true
+    return t.bookingCode.toLowerCase().includes(q)
+      || (t.destination ?? '').toLowerCase().includes(q)
+      || t.leadGuestName.toLowerCase().includes(q)
+      || t.guestNames.some(n => n.toLowerCase().includes(q))
+  }).slice(0, 30)
+
+  return (
+    <>
+      <button type="button" onClick={() => { setOpen(true); setSearch('') }}
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] transition">
+        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Pilih trip (opsional)...'}</span>
+        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b shrink-0">
+              <h3 className="font-semibold text-lg">Pilih Trip</h3>
+              <button onClick={() => setOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="p-4 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input autoFocus className="w-full h-9 border rounded-md px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
+                  placeholder="Cari booking code, guest, destinasi..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {value && (
+                <button type="button" onClick={() => { onChange('', ''); setOpen(false); setSearch('') }}
+                  className="w-full text-left px-5 py-2.5 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
+                  Clear selection
+                </button>
+              )}
+              {opts.length === 0 && (
+                <p className="px-5 py-6 text-sm text-muted-foreground text-center">{yachtId ? 'Tidak ada trip untuk kapal ini' : 'No trips found'}</p>
+              )}
+              {opts.map(t => {
+                const label = `${fmtDate(t.startDate)}–${fmtDate(t.endDate)}${t.yacht ? ` — ${t.yacht.name}` : ''}`
+                return (
+                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
+                    className="w-full text-left px-5 py-3 text-sm hover:bg-muted flex items-start gap-2.5 border-b last:border-0 transition-colors">
+                    <Ship className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{fmtDate(t.startDate)}–{fmtDate(t.endDate)}</span>
+                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
+                      </span>
+                      <span className="block text-xs text-muted-foreground truncate mt-0.5">
+                        {t.yacht?.name ?? '—'}
+                      </span>
+                      <span className="block text-xs text-muted-foreground truncate">
+                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function TransfersPage() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
@@ -157,6 +243,7 @@ export default function TransfersPage() {
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [trips, setTrips] = useState<TripOption[]>([])
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [detail, setDetail] = useState<TransferDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -165,6 +252,8 @@ export default function TransfersPage() {
   // Create form
   const [fromLoc, setFromLoc] = useState('')
   const [toLoc, setToLoc] = useState('')
+  const [tripBookingId, setTripBookingId] = useState('')
+  const [tripBookingLabel, setTripBookingLabel] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; inputQty: number; usePurchaseUnit: boolean; availableQty: number }[]>([])
   const [saving, setSaving] = useState(false)
@@ -214,16 +303,18 @@ export default function TransfersPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [tRes, lRes, uRes, eRes] = await Promise.all([
+    const [tRes, lRes, uRes, eRes, tripRes] = await Promise.all([
       fetch('/api/purchasing/transfers'),
       fetch('/api/purchasing/locations'),
       fetch('/api/purchasing/team'),
       fetch('/api/purchasing/employees'),
+      fetch('/api/purchasing/trips'),
     ])
     if (tRes.ok) setTransfers(await tRes.json())
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation & { isActive?: boolean }) => l.isActive !== false))
     if (uRes.ok) setTeamUsers(await uRes.json())
     if (eRes.ok) setEmployees(await eRes.json())
+    if (tripRes.ok) setTrips(await tripRes.json())
     setLoading(false)
   }, [])
 
@@ -312,7 +403,7 @@ export default function TransfersPage() {
     if (!validLines.length) { setSaveError('Tambahkan minimal 1 item'); setSaving(false); return }
     const res = await fetch('/api/purchasing/transfers', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromLocationId: fromLoc, toLocationId: toLoc, notes, items: validLines.map(l => ({
+      body: JSON.stringify({ fromLocationId: fromLoc, toLocationId: toLoc, tripBookingId: tripBookingId || undefined, notes, items: validLines.map(l => ({
         itemId: l.itemId,
         itemName: l.itemName,
         requestedQty: l.usePurchaseUnit ? l.inputQty * l.conversionFactor : l.inputQty,
@@ -321,7 +412,7 @@ export default function TransfersPage() {
     const data = await res.json()
     if (!res.ok) { setSaveError(data.error ?? 'Gagal menyimpan'); setSaving(false); return }
     setSaving(false); setView('list')
-    setFromLoc(''); setToLoc(''); setNotes(''); setLines([])
+    setFromLoc(''); setToLoc(''); setTripBookingId(''); setTripBookingLabel(''); setNotes(''); setLines([])
     load()
   }
 
@@ -599,11 +690,24 @@ export default function TransfersPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To <span className="text-destructive">*</span></label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => setToLoc(e.target.value)}>
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => {
+                  setToLoc(e.target.value); setTripBookingId(''); setTripBookingLabel('')
+                }}>
                   <option value="">Pilih lokasi tujuan...</option>
                   {renderLocationOptions(locations, { excludeIds: new Set([fromLoc]) })}
                 </select>
               </div>
+              {(() => {
+                const toYachtId = locations.find(l => l.id === toLoc)?.yachtId
+                if (!toYachtId) return null
+                return (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Trip</label>
+                    <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} yachtId={toYachtId}
+                      onChange={(id, label) => { setTripBookingId(id); setTripBookingLabel(label) }} />
+                  </div>
+                )
+              })()}
             </div>
           </div>
           <div className="rounded-xl border overflow-hidden">
@@ -807,6 +911,12 @@ export default function TransfersPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Requested by <span className="font-medium text-foreground">{detail.purchaseRequest.requestedByName ?? '—'}</span>
                   {' '}({detail.purchaseRequest.prNumber})
+                </p>
+              )}
+              {detail.tripBooking && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Trip: <span className="font-medium text-foreground">{fmtDate(detail.tripBooking.startDate)}–{fmtDate(detail.tripBooking.endDate)}</span>
+                  {detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}
                 </p>
               )}
               {!!detail.totalValue && (

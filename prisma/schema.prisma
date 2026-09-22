@@ -895,6 +895,7 @@ model Booking {
   cashierSales                  CashierSale[]
   purchaseOrders                PurchaseOrder[]
   purchaseRequests              PurchaseRequest[]
+  stockTransfers                StockTransfer[]
   freelanceTripAssignments      FreelanceTripAssignment[]
 
   @@index([status])
@@ -1063,6 +1064,11 @@ model Payment {
   status             PaymentStatus  @default(pending_confirmation)
   notes              String?
   proofOfTransfer    String?
+  // Optional note + evidence Finance attaches when editing an already-generated invoice (e.g.
+  // "amount received doesn't match the DP on file") — shown to Sales on the booking so they
+  // know what changed and why, without forcing them to resubmit proof of transfer.
+  changeProofNote    String?
+  changeProofUrl     String?
   billToType         String?
   showNetAmount      Boolean        @default(false)
   showCommissionNote Boolean        @default(false)
@@ -2795,6 +2801,9 @@ model StockTransfer {
   toLocationId          String
   crewRequestId         String?
   purchaseRequestId     String?
+  // Optional link to the specific charter/departure this transfer's cargo is for — lets
+  // Purchasing/Warehouse see which trip stock is headed to when shipping to a vessel.
+  tripBookingId         String?
   // Set when this transfer is one leg of a PO's multi-stop transit route (auto-created,
   // see src/lib/purchasing/transitChain.ts). originGoodsReceiptId stays the same across every
   // leg spawned from one shipment, so partial deliveries get independent chains.
@@ -2828,6 +2837,7 @@ model StockTransfer {
   toLocation         StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])
   crewRequest        CrewRequest?        @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
   purchaseRequest    PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  tripBooking        Booking?            @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
   purchaseOrder      PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   originGoodsReceipt GoodsReceipt?       @relation(fields: [originGoodsReceiptId], references: [id], onDelete: SetNull)
   dispatchedBy       User?               @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
@@ -2838,6 +2848,7 @@ model StockTransfer {
   @@index([status])
   @@index([createdAt])
   @@index([crewRequestId])
+  @@index([tripBookingId])
   @@index([purchaseRequestId])
   @@index([purchaseOrderId])
   @@index([originGoodsReceiptId])

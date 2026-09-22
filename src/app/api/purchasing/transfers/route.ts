@@ -25,12 +25,16 @@ export async function GET() {
     include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })
   const locIds = [...new Set([...transfers.map(t => t.fromLocationId), ...transfers.map(t => t.toLocationId)])]
-  const [locations, purchaseOrders, purchaseRequests] = await Promise.all([
+  const [locations, purchaseOrders, purchaseRequests, tripBookings] = await Promise.all([
     db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } }),
     db.purchaseOrder.findMany({ where: { id: { in: transfers.map(t => t.purchaseOrderId).filter((x): x is string => !!x) } }, select: { id: true, poNumber: true } }),
     db.purchaseRequest.findMany({
       where: { id: { in: transfers.map(t => t.purchaseRequestId).filter((x): x is string => !!x) } },
       select: { id: true, prNumber: true, requestedBy: { select: { name: true } }, requestedByEmployee: { select: { fullName: true } } },
+    }),
+    db.booking.findMany({
+      where: { id: { in: transfers.map(t => t.tripBookingId).filter((x): x is string => !!x) } },
+      select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { id: true, name: true } } },
     }),
   ])
   const locMap = new Map(locations.map(l => [l.id, l]))
@@ -39,6 +43,7 @@ export async function GET() {
     id: r.id, prNumber: r.prNumber,
     requestedByName: r.requestedByEmployee?.fullName ?? r.requestedBy?.name ?? null,
   }]))
+  const tripMap = new Map(tripBookings.map(b => [b.id, b]))
   return NextResponse.json(transfers.map(t => {
     const first = t.items[0]?.itemName ?? null
     const extra = t.items.length > 1 ? t.items.length - 1 : 0
@@ -57,6 +62,7 @@ export async function GET() {
       toLocation: locMap.get(t.toLocationId) ?? null,
       purchaseOrder: t.purchaseOrderId ? (poMap.get(t.purchaseOrderId) ?? null) : null,
       purchaseRequest: t.purchaseRequestId ? (prMap.get(t.purchaseRequestId) ?? null) : null,
+      tripBooking: t.tripBookingId ? (tripMap.get(t.tripBookingId) ?? null) : null,
     }
   }))
 }
@@ -67,7 +73,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { fromLocationId, toLocationId, notes, items } = body
+  const { fromLocationId, toLocationId, notes, items, tripBookingId } = body
   if (!fromLocationId || !toLocationId) return NextResponse.json({ error: 'Lokasi asal dan tujuan wajib dipilih' }, { status: 400 })
   if (fromLocationId === toLocationId) return NextResponse.json({ error: 'Lokasi asal dan tujuan tidak boleh sama' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
@@ -99,6 +105,7 @@ export async function POST(req: NextRequest) {
       toLocationId,
       status: 'PENDING',
       notes: notes?.trim() || null,
+      tripBookingId: tripBookingId || null,
       updatedAt: new Date(),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; requestedQty: number }) => ({

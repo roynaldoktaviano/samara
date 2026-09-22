@@ -49,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           requestedByEmployee: { select: { fullName: true } },
         },
       },
+      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { id: true, name: true } } } },
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })

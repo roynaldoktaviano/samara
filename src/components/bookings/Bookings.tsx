@@ -105,6 +105,11 @@ interface PaymentRecord {
   hasDocument?: boolean
   parentPaymentId?: string | null
   parentPayment?: { invoiceNumber: string } | null
+  // Optional "what changed" note Finance attaches when editing an already-generated invoice
+  // — changeProofUrl itself is stripped from this list (like proofOfTransfer) and fetched
+  // on demand from /api/payments/[id] only when Sales clicks to view it.
+  changeProofNote?: string | null
+  hasChangeProof?: boolean
   booking: {
     bookingCode: string
     tripType: string
@@ -314,6 +319,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   /* payments list (for payment column context) */
   const [payments,        setPayments]        = useState<PaymentRecord[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
+
+  /* Finance's "what changed" proof — fetched on demand since changeProofUrl is stripped
+     from the payments list (same reason proofOfTransfer is). */
+  const [changeProofView,    setChangeProofView]    = useState<string | null>(null)
+  const [changeProofLoading, setChangeProofLoading] = useState(false)
+  async function viewChangeProof(paymentId: string) {
+    setChangeProofLoading(true)
+    try {
+      const res = await fetch(`/api/payments/${paymentId}`)
+      if (res.ok) setChangeProofView((await res.json()).changeProofUrl ?? null)
+    } finally {
+      setChangeProofLoading(false)
+    }
+  }
 
   /* guest travel dialog */
   const [travelBooking,    setTravelBooking]    = useState<BookingRecord | null>(null)
@@ -875,6 +894,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setDetailBooking(b)
     setDetailShowIDR(false)
     setDetailCabins([])
+    setChangeProofView(null)
     if (b.tripType === 'OPEN_TRIP' && b.openTrip?.id) {
       setDetailCabinsLoading(true)
       try {
@@ -3336,6 +3356,29 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     )}
                     {detailActivePmt?.status === 'pending_confirmation' && (
                       <p className="text-[11px] text-amber-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Proof submitted — awaiting confirmation</p>
+                    )}
+                    {/* Finance edited the invoice and left a note (± proof) explaining what changed */}
+                    {detailActivePmt?.changeProofNote && (
+                      <div className="rounded-md bg-orange-50 border border-orange-200 px-3 py-2 space-y-1">
+                        <p className="text-[11px] font-medium text-orange-700 flex items-center gap-1.5">
+                          <AlertCircle className="h-3 w-3 shrink-0" /> Finance note — invoice was updated
+                        </p>
+                        <p className="text-[11px] text-orange-700">{detailActivePmt.changeProofNote}</p>
+                        {detailActivePmt.hasChangeProof && (
+                          changeProofView ? (
+                            <FilePreview src={changeProofView} alt="Proof of change" className="max-h-48 w-full object-contain rounded border bg-white mt-1" />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => viewChangeProof(detailActivePmt.id)}
+                              disabled={changeProofLoading}
+                              className="text-[11px] font-medium text-orange-700 underline underline-offset-2 hover:text-orange-800 disabled:opacity-50"
+                            >
+                              {changeProofLoading ? 'Loading proof...' : 'View proof'}
+                            </button>
+                          )
+                        )}
+                      </div>
                     )}
                     {/* Confirmed invoice badges */}
                     {detailConfirmed.length > 0 && (

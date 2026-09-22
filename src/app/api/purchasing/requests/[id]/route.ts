@@ -49,7 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       convertedBy: { select: { id: true, name: true } },
       rejectedBy: { select: { id: true, name: true } },
       cancelledBy: { select: { id: true, name: true } },
-      tripBooking: { select: { id: true, bookingCode: true, yacht: { select: { name: true } } } },
+      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
       // Lets the frontend show how far conversion got — the detail Timeline fetches each
       // PO's full detail separately (GET /api/purchasing/orders/[id]) for its complete
       // journey, so only enough is needed here to know which POs exist and their status.

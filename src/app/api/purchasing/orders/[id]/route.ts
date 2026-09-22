@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         inventoryCategory: { select: { name: true } },
       } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true, address: true } },
-      booking: { select: { bookingCode: true, tripType: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
+      booking: { select: { bookingCode: true, tripType: true, startDate: true, endDate: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
       createdBy: { select: { name: true } },
       supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
       request: {
@@ -130,7 +130,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     currentLegLabel,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
-    booking: order.booking ? { bookingCode: order.booking.bookingCode, tripType: order.booking.tripType, leadGuestName: order.booking.customer.name, yacht: order.booking.yacht } : null,
+    booking: order.booking ? { bookingCode: order.booking.bookingCode, tripType: order.booking.tripType, startDate: order.booking.startDate, endDate: order.booking.endDate, leadGuestName: order.booking.customer.name, yacht: order.booking.yacht } : null,
   })
 }
 

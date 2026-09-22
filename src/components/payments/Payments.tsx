@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/compressImage'
-import { extFromDataUrl } from '@/lib/fileUpload'
+import { extFromDataUrl, readUploadFile } from '@/lib/fileUpload'
 import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import TripSheet from './TripSheet'
@@ -168,6 +168,12 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [genInvShowNet,      setGenInvShowNet]     = useState(false)
   const [genInvShowNote,     setGenInvShowNote]    = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
+  // Optional "what changed" note + evidence Finance can attach when editing an already-generated
+  // invoice — shown to Sales on the booking instead of forcing them to resubmit proof of transfer.
+  const [changeProofNote,    setChangeProofNote]   = useState('')
+  const [changeProofUrl,     setChangeProofUrl]    = useState('')
+  const [changeProofUploading, setChangeProofUploading] = useState(false)
+  const changeProofInputRef = useRef<HTMLInputElement>(null)
 
   // ── Convert a foreign-currency amount received into the USD figure for Amount (USD) ──
   const [amtConvertOpen,     setAmtConvertOpen]     = useState(false)
@@ -298,6 +304,24 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
   const genInvPaymentDestMissing = !genInvBankId && !(genInvUsePayLink && genInvPayLink.trim())
 
+  async function handleChangeProofFile(file: File) {
+    if (!['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(file.type)) {
+      toast.error('Only JPG, PNG, or PDF files are allowed')
+      return
+    }
+    setChangeProofUploading(true)
+    try {
+      setChangeProofUrl(await readUploadFile(file))
+    } catch {
+      toast.error('Failed to read file')
+    } finally {
+      setChangeProofUploading(false)
+    }
+  }
+  const { isDragging: changeProofDragging, dropProps: changeProofDropProps } = useFileDrop(files => {
+    if (files[0]) handleChangeProofFile(files[0])
+  })
+
   const handleGenerateInvoice = async (silent = false) => {
     if (!selected) return
     const amount = parseFloat(genInvAmount.replace(/,/g, '')) || 0
@@ -324,12 +348,15 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           bankId: genInvBankId || null,
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
           silent: silent && !isFirstGeneration,
+          changeProofNote: !isFirstGeneration ? (changeProofNote.trim() || null) : undefined,
+          changeProofUrl: !isFirstGeneration ? (changeProofUrl || null) : undefined,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
       toast.success(isFirstGeneration ? 'Invoice generated successfully' : silent ? 'Invoice saved' : 'Invoice updated — Sales has been notified')
       setSelected(null)
       setGenInvAmount(''); setGenInvType('DP'); setGenInvMethod('Transfer Bank'); setGenInvNotes(''); setGenInvBillTo('CUSTOMER'); setGenInvBankId(null); setGenInvUsePayLink(false); setGenInvPayLink(''); setGenInvEditing(false); setGenInvConfirmEdit(false)
+      setChangeProofNote(''); setChangeProofUrl('')
       fetchPayments()
       window.dispatchEvent(new CustomEvent('payment-updated'))
     } catch (err) {
@@ -450,6 +477,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setGenInvShowNote(p.showCommissionNote ?? false)
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
+    setChangeProofNote('')
+    setChangeProofUrl('')
     setConvertOpen(false)
     const savedCurrency = p.currency !== 'USD' ? p.currency : (p.booking.currency !== 'USD' ? p.booking.currency : 'EUR')
     setConvertCurrency(savedCurrency)
@@ -1535,6 +1564,56 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             )}
                           </div>
                         )}
+                      </>
+                    )}
+
+                    {!isFirstGeneration && (
+                      <>
+                        <Separator />
+                        <div className="space-y-1.5">
+                          <Label className="text-xs flex items-center gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5" /> What changed? <span className="font-normal text-muted-foreground">(optional — shown to Sales)</span>
+                          </Label>
+                          <Textarea
+                            rows={2} className="text-sm resize-none"
+                            placeholder="e.g. Amount received doesn't match the DP on file — actual $500 vs system $600"
+                            value={changeProofNote}
+                            onChange={e => setChangeProofNote(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Proof of change (optional)</Label>
+                          {changeProofUrl ? (
+                            <div className="relative rounded-lg overflow-hidden border">
+                              <FilePreview src={changeProofUrl} alt="Proof of change" className="max-h-40 w-full object-contain bg-muted/30" />
+                              <button
+                                type="button"
+                                onClick={() => setChangeProofUrl('')}
+                                className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div
+                              {...changeProofDropProps}
+                              onClick={() => changeProofInputRef.current?.click()}
+                              className={`flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-4 cursor-pointer transition-colors ${
+                                changeProofDragging ? 'border-blue-400 bg-blue-50 text-blue-700' : 'text-muted-foreground hover:bg-muted/30'
+                              }`}
+                            >
+                              {changeProofUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <FilePlus className="h-5 w-5" />}
+                              <span className="text-xs">{changeProofUploading ? 'Uploading...' : 'Tap or drag to upload image/PDF'}</span>
+                            </div>
+                          )}
+                          <input
+                            ref={changeProofInputRef}
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                            className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleChangeProofFile(f); e.target.value = '' }}
+                          />
+                        </div>
                       </>
                     )}
 

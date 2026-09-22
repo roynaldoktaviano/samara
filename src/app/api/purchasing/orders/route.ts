@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     include: {
       items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
-      booking: { select: { bookingCode: true, tripType: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
+      booking: { select: { bookingCode: true, tripType: true, startDate: true, endDate: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
       createdBy: { select: { name: true } },
       request: {
         select: {
@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
       requestedByOffice: o.requestedByOffice ?? o.request?.requestedByEmployee?.location?.name ?? null,
       requestedByDepartment: o.requestedByDepartment ?? o.request?.requestedByEmployee?.department ?? null,
       requestedByRole: o.requestedByRole ?? null,
-      booking: o.booking ? { bookingCode: o.booking.bookingCode, tripType: o.booking.tripType, leadGuestName: o.booking.customer.name, yacht: o.booking.yacht } : null,
+      booking: o.booking ? { bookingCode: o.booking.bookingCode, tripType: o.booking.tripType, startDate: o.booking.startDate, endDate: o.booking.endDate, leadGuestName: o.booking.customer.name, yacht: o.booking.yacht } : null,
       request: undefined,
       createdBy: undefined,
       transitStops: o.transitStops.map(s => ({ locationId: s.locationId, sequence: s.sequence, location: s.location })),

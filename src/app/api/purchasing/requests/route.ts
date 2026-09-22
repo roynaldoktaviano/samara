@@ -58,7 +58,7 @@ export async function GET() {
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
-      tripBooking: { select: { id: true, bookingCode: true, yacht: { select: { name: true } } } },
+      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
       // So the list can show how far a converted PR's PO(s) actually got (Ordered / On
       // Delivery / Received) instead of just the terminal "Converted" PR status — including
       // exactly where a routed PO physically is right now, same text as the PO's own list.

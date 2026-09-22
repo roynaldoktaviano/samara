@@ -35,6 +35,8 @@ export async function GET(_: NextRequest) {
         status: true,
         notes: true,
         proofOfTransfer: true,
+        changeProofNote: true,
+        changeProofUrl: true,
         billToType: true,
         showNetAmount: true,
         showCommissionNote: true,
@@ -82,9 +84,10 @@ export async function GET(_: NextRequest) {
       take: 500,
     }))
     // Strip base64 proof from list; return a boolean flag instead
-    const result = payments.map(({ proofOfTransfer, ...p }) => ({
+    const result = payments.map(({ proofOfTransfer, changeProofUrl, ...p }) => ({
       ...p,
       hasProof: !!proofOfTransfer,
+      hasChangeProof: !!changeProofUrl,
     }))
     return NextResponse.json(result)
   } catch (error) {
