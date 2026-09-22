@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
+import { renumberOpenTripYear } from '@/lib/openTripNumbering'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -145,25 +146,31 @@ export async function POST(request: NextRequest) {
 
     const totalCabins = yacht?.cabins.length || yacht?.cabinCount || 0
 
-    const trip = await db.openTrip.create({
-      data: {
-        title,
-        description: description || null,
-        yachtId,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        destination,
-        destinationId: destinationId || null,
-        region: region || null,
-        departurePort: departurePort || null,
-        arrivalPort: arrivalPort || null,
-        pricePerCabin: parseFloat(pricePerCabin) || 0,
-        maxCapacity: totalCabins,
-        status: 'open',
-      },
-      include: {
-        yacht: { select: { id: true, name: true } },
-      },
+    const trip = await db.$transaction(async (tx) => {
+      const created = await tx.openTrip.create({
+        data: {
+          title,
+          description: description || null,
+          yachtId,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          destination,
+          destinationId: destinationId || null,
+          region: region || null,
+          departurePort: departurePort || null,
+          arrivalPort: arrivalPort || null,
+          pricePerCabin: parseFloat(pricePerCabin) || 0,
+          maxCapacity: totalCabins,
+          status: 'open',
+        },
+      })
+
+      await renumberOpenTripYear(tx, created.startDate.getFullYear())
+
+      return tx.openTrip.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { yacht: { select: { id: true, name: true } } },
+      })
     })
 
     return NextResponse.json(trip, { status: 201 })

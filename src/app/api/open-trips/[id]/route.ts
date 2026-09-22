@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
+import { renumberOpenTripYear } from '@/lib/openTripNumbering'
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
@@ -137,7 +138,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb(adminSession)
   try {
     const { id } = await params
-    await db.openTrip.delete({ where: { id } })
+    const existing = await db.openTrip.findUnique({ where: { id }, select: { startDate: true } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    await db.$transaction(async (tx) => {
+      await tx.openTrip.delete({ where: { id } })
+      await renumberOpenTripYear(tx, existing.startDate.getFullYear())
+    })
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error deleting open trip:', error)
@@ -154,23 +162,39 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json()
     const { title, description, destination, destinationId, region, departurePort, arrivalPort, status, pricePerCabin, startDate, endDate, yachtId } = body
 
-    const trip = await db.openTrip.update({
-      where: { id },
-      data: {
-        ...(title         !== undefined && { title }),
-        ...(description   !== undefined && { description: description || null }),
-        ...(destination   !== undefined && { destination }),
-        ...(destinationId !== undefined && { destinationId: destinationId || null }),
-        ...(region        !== undefined && { region: region || null }),
-        ...(departurePort !== undefined && { departurePort: departurePort || null }),
-        ...(arrivalPort   !== undefined && { arrivalPort: arrivalPort || null }),
-        ...(status        !== undefined && { status }),
-        ...(pricePerCabin !== undefined && { pricePerCabin: parseFloat(pricePerCabin) || 0 }),
-        ...(startDate     !== undefined && { startDate: new Date(startDate) }),
-        ...(endDate       !== undefined && { endDate:   new Date(endDate) }),
-        ...(yachtId       !== undefined && { yachtId }),
-      },
-      include: { yacht: { select: { id: true, name: true } } },
+    const existing = await db.openTrip.findUnique({ where: { id }, select: { startDate: true } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const oldYear = existing.startDate.getFullYear()
+
+    const trip = await db.$transaction(async (tx) => {
+      const updated = await tx.openTrip.update({
+        where: { id },
+        data: {
+          ...(title         !== undefined && { title }),
+          ...(description   !== undefined && { description: description || null }),
+          ...(destination   !== undefined && { destination }),
+          ...(destinationId !== undefined && { destinationId: destinationId || null }),
+          ...(region        !== undefined && { region: region || null }),
+          ...(departurePort !== undefined && { departurePort: departurePort || null }),
+          ...(arrivalPort   !== undefined && { arrivalPort: arrivalPort || null }),
+          ...(status        !== undefined && { status }),
+          ...(pricePerCabin !== undefined && { pricePerCabin: parseFloat(pricePerCabin) || 0 }),
+          ...(startDate     !== undefined && { startDate: new Date(startDate) }),
+          ...(endDate       !== undefined && { endDate:   new Date(endDate) }),
+          ...(yachtId       !== undefined && { yachtId }),
+        },
+      })
+
+      if (startDate !== undefined) {
+        const newYear = updated.startDate.getFullYear()
+        await renumberOpenTripYear(tx, oldYear)
+        if (newYear !== oldYear) await renumberOpenTripYear(tx, newYear)
+      }
+
+      return tx.openTrip.findUniqueOrThrow({
+        where: { id },
+        include: { yacht: { select: { id: true, name: true } } },
+      })
     })
 
     return NextResponse.json(trip)

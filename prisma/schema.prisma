@@ -808,6 +808,12 @@ model OpenTrip {
   maxCapacity      Int            @default(0)
   status           OpenTripStatus @default(open)
   closedReason     String?
+  // Sequential position of this trip within its startDate's calendar year (Jan trip = 1,
+  // counting up through Dec, resetting to 1 next year). Persisted (not computed on read) so
+  // it stays stable for display/printing; recomputed for the affected year(s) by
+  // renumberOpenTripYear() whenever a trip in that year is created, has its startDate
+  // changed, or is deleted. Nullable only because existing rows predate this field.
+  tripNumber       Int?
   bookings         Booking[]
   waitingListItems WaitingList[]
   yacht            Yacht          @relation(fields: [yachtId], references: [id], onDelete: Cascade)
