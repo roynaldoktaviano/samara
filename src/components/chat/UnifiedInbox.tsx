@@ -6,10 +6,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Search, MessageCircle, Instagram, Mail } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Search, MessageCircle, Instagram, Mail, Plus, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ChatChannel, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { WHATSAPP_TEMPLATES, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
 
@@ -52,6 +55,7 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
   const [salesFilter, setSalesFilter] = useState('all')
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
   const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(null)
+  const [newChatOpen, setNewChatOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/chat/inbox')
@@ -90,13 +94,40 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
     if (item.unreadCount > 0) setItems(prev => prev.map(p => p.id === item.id && p.channel === item.channel ? { ...p, unreadCount: 0 } : p))
   }
 
+  async function startChat(payload: { phone: string; brand: WhatsappBrand; templateName: string; templateParams: string[]; contactName?: string }) {
+    const res = await fetch('/api/whatsapp/conversations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error ?? 'Failed to start conversation' }
+    setNewChatOpen(false)
+    await load()
+    setSelected({ channel: 'whatsapp', id: data.conversationId })
+    return { ok: true, providerError: data.providerError as string | undefined }
+  }
+
   return (
     <div className="h-[calc(100vh-6rem)] flex rounded-xl border overflow-hidden bg-card">
       {/* Conversation list */}
       <div className="w-80 shrink-0 border-r flex flex-col">
-        <div className="px-4 py-4 border-b">
-          <h2 className="text-lg font-bold tracking-tight">All Chats</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">WhatsApp &amp; Instagram, newest first</p>
+        <div className="px-4 py-4 border-b flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">All Chats</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">WhatsApp &amp; Instagram, newest first</p>
+          </div>
+          <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 shrink-0" title="Start a new WhatsApp chat">
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Chat WhatsApp Baru</DialogTitle>
+              </DialogHeader>
+              <NewChatForm onSubmit={startChat} />
+            </DialogContent>
+          </Dialog>
         </div>
         <div className="px-3 pt-3 border-b pb-3">
           <Tabs value={brandFilter} onValueChange={v => setBrandFilter(v as 'all' | WhatsappBrand)}>
@@ -195,6 +226,86 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
       ) : (
         <InstagramThread key={selected.id} conversationId={selected.id} onConversationUpdate={load} />
       )}
+    </div>
+  )
+}
+
+/**
+ * Starting a WhatsApp thread with someone who's never messaged in requires a Message
+ * Template (Meta rejects free text outside the 24h customer-service window) — see
+ * src/lib/whatsapp-templates.ts for the registry and POST /api/whatsapp/conversations.
+ */
+function NewChatForm({ onSubmit }: { onSubmit: (payload: { phone: string; brand: WhatsappBrand; templateName: string; templateParams: string[]; contactName?: string }) => Promise<{ ok: boolean; error?: string; providerError?: string }> }) {
+  const [phone, setPhone] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [brand, setBrand] = useState<WhatsappBrand>('SAMARA')
+  const [templateName, setTemplateName] = useState(WHATSAPP_TEMPLATES.SAMARA[0]?.name ?? '')
+  const [templateParams, setTemplateParams] = useState<string[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const templates = WHATSAPP_TEMPLATES[brand]
+  const selectedTemplate = templates.find(t => t.name === templateName)
+
+  function changeBrand(b: WhatsappBrand) {
+    setBrand(b)
+    const first = WHATSAPP_TEMPLATES[b][0]
+    setTemplateName(first?.name ?? '')
+    setTemplateParams(new Array(first?.paramLabels?.length ?? 0).fill(''))
+  }
+
+  async function handleSubmit() {
+    if (!phone.trim() || !selectedTemplate) return
+    setSubmitting(true)
+    setError(null)
+    const result = await onSubmit({ phone: phone.trim(), brand, templateName: selectedTemplate.name, templateParams, contactName: contactName.trim() || undefined })
+    setSubmitting(false)
+    if (!result.ok) setError(result.error ?? 'Failed to start conversation')
+    else if (result.providerError) setError(`Terkirim tapi WhatsApp menolak: ${result.providerError}`)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">Nomor WhatsApp</label>
+        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="62812xxxxxxx" className="h-9" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">Nama (opsional)</label>
+        <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nama contact/lead" className="h-9" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">Nomor Brand</label>
+        <Select value={brand} onValueChange={v => changeBrand(v as WhatsappBrand)}>
+          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">Template</label>
+        <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => t.name === v)?.paramLabels?.length ?? 0).fill('')) }}>
+          <SelectTrigger className="h-9"><SelectValue placeholder="Pilih template" /></SelectTrigger>
+          <SelectContent>
+            {templates.map(t => <SelectItem key={t.name} value={t.name}>{t.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      {selectedTemplate?.paramLabels?.map((label, i) => (
+        <Input key={i} placeholder={label} value={templateParams[i] ?? ''}
+          onChange={e => setTemplateParams(prev => { const next = [...prev]; next[i] = e.target.value; return next })}
+          className="h-9" />
+      ))}
+      {selectedTemplate && (
+        <p className="text-xs text-muted-foreground whitespace-pre-wrap border rounded-md p-2 bg-muted/40">
+          {renderWhatsappTemplateBody(selectedTemplate, templateParams)}
+        </p>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <Button onClick={handleSubmit} disabled={!phone.trim() || !selectedTemplate || submitting} className="w-full h-9">
+        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Mulai Chat'}
+      </Button>
     </div>
   )
 }

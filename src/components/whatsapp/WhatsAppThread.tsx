@@ -2,8 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
-import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon } from 'lucide-react'
+import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon, FileText } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { WHATSAPP_TEMPLATES, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import type { WhatsappBrand } from '@/lib/whatsapp-brands'
 
 const ACCENT = '#25D366' // WhatsApp green — this module only
 
@@ -16,11 +22,12 @@ interface Message {
   mediaType: string | null
   status: 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'
   sentByName: string | null
+  templateName: string | null
   createdAt: string
   replyTo: QuotedMessage | null
 }
 interface ConversationDetail {
-  id: string; phone: string; contactName: string | null; messages: Message[]
+  id: string; phone: string; contactName: string | null; brand: WhatsappBrand | null; windowOpen: boolean; messages: Message[]
 }
 
 function initials(name: string | null, phone: string) {
@@ -56,8 +63,15 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templateParams, setTemplateParams] = useState<string[]>([])
+  const [sendingTemplate, setSendingTemplate] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const templates = WHATSAPP_TEMPLATES[detail?.brand ?? 'SAMARA']
+  const selectedTemplate = templates.find(t => t.name === templateName)
 
   const loadDetail = useCallback(async () => {
     const res = await fetch(`/api/whatsapp/conversations/${conversationId}`)
@@ -88,7 +102,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [detail?.messages.length])
 
-  async function postMessage(payload: { body?: string; mediaUrl?: string; mediaType?: string }) {
+  async function postMessage(payload: { body?: string; mediaUrl?: string; mediaType?: string; templateName?: string; templateParams?: string[] }) {
     const res = await fetch(`/api/whatsapp/conversations/${conversationId}/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...payload, replyToId: replyTo?.id }),
@@ -105,6 +119,23 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
     const text = draft.trim()
     setDraft('')
     try { await postMessage({ body: text }) } finally { setSending(false) }
+  }
+
+  function openTemplatePicker() {
+    setTemplateName(templates[0]?.name ?? '')
+    setTemplateParams(new Array(templates[0]?.paramLabels?.length ?? 0).fill(''))
+    setTemplateOpen(true)
+  }
+
+  async function sendTemplate() {
+    if (!selectedTemplate) return
+    setSendingTemplate(true)
+    try {
+      await postMessage({ templateName: selectedTemplate.name, templateParams })
+      setTemplateOpen(false)
+    } finally {
+      setSendingTemplate(false)
+    }
   }
 
   async function handleFilePicked(file: File) {
@@ -164,6 +195,11 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
                   </a>
                 )
               )}
+              {m.templateName && (
+                <p className={`flex items-center gap-1 text-[10px] mb-1 font-medium ${m.direction === 'OUT' ? 'text-white/70' : 'text-muted-foreground'}`}>
+                  <FileText className="h-2.5 w-2.5" /> Template: {m.templateName}
+                </p>
+              )}
               {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
               <div className={`flex items-center gap-1 mt-1 justify-end ${m.direction === 'OUT' ? 'text-white/70' : 'text-muted-foreground'}`}>
                 <span className="text-[10px]">{fmtTime(m.createdAt)}</span>
@@ -181,6 +217,16 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
       </div>
 
       <div className="border-t bg-white shrink-0">
+        {detail && !detail.windowOpen && (
+          <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1 text-xs">
+            <span className="text-amber-700">
+              Sudah lebih dari 24 jam sejak balasan terakhir customer — pesan bebas kemungkinan ditolak WhatsApp. Pakai Template Message.
+            </span>
+            <button onClick={openTemplatePicker} className="shrink-0 font-medium underline" style={{ color: '#1b7a45' }}>
+              Kirim Template
+            </button>
+          </div>
+        )}
         {replyTo && (
           <div className="flex items-center gap-2 px-3 pt-2.5">
             <div className="flex-1 min-w-0 flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-1.5 border-l-2 border-green-600">
@@ -202,6 +248,39 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
             className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
           </button>
+          <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+            <PopoverTrigger asChild>
+              <button onClick={openTemplatePicker} title="Send a Message Template"
+                className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                <FileText className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 space-y-3" side="top" align="start">
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Message Template</p>
+                <p className="text-[11px] text-muted-foreground">Dipakai kalau customer belum pernah chat, atau sudah &gt;24 jam sejak balasan terakhirnya.</p>
+              </div>
+              <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => t.name === v)?.paramLabels?.length ?? 0).fill('')) }}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Pilih template" /></SelectTrigger>
+                <SelectContent>
+                  {templates.map(t => <SelectItem key={t.name} value={t.name}>{t.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {selectedTemplate?.paramLabels?.map((label, i) => (
+                <Input key={i} placeholder={label} value={templateParams[i] ?? ''}
+                  onChange={e => setTemplateParams(prev => { const next = [...prev]; next[i] = e.target.value; return next })}
+                  className="h-9 text-sm" />
+              ))}
+              {selectedTemplate && (
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap border rounded-md p-2 bg-muted/40">
+                  {renderWhatsappTemplateBody(selectedTemplate, templateParams)}
+                </p>
+              )}
+              <Button onClick={sendTemplate} disabled={!selectedTemplate || sendingTemplate} className="w-full h-9" style={{ backgroundColor: ACCENT }}>
+                {sendingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Kirim Template'}
+              </Button>
+            </PopoverContent>
+          </Popover>
           <textarea
             rows={1}
             className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 max-h-28"

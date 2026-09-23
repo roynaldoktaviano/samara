@@ -4192,6 +4192,10 @@ model WhatsappMessage {
   body              String?
   mediaUrl          String?
   mediaType         String?
+  // Set when this OUT message was sent as an approved Message Template (HSM) rather than
+  // free text — required by Meta to message someone outside the 24h customer-service
+  // window (see src/lib/whatsapp-templates.ts). `body` still holds the rendered text for display.
+  templateName      String?
   status            WhatsappMessageStatus @default(SENT)
   // Provider's own message id — lets the inbound webhook dedupe on redelivery,
   // and lets an outbound send record what it maps to once the provider replies.

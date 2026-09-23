@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '@prisma/client'
 import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
 import { sendPushToUser } from '@/lib/push'
-import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
+import { notifyByRoleForRequest, notifyPurchasingForRequest } from '@/lib/notify-purchasing'
+import { allItemsCustom } from '@/lib/purchasing/requestItems'
 
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
@@ -104,6 +105,9 @@ export async function POST(req: NextRequest) {
     ? await db.employee.findUnique({ where: { id: employee.managerId }, select: { id: true, userId: true } })
     : null
   const approverEmployeeId = manager?.userId ? manager.id : null
+  // Warehouse has nothing to check when every item is custom/non-catalog — skip
+  // "Cek Gudang" and land straight in Purchasing's queue (see allItemsCustom).
+  const allCustom = allItemsCustom(items.map(it => ({ itemId: it.itemId || null })))
 
   const [requestedById, prNumber] = await Promise.all([getSystemRequesterId(db), generatePrNumber(db)])
 
@@ -122,7 +126,7 @@ export async function POST(req: NextRequest) {
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
       division,
-      status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
+      status: approverEmployeeId ? 'PENDING_APPROVAL' : (allCustom ? 'ON_PROCESS' : 'DRAFT'),
       updatedAt: new Date(),
       items: {
         create: items.map(it => ({
@@ -163,13 +167,25 @@ export async function POST(req: NextRequest) {
     const skipReason = !employee.managerId
       ? ' (no manager on file for this employee — skipped manager approval)'
       : ' (assigned manager has no ERP login yet — skipped manager approval)'
-    await notifyByRoleForRequest(
-      db, WAREHOUSE_ROLES,
-      isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
-      isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
-      `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for a stock check.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
-      request.id,
-    )
+    if (allCustom) {
+      // Every item is custom — nothing for Warehouse to stock-check, so this already
+      // went straight to ON_PROCESS above. Notify Purchasing directly instead.
+      await notifyPurchasingForRequest(
+        db, division,
+        isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
+        isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
+        `${employee.fullName} requested ${request.items.length} custom item${request.items.length !== 1 ? 's' : ''} — ${prNumber} needs no stock check.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+        request.id,
+      )
+    } else {
+      await notifyByRoleForRequest(
+        db, WAREHOUSE_ROLES,
+        isUrgent ? 'REQUEST_ORDER_URGENT' : 'REQUEST_ORDER_SUBMITTED',
+        isUrgent ? '🔴 Urgent request order submitted' : 'New request order submitted',
+        `${employee.fullName} requested ${request.items.length} item${request.items.length !== 1 ? 's' : ''} — ${prNumber} is waiting for a stock check.${skipReason}${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+        request.id,
+      )
+    }
   }
 
   return NextResponse.json(request, { status: 201 })

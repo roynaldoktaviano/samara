@@ -24,7 +24,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (role === 'SALES' && conversation.assignedToId !== session.user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  return NextResponse.json(conversation)
+
+  // Meta only allows free-form replies within 24h of the customer's own last message —
+  // the thread UI uses this to nudge toward a Message Template once that's closed.
+  const lastInbound = await db.whatsappMessage.findFirst({
+    where: { conversationId: id, direction: 'IN' },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  })
+  const windowOpen = !!lastInbound && Date.now() - lastInbound.createdAt.getTime() < 24 * 60 * 60 * 1000
+
+  return NextResponse.json({ ...conversation, windowOpen })
 }
 
 // Marks a conversation as read (called when the admin opens it).

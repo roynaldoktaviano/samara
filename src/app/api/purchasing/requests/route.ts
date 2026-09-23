@@ -4,8 +4,9 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
-import { notifyByRoleForRequest } from '@/lib/notify-purchasing'
+import { notifyByRoleForRequest, notifyPurchasingForRequest, PURCHASING_ROLES } from '@/lib/notify-purchasing'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
+import { allItemsCustom } from '@/lib/purchasing/requestItems'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 
@@ -170,6 +171,10 @@ export async function POST(req: NextRequest) {
     ? await db.employee.findUnique({ where: { id: requesterEmployee.managerId }, select: { id: true, userId: true } })
     : null
   const approverEmployeeId = manager?.userId ? manager.id : null
+  // Warehouse has nothing to check when every item is a custom/non-catalog request (see
+  // allItemsCustom) — those PRs skip "Cek Gudang" entirely once approved (or immediately,
+  // if there's no manager to approve first).
+  const allCustom = allItemsCustom(items.map(it => ({ itemId: it.itemId || null })))
 
   const prNumber = await generatePrNumber(db)
   const request = await db.purchaseRequest.create({
@@ -186,7 +191,7 @@ export async function POST(req: NextRequest) {
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
-      status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
+      status: approverEmployeeId ? 'PENDING_APPROVAL' : (allCustom ? 'ON_PROCESS' : 'DRAFT'),
       updatedAt: new Date(),
       items: {
         create: items.map((it) => ({
@@ -224,6 +229,17 @@ export async function POST(req: NextRequest) {
       body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.`,
       url: '/',
     }).catch(() => {})
+  } else if (allCustom) {
+    // No usable manager on file, and every item is custom — nothing for Warehouse to
+    // check, so this went straight to ON_PROCESS above. Notify Purchasing directly
+    // instead, same as warehouse-forward does once a mixed PR clears its stock check.
+    if (!roleMatches(role, PURCHASING_ROLES)) {
+      notifyPurchasingForRequest(
+        db, request.division ?? null, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
+        `${prNumber} was submitted with ${request.items.length} custom item${request.items.length !== 1 ? 's' : ''} — no stock check needed.`,
+        request.id,
+      ).catch(() => {})
+    }
   } else if (!roleMatches(role, WAREHOUSE_ROLES)) {
     // No usable manager on file — notify Warehouse directly so they can check stock,
     // same as after a manager approves. Skip when Warehouse/Admin themselves created it,
