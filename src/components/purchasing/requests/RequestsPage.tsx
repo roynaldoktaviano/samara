@@ -102,7 +102,7 @@ interface FollowUp {
 interface EscalationTarget { id: string; name: string | null }
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Cek Gudang', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
   PENDING_APPROVAL: 'bg-purple-100 text-purple-700', DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
@@ -129,7 +129,7 @@ function leastAdvancedPo(orders: PurchaseRequest['orders']): { po: NonNullable<P
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
-  { key: 'DRAFT', label: 'Cek Gudang' },
+  { key: 'DRAFT', label: 'Draft' },
   { key: 'ON_PROCESS', label: 'On Process' },
   { key: 'CONVERTED', label: 'Converted' },
   { key: 'REJECTED', label: 'Rejected' },
