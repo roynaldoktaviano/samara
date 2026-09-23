@@ -215,11 +215,14 @@ export default function InvoicePage() {
     return acc
   }, [])
   const currentRow      = historyRows.find(h => h.id === payment.id)
-  // "Closing" is judged by this invoice's own position in the sequence (does the running total
-  // up through it reach the package total) — separate from grandTotal below, which is everything
-  // recorded for the booking regardless of when it happened relative to this invoice.
+  // "Closing" is judged by this invoice's own position in the sequence — does the running
+  // total up through it (not the booking's overall total) reach the package total.
   const isClosingPayment = !!currentRow && currentRow.cumAfter >= afterDiscount - 0.01
-  const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : payment.amount
+  // Balance Due must reflect the running total through *this* invoice's own payment, not the
+  // booking's current real-world total — otherwise a 1st-payment invoice regenerated after a
+  // 2nd payment has already been confirmed would silently net that later payment out too,
+  // showing a smaller balance than what was actually owed at the time this invoice was issued.
+  const grandTotal = currentRow?.cumAfter ?? payment.amount
   const balanceAfterAll = Math.max(0, afterDiscount - grandTotal)
   // A 2nd (or later) DP invoice used to headline the *cumulative* total of every deposit
   // recorded so far (this one plus every earlier confirmed one) instead of what this

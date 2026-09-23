@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
-import { renumberOpenTripYear } from '@/lib/openTripNumbering'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -86,7 +86,9 @@ export async function GET(request: NextRequest) {
           db.openTrip.update({
             where: { id: t.id },
             data:  { status: 'closed', closedReason },
-          }).catch(e => console.error('[open-trips] status sync failed:', e))
+          })
+            .then(() => renumberTripYear(db, t.yachtId, new Date(t.endDate).getFullYear()))
+            .catch(e => console.error('[open-trips] status sync failed:', e))
         }
       } else if (t.status === 'closed' && !blockingPC && now < new Date(t.startDate)) {
         // Orphaned close: trip is closed in DB but no PC blocks it and date hasn't passed → recover
@@ -95,7 +97,9 @@ export async function GET(request: NextRequest) {
         db.openTrip.update({
           where: { id: t.id },
           data:  { status: 'open', closedReason: null },
-        }).catch(e => console.error('[open-trips] status sync failed:', e))
+        })
+          .then(() => renumberTripYear(db, t.yachtId, new Date(t.endDate).getFullYear()))
+          .catch(e => console.error('[open-trips] status sync failed:', e))
       } else if (t.status !== 'cancelled' && t.status !== 'closed') {
         if (now >= new Date(t.startDate) && !includePast) effectiveStatus = 'closed'
         else if (spotsAvailable === 0)   effectiveStatus = 'full'
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      await renumberOpenTripYear(tx, created.startDate.getFullYear())
+      await renumberTripYear(tx, created.yachtId, created.endDate.getFullYear())
 
       return tx.openTrip.findUniqueOrThrow({
         where: { id: created.id },

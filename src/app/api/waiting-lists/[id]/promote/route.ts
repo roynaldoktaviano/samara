@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 import type { PrismaClient } from '@prisma/client'
 
 // Manually promote a specific waiting list entry to on_hold
@@ -128,6 +129,10 @@ async function promoteDirect(db: PrismaClient, entry: {
     },
     select: { id: true, bookingCode: true },
   })
+
+  if (tripType === 'PRIVATE_CHARTER' && entry.yachtId) {
+    await renumberTripYear(db, entry.yachtId, entry.endDate.getFullYear())
+  }
 
   await db.waitingList.update({
     where: { id: entry.id },

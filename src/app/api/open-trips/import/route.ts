@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { renumberOpenTripYear } from '@/lib/openTripNumbering'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 const HEADERS = ['title', 'yachtName', 'startDate', 'endDate', 'destination', 'region', 'departurePort', 'arrivalPort', 'description']
 
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     )
 
     const results: { row: number; status: 'created' | 'error'; title?: string; error?: string }[] = []
-    const affectedYears = new Set<number>()
+    const affectedYachtYears = new Set<string>()
 
     for (let i = 1; i < lines.length; i++) {
       const raw = lines[i].trim()
@@ -159,16 +159,19 @@ export async function POST(req: NextRequest) {
             status:        'open',
           },
         })
-        affectedYears.add(start.getFullYear())
+        affectedYachtYears.add(`${yacht.id}|${end.getFullYear()}`)
         results.push({ row: i + 1, status: 'created', title })
       } catch (e) {
         results.push({ row: i + 1, status: 'error', title, error: String(e) })
       }
     }
 
-    if (affectedYears.size > 0) {
+    if (affectedYachtYears.size > 0) {
       await db.$transaction(async (tx) => {
-        for (const year of affectedYears) await renumberOpenTripYear(tx, year)
+        for (const key of affectedYachtYears) {
+          const [yachtId, year] = key.split('|')
+          await renumberTripYear(tx, yachtId, Number(year))
+        }
       })
     }
 

@@ -8,6 +8,7 @@ import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
 import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -49,13 +50,22 @@ export async function GET(request: NextRequest) {
     // Background: auto-cancel pending bookings past deposit deadline & expired holds
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
-    Promise.all([
-      db.booking.updateMany({
+    ;(async () => {
+      const overdue = await db.booking.findMany({
+        where: { status: 'pending', depositDueDate: { lt: todayStart }, tripType: 'PRIVATE_CHARTER' },
+        select: { yachtId: true, endDate: true },
+      })
+      await db.booking.updateMany({
         where: { status: 'pending', depositDueDate: { lt: todayStart } },
         data: { status: 'cancelled' },
-      }),
-      processExpiredHoldsAndPromote(db),
-    ]).catch(e => console.error('[bookings] background housekeeping failed:', e))
+      })
+      const pairs = new Set(overdue.filter(b => b.yachtId).map(b => `${b.yachtId}|${b.endDate.getFullYear()}`))
+      for (const key of pairs) {
+        const [yachtId, year] = key.split('|')
+        await renumberTripYear(db, yachtId, Number(year))
+      }
+      await processExpiredHoldsAndPromote(db)
+    })().catch(e => console.error('[bookings] background housekeeping failed:', e))
 
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
@@ -75,7 +85,7 @@ export async function GET(request: NextRequest) {
     const bookings = await db.booking.findMany({
       where,
       select: {
-        id: true, bookingCode: true, source: true, tripType: true,
+        id: true, bookingCode: true, source: true, tripType: true, tripNumber: true,
         startDate: true, endDate: true, status: true,
         totalPrice: true, depositPaid: true, discount: true, vatType: true, vatValue: true,
         depositDueDate: true, finalDueDate: true, holdUntil: true,
@@ -447,22 +457,35 @@ export async function POST(request: NextRequest) {
       ]))).catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
     }
 
-    // Close any conflicting open trips (private charter override)
-    if (tripType === 'PRIVATE_CHARTER' && yachtId && confirmCloseOpenTrips) {
-      const start = new Date(startDate)
-      const end   = new Date(endDate)
-      await db.openTrip.updateMany({
-        where: {
+    // Close any conflicting open trips (private charter override), then recompute the
+    // combined trip-number sequence for every yacht+year this booking touches — its own
+    // slot, plus each open trip it just bumped out of the sequence.
+    if (tripType === 'PRIVATE_CHARTER' && yachtId) {
+      const years = new Set<number>([new Date(endDate).getFullYear()])
+
+      if (confirmCloseOpenTrips) {
+        const start = new Date(startDate)
+        const end   = new Date(endDate)
+        const closingWhere = {
           yachtId,
-          status: { in: ['open', 'full'] },
+          status: { in: ['open', 'full'] as ('open' | 'full')[] },
           startDate: { lt: end },
           endDate:   { gt: start },
-        },
-        data: {
-          status: 'closed',
-          closedReason: `Dialihkan ke Private Charter ${booking.bookingCode}`,
-        },
-      })
+        }
+        const affected = await db.openTrip.findMany({ where: closingWhere, select: { endDate: true } })
+        if (affected.length) {
+          await db.openTrip.updateMany({
+            where: closingWhere,
+            data: {
+              status: 'closed',
+              closedReason: `Dialihkan ke Private Charter ${booking.bookingCode}`,
+            },
+          })
+          affected.forEach(t => years.add(t.endDate.getFullYear()))
+        }
+      }
+
+      for (const year of years) await renumberTripYear(db, yachtId, year)
     }
 
     // Increment voucher usage atomically — only if still under maxUses

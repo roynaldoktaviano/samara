@@ -808,11 +808,15 @@ model OpenTrip {
   maxCapacity      Int            @default(0)
   status           OpenTripStatus @default(open)
   closedReason     String?
-  // Sequential position of this trip within its startDate's calendar year (Jan trip = 1,
-  // counting up through Dec, resetting to 1 next year). Persisted (not computed on read) so
-  // it stays stable for display/printing; recomputed for the affected year(s) by
-  // renumberOpenTripYear() whenever a trip in that year is created, has its startDate
-  // changed, or is deleted. Nullable only because existing rows predate this field.
+  // Sequential position of this trip within its yacht+calendar-year (year bucketed by
+  // endDate/checkout, not startDate — a trip departing Dec 31 and returning Jan 3 is next
+  // year's #1, not last year's final number), combined with that yacht's Private Charter
+  // bookings (Booking.tripNumber) into one shared sequence ordered by startDate — a trip
+  // closed (or cancelled) because a Private Charter took its slot is excluded, so the
+  // charter gets the number instead. Persisted (not computed on read) so it stays stable for
+  // display/printing; recomputed by renumberTripYear() in src/lib/openTripNumbering.ts
+  // whenever a trip/charter in that yacht+year is created, has its startDate/endDate/yacht/
+  // status changed, or is deleted. Nullable only because existing rows predate this field.
   tripNumber       Int?
   bookings         Booking[]
   waitingListItems WaitingList[]
@@ -845,6 +849,11 @@ model Booking {
   destination                   String?
   destinationId                 String?
   status                        BookingStatus             @default(pending)
+  // Private Charter only: this booking's position in the combined per-yacht,
+  // per-calendar-year trip sequence (year bucketed by endDate, shared with
+  // OpenTrip.tripNumber) — see renumberTripYear() in src/lib/openTripNumbering.ts.
+  // Null for OPEN_TRIP bookings and for excluded (cancelled) charters.
+  tripNumber                    Int?
   totalPrice                    Float
   depositPaid                   Float                     @default(0)
   discount                      Float                     @default(0)
@@ -3258,6 +3267,7 @@ model Employee {
   id                     String             @id @default(cuid())
   employeeNumber         String             @unique
   fullName               String
+  nickName               String?
   department             String?
   gender                 String?
   employmentStatus       String? // e.g. Permanent | Contract | Probation | Intern

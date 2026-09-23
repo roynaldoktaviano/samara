@@ -17,7 +17,7 @@ interface EmployeeRole { id: string; title: string }
 interface Location { id: string; name: string }
 interface AppUser { id: string; name: string | null; email: string; role: string }
 interface Employee {
-  id: string; employeeNumber: string; fullName: string; department: string | null; isActive: boolean
+  id: string; employeeNumber: string; fullName: string; nickName: string | null; department: string | null; isActive: boolean
   resignedAt: string | null; resignStatus: string | null; resignReason: string | null
   gender: string | null; employmentStatus: string | null; level: 'HIGH' | 'MEDIUM' | 'LOW' | null; leaveBalance: number | null; leaveEntitlementPolicy: string | null
   joinDate: string | null; contractStartDate: string | null; contractEndDate: string | null
@@ -60,7 +60,7 @@ interface PerformanceReviewRow {
 interface CompensationBandRow { id: string; roleId: string; level: 'HIGH' | 'MEDIUM' | 'LOW'; minSalary: number; maxSalary: number }
 
 const BLANK = {
-  fullName: '', employeeNumber: '', legalEntityId: '', businessUnitId: '', locationId: '', department: '', roleId: '', level: '', gender: '', employmentStatus: '', leaveBalance: '', leaveEntitlementPolicy: '',
+  fullName: '', nickName: '', employeeNumber: '', legalEntityId: '', businessUnitId: '', locationId: '', department: '', roleId: '', level: '', gender: '', employmentStatus: '', leaveBalance: '', leaveEntitlementPolicy: '',
   joinDate: '', contractStartDate: '', contractEndDate: '', managerId: '', userId: '', phone: '', address: '', birthDate: '',
   nikPassport: '', nationality: '', religion: '', placeOfBirth: '', motherName: '', personalEmail: '', maritalStatus: '', addressCurrent: '',
   emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '',
@@ -379,7 +379,10 @@ function EmployeeDetailModal({
                 {initials(employee.fullName)}
               </span>
               <div className="min-w-0">
-                <h3 className="font-bold text-2xl leading-tight truncate">{employee.fullName}</h3>
+                <h3 className="font-bold text-2xl leading-tight truncate">
+                  {employee.fullName}
+                  {employee.nickName && <span className="text-muted-foreground font-normal"> ({employee.nickName})</span>}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-1 truncate">
                   {employee.employeeNumber} · {employee.role?.title ?? 'No role'} · {employee.location?.name ?? 'No location'}
                 </p>
@@ -712,7 +715,7 @@ export default function EmployeesPage() {
   function openAdd() { setForm({ ...BLANK }); setEditing(null); setFormError(''); setModalTab('details'); setModal(true); privateGate.hide() }
   function openEdit(emp: Employee) {
     setForm({
-      fullName: emp.fullName, employeeNumber: emp.employeeNumber,
+      fullName: emp.fullName, nickName: emp.nickName ?? '', employeeNumber: emp.employeeNumber,
       legalEntityId: emp.legalEntity?.id ?? '', businessUnitId: emp.businessUnit?.id ?? '', locationId: emp.location?.id ?? '',
       department: emp.department ?? '', roleId: emp.role?.id ?? '',
       gender: emp.gender ?? '', employmentStatus: emp.employmentStatus ?? '', level: emp.level ?? '',
@@ -829,7 +832,7 @@ export default function EmployeesPage() {
   }
 
   const filtered = employees.filter(e => {
-    const matchSearch = !search || e.fullName.toLowerCase().includes(search.toLowerCase()) || e.employeeNumber.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = !search || e.fullName.toLowerCase().includes(search.toLowerCase()) || e.employeeNumber.toLowerCase().includes(search.toLowerCase()) || (e.nickName?.toLowerCase().includes(search.toLowerCase()) ?? false)
     const matchEntity = entityFilter === 'All' || e.legalEntity?.id === entityFilter
     const matchBusinessUnit = businessUnitFilter === 'All' || e.businessUnit?.id === businessUnitFilter
     const matchLocation = locationFilter === 'All' || e.location?.id === locationFilter
@@ -1003,6 +1006,7 @@ export default function EmployeesPage() {
                     <div className="min-w-0">
                       <p className="font-medium text-sm flex items-center gap-1.5 truncate">
                         {emp.fullName}
+                        {emp.nickName && <span className="text-muted-foreground font-normal">({emp.nickName})</span>}
                         {emp.userId && (
                           <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
                         )}
@@ -1053,6 +1057,7 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium flex items-center gap-1.5">
                       {emp.fullName}
+                      {emp.nickName && <span className="text-muted-foreground font-normal">({emp.nickName})</span>}
                       {emp.userId && (
                         <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
                       )}
@@ -1223,6 +1228,14 @@ export default function EmployeesPage() {
                     <input
                       className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
                       value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} autoFocus
+                    />
+                  </div>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nickname</label>
+                    <input
+                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
+                      value={form.nickName} onChange={e => setForm(f => ({ ...f, nickName: e.target.value }))}
                     />
                   </div>
 

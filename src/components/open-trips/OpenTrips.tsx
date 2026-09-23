@@ -476,7 +476,7 @@ export default function OpenTrips() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {t.tripNumber != null && (
                             <span className="text-xs font-mono text-muted-foreground shrink-0">
-                              #{t.tripNumber}/{new Date(t.startDate).getFullYear()}
+                              #{t.tripNumber}/{new Date(t.endDate).getFullYear()}
                             </span>
                           )}
                           <span className="font-semibold">{t.title}</span>

@@ -1,13 +1,13 @@
 /**
- * One-off backfill: assigns OpenTrip.tripNumber to every existing trip, per tenant,
- * using the same rule as renumberOpenTripYear() (trips numbered 1..N within each
- * calendar year of startDate, ordered by startDate then createdAt).
+ * One-off backfill: recomputes the combined Open Trip + Private Charter trip-number
+ * sequence for every yacht+calendar-year that has data, per tenant, using
+ * renumberTripYear() (see src/lib/openTripNumbering.ts).
  *
  * Run: npx tsx scripts/backfill-open-trip-numbers.ts
  */
 import { PrismaClient as CentralClient } from '@prisma/central-client'
 import { PrismaClient } from '@prisma/client'
-import { renumberOpenTripYear } from '../src/lib/openTripNumbering'
+import { renumberTripYear } from '../src/lib/openTripNumbering'
 import * as dotenv from 'dotenv'
 
 dotenv.config({ path: '.env.local' })
@@ -26,11 +26,18 @@ async function main() {
   for (const t of tenants) {
     const db = new PrismaClient({ datasources: { db: { url: t.databaseUrl } } })
     try {
-      const years = await db.openTrip.findMany({ select: { startDate: true } })
-      const distinctYears = [...new Set(years.map(y => y.startDate.getFullYear()))].sort()
-      console.log(`→ ${t.slug}: ${years.length} trip(s) across ${distinctYears.length} year(s) [${distinctYears.join(', ')}]`)
-      for (const year of distinctYears) {
-        await renumberOpenTripYear(db, year)
+      const [trips, charters] = await Promise.all([
+        db.openTrip.findMany({ select: { yachtId: true, endDate: true } }),
+        db.booking.findMany({ where: { tripType: 'PRIVATE_CHARTER' }, select: { yachtId: true, endDate: true } }),
+      ])
+      const keys = new Set([
+        ...trips.map(t => `${t.yachtId}|${t.endDate.getFullYear()}`),
+        ...charters.filter(c => c.yachtId).map(c => `${c.yachtId}|${c.endDate.getFullYear()}`),
+      ])
+      console.log(`→ ${t.slug}: ${trips.length} open trip(s), ${charters.length} charter(s) across ${keys.size} yacht+year combo(s)`)
+      for (const key of keys) {
+        const [yachtId, year] = key.split('|')
+        await renumberTripYear(db, yachtId, Number(year))
       }
       console.log(`✓ ${t.slug} done.\n`)
     } finally {

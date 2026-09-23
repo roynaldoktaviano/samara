@@ -1,5 +1,6 @@
 import { db as defaultDb } from '@/lib/db'
 import type { PrismaClient } from '@prisma/client'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 /**
  * Promotes the first waiting list entry for a cancelled/expired booking.
@@ -84,6 +85,11 @@ export async function promoteWaitingListForBooking(cancelledBookingId: string, p
     db.bookingGuest.create({ data: { bookingId: cancelledBookingId, customerId, isLead: true } }),
   ])
 
+  // Booking is no longer cancelled — it re-enters the combined trip-number sequence.
+  if (original.tripType === 'PRIVATE_CHARTER' && original.yachtId) {
+    await renumberTripYear(db, original.yachtId, original.endDate.getFullYear())
+  }
+
   // Mark as promoted + re-number remaining in a single transaction to prevent race conditions
   const remaining = await db.waitingList.findMany({
     where: { status: 'waiting', OR: whereOr },
@@ -128,7 +134,7 @@ export async function processExpiredHoldsAndPromote(prisma?: PrismaClient) {
   const now = new Date()
   const expired = await db.booking.findMany({
     where: { status: 'on_hold', holdUntil: { lt: now } },
-    select: { id: true },
+    select: { id: true, tripType: true, yachtId: true, endDate: true },
   })
   if (!expired.length) return
 
@@ -136,6 +142,15 @@ export async function processExpiredHoldsAndPromote(prisma?: PrismaClient) {
     where: { id: { in: expired.map(b => b.id) }, status: 'on_hold', holdUntil: { lt: now } },
     data:  { status: 'cancelled', cancelReason: 'Hold expired' },
   })
+
+  const pairs = new Set(
+    expired.filter(b => b.tripType === 'PRIVATE_CHARTER' && b.yachtId)
+      .map(b => `${b.yachtId}|${b.endDate.getFullYear()}`)
+  )
+  for (const key of pairs) {
+    const [yachtId, year] = key.split('|')
+    await renumberTripYear(db, yachtId, Number(year)).catch(e => console.error('renumber failed:', e))
+  }
 
   for (const b of expired) {
     await promoteWaitingListForBooking(b.id, db).catch(e => console.error('promote failed:', e))

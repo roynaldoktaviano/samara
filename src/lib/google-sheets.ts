@@ -4,7 +4,7 @@ import { getTripSheetGroups, type TripSheetGroup } from '@/lib/trip-sheet'
 import { getGoogleAdsConversions, toGoogleAdsTime, GOOGLE_ADS_CONVERSION_HEADER } from '@/lib/google-ads-conversions'
 
 const HEADER = [
-  'Month', 'Trip Date', 'Trip', 'Type', 'Status',
+  'Month', 'Trip Date', 'Trip', 'Trip #', 'Type', 'Status',
   'Guest', 'Agent', 'Sales', 'Cabin', 'Invoice',
   'Publish (USD)', 'Disc %', 'Agent Com (USD)', 'Total (USD)', 'Total (IDR)',
   'DP (USD)', '2nd DP / Payment (USD)', 'Balance (USD)', 'Payment Status',
@@ -13,8 +13,8 @@ const HEADER = [
 const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
 
 // Column blocks that get merged across rows, mirroring the rowSpan cells in the in-app table.
-const TRIP_BLOCK    = { start: 1, end: 5 }   // B:E — Trip Date, Trip, Type, Status
-const BOOKING_BLOCK = { start: 9, end: 19 }  // J:S — Invoice ... Payment Status
+const TRIP_BLOCK    = { start: 1, end: 6 }   // B:F — Trip Date, Trip, Trip #, Type, Status
+const BOOKING_BLOCK = { start: 10, end: 20 } // K:T — Invoice ... Payment Status
 const MONTH_COL = 0
 
 function fmtRange(start: Date, end: Date) {
@@ -86,6 +86,7 @@ function buildVesselSheet(groups: TripSheetGroup[]) {
           (isFirstOfGroup && isNewMonth) ? MONTH_NAMES[g.startDate.getMonth()] : '',
           isFirstOfGroup ? fmtRange(g.startDate, g.endDate) : '',
           isFirstOfGroup ? g.tripLabel : '',
+          isFirstOfGroup ? (g.tripNumber != null ? `#${g.tripNumber}/${g.tripYear}` : '') : '',
           isFirstOfGroup ? g.tripType : '',
           isFirstOfGroup ? g.status : '',
           r.guestName,

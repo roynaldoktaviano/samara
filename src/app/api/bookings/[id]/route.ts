@@ -8,6 +8,7 @@ import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { recalcOpenTripPrice } from '@/lib/booking-pricing'
 import { roleMatches } from '@/lib/role-utils'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -71,6 +72,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         totalPrice: true, depositPaid: true, status: true, tripType: true,
         depositDueDate: true, finalDueDate: true,
         depositDueDateInvoiceOverride: true, finalDueDateInvoiceOverride: true,
+        yachtId: true, endDate: true,
       },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -150,8 +152,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }),
         status: computedStatus,
       },
-      select: { id: true, bookingCode: true, status: true },
+      select: { id: true, bookingCode: true, status: true, yachtId: true, endDate: true },
     })
+
+    // Private Charter: startDate/endDate/yacht/status changes can shift its position (or
+    // eligibility) in the combined trip-number sequence — recompute for every yacht+year
+    // touched. Year bucketing uses endDate, so an endDate-only change matters too.
+    if (existing.tripType === 'PRIVATE_CHARTER' && (startDate !== undefined || endDate !== undefined || yachtId !== undefined || computedStatus !== existing.status)) {
+      const pairs = new Set<string>()
+      if (existing.yachtId) pairs.add(`${existing.yachtId}|${existing.endDate.getFullYear()}`)
+      if (booking.yachtId)  pairs.add(`${booking.yachtId}|${booking.endDate.getFullYear()}`)
+      for (const key of pairs) {
+        const [yid, yr] = key.split('|')
+        await renumberTripYear(db, yid, Number(yr))
+      }
+    }
 
     if (newCabinId) {
       await db.bookingGuest.updateMany({
@@ -185,7 +200,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       await recalcOpenTripPrice(db, id)
       finalBooking = await db.booking.findUniqueOrThrow({
         where: { id },
-        select: { id: true, bookingCode: true, status: true },
+        select: { id: true, bookingCode: true, status: true, yachtId: true, endDate: true },
       })
     }
 
@@ -220,7 +235,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const existing = await db.booking.findUnique({
       where:  { id },
-      select: { totalPrice: true, depositPaid: true, status: true, bookingCode: true },
+      select: { totalPrice: true, depositPaid: true, status: true, bookingCode: true, tripType: true, yachtId: true, endDate: true },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -379,6 +394,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         where: { bookingId: id, status: { in: ['requested', 'invoice_ready', 'pending_confirmation'] } },
         data: { status: 'cancelled' },
       }).catch(e => console.error('cancel payments failed:', e))
+      if (existing.tripType === 'PRIVATE_CHARTER' && existing.yachtId) {
+        await renumberTripYear(db, existing.yachtId, existing.endDate.getFullYear()).catch(e => console.error('renumber failed:', e))
+      }
+      // If a waiting-list entry exists, this reuses the same booking (cancelled → on_hold)
+      // and re-numbers it again — see promoteWaitingListForBooking.
       await promoteWaitingListForBooking(id, db).catch(e => console.error('promote waiting list failed:', e))
     }
 
@@ -412,14 +432,23 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     await db.booking.delete({ where: { id } })
 
     // If it was a Private Charter, reopen any future open trips that were closed because of it
+    // — each reopened trip re-enters the combined trip-number sequence for its yacht+year.
     if (existing.tripType === 'PRIVATE_CHARTER') {
-      db.openTrip.updateMany({
-        where: {
-          closedReason: { contains: existing.bookingCode },
-          startDate: { gt: new Date() },
-        },
-        data: { status: 'open', closedReason: null },
-      }).catch(() => {})
+      const reopened = await db.openTrip.findMany({
+        where: { closedReason: { contains: existing.bookingCode }, startDate: { gt: new Date() } },
+        select: { id: true, yachtId: true, endDate: true },
+      })
+      if (reopened.length) {
+        await db.openTrip.updateMany({
+          where: { id: { in: reopened.map(t => t.id) } },
+          data: { status: 'open', closedReason: null },
+        })
+        const pairs = new Set(reopened.map(t => `${t.yachtId}|${t.endDate.getFullYear()}`))
+        for (const key of pairs) {
+          const [yachtId, year] = key.split('|')
+          await renumberTripYear(db, yachtId, Number(year)).catch(e => console.error('renumber failed:', e))
+        }
+      }
     }
 
     const userId   = session?.user?.id   ?? ''

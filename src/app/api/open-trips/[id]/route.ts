@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
-import { renumberOpenTripYear } from '@/lib/openTripNumbering'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions)
@@ -110,7 +110,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       effectiveStatus = 'closed'
       closedReason    = closedReason ?? `Dialihkan ke Private Charter ${blockingPC.bookingCode}`
       if (trip.status !== 'closed') {
-        db.openTrip.update({ where: { id }, data: { status: 'closed' } }).catch(() => {})
+        db.openTrip.update({ where: { id }, data: { status: 'closed' } })
+          .then(() => renumberTripYear(db, trip.yachtId, new Date(trip.endDate).getFullYear()))
+          .catch(() => {})
       }
     } else if (trip.status !== 'cancelled' && trip.status !== 'closed') {
       if (new Date() >= new Date(trip.startDate) && !includePast) effectiveStatus = 'closed'
@@ -138,12 +140,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb(adminSession)
   try {
     const { id } = await params
-    const existing = await db.openTrip.findUnique({ where: { id }, select: { startDate: true } })
+    const existing = await db.openTrip.findUnique({ where: { id }, select: { endDate: true, yachtId: true } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await db.$transaction(async (tx) => {
       await tx.openTrip.delete({ where: { id } })
-      await renumberOpenTripYear(tx, existing.startDate.getFullYear())
+      await renumberTripYear(tx, existing.yachtId, existing.endDate.getFullYear())
     })
 
     return NextResponse.json({ ok: true })
@@ -162,9 +164,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json()
     const { title, description, destination, destinationId, region, departurePort, arrivalPort, status, pricePerCabin, startDate, endDate, yachtId } = body
 
-    const existing = await db.openTrip.findUnique({ where: { id }, select: { startDate: true } })
+    const existing = await db.openTrip.findUnique({ where: { id }, select: { endDate: true, yachtId: true, status: true } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    const oldYear = existing.startDate.getFullYear()
+    const oldYear = existing.endDate.getFullYear()
 
     const trip = await db.$transaction(async (tx) => {
       const updated = await tx.openTrip.update({
@@ -185,10 +187,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         },
       })
 
-      if (startDate !== undefined) {
-        const newYear = updated.startDate.getFullYear()
-        await renumberOpenTripYear(tx, oldYear)
-        if (newYear !== oldYear) await renumberOpenTripYear(tx, newYear)
+      if (startDate !== undefined || endDate !== undefined || status !== undefined || yachtId !== undefined) {
+        const newYear = updated.endDate.getFullYear()
+        const pairs = new Set([`${existing.yachtId}|${oldYear}`, `${updated.yachtId}|${newYear}`])
+        for (const key of pairs) {
+          const [yid, yr] = key.split('|')
+          await renumberTripYear(tx, yid, Number(yr))
+        }
       }
 
       return tx.openTrip.findUniqueOrThrow({

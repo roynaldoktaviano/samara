@@ -38,6 +38,7 @@ interface BookingRecord {
   bookingCode: string
   source: 'AGENT' | 'DIRECT'
   tripType: string
+  tripNumber?: number | null
   startDate: string
   endDate: string
   totalPrice: number
@@ -1381,7 +1382,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 ) : paginated.map(b => (
                   <TableRow key={b.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(b)}>
                     <TableCell>
-                      <div className="font-mono text-xs font-medium">{b.bookingCode}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="font-mono text-xs font-medium">{b.bookingCode}</div>
+                        {b.tripType === 'PRIVATE_CHARTER' && b.tripNumber != null && (
+                          <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                            #{b.tripNumber}/{new Date(b.endDate).getFullYear()}
+                          </span>
+                        )}
+                      </div>
                       {b.createdAt && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">
                           {new Date(b.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}

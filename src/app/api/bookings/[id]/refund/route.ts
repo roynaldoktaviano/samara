@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { promoteWaitingListForBooking } from '@/lib/waiting-list'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { renumberTripYear } from '@/lib/openTripNumbering'
 
 async function requireFinanceOrAdmin() {
   const session = await getServerSession(authOptions)
@@ -65,9 +66,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           refundDecision: 'no_refund',
           refundReason: reason.trim(),
         },
-        select: { id: true, bookingCode: true, salespersonId: true },
+        select: { id: true, bookingCode: true, salespersonId: true, tripType: true, yachtId: true, endDate: true },
       })
 
+      if (booking.tripType === 'PRIVATE_CHARTER' && booking.yachtId) {
+        await renumberTripYear(db, booking.yachtId, booking.endDate.getFullYear()).catch(e => console.error('[refund] renumber failed:', e))
+      }
       await promoteWaitingListForBooking(id, db).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       // Notify salesperson
@@ -186,7 +190,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           refundConfirmedAt: new Date(),
           refundConfirmedBy: session.user?.name ?? session.user?.email ?? 'Unknown',
         },
-        select: { id: true, bookingCode: true },
+        select: { id: true, bookingCode: true, tripType: true, yachtId: true, endDate: true },
       })
 
       // Mark confirmed payments as refunded
@@ -195,6 +199,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         data: { status: 'refunded' },
       }).catch(e => console.error('[refund] payment status update failed for booking', id, e))
 
+      if (booking.tripType === 'PRIVATE_CHARTER' && booking.yachtId) {
+        await renumberTripYear(db, booking.yachtId, booking.endDate.getFullYear()).catch(e => console.error('[refund] renumber failed:', e))
+      }
       await promoteWaitingListForBooking(id, db).catch(e => console.error('[refund] waiting list promotion failed for booking', id, e))
 
       const actorName = session.user?.name ?? session.user?.email ?? 'Unknown'

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const {
-    fullName, employeeNumber, legalEntityId, businessUnitId, locationId, department, roleId, level, gender, employmentStatus, leaveBalance, leaveEntitlementPolicy, joinDate, contractStartDate, contractEndDate, managerId, userId, phone, address, birthDate,
+    fullName, nickName, employeeNumber, legalEntityId, businessUnitId, locationId, department, roleId, level, gender, employmentStatus, leaveBalance, leaveEntitlementPolicy, joinDate, contractStartDate, contractEndDate, managerId, userId, phone, address, birthDate,
     nikPassport, nationality, religion, placeOfBirth, motherName, personalEmail, maritalStatus, addressCurrent,
     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
         id: crypto.randomUUID(),
         employeeNumber: number,
         fullName: fullName.trim(),
+        nickName: nickName?.trim() || null,
         department: department?.trim() || null,
         legalEntityId: legalEntityId || null,
         businessUnitId: businessUnitId || null,

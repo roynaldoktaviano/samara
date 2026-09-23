@@ -40,6 +40,8 @@ interface TripGroup {
   yachtName: string
   tripLabel: string
   tripType: 'Sharing' | 'Private'
+  tripNumber: number | null
+  tripYear: number
   startDate: string
   endDate: string
   duration: string
@@ -277,6 +279,9 @@ export default function TripSheet() {
                             <div className="text-[10px] font-semibold mt-0.5" style={{ color: yachtColorMap[g.yachtName] }}>{g.yachtName}</div>
                             <div className="text-[10px] text-muted-foreground font-normal">{g.tripLabel}</div>
                             <div className="flex items-center gap-1 mt-1">
+                              {g.tripNumber != null && (
+                                <span className="text-[10px] font-mono text-muted-foreground">#{g.tripNumber}/{g.tripYear}</span>
+                              )}
                               <span className="text-[10px] text-muted-foreground">{g.duration}</span>
                               <Badge className={`text-[9px] px-1.5 py-0 ${TRIP_TYPE_STYLE[g.tripType]}`}>{g.tripType}</Badge>
                             </div>
@@ -343,6 +348,9 @@ export default function TripSheet() {
                 <Ship className="h-4 w-4 text-muted-foreground" />
                 <span style={{ color: yachtColorMap[selectedTrip.yachtName] }}>{selectedTrip.yachtName}</span>
                 <span className="text-muted-foreground">· {selectedTrip.tripLabel}</span>
+                {selectedTrip.tripNumber != null && (
+                  <span className="text-xs font-mono font-normal text-muted-foreground">#{selectedTrip.tripNumber}/{selectedTrip.tripYear}</span>
+                )}
               </DialogTitle>
             </DialogHeader>
 
