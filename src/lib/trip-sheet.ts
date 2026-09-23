@@ -31,7 +31,7 @@ function bookingFinancials(booking: {
   useB2BCommission?: boolean
   agent: { commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null
   services: { price: number; quantity: number }[]
-  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date }[]
+  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean }[]
 }) {
   // totalPrice is already net of discount + TNK (services), quoted in USD baseline
   // (see BookingWizard: total = max(0, base - discountAmt) + services)
@@ -49,23 +49,30 @@ function bookingFinancials(booking: {
   const totalUSD = trip + tnk
   const totalIDR = (booking.currency === 'IDR' && booking.exchangeRate) ? totalUSD * booking.exchangeRate : null
 
-  const dpPayment = booking.payments.find(p => p.paymentType === 'DP' && p.status === 'confirmed')
-  const pelunasanPayment = booking.payments.find(p => p.paymentType === 'PELUNASAN' && p.status === 'confirmed')
-  const dp = dpPayment?.amount ?? 0
-  const pelunasan = pelunasanPayment?.amount ?? 0
+  // A deposit can arrive as several installments (1st/2nd/... DP) — sum all confirmed ones
+  // rather than just the first, so `dp`/`balance` stay correct once a booking has more than one.
+  const dpPayments = booking.payments.filter(p => p.paymentType === 'DP' && p.status === 'confirmed')
+  const pelunasanPayments = booking.payments.filter(p => p.paymentType === 'PELUNASAN' && p.status === 'confirmed')
+  const dp = dpPayments.reduce((s, p) => s + p.amount, 0)
+  const pelunasan = pelunasanPayments.reduce((s, p) => s + p.amount, 0)
   const balance = Math.max(0, totalUSD - dp - pelunasan)
 
   const latestPayment = booking.payments[booking.payments.length - 1] ?? null
-  const referencePayment = pelunasanPayment ?? dpPayment ?? latestPayment
+  const referencePayment = pelunasanPayments[pelunasanPayments.length - 1] ?? dpPayments[dpPayments.length - 1] ?? latestPayment
 
-  const paymentStatusLabel = balance <= 0 && (dpPayment || pelunasanPayment)
+  const paymentStatusLabel = balance <= 0 && (dpPayments.length > 0 || pelunasanPayments.length > 0)
     ? 'PAID'
     : (referencePayment?.status ?? 'unpaid')
 
+  // Every confirmed payment that got its own invoice document (hasDocument:false ones are
+  // top-up DPs folded into an earlier invoice, with no document of their own to link to).
+  const invoices = booking.payments
+    .filter(p => p.status === 'confirmed' && p.hasDocument !== false && p.invoiceNumber)
+    .map(p => ({ invoiceNumber: p.invoiceNumber, paymentId: p.id }))
+
   return {
     publish, discount, discountPct, trip, tnk, totalUSD, totalIDR, agentCommission, dp, pelunasan, balance,
-    invoiceNumber: referencePayment?.invoiceNumber ?? null,
-    paymentId: referencePayment?.id ?? null,
+    invoices,
     paymentMethod: referencePayment?.paymentMethod ?? null,
     paymentStatusLabel,
   }
@@ -88,7 +95,7 @@ function bookingRows(booking: {
   totalPrice: number
   discount: number
   services: { price: number; quantity: number }[]
-  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date }[]
+  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean }[]
 }) {
   const agentName = booking.source === 'AGENT' && booking.agent?.name ? booking.agent.name : 'Direct'
   const salespersonName = booking.salespersonUser?.name ?? booking.salesperson ?? '—'

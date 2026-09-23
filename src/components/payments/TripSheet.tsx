@@ -29,8 +29,7 @@ interface TripRow {
   dp: number
   pelunasan: number
   balance: number
-  invoiceNumber: string | null
-  paymentId: string | null
+  invoices: { invoiceNumber: string; paymentId: string }[]
   paymentMethod: string | null
   paymentStatusLabel: string
 }
@@ -140,7 +139,7 @@ export default function TripSheet() {
     .map(g => q ? { ...g, rows: g.rows.filter(r =>
       r.guestName.toLowerCase().includes(q) ||
       r.bookingCode.toLowerCase().includes(q) ||
-      (r.invoiceNumber ?? '').toLowerCase().includes(q) ||
+      r.invoices.some(inv => inv.invoiceNumber.toLowerCase().includes(q)) ||
       r.agentName.toLowerCase().includes(q)
     ) } : g)
     .filter(g => g.rows.length > 0)
@@ -304,12 +303,16 @@ export default function TripSheet() {
                       {isFirstOfBooking && (
                         <>
                           <TableCell rowSpan={r.guestRowCount}>
-                            {r.invoiceNumber && r.paymentId ? (
-                              <a href={`/print/invoice/${r.paymentId}`} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[#1a5f6e] hover:underline font-medium whitespace-nowrap">
-                                {r.invoiceNumber}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
+                            {r.invoices.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {r.invoices.map(inv => (
+                                  <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[#1a5f6e] hover:underline font-medium whitespace-nowrap">
+                                    {inv.invoiceNumber}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                ))}
+                              </div>
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right border-l">${fmt(r.publish)}</TableCell>
@@ -421,13 +424,13 @@ export default function TripSheet() {
                               <Badge className={`text-[10px] ${PAYMENT_STATUS_STYLE[r0.paymentStatusLabel] ?? PAYMENT_STATUS_STYLE.unpaid}`}>
                                 {r0.paymentStatusLabel === 'PAID' ? 'PAID' : r0.paymentStatusLabel.replace('_', ' ')}
                               </Badge>
-                              {r0.invoiceNumber && r0.paymentId && (
-                                <a href={`/print/invoice/${r0.paymentId}`} target="_blank" rel="noopener noreferrer"
+                              {r0.invoices.map(inv => (
+                                <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 text-[#1a5f6e] hover:underline font-medium">
-                                  {r0.invoiceNumber}
+                                  {inv.invoiceNumber}
                                   <ExternalLink className="h-3 w-3" />
                                 </a>
-                              )}
+                              ))}
                             </div>
                           </div>
 

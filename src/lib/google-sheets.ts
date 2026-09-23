@@ -93,7 +93,7 @@ function buildVesselSheet(groups: TripSheetGroup[]) {
           r.agentName,
           r.salesperson,
           r.cabin,
-          isFirstOfBooking ? (r.invoiceNumber ?? '') : '',
+          isFirstOfBooking ? r.invoices.map(inv => inv.invoiceNumber).join(', ') : '',
           isFirstOfBooking ? round2(r.publish) : '',
           isFirstOfBooking ? (r.discountPct > 0 ? round2(r.discountPct) : '') : '',
           isFirstOfBooking ? (r.agentCommission > 0 ? round2(r.agentCommission) : '') : '',
