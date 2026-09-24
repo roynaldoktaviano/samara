@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { putToR2 } from '@/lib/r2'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
@@ -128,6 +129,13 @@ export async function POST(request: NextRequest) {
   const body = JSON.parse(rawBody) as CloudApiBody
   if (body.object !== 'whatsapp_business_account') return NextResponse.json({ ok: true, ignored: true })
 
+  // Set when a message arrived on a number we can't map to a brand (phone_number_id not
+  // configured / mistyped in tenant secrets). Those messages are NOT saved — a thread with
+  // no brand can't be replied to or distributed — and we answer non-2xx at the end so Meta
+  // keeps redelivering them (for up to ~7 days) until the config is fixed. Everything else
+  // in the batch is still processed now; redelivery is safe thanks to the providerMessageId dedupe.
+  let hasUnroutedMessages = false
+
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value
@@ -142,6 +150,11 @@ export async function POST(request: NextRequest) {
           where: { providerMessageId: status.id },
           data: { status: mapped as 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' },
         }).catch(() => {})
+      }
+
+      if (!brand) {
+        if (value.messages?.length) hasUnroutedMessages = true
+        continue
       }
 
       // Inbound messages
@@ -168,18 +181,35 @@ export async function POST(request: NextRequest) {
         }
 
         const preview = text ?? (mediaUrl ? '📎 Attachment' : '')
-        // Only a brand-new number gets assigned (per the admin-configured pool/method,
-        // see pickNextSalesUserId) — an existing conversation keeps whoever it was
-        // first assigned to.
-        const existing = await db.whatsappConversation.findUnique({ where: { phone: msg.from }, select: { id: true } })
-        const conversation = existing
-          ? await db.whatsappConversation.update({
-              where: { id: existing.id },
-              data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
+        // One thread per (number, brand) — the same customer messaging Samara and then
+        // Otium gets two threads, each distributed via that brand's own pool and replied
+        // from that brand's number. Only a brand-new thread gets assigned (per the
+        // admin-configured pool/method, see pickNextSalesUserId) — an existing one keeps
+        // whoever holds it (admins can reassign from the thread header).
+        const conversationKey = { phone_brand: { phone: msg.from, brand } }
+        const touchExisting = (id: string) => db.whatsappConversation.update({
+          where: { id },
+          data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
+        })
+        const existing = await db.whatsappConversation.findUnique({ where: conversationKey, select: { id: true } })
+        let isNewConversation = false
+        let conversation
+        if (existing) {
+          conversation = await touchExisting(existing.id)
+        } else {
+          try {
+            conversation = await db.whatsappConversation.create({
+              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: await pickNextSalesUserId(db, brand), brand },
             })
-          : await db.whatsappConversation.create({
-              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: brand ? await pickNextSalesUserId(db, brand) : null, brand },
-            })
+            isNewConversation = true
+          } catch (e) {
+            // Two first-messages from the same new number delivered concurrently — the other
+            // delivery created the thread a moment ago, so just append to it.
+            if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e
+            const raced = await db.whatsappConversation.findUniqueOrThrow({ where: conversationKey, select: { id: true } })
+            conversation = await touchExisting(raced.id)
+          }
+        }
 
         // Resolve the quoted message (if this is a reply) — Meta only gives us its WAMID,
         // so we look up which of our own rows that maps back to via providerMessageId.
@@ -196,17 +226,30 @@ export async function POST(request: NextRequest) {
         // chime, see src/app/page.tsx's 'chat' SSE handler) and a browser/OS push so they
         // still hear about it if the app isn't open. Best-effort, fire-and-forget: a
         // failure here shouldn't hold up acking the webhook to Meta.
+        const notifTitle = `WhatsApp from ${contactName || msg.from}`
+        const notifBody = preview || 'New message'
         if (conversation.assignedToId) {
-          const notifTitle = `WhatsApp from ${contactName || msg.from}`
-          const notifBody = preview || 'New message'
           db.notification.create({
             data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title: notifTitle, body: notifBody },
           }).catch(() => {})
           sendPushToUser(db, conversation.assignedToId, { title: notifTitle, body: notifBody, url: '/' }).catch(() => {})
+        } else if (isNewConversation) {
+          // Nobody in this brand's distribution pool — the chat sits unassigned (every SALES
+          // rep can see and claim it), so tell admins once so it doesn't go unanswered.
+          const unassignedTitle = `Unassigned WhatsApp (${brand}) from ${contactName || msg.from}`
+          db.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } }).then(admins => {
+            for (const a of admins) {
+              db.notification.create({ data: { userId: a.id, type: 'WHATSAPP_MESSAGE', title: unassignedTitle, body: notifBody } }).catch(() => {})
+              sendPushToUser(db, a.id, { title: unassignedTitle, body: notifBody, url: '/' }).catch(() => {})
+            }
+          }).catch(() => {})
         }
       }
     }
   }
 
+  if (hasUnroutedMessages) {
+    return NextResponse.json({ error: 'Message received on a WhatsApp number that is not configured for any brand' }, { status: 503 })
+  }
   return NextResponse.json({ ok: true })
 }

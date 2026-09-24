@@ -10,6 +10,15 @@ export interface SendWhatsappResult {
   error?: string
 }
 
+// Meta sends/expects numbers as bare international digits (e.g. 628123456789). Staff
+// typing a number by hand often use the local "0812..." form, which Meta rejects and which
+// would never match the inbound webhook's copy of the same number — so a leading 0 is
+// treated as Indonesia's +62. Anything else is kept as international digits as-is.
+export function normalizeWhatsappPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  return digits.startsWith('0') ? `62${digits.slice(1)}` : digits
+}
+
 function cloudApiMediaType(mimeType?: string): 'image' | 'video' | 'audio' | 'document' {
   if (mimeType?.startsWith('image/')) return 'image'
   if (mimeType?.startsWith('video/')) return 'video'

@@ -88,6 +88,7 @@ import SeparationPage from '@/components/hr/SeparationPage'
 import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import WhatsappDistributionSettings from '@/components/whatsapp/WhatsappDistributionSettings'
+import WhatsappTemplateSettings from '@/components/whatsapp/WhatsappTemplateSettings'
 import Banks from '@/components/banks/Banks'
 import MarketingBrands from '@/components/marketing/brands/Brands'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
@@ -812,6 +813,7 @@ export default function Home() {
       case 'chat-inbox':   return <UnifiedInbox onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
       case 'chat-whatsapp-distribution': return <WhatsappDistributionSettings />
+      case 'chat-whatsapp-templates': return <WhatsappTemplateSettings />
       case 'open-trips':   return <OpenTrips />
       case 'expenses':     return <Expenses />
       case 'maintenance':  return <Maintenance />

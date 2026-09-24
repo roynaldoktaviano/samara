@@ -55,3 +55,23 @@ export async function pickNextSalesUserId(db: PrismaClient, brand: WhatsappBrand
   const pointer = rows[0]?.value ?? 1
   return participants[(pointer - 1) % participants.length].userId
 }
+
+// A SALES rep can open/reply to a chat that's assigned to them, or one nobody holds yet
+// (no pool configured for that brand when it came in, or an admin released it) — the
+// latter gets claimed by whoever acts on it first, see claimWhatsappConversation.
+export function salesCanAccessConversation(conversation: { assignedToId: string | null }, userId: string): boolean {
+  return conversation.assignedToId === null || conversation.assignedToId === userId
+}
+
+// Atomically takes an unassigned conversation for `userId` — the `assignedToId: null`
+// guard means two reps clicking at once can't both win. Returns true if `userId` holds
+// it afterwards (including when they already did).
+export async function claimWhatsappConversation(db: PrismaClient, conversationId: string, userId: string): Promise<boolean> {
+  const { count } = await db.whatsappConversation.updateMany({
+    where: { id: conversationId, assignedToId: null },
+    data: { assignedToId: userId },
+  })
+  if (count > 0) return true
+  const current = await db.whatsappConversation.findUnique({ where: { id: conversationId }, select: { assignedToId: true } })
+  return current?.assignedToId === userId
+}

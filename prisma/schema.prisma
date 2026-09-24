@@ -285,21 +285,21 @@ model Lead {
   updatedAt           DateTime  @updatedAt
 
   // Pipeline / qualification
-  stage             LeadStage    @default(NEW)
-  stageUpdatedAt    DateTime?
-  stageUpdatedById  String?
-  stageUpdatedBy    User?        @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
-  productInterest   String? // yacht / product interest, free text
-  destinationId     String?
-  destination       Destination? @relation("LeadDestination", fields: [destinationId], references: [id])
-  travelStartDate   DateTime?
-  travelEndDate     DateTime?
-  travelSeason      String? // free-text fallback when exact dates aren't known yet
-  guestCount        Int?
-  leadQuality       LeadQuality?
-  budgetMin         Float? // optional — never required to advance stage
-  budgetMax         Float?
-  budgetCurrency    String?
+  stage            LeadStage    @default(NEW)
+  stageUpdatedAt   DateTime?
+  stageUpdatedById String?
+  stageUpdatedBy   User?        @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
+  productInterest  String? // yacht / product interest, free text
+  destinationId    String?
+  destination      Destination? @relation("LeadDestination", fields: [destinationId], references: [id])
+  travelStartDate  DateTime?
+  travelEndDate    DateTime?
+  travelSeason     String? // free-text fallback when exact dates aren't known yet
+  guestCount       Int?
+  leadQuality      LeadQuality?
+  budgetMin        Float? // optional — never required to advance stage
+  budgetMax        Float?
+  budgetCurrency   String?
 
   inquiries Inquiry[]
   pageViews PageView[]
@@ -4160,7 +4160,10 @@ enum WhatsappBrand {
 
 model WhatsappConversation {
   id                 String   @id @default(cuid())
-  phone              String   @unique // whatever format the provider sends, kept as-is
+  // Whatever format the provider sends, kept as-is. NOT unique on its own — the same
+  // customer messaging two of our numbers (e.g. Samara then Otium) gets a separate thread
+  // per brand, so each is distributed/replied from the right number (see @@unique below).
+  phone              String
   contactName        String?
   lastMessageAt      DateTime @default(now())
   lastMessagePreview String?
@@ -4175,10 +4178,12 @@ model WhatsappConversation {
   assignedToId String?
   assignedTo   User?   @relation("WhatsappConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
 
-  brand WhatsappBrand?
+  // Which of our numbers this thread lives on — every reply goes out from this brand's number.
+  brand WhatsappBrand @default(SAMARA)
 
   messages WhatsappMessage[]
 
+  @@unique([phone, brand])
   @@index([lastMessageAt])
   @@index([assignedToId])
   @@index([brand])
@@ -4212,6 +4217,24 @@ model WhatsappMessage {
   replies   WhatsappMessage[] @relation("WhatsappMessageReplies")
 
   @@index([conversationId, createdAt])
+}
+
+// Admin-registered Message Templates (HSM) per brand — mirrors what's been approved in
+// Meta Business Manager (WhatsApp Manager > Message Templates), since Meta has no simple
+// "list approved templates" call without extra WABA permissions. `name`/`language` must
+// match Meta exactly; `bodyText` (with {{1}}, {{2}}, ...) is only for local preview/display.
+model WhatsappTemplate {
+  id          String        @id @default(cuid())
+  brand       WhatsappBrand
+  name        String
+  label       String
+  language    String
+  bodyText    String
+  paramLabels String[]      @default([])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([brand, name, language])
 }
 
 // Admin-configured pool of sales reps that new WhatsApp chats get assigned to, kept

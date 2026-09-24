@@ -12,7 +12,8 @@ import { Search, MessageCircle, Instagram, Mail, Plus, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils'
 import type { ChatChannel, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
-import { WHATSAPP_TEMPLATES, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
 import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
 
@@ -82,7 +83,8 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
   const filtered = useMemo(() => {
     let list = items
     if (brandFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.brand === brandFilter)
-    if (salesFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.assignedToId === salesFilter)
+    if (salesFilter === 'unassigned') list = list.filter(i => i.channel === 'whatsapp' && !i.assignedToId)
+    else if (salesFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.assignedToId === salesFilter)
     const q = search.trim().toLowerCase()
     if (q) list = list.filter(i => i.name.toLowerCase().includes(q) || i.preview?.toLowerCase().includes(q))
     return list
@@ -94,7 +96,7 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
     if (item.unreadCount > 0) setItems(prev => prev.map(p => p.id === item.id && p.channel === item.channel ? { ...p, unreadCount: 0 } : p))
   }
 
-  async function startChat(payload: { phone: string; brand: WhatsappBrand; templateName: string; templateParams: string[]; contactName?: string }) {
+  async function startChat(payload: NewChatPayload) {
     const res = await fetch('/api/whatsapp/conversations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
@@ -151,6 +153,7 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All sales</SelectItem>
+                <SelectItem value="unassigned">Belum di-assign</SelectItem>
                 {salesUsers.map(u => (
                   <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
                 ))}
@@ -200,8 +203,13 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
                     <p className={cn('text-xs truncate mt-0.5', unread ? 'text-foreground' : 'text-muted-foreground')}>
                       {item.preview || '—'}
                     </p>
-                    {isAdmin && item.channel === 'whatsapp' && item.assignedToName && (
-                      <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">Sales: {item.assignedToName}</p>
+                    {item.channel === 'whatsapp' && (
+                      <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                        {item.brand && WHATSAPP_BRAND_LABELS[item.brand]}
+                        {!item.assignedToId
+                          ? <span className="text-amber-600 font-medium"> · Belum di-assign</span>
+                          : isAdmin && item.assignedToName && <> · Sales: {item.assignedToName}</>}
+                      </p>
                     )}
                   </div>
 
@@ -222,7 +230,7 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
           </div>
         </div>
       ) : selected.channel === 'whatsapp' ? (
-        <WhatsAppThread key={selected.id} conversationId={selected.id} onConversationUpdate={load} />
+        <WhatsAppThread key={selected.id} conversationId={selected.id} onConversationUpdate={load} salesUsers={salesUsers} />
       ) : (
         <InstagramThread key={selected.id} conversationId={selected.id} onConversationUpdate={load} />
       )}
@@ -233,32 +241,29 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
 /**
  * Starting a WhatsApp thread with someone who's never messaged in requires a Message
  * Template (Meta rejects free text outside the 24h customer-service window) — see
- * src/lib/whatsapp-templates.ts for the registry and POST /api/whatsapp/conversations.
+ * Chat > WhatsApp Templates (src/lib/whatsapp-templates.ts) and POST /api/whatsapp/conversations.
  */
-function NewChatForm({ onSubmit }: { onSubmit: (payload: { phone: string; brand: WhatsappBrand; templateName: string; templateParams: string[]; contactName?: string }) => Promise<{ ok: boolean; error?: string; providerError?: string }> }) {
+interface NewChatPayload { phone: string; brand: WhatsappBrand; templateName: string; templateLanguage: string; templateParams: string[]; contactName?: string }
+
+function NewChatForm({ onSubmit }: { onSubmit: (payload: NewChatPayload) => Promise<{ ok: boolean; error?: string; providerError?: string }> }) {
   const [phone, setPhone] = useState('')
   const [contactName, setContactName] = useState('')
   const [brand, setBrand] = useState<WhatsappBrand>('SAMARA')
-  const [templateName, setTemplateName] = useState(WHATSAPP_TEMPLATES.SAMARA[0]?.name ?? '')
+  const [templateName, setTemplateName] = useState('')
   const [templateParams, setTemplateParams] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const templates = WHATSAPP_TEMPLATES[brand]
-  const selectedTemplate = templates.find(t => t.name === templateName)
-
-  function changeBrand(b: WhatsappBrand) {
-    setBrand(b)
-    const first = WHATSAPP_TEMPLATES[b][0]
-    setTemplateName(first?.name ?? '')
-    setTemplateParams(new Array(first?.paramLabels?.length ?? 0).fill(''))
-  }
+  const templates = useWhatsappTemplates(brand)
+  // Falls back to the brand's first template until one is picked (and after a brand switch,
+  // since the old pick won't exist in the new brand's list).
+  const selectedTemplate = templates.find(t => templateKey(t) === templateName) ?? templates[0]
 
   async function handleSubmit() {
     if (!phone.trim() || !selectedTemplate) return
     setSubmitting(true)
     setError(null)
-    const result = await onSubmit({ phone: phone.trim(), brand, templateName: selectedTemplate.name, templateParams, contactName: contactName.trim() || undefined })
+    const result = await onSubmit({ phone: phone.trim(), brand, templateName: selectedTemplate.name, templateLanguage: selectedTemplate.language, templateParams, contactName: contactName.trim() || undefined })
     setSubmitting(false)
     if (!result.ok) setError(result.error ?? 'Failed to start conversation')
     else if (result.providerError) setError(`Terkirim tapi WhatsApp menolak: ${result.providerError}`)
@@ -268,7 +273,8 @@ function NewChatForm({ onSubmit }: { onSubmit: (payload: { phone: string; brand:
     <div className="space-y-3">
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">Nomor WhatsApp</label>
-        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="62812xxxxxxx" className="h-9" />
+        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="62812xxxxxxx / 0812xxxxxxx" className="h-9" />
+        <p className="text-[11px] text-muted-foreground">Nomor luar negeri pakai kode negara (mis. 61…, 44…). Awalan 0 otomatis jadi 62.</p>
       </div>
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">Nama (opsional)</label>
@@ -276,7 +282,7 @@ function NewChatForm({ onSubmit }: { onSubmit: (payload: { phone: string; brand:
       </div>
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">Nomor Brand</label>
-        <Select value={brand} onValueChange={v => changeBrand(v as WhatsappBrand)}>
+        <Select value={brand} onValueChange={v => { setBrand(v as WhatsappBrand); setTemplateName(''); setTemplateParams([]) }}>
           <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
@@ -285,10 +291,10 @@ function NewChatForm({ onSubmit }: { onSubmit: (payload: { phone: string; brand:
       </div>
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">Template</label>
-        <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => t.name === v)?.paramLabels?.length ?? 0).fill('')) }}>
+        <Select value={selectedTemplate ? templateKey(selectedTemplate) : ''} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => templateKey(t) === v)?.paramLabels?.length ?? 0).fill('')) }}>
           <SelectTrigger className="h-9"><SelectValue placeholder="Pilih template" /></SelectTrigger>
           <SelectContent>
-            {templates.map(t => <SelectItem key={t.name} value={t.name}>{t.label}</SelectItem>)}
+            {templates.map(t => <SelectItem key={templateKey(t)} value={templateKey(t)}>{t.label} ({t.language})</SelectItem>)}
           </SelectContent>
         </Select>
       </div>

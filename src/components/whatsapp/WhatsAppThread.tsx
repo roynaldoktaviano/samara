@@ -1,15 +1,18 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
+import { toast } from 'sonner'
 import { uploadToR2 } from '@/lib/r2-client'
-import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon, FileText } from 'lucide-react'
+import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon, FileText, UserPlus } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { WHATSAPP_TEMPLATES, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
-import type { WhatsappBrand } from '@/lib/whatsapp-brands'
+import { renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
 
 const ACCENT = '#25D366' // WhatsApp green — this module only
 
@@ -27,8 +30,13 @@ interface Message {
   replyTo: QuotedMessage | null
 }
 interface ConversationDetail {
-  id: string; phone: string; contactName: string | null; brand: WhatsappBrand | null; windowOpen: boolean; messages: Message[]
+  id: string; phone: string; contactName: string | null; brand: WhatsappBrand; windowOpen: boolean; messages: Message[]
+  assignedToId: string | null
+  assignedTo: { id: string; name: string | null; email: string } | null
 }
+export interface SalesUserOption { id: string; name: string | null; email: string }
+
+const UNASSIGNED = '__unassigned__'
 
 function initials(name: string | null, phone: string) {
   if (name?.trim()) return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
@@ -56,7 +64,16 @@ function StatusIcon({ status }: { status: Message['status'] }) {
  * into its own right-hand pane next to a shared conversation list, instead of WhatsApp needing its
  * own separate screen with its own separate list.
  */
-export default function WhatsAppThread({ conversationId, onConversationUpdate }: { conversationId: string; onConversationUpdate: () => void }) {
+export default function WhatsAppThread({ conversationId, onConversationUpdate, salesUsers = [] }: {
+  conversationId: string
+  onConversationUpdate: () => void
+  // ADMIN only — the reps a chat can be reassigned to from the header.
+  salesUsers?: SalesUserOption[]
+}) {
+  const { data: session } = useSession()
+  const role = (session?.user as { role?: string })?.role ?? ''
+  const isAdmin = role === 'ADMIN'
+  const [assigning, setAssigning] = useState(false)
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -70,8 +87,8 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const templates = WHATSAPP_TEMPLATES[detail?.brand ?? 'SAMARA']
-  const selectedTemplate = templates.find(t => t.name === templateName)
+  const templates = useWhatsappTemplates(detail?.brand)
+  const selectedTemplate = templates.find(t => templateKey(t) === templateName)
 
   const loadDetail = useCallback(async () => {
     const res = await fetch(`/api/whatsapp/conversations/${conversationId}`)
@@ -102,15 +119,34 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [detail?.messages.length])
 
-  async function postMessage(payload: { body?: string; mediaUrl?: string; mediaType?: string; templateName?: string; templateParams?: string[] }) {
+  async function postMessage(payload: { body?: string; mediaUrl?: string; mediaType?: string; templateName?: string; templateLanguage?: string; templateParams?: string[] }) {
     const res = await fetch(`/api/whatsapp/conversations/${conversationId}/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...payload, replyToId: replyTo?.id }),
     })
     const data = await res.json().catch(() => ({}))
+    if (!res.ok) toast.error(data?.error ?? 'Failed to send message')
+    else if (data?.providerError) toast.error(`WhatsApp menolak pesan: ${data.providerError}`)
     if (data?.message) setDetail(prev => prev ? { ...prev, messages: [...prev.messages, data.message] } : prev)
     setReplyTo(null)
+    await loadDetail()
     onConversationUpdate()
+  }
+
+  // ADMIN: reassign/release. SALES: claim an unassigned chat for themselves.
+  async function assignTo(assignedToId: string | null) {
+    setAssigning(true)
+    try {
+      const res = await fetch(`/api/whatsapp/conversations/${conversationId}/assign`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedToId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to update assignment'); return }
+      await loadDetail()
+      onConversationUpdate()
+    } finally {
+      setAssigning(false)
+    }
   }
 
   async function sendMessage() {
@@ -122,7 +158,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
   }
 
   function openTemplatePicker() {
-    setTemplateName(templates[0]?.name ?? '')
+    setTemplateName(templates[0] ? templateKey(templates[0]) : '')
     setTemplateParams(new Array(templates[0]?.paramLabels?.length ?? 0).fill(''))
     setTemplateOpen(true)
   }
@@ -131,7 +167,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
     if (!selectedTemplate) return
     setSendingTemplate(true)
     try {
-      await postMessage({ templateName: selectedTemplate.name, templateParams })
+      await postMessage({ templateName: selectedTemplate.name, templateLanguage: selectedTemplate.language, templateParams })
       setTemplateOpen(false)
     } finally {
       setSendingTemplate(false)
@@ -160,11 +196,37 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
             {initials(detail?.contactName ?? null, detail?.phone ?? '')}
           </AvatarFallback>
         </Avatar>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold truncate">{detail?.contactName || detail?.phone}</p>
-          <p className="text-xs text-muted-foreground">{detail?.phone}</p>
+          <p className="text-xs text-muted-foreground">
+            {detail?.phone}
+            {detail && <> · via <span className="font-medium">{WHATSAPP_BRAND_LABELS[detail.brand]}</span></>}
+          </p>
         </div>
+        {detail && isAdmin && (
+          <Select value={detail.assignedToId ?? UNASSIGNED} onValueChange={v => assignTo(v === UNASSIGNED ? null : v)} disabled={assigning}>
+            <SelectTrigger className="h-8 w-48 text-xs shrink-0" title="Sales yang memegang chat ini">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNASSIGNED}>Belum di-assign</SelectItem>
+              {/* Keep the current holder selectable even if they've since lost the SALES role. */}
+              {detail.assignedTo && !salesUsers.some(u => u.id === detail.assignedToId) && (
+                <SelectItem value={detail.assignedTo.id}>{detail.assignedTo.name ?? detail.assignedTo.email}</SelectItem>
+              )}
+              {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
+      {detail && !isAdmin && detail.assignedToId === null && (
+        <div className="px-5 py-2 bg-amber-50 border-b text-xs flex items-center justify-between gap-2 shrink-0">
+          <span className="text-amber-800">Chat ini belum dipegang sales mana pun. Ambil supaya masuk ke daftar kamu (membalas juga otomatis mengambilnya).</span>
+          <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={assigning} onClick={() => session?.user?.id && assignTo(session.user.id)}>
+            {assigning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><UserPlus className="h-3.5 w-3.5 mr-1" /> Ambil chat</>}
+          </Button>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {detailLoading ? (
@@ -260,10 +322,10 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate }:
                 <p className="text-xs font-medium">Message Template</p>
                 <p className="text-[11px] text-muted-foreground">Dipakai kalau customer belum pernah chat, atau sudah &gt;24 jam sejak balasan terakhirnya.</p>
               </div>
-              <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => t.name === v)?.paramLabels?.length ?? 0).fill('')) }}>
+              <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => templateKey(t) === v)?.paramLabels?.length ?? 0).fill('')) }}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Pilih template" /></SelectTrigger>
                 <SelectContent>
-                  {templates.map(t => <SelectItem key={t.name} value={t.name}>{t.label}</SelectItem>)}
+                  {templates.map(t => <SelectItem key={templateKey(t)} value={templateKey(t)}>{t.label} ({t.language})</SelectItem>)}
                 </SelectContent>
               </Select>
               {selectedTemplate?.paramLabels?.map((label, i) => (

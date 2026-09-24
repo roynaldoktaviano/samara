@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { sendWhatsappMessage, sendWhatsappTemplateMessage } from '@/lib/whatsapp'
 import { findWhatsappTemplate, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { claimWhatsappConversation } from '@/lib/whatsapp-distribution'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent from here, regardless of
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const { body: rawText, mediaUrl, mediaType, replyToId, templateName, templateParams } = await req.json()
+  const { body: rawText, mediaUrl, mediaType, replyToId, templateName, templateLanguage, templateParams } = await req.json()
   const text: string | undefined = rawText?.trim() || undefined
   if (!text && !mediaUrl && !templateName) return NextResponse.json({ error: 'Message or attachment is required' }, { status: 400 })
 
@@ -27,7 +28,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const conversation = await db.whatsappConversation.findUnique({ where: { id } })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (role === 'SALES' && conversation.assignedToId !== session.user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (conversation.assignedToId !== null) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // Replying to an unassigned chat claims it — atomically, so if another rep got there
+    // first this reply is refused instead of two reps answering the same customer.
+    if (!(await claimWhatsappConversation(db, id, session.user.id))) {
+      return NextResponse.json({ error: 'This chat was just taken by another sales rep' }, { status: 409 })
+    }
   }
 
   let quotedProviderMessageId: string | null = null
@@ -39,11 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     quotedProviderMessageId = quoted.providerMessageId
   }
 
-  // Conversations created before brands existed (or whose phone_number_id didn't match
-  // any configured brand) have no brand on file — Samara was the only number that ever
-  // existed until now, so it's the only sane default to fall back to.
-  const brand = conversation.brand ?? 'SAMARA'
-  const templateDef = templateName ? findWhatsappTemplate(brand, templateName) : undefined
+  const brand = conversation.brand
+  const templateDef = templateName ? await findWhatsappTemplate(db, brand, templateName, templateLanguage) : undefined
   if (templateName && !templateDef) return NextResponse.json({ error: 'Unknown template' }, { status: 400 })
   const renderedBody = templateDef ? renderWhatsappTemplateBody(templateDef, templateParams ?? []) : text
 

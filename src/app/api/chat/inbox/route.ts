@@ -33,7 +33,8 @@ export async function GET() {
 
   const [whatsapp, instagram, email] = await Promise.all([
     db.whatsappConversation.findMany({
-      where: role === 'SALES' ? { assignedToId: session.user.id } : undefined,
+      // SALES: their own chats plus unassigned ones they can claim (see salesCanAccessConversation).
+      where: role === 'SALES' ? { OR: [{ assignedToId: session.user.id }, { assignedToId: null }] } : undefined,
       orderBy: { lastMessageAt: 'desc' },
       include: { assignedTo: { select: { id: true, name: true, email: true } } },
     }),

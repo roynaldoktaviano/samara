@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -14,6 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const conversation = await db.whatsappConversation.findUnique({
     where: { id },
     include: {
+      assignedTo: { select: { id: true, name: true, email: true } },
       messages: {
         orderBy: { createdAt: 'asc' },
         include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
@@ -21,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (role === 'SALES' && conversation.assignedToId !== session.user.id) {
+  if (role === 'SALES' && !salesCanAccessConversation(conversation, session.user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -47,7 +49,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   const db = await getDb(session)
   const existing = await db.whatsappConversation.findUnique({ where: { id }, select: { assignedToId: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (role === 'SALES' && existing.assignedToId !== session.user.id) {
+  if (role === 'SALES' && !salesCanAccessConversation(existing, session.user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
