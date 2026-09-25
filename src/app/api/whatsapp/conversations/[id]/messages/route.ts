@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { sendWhatsappMessage, sendWhatsappTemplateMessage } from '@/lib/whatsapp'
 import { findWhatsappTemplate, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { claimWhatsappConversation } from '@/lib/whatsapp-distribution'
+import { recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent from here, regardless of
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!(await claimWhatsappConversation(db, id, session.user.id))) {
       return NextResponse.json({ error: 'This chat was just taken by another sales rep' }, { status: 409 })
     }
+    await syncLeadOwner(db, id, 'CLAIM').catch(() => {})
   }
 
   let quotedProviderMessageId: string | null = null
@@ -84,6 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : { status: 'FAILED' },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
+  if (result.ok) await recordStaffReply(db, id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })
 }

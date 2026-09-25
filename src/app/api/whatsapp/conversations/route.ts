@@ -6,6 +6,7 @@ import { normalizeWhatsappPhone, sendWhatsappTemplateMessage } from '@/lib/whats
 import { findWhatsappTemplate, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { claimWhatsappConversation, pickNextSalesUserId } from '@/lib/whatsapp-distribution'
+import { autoLinkNewConversation, recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
       assignedToId: role === 'SALES' ? session.user.id : await pickNextSalesUserId(db, brand),
     },
   })
+  if (existing) await syncLeadOwner(db, conversation.id, role === 'SALES' ? 'CLAIM' : 'MANUAL').catch(() => {})
+  else await autoLinkNewConversation(db, conversation.id).catch(e => console.error('[whatsapp] auto-link failed', e))
 
   const renderedBody = renderWhatsappTemplateBody(templateDef, templateParams ?? [])
   const message = await db.whatsappMessage.create({
@@ -80,6 +83,7 @@ export async function POST(req: NextRequest) {
     where: { id: message.id },
     data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED' },
   })
+  if (result.ok) await recordStaffReply(db, conversation.id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))
 
   return NextResponse.json({ conversationId: conversation.id, providerError: result.ok ? undefined : result.error })
 }

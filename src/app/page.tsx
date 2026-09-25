@@ -89,6 +89,7 @@ import EmailInboxPage from '@/components/email-inbox/EmailInboxPage'
 import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import WhatsappDistributionSettings from '@/components/whatsapp/WhatsappDistributionSettings'
 import WhatsappTemplateSettings from '@/components/whatsapp/WhatsappTemplateSettings'
+import SalesPipeline from '@/components/leads/SalesPipeline'
 import Banks from '@/components/banks/Banks'
 import MarketingBrands from '@/components/marketing/brands/Brands'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
@@ -309,6 +310,7 @@ export default function Home() {
   // open inline in that same screen, but Email is still its own separate page (deliberately
   // not chat-bubble UI), so this tells it which conversation to auto-open once it mounts.
   const [emailDeepLinkId, setEmailDeepLinkId] = useState<string | null>(null)
+  const [whatsappDeepLinkId, setWhatsappDeepLinkId] = useState<string | null>(null)
   // Lets Item by Location's "click PO number" deep-link into a specific PO's
   // detail view on the Purchase Orders page — there's no URL routing between
   // top-level views in this app, so this is the plain state-lifting equivalent.
@@ -810,7 +812,8 @@ export default function Home() {
       case 'customers':    return <Customers />
       case 'leads':        return <Leads />
       case 'calendar':     return <CalendarView />
-      case 'chat-inbox':   return <UnifiedInbox onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'chat-inbox':   return <UnifiedInbox initialWhatsappId={whatsappDeepLinkId} onDeepLinkHandled={() => setWhatsappDeepLinkId(null)} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'sales-pipeline': return <SalesPipeline onOpenChat={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} />
       case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
       case 'chat-whatsapp-distribution': return <WhatsappDistributionSettings />
       case 'chat-whatsapp-templates': return <WhatsappTemplateSettings />

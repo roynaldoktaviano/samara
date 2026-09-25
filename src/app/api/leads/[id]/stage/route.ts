@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
-import { canTransition, getMissingQualificationFields, isLeadStage, LEAD_STAGE_LABEL, LEAD_TRANSITIONS } from '@/lib/lead-pipeline'
+import { canTransition, getMissingQualificationFields, isLeadLostReason, isLeadStage, LEAD_STAGE_LABEL, LEAD_TRANSITIONS } from '@/lib/lead-pipeline'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -12,7 +12,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const { id } = await params
     const body = await request.json()
-    const { stage: targetStage } = body
+    const { stage: targetStage, lostReason, lostNote, proposalSentAt } = body
 
     if (!isLeadStage(targetStage)) {
       return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
@@ -40,9 +40,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
     }
 
+    if (targetStage === 'CLOSED_LOST' && !isLeadLostReason(lostReason)) {
+      return NextResponse.json({ error: 'Pick a lost reason before marking this lead as Closed Lost.' }, { status: 400 })
+    }
+
     const updated = await db.lead.update({
       where: { id },
-      data: { stage: targetStage, stageUpdatedAt: new Date(), stageUpdatedById: session.user.id },
+      data: {
+        stage: targetStage, stageUpdatedAt: new Date(), stageUpdatedById: session.user.id,
+        ...(targetStage === 'OPPORTUNITY' && !lead.proposalSentAt
+          ? { proposalSentAt: proposalSentAt ? new Date(proposalSentAt) : new Date() }
+          : {}),
+        ...(targetStage === 'CLOSED_LOST' ? { lostReason, lostNote: typeof lostNote === 'string' && lostNote.trim() ? lostNote.trim() : null } : {}),
+      },
     })
 
     logActivity({

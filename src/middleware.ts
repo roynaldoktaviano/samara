@@ -48,6 +48,9 @@ const PUBLIC_PATHS = [
   '/api/marketing/automations/tick',
   // Scheduled-campaign dispatcher — triggered by Vercel Cron, authenticates via its own bearer secret
   '/api/marketing/campaigns/dispatch',
+  // Sales Pipeline 24h stagnant-lead reassignment — self-hosted interval in
+  // instrumentation-node.ts, authenticates via its own CRON_SECRET bearer token
+  '/api/leads/stagnant-check',
   // PWA manifest + service worker — must be fetchable pre-login (browsers request these
   // to decide installability before the user necessarily has a session)
   '/manifest.webmanifest',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
+import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
@@ -262,6 +263,12 @@ export async function POST(request: NextRequest) {
         rawPayload:   toJsonSafe(data),
       },
     })
+
+    // New or still-unowned Lead → rotate it to a sales rep from that website's brand pool
+    // (see autoAssignWebsiteLead). Best-effort: never fails the form submission.
+    if (ownerType === 'lead') {
+      await autoAssignWebsiteLead(db, ownerId, website, fullName).catch(e => console.error('[CF7 webhook] auto-assign failed', e))
+    }
 
     logActivity({
       userId: '', userName: 'Website CF7', userRole: 'SYSTEM',

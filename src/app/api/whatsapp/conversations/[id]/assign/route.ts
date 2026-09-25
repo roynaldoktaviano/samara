@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { claimWhatsappConversation } from '@/lib/whatsapp-distribution'
+import { syncLeadOwner } from '@/lib/whatsapp-lead'
 
 // Changes who holds a WhatsApp chat — distribution only ever assigns once (on the first
 // inbound message), so this is how a chat moves on when a rep leaves, is on leave, or the
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!(await claimWhatsappConversation(db, id, session.user.id))) {
       return NextResponse.json({ error: 'This chat is already handled by another sales rep' }, { status: 409 })
     }
+    await syncLeadOwner(db, id, 'CLAIM').catch(() => {})
     emitTenantEvent(session.user.tenantId, 'chat')
     return NextResponse.json({ ok: true })
   }
@@ -40,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await db.whatsappConversation.update({ where: { id }, data: { assignedToId } })
+  await syncLeadOwner(db, id, 'MANUAL').catch(() => {})
   emitTenantEvent(session.user.tenantId, 'chat')
 
   if (assignedToId && assignedToId !== conversation.assignedToId && assignedToId !== session.user.id) {

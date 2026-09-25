@@ -6,6 +6,7 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
+import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { sendPushToUser } from '@/lib/push'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
@@ -189,7 +190,7 @@ export async function POST(request: NextRequest) {
         const conversationKey = { phone_brand: { phone: msg.from, brand } }
         const touchExisting = (id: string) => db.whatsappConversation.update({
           where: { id },
-          data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
+          data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastInboundAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
         })
         const existing = await db.whatsappConversation.findUnique({ where: conversationKey, select: { id: true } })
         let isNewConversation = false
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
         } else {
           try {
             conversation = await db.whatsappConversation.create({
-              data: { phone: msg.from, contactName, lastMessagePreview: preview, unreadCount: 1, assignedToId: await pickNextSalesUserId(db, brand), brand },
+              data: { phone: msg.from, contactName, lastMessagePreview: preview, lastInboundAt: new Date(), unreadCount: 1, assignedToId: await pickNextSalesUserId(db, brand), brand },
             })
             isNewConversation = true
           } catch (e) {
@@ -221,6 +222,12 @@ export async function POST(request: NextRequest) {
           data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
         })
         emitTenantEvent(tenant.id, 'chat')
+
+        // Existing Lead/Guest with this number → link/categorise the new chat right away
+        // (see src/lib/whatsapp-lead.ts). Never blocks acking the webhook.
+        if (isNewConversation) {
+          await autoLinkNewConversation(db, conversation.id).catch(e => console.error('[whatsapp webhook] auto-link failed', e))
+        }
 
         // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +
         // chime, see src/app/page.tsx's 'chat' SSE handler) and a browser/OS push so they

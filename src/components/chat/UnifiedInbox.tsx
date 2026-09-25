@@ -44,7 +44,12 @@ function initials(name: string) {
  * stays a genuinely separate screen (different UI on purpose, not chat-bubble shaped) — an
  * email row here still hands off via onOpenEmail rather than opening inline.
  */
-export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string) => void }) {
+export default function UnifiedInbox({ onOpenEmail, initialWhatsappId, onDeepLinkHandled }: {
+  onOpenEmail: (id: string) => void
+  // Opens this WhatsApp chat straight away — used by the WhatsApp Pipeline's "open chat".
+  initialWhatsappId?: string | null
+  onDeepLinkHandled?: () => void
+}) {
   const { data: session } = useSession()
   const userRole = (session?.user as { role?: string })?.role ?? ''
   const isAdmin = userRole === 'ADMIN'
@@ -55,7 +60,9 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
   const [brandFilter, setBrandFilter] = useState<'all' | WhatsappBrand>('all')
   const [salesFilter, setSalesFilter] = useState('all')
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
-  const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(null)
+  const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(
+    initialWhatsappId ? { channel: 'whatsapp', id: initialWhatsappId } : null,
+  )
   const [newChatOpen, setNewChatOpen] = useState(false)
 
   const load = useCallback(async () => {
@@ -65,6 +72,8 @@ export default function UnifiedInbox({ onOpenEmail }: { onOpenEmail: (id: string
   }, [])
 
   useEffect(() => { load() }, [load])
+  // Consumed once on mount, so revisiting the inbox later doesn't reopen the same chat.
+  useEffect(() => { if (initialWhatsappId) onDeepLinkHandled?.() }, [])
   useEffect(() => {
     const t = setInterval(load, 10000)
     return () => clearInterval(t)

@@ -124,6 +124,9 @@ model User {
   updatedAt                              DateTime                          @updatedAt
   bookings                               Booking[]                         @relation("SalespersonBookings")
   leadStageUpdates                       Lead[]                            @relation("LeadStageUpdatedBy")
+  ownedLeads                             Lead[]                            @relation("LeadOwner")
+  leadAssignmentsFrom                    LeadAssignmentLog[]               @relation("LeadAssignmentFrom")
+  leadAssignmentsTo                      LeadAssignmentLog[]               @relation("LeadAssignmentTo")
   managedAgents                          Agent[]                           @relation("AgentSalesperson")
   waitingListItems                       WaitingList[]
   stockMovements                         StockMovement[]
@@ -270,6 +273,23 @@ enum LeadQuality {
   COLD
 }
 
+// Why a Lead changed hands — see LeadAssignmentLog.
+enum LeadAssignmentReason {
+  AUTO_DISTRIBUTION // first owner, picked from the brand's sales pool
+  CLAIM // a sales rep took an unowned lead/chat
+  MANUAL // an admin assigned/released it
+  STAGNANT // auto-moved after 24h without follow-up (src/lib/lead-stagnant.ts)
+}
+
+// Required when a lead is moved to CLOSED_LOST (see PATCH /api/leads/[id]/stage).
+enum LeadLostReason {
+  PRICE
+  DATES
+  COMPETITOR
+  NO_RESPONSE
+  OTHER
+}
+
 model Lead {
   id                  String    @id @default(cuid())
   name                String
@@ -285,13 +305,13 @@ model Lead {
   updatedAt           DateTime  @updatedAt
 
   // Pipeline / qualification
-  stage            LeadStage    @default(NEW)
+  stage            LeadStage       @default(NEW)
   stageUpdatedAt   DateTime?
   stageUpdatedById String?
-  stageUpdatedBy   User?        @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
+  stageUpdatedBy   User?           @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
   productInterest  String? // yacht / product interest, free text
   destinationId    String?
-  destination      Destination? @relation("LeadDestination", fields: [destinationId], references: [id])
+  destination      Destination?    @relation("LeadDestination", fields: [destinationId], references: [id])
   travelStartDate  DateTime?
   travelEndDate    DateTime?
   travelSeason     String? // free-text fallback when exact dates aren't known yet
@@ -300,15 +320,51 @@ model Lead {
   budgetMin        Float? // optional — never required to advance stage
   budgetMax        Float?
   budgetCurrency   String?
+  // Set (defaulting to "now") when the lead first moves to OPPORTUNITY — the single
+  // OPPORTUNITY stage covers both "proposal sent" and "negotiating", this dates the former.
+  proposalSentAt   DateTime?
+  lostReason       LeadLostReason?
+  lostNote         String?
 
-  inquiries Inquiry[]
-  pageViews PageView[]
+  // Sales rep who owns this lead. For WhatsApp-sourced leads it's kept in sync with the
+  // linked chat's assignedToId (chat owner = lead owner, see src/lib/whatsapp-lead.ts).
+  ownerId         String?
+  owner           User?     @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  // When the current owner got it — the 24h stagnant clock (src/lib/lead-stagnant.ts)
+  // restarts from here on every hand-over.
+  ownerAssignedAt DateTime?
+  // Where the lead came from when created by the app itself, e.g. "WHATSAPP_SAMARA".
+  // Website-form leads leave this null — their source lives on Inquiry.utm*.
+  source          String?
+
+  inquiries             Inquiry[]
+  pageViews             PageView[]
+  whatsappConversations WhatsappConversation[]
+  assignmentLogs        LeadAssignmentLog[]
 
   @@index([deletedAt])
   @@index([name])
   @@index([email])
   @@index([createdAt])
   @@index([stage])
+  @@index([ownerId])
+}
+
+// One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and
+// future accept-time/stagnant stats). fromUserId null = was unowned; toUserId null = released.
+model LeadAssignmentLog {
+  id         String               @id @default(cuid())
+  leadId     String
+  lead       Lead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromUserId String?
+  fromUser   User?                @relation("LeadAssignmentFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUserId   String?
+  toUser     User?                @relation("LeadAssignmentTo", fields: [toUserId], references: [id], onDelete: SetNull)
+  reason     LeadAssignmentReason
+  createdAt  DateTime             @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([createdAt])
 }
 
 // One row per page load on the tenant's website, reported by the client-side
@@ -4158,6 +4214,16 @@ enum WhatsappBrand {
   OTIUM
 }
 
+// Triage bucket for a chat — only SALES chats get a Lead and show in the WhatsApp Pipeline;
+// the rest (existing guests, vendors, spam) stay out of the pipeline and its stats.
+enum WhatsappChatCategory {
+  UNSORTED
+  SALES
+  GUEST
+  VENDOR
+  SPAM
+}
+
 model WhatsappConversation {
   id                 String   @id @default(cuid())
   // Whatever format the provider sends, kept as-is. NOT unique on its own — the same
@@ -4181,12 +4247,25 @@ model WhatsappConversation {
   // Which of our numbers this thread lives on — every reply goes out from this brand's number.
   brand WhatsappBrand @default(SAMARA)
 
+  // Pipeline link — see src/lib/whatsapp-lead.ts. The pipeline stage itself lives on the
+  // Lead (single source of truth); one Lead can have several chats (one per brand).
+  category        WhatsappChatCategory @default(UNSORTED)
+  leadId          String?
+  lead            Lead?                @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  // Timestamps for SLA / "waiting for reply" / stagnant detection: waiting = lastInboundAt
+  // is later than lastOutboundAt.
+  lastInboundAt   DateTime?
+  lastOutboundAt  DateTime?
+  firstResponseAt DateTime?
+
   messages WhatsappMessage[]
 
   @@unique([phone, brand])
   @@index([lastMessageAt])
   @@index([assignedToId])
   @@index([brand])
+  @@index([leadId])
+  @@index([category])
 }
 
 model WhatsappMessage {

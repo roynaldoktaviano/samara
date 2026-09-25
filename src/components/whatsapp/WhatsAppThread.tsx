@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
+import { WHATSAPP_CHAT_CATEGORIES, WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
+import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 
 const ACCENT = '#25D366' // WhatsApp green — this module only
 
@@ -33,6 +35,8 @@ interface ConversationDetail {
   id: string; phone: string; contactName: string | null; brand: WhatsappBrand; windowOpen: boolean; messages: Message[]
   assignedToId: string | null
   assignedTo: { id: string; name: string | null; email: string } | null
+  category: WhatsappChatCategory
+  lead: { id: string; name: string; stage: LeadStage } | null
 }
 export interface SalesUserOption { id: string; name: string | null; email: string }
 
@@ -74,6 +78,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
   const role = (session?.user as { role?: string })?.role ?? ''
   const isAdmin = role === 'ADMIN'
   const [assigning, setAssigning] = useState(false)
+  const [categorizing, setCategorizing] = useState(false)
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -149,6 +154,22 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
     }
   }
 
+  // Triage for the WhatsApp Pipeline — SALES creates/links this chat's Lead server-side.
+  async function setCategory(category: WhatsappChatCategory) {
+    setCategorizing(true)
+    try {
+      const res = await fetch(`/api/whatsapp/conversations/${conversationId}/category`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data?.error ?? 'Gagal mengubah kategori'); return }
+      await loadDetail()
+      onConversationUpdate()
+    } finally {
+      setCategorizing(false)
+    }
+  }
+
   async function sendMessage() {
     if (!draft.trim()) return
     setSending(true)
@@ -203,6 +224,21 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
             {detail && <> · via <span className="font-medium">{WHATSAPP_BRAND_LABELS[detail.brand]}</span></>}
           </p>
         </div>
+        {detail?.category === 'SALES' && detail.lead && (
+          <span className={`shrink-0 text-[11px] font-medium rounded-full px-2 py-0.5 ${LEAD_STAGE_COLOR[detail.lead.stage]}`} title="Stage lead di WhatsApp Pipeline">
+            {LEAD_STAGE_LABEL[detail.lead.stage]}
+          </span>
+        )}
+        {detail && (
+          <Select value={detail.category} onValueChange={v => setCategory(v as WhatsappChatCategory)} disabled={categorizing}>
+            <SelectTrigger className={`h-8 w-40 text-xs shrink-0 ${detail.category === 'UNSORTED' ? 'border-amber-400 text-amber-800' : ''}`} title="Kategori chat (Sales = masuk WhatsApp Pipeline)">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WHATSAPP_CHAT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{WHATSAPP_CHAT_CATEGORY_LABEL[c]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         {detail && isAdmin && (
           <Select value={detail.assignedToId ?? UNASSIGNED} onValueChange={v => assignTo(v === UNASSIGNED ? null : v)} disabled={assigning}>
             <SelectTrigger className="h-8 w-48 text-xs shrink-0" title="Sales yang memegang chat ini">

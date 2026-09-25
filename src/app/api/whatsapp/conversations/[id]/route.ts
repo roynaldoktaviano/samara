@@ -16,6 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       assignedTo: { select: { id: true, name: true, email: true } },
+      lead: { select: { id: true, name: true, stage: true } },
       messages: {
         orderBy: { createdAt: 'asc' },
         include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },

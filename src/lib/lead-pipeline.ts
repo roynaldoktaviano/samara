@@ -34,6 +34,21 @@ export const LEAD_TRANSITIONS: Record<LeadStage, LeadStage[]> = {
   CLOSED_LOST: [],
 }
 
+export const LEAD_LOST_REASONS = ['PRICE', 'DATES', 'COMPETITOR', 'NO_RESPONSE', 'OTHER'] as const
+export type LeadLostReason = typeof LEAD_LOST_REASONS[number]
+
+export const LEAD_LOST_REASON_LABEL: Record<LeadLostReason, string> = {
+  PRICE: 'Price too high',
+  DATES: 'Dates not available',
+  COMPETITOR: 'Chose a competitor',
+  NO_RESPONSE: 'No response',
+  OTHER: 'Other',
+}
+
+export function isLeadLostReason(value: unknown): value is LeadLostReason {
+  return typeof value === 'string' && (LEAD_LOST_REASONS as readonly string[]).includes(value)
+}
+
 export function canTransition(from: LeadStage, to: LeadStage): boolean {
   return LEAD_TRANSITIONS[from]?.includes(to) ?? false
 }

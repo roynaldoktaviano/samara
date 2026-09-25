@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2 } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
+import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
@@ -119,6 +120,7 @@ export default function Leads() {
   const [sources, setSources] = useState<string[]>([])
   const [stageFilter, setStageFilter] = useState<LeadStage | 'all'>('all')
   const [stageBusy, setStageBusy] = useState(false)
+  const [lostTarget, setLostTarget] = useState<Lead | null>(null)
   const [destinationMap, setDestinationMap] = useState<Record<string, string>>({})
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -205,11 +207,12 @@ export default function Leads() {
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
 
-  const changeStage = async (lead: Lead, stage: LeadStage) => {
+  const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) => {
+    if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
     setStageBusy(true)
     try {
       const res = await fetch(`/api/leads/${lead.id}/stage`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage }),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage, ...extra }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -219,6 +222,7 @@ export default function Leads() {
         return
       }
       toast.success(`Stage updated to ${LEAD_STAGE_LABEL[stage]}`)
+      setLostTarget(null)
       setDetail(data)
       fetchLeads(page)
     } finally {
@@ -574,6 +578,13 @@ export default function Leads() {
       </>}
 
       {/* ── Add / Edit Lead Sheet ─────────────────────────────────────────── */}
+      <LostReasonDialog
+        open={!!lostTarget}
+        leadName={lostTarget?.name}
+        busy={stageBusy}
+        onCancel={() => setLostTarget(null)}
+        onConfirm={(lostReason, lostNote) => lostTarget && changeStage(lostTarget, 'CLOSED_LOST', { lostReason, lostNote })}
+      />
       <LeadEditSheet
         open={sheetOpen}
         leadId={sheetLeadId}

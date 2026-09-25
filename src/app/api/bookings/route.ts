@@ -453,7 +453,8 @@ export async function POST(request: NextRequest) {
     if (convertedLeads.length > 0) {
       await Promise.all(convertedLeads.map(({ leadId, customerId }) => Promise.all([
         db.inquiry.updateMany({ where: { leadId }, data: { leadId: null, customerId } }),
-        db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date() } }),
+        // Booked = won — stamped so the WhatsApp Pipeline's Closed Won column still shows it.
+        db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date(), stage: 'CLOSED_WON', stageUpdatedAt: new Date(), stageUpdatedById: session.user.id } }),
       ]))).catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
     }
 
