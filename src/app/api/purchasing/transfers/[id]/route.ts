@@ -8,6 +8,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
 import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
+import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -49,7 +50,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           requestedByEmployee: { select: { fullName: true } },
         },
       },
-      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { id: true, name: true } } } },
+      tripBooking: { select: tripBookingSelect },
+      openTrip: { select: openTripSelect },
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -87,6 +89,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     toLocation: toLoc,
     totalValue,
     items,
+    tripBooking: undefined,
+    openTrip: undefined,
+    trip: transfer.openTrip ? tripFromOpenTrip(transfer.openTrip) : transfer.tripBooking ? tripFromBooking(transfer.tripBooking) : null,
     purchaseRequest: transfer.purchaseRequest && {
       id: transfer.purchaseRequest.id,
       prNumber: transfer.purchaseRequest.prNumber,
@@ -114,17 +119,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // rather than being a print-only note — only while the transfer hasn't moved yet, same
   // as every other edit here (cancel/dispatch/receive are all PENDING/one-shot gated).
   if (action === 'add-item') {
-    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Hanya transfer PENDING yang bisa ditambah item' }, { status: 409 })
+    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Items can only be added to a PENDING transfer' }, { status: 409 })
     const { itemId, itemName, qty } = body as { itemId?: string; itemName?: string; qty?: number }
     const quantity = Number(qty)
-    if (!Number.isFinite(quantity) || quantity <= 0) return NextResponse.json({ error: 'Qty harus lebih dari 0' }, { status: 400 })
+    if (!Number.isFinite(quantity) || quantity <= 0) return NextResponse.json({ error: 'Qty must be greater than 0' }, { status: 400 })
     let resolvedName = itemName?.trim() || ''
     if (itemId) {
       const item = await db.purchaseItem.findUnique({ where: { id: itemId }, select: { name: true } })
-      if (!item) return NextResponse.json({ error: 'Item tidak ditemukan' }, { status: 404 })
+      if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
       resolvedName = item.name
     }
-    if (!resolvedName) return NextResponse.json({ error: 'Nama item wajib diisi' }, { status: 400 })
+    if (!resolvedName) return NextResponse.json({ error: 'Item name is required' }, { status: 400 })
 
     // Already on this transfer (matched the same way dispatch/receive match a line —
     // itemId for catalog items, itemName for non-stock ones) — bump its requestedQty
@@ -172,15 +177,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (action === 'cancel') {
-    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Hanya transfer PENDING yang bisa dibatalkan' }, { status: 409 })
+    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Only a PENDING transfer can be cancelled' }, { status: 409 })
     await db.stockTransfer.update({ where: { id }, data: { status: 'CANCELLED', updatedAt: new Date() } })
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
     return NextResponse.json({ ok: true })
   }
 
   if (action === 'dispatch') {
-    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Transfer sudah diproses' }, { status: 409 })
-    if (!dispatchPhotoKey) return NextResponse.json({ error: 'Foto dispatch wajib diupload' }, { status: 400 })
+    if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Transfer has already been processed' }, { status: 409 })
+    if (!dispatchPhotoKey) return NextResponse.json({ error: 'Dispatch photo is required' }, { status: 400 })
     if (transfer.purchaseOrderId && !(await legLocationAllowsRole(db, transfer.fromLocationId, role))) {
       return NextResponse.json({ error: 'Only the team managing this location can dispatch from it' }, { status: 403 })
     }
@@ -202,7 +207,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .filter(it => Number(it.dispatchedQty) > it.available)
     if (insufficient.length > 0) {
       const detail = insufficient.map(it => `${it.itemName} (tersedia: ${it.available}, diminta: ${it.dispatchedQty})`).join(', ')
-      return NextResponse.json({ error: `Stok tidak cukup untuk: ${detail}` }, { status: 409 })
+      return NextResponse.json({ error: `Not enough stock for: ${detail}` }, { status: 409 })
     }
 
     await db.$transaction(async (tx) => {
@@ -258,8 +263,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const link = `${resolveBaseUrl(req)}/crew-receive/${token}`
         notifyAssignedYachtCaptains(db, yachtId, {
           type: 'TRANSFER_IN_TRANSIT_RECEIVE',
-          title: 'Barang Menuju Kapal Anda',
-          body: `${transfer.transferNumber} sedang dalam perjalanan. Konfirmasi penerimaan di sini: ${link}`,
+          title: 'Goods On the Way to Your Yacht',
+          body: `${transfer.transferNumber} is on its way. Confirm receipt here: ${link}`,
           url: `/crew-receive/${token}`,
         }).catch(console.error)
       }).catch(console.error)
@@ -284,5 +289,5 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true })
   }
 
-  return NextResponse.json({ error: 'Action tidak valid' }, { status: 400 })
+  return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }

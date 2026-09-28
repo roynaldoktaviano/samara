@@ -13,16 +13,11 @@ import { cn } from '@/lib/utils'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { TripPicker, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
 interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null }
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
-interface LocationLite { id: string; name: string; type: string; parentId: string | null }
-interface TripOption {
-  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
-  destination: string | null; status: string
-  yacht: { id: string; name: string } | null
-  leadGuestName: string; guestNames: string[]
-}
+interface LocationLite { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface CartLine {
   key: string
   itemId: string | null
@@ -95,8 +90,7 @@ function RequestOrderContent() {
   const [urgentReason, setUrgentReason] = useState('')
   const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
   const [division, setDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''>('')
-  const [tripBookingId, setTripBookingId] = useState('')
-  const [tripBookingLabel, setTripBookingLabel] = useState('')
+  const [trip, setTrip] = useState<TripOption | null>(null)
   const [trips, setTrips] = useState<TripOption[]>([])
 
   const [customModal, setCustomModal] = useState(false)
@@ -173,10 +167,6 @@ function RequestOrderContent() {
     setCart(prev => prev.filter(l => l.key !== key))
   }
 
-  function setTripBooking(id: string, label: string) {
-    setTripBookingId(id)
-    setTripBookingLabel(label)
-  }
 
   async function processCustomImages(files: File[]) {
     if (!files.length) return
@@ -216,7 +206,7 @@ function RequestOrderContent() {
     if (!locationId) { setSubmitError('Please select a delivery location'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
-    if (purpose === 'TRIP' && !tripBookingId) { setSubmitError('Please select which trip this request is for'); return }
+    if (purpose === 'TRIP' && !trip) { setSubmitError('Please select which trip this request is for'); return }
     if (!division) { setSubmitError('Please select what this request is for'); return }
     setSubmitting(true)
     const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
@@ -224,7 +214,7 @@ function RequestOrderContent() {
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
         neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
-        purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : null,
+        purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
         division,
         items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
       }),
@@ -238,7 +228,7 @@ function RequestOrderContent() {
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-    setPurpose('STOCK_INVENTORY'); setDivision(''); setTripBookingId(''); setTripBookingLabel('')
+    setPurpose('STOCK_INVENTORY'); setDivision(''); setTrip(null)
     setSuccess(null); setCartOpen(false)
   }
 
@@ -454,7 +444,7 @@ function RequestOrderContent() {
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent}
               urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-              purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+              purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
               submit={submit} submitting={submitting} submitError={submitError}
             />
           </div>
@@ -480,7 +470,7 @@ function RequestOrderContent() {
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent}
                 urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-                purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+                purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
               />
@@ -567,87 +557,6 @@ function RequestOrderContent() {
   )
 }
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-// Trip picker for the "Purpose: Trip" option — same shape/behavior as the internal PR
-// page's trip picker (search by booking code/guest/destination, filter by yacht).
-function TripCombobox({ value, valueLabel, trips, onChange }: {
-  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [yachtFilter, setYachtFilter] = useState('')
-  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
-  const q = search.trim().toLowerCase()
-  const opts = trips.filter(t => {
-    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
-    if (!q) return true
-    return t.bookingCode.toLowerCase().includes(q)
-      || (t.destination ?? '').toLowerCase().includes(q)
-      || t.leadGuestName.toLowerCase().includes(q)
-      || t.guestNames.some(n => n.toLowerCase().includes(q))
-  }).slice(0, 30)
-
-  return (
-    <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip...'}</span>
-        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-72 flex flex-col">
-            <div className="p-2 border-b shrink-0 space-y-1.5">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <select className="w-full h-8 border rounded px-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
-                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
-                <option value="">All yachts</option>
-                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </div>
-            <div className="overflow-y-auto">
-              {opts.length === 0 && (
-                <p className="px-3 py-3 text-sm text-muted-foreground">No trips found</p>
-              )}
-              {opts.map(t => {
-                const label = `${t.bookingCode}${t.yacht ? ` — ${t.yacht.name}` : ''}`
-                return (
-                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent/30 flex items-start gap-2 border-b last:border-0 transition-colors">
-                    <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{t.bookingCode}</span>
-                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
-                        </span>
-                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
-                      </span>
-                      <span className="block text-[11px] text-muted-foreground truncate">
-                        {t.yacht?.name ?? '—'} · {fmtDate(t.startDate)}–{fmtDate(t.endDate)}
-                      </span>
-                      <span className="block text-[11px] text-muted-foreground truncate">
-                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
 
 function RequestSidebar({
   cart, removeLine, changeQty,
@@ -655,7 +564,7 @@ function RequestSidebar({
   locations, locationId, setLocationId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
-  purpose, setPurpose, division, setDivision, tripBookingId, tripBookingLabel, setTripBooking, trips,
+  purpose, setPurpose, division, setDivision, trip, setTrip, trips,
   submit, submitting, submitError,
   embedded = false,
 }: {
@@ -669,7 +578,7 @@ function RequestSidebar({
   urgentReason: string; setUrgentReason: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''; setDivision: (v: 'BOAT_OPERATION' | 'BUILDING_MATERIAL') => void
-  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
   submit: () => void; submitting: boolean; submitError: string
   embedded?: boolean
@@ -753,7 +662,7 @@ function RequestSidebar({
             </button>
           </div>
           {purpose === 'TRIP' && (
-            <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
+            <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === locationId)?.yachtId} />
           )}
         </div>
 

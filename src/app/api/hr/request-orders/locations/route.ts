@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const { db } = resolved
   const locations = await db.stockLocation.findMany({
     where: { isActive: true },
-    select: { id: true, name: true, type: true, parentId: true },
+    select: { id: true, name: true, type: true, parentId: true, yachtId: true },
     orderBy: [{ type: 'asc' }, { name: 'asc' }],
   })
   return NextResponse.json(locations)

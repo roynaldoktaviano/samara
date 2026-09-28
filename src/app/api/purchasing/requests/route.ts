@@ -9,6 +9,7 @@ import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { allItemsCustom } from '@/lib/purchasing/requestItems'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
+import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -59,7 +60,8 @@ export async function GET() {
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
-      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
+      tripBooking: { select: tripBookingSelect },
+      openTrip: { select: openTripSelect },
       // So the list can show how far a converted PR's PO(s) actually got (Ordered / On
       // Delivery / Received) instead of just the terminal "Converted" PR status — including
       // exactly where a routed PO physically is right now, same text as the PO's own list.
@@ -85,6 +87,9 @@ export async function GET() {
   return NextResponse.json(
     requests.map(r => ({
       ...r,
+      tripBooking: undefined,
+      openTrip: undefined,
+      trip: tripOf(r),
       itemCount: r.items.length,
       itemNames: r.items.map(i => i.itemName),
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
@@ -117,11 +122,11 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { deliveryLocationId, notes, items, requestedByEmployeeId, neededByDate, isUrgent, urgentReason, purpose, tripBookingId } = body as {
+  const { deliveryLocationId, notes, items, requestedByEmployeeId, neededByDate, isUrgent, urgentReason, purpose, tripBookingId, openTripId } = body as {
     deliveryLocationId?: string; notes?: string
     items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
     requestedByEmployeeId?: string; neededByDate?: string; isUrgent?: boolean; urgentReason?: string
-    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
+    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string; openTripId?: string
   }
 
   // Same validation as the public /request-order intake (POST /api/hr/request-orders) —
@@ -141,15 +146,13 @@ export async function POST(req: NextRequest) {
   if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
     return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
   }
-  if (purpose === 'TRIP' && !tripBookingId) {
+  if (purpose === 'TRIP' && !tripBookingId && !openTripId) {
     return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
   }
   const loc = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { id: true } })
   if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
-  if (purpose === 'TRIP' && tripBookingId) {
-    const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
-    if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
-  }
+  const tripLink = purpose === 'TRIP' ? await resolveTripLink(db, { tripBookingId, openTripId }) : { tripBookingId: null, openTripId: null }
+  if ('error' in tripLink) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
   const inventoryItemIds = [...new Set(items.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]
   if (inventoryItemIds.length > 0) {
     const foundInventoryItems = await db.inventoryItem.findMany({ where: { id: { in: inventoryItemIds } }, select: { id: true } })
@@ -190,7 +193,8 @@ export async function POST(req: NextRequest) {
       isUrgent: !!isUrgent,
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
-      tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
+      tripBookingId: tripLink.tripBookingId,
+      openTripId: tripLink.openTripId,
       status: approverEmployeeId ? 'PENDING_APPROVAL' : (allCustom ? 'ON_PROCESS' : 'DRAFT'),
       updatedAt: new Date(),
       items: {

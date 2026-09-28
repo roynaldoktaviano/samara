@@ -5,14 +5,9 @@ import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, Ale
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { TripPicker, tripShortLabel, tripDates, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
-interface TripOption {
-  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
-  destination: string | null; status: string
-  yacht: { id: string; name: string } | null
-  leadGuestName: string; guestNames: string[]
-}
 
 interface StockPickerRow {
   kind: 'stock' | 'non-stock'
@@ -51,8 +46,7 @@ interface StockTransfer {
   purchaseRequestId?: string | null
   purchaseRequest?: { id: string; prNumber: string; requestedByName: string | null } | null
   // Optional link to the charter/departure this transfer's cargo is for.
-  tripBookingId?: string | null
-  tripBooking?: { id: string; bookingCode: string; startDate: string; endDate: string; yacht: { id: string; name: string } | null } | null
+  trip?: TripOption | null
 }
 interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null }
 
@@ -157,82 +151,6 @@ function EmployeeCombobox({ employees, value, onChange }: {
   )
 }
 
-// Trip picker for the "Trip" field on Create Transfer — scoped to the yacht of the
-// selected TO location (when it's a vessel) so it only shows that ship's trips.
-function TripCombobox({ value, valueLabel, trips, yachtId, onChange }: {
-  value: string; valueLabel: string; trips: TripOption[]; yachtId?: string | null; onChange: (id: string, label: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const q = search.trim().toLowerCase()
-  const scoped = yachtId ? trips.filter(t => t.yacht?.id === yachtId) : trips
-  const opts = scoped.filter(t => {
-    if (!q) return true
-    return t.bookingCode.toLowerCase().includes(q)
-      || (t.destination ?? '').toLowerCase().includes(q)
-      || t.leadGuestName.toLowerCase().includes(q)
-      || t.guestNames.some(n => n.toLowerCase().includes(q))
-  }).slice(0, 30)
-
-  return (
-    <>
-      <button type="button" onClick={() => { setOpen(true); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] transition">
-        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Pilih trip (opsional)...'}</span>
-        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      </button>
-      {open && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b shrink-0">
-              <h3 className="font-semibold text-lg">Pilih Trip</h3>
-              <button onClick={() => setOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
-            <div className="p-4 border-b shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-9 border rounded-md px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
-                  placeholder="Cari booking code, guest, destinasi..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {value && (
-                <button type="button" onClick={() => { onChange('', ''); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-5 py-2.5 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
-                  Clear selection
-                </button>
-              )}
-              {opts.length === 0 && (
-                <p className="px-5 py-6 text-sm text-muted-foreground text-center">{yachtId ? 'Tidak ada trip untuk kapal ini' : 'No trips found'}</p>
-              )}
-              {opts.map(t => {
-                const label = `${fmtDate(t.startDate)}–${fmtDate(t.endDate)}${t.yacht ? ` — ${t.yacht.name}` : ''}`
-                return (
-                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
-                    className="w-full text-left px-5 py-3 text-sm hover:bg-muted flex items-start gap-2.5 border-b last:border-0 transition-colors">
-                    <Ship className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{fmtDate(t.startDate)}–{fmtDate(t.endDate)}</span>
-                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate mt-0.5">
-                        {t.yacht?.name ?? '—'}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate">
-                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
 
 export default function TransfersPage() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
@@ -252,8 +170,7 @@ export default function TransfersPage() {
   // Create form
   const [fromLoc, setFromLoc] = useState('')
   const [toLoc, setToLoc] = useState('')
-  const [tripBookingId, setTripBookingId] = useState('')
-  const [tripBookingLabel, setTripBookingLabel] = useState('')
+  const [trip, setTrip] = useState<TripOption | null>(null)
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<{ itemId: string; itemName: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; inputQty: number; usePurchaseUnit: boolean; availableQty: number }[]>([])
   const [saving, setSaving] = useState(false)
@@ -378,7 +295,7 @@ export default function TransfersPage() {
   async function confirmAddItem() {
     if (!detail || !addItemPicked) return
     const qty = Number(addItemQty)
-    if (!Number.isFinite(qty) || qty <= 0) { setAddItemError('Qty harus lebih dari 0'); return }
+    if (!Number.isFinite(qty) || qty <= 0) { setAddItemError('Qty must be greater than 0'); return }
     setAddItemSaving(true); setAddItemError('')
     const res = await fetch(`/api/purchasing/transfers/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -390,7 +307,7 @@ export default function TransfersPage() {
     })
     const data = await res.json().catch(() => null)
     setAddItemSaving(false)
-    if (!res.ok) { setAddItemError(data?.error ?? 'Gagal menambah barang'); return }
+    if (!res.ok) { setAddItemError(data?.error ?? 'Failed to add item'); return }
     setAddItemModal(false)
     openDetail(detail)
     load()
@@ -398,21 +315,21 @@ export default function TransfersPage() {
 
   async function submit() {
     setSaving(true); setSaveError('')
-    if (!fromLoc || !toLoc) { setSaveError('Pilih lokasi asal dan tujuan'); setSaving(false); return }
+    if (!fromLoc || !toLoc) { setSaveError('Select both the From and To locations'); setSaving(false); return }
     const validLines = lines.filter(l => l.itemId && l.inputQty > 0)
-    if (!validLines.length) { setSaveError('Tambahkan minimal 1 item'); setSaving(false); return }
+    if (!validLines.length) { setSaveError('Add at least 1 item'); setSaving(false); return }
     const res = await fetch('/api/purchasing/transfers', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromLocationId: fromLoc, toLocationId: toLoc, tripBookingId: tripBookingId || undefined, notes, items: validLines.map(l => ({
+      body: JSON.stringify({ fromLocationId: fromLoc, toLocationId: toLoc, ...tripLinkBody(trip), notes, items: validLines.map(l => ({
         itemId: l.itemId,
         itemName: l.itemName,
         requestedQty: l.usePurchaseUnit ? l.inputQty * l.conversionFactor : l.inputQty,
       })) }),
     })
     const data = await res.json()
-    if (!res.ok) { setSaveError(data.error ?? 'Gagal menyimpan'); setSaving(false); return }
+    if (!res.ok) { setSaveError(data.error ?? 'Failed to save'); setSaving(false); return }
     setSaving(false); setView('list')
-    setFromLoc(''); setToLoc(''); setTripBookingId(''); setTripBookingLabel(''); setNotes(''); setLines([])
+    setFromLoc(''); setToLoc(''); setTrip(null); setNotes(''); setLines([])
     load()
   }
 
@@ -450,13 +367,13 @@ export default function TransfersPage() {
     const res = await fetch(`/api/purchasing/transfers/${detail.id}/receive-link`, { method: 'POST' })
     const data = await res.json()
     setCrewLinkLoading(false)
-    if (!res.ok) { setCrewLinkError(data.error ?? 'Gagal membuat link'); return }
+    if (!res.ok) { setCrewLinkError(data.error ?? 'Failed to create link'); return }
     setCrewLink(data.link)
   }
 
   async function submitDispatch() {
     if (!detail) return
-    if (!dispatchPhoto) { setDispatchError('Foto dispatch wajib diupload'); return }
+    if (!dispatchPhoto) { setDispatchError('Dispatch photo is required'); return }
     setDispatchSaving(true); setDispatchError('')
     const res = await fetch(`/api/purchasing/transfers/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -468,14 +385,14 @@ export default function TransfersPage() {
       }),
     })
     const data = await res.json()
-    if (!res.ok) { setDispatchError(data.error ?? 'Gagal'); setDispatchSaving(false); return }
+    if (!res.ok) { setDispatchError(data.error ?? 'Failed to dispatch'); setDispatchSaving(false); return }
     setDispatchSaving(false); setDispatchModal(false)
     openDetail(detail); load()
   }
 
   async function submitReceive() {
     if (!detail) return
-    if (!receivePhoto) { setReceiveError('Foto penerimaan wajib diupload'); return }
+    if (!receivePhoto) { setReceiveError('Receipt photo is required'); return }
     setReceiveSaving(true); setReceiveError('')
     const res = await fetch(`/api/purchasing/transfers/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -487,7 +404,7 @@ export default function TransfersPage() {
       }),
     })
     const data = await res.json()
-    if (!res.ok) { setReceiveError(data.error ?? 'Gagal'); setReceiveSaving(false); return }
+    if (!res.ok) { setReceiveError(data.error ?? 'Failed to confirm receipt'); setReceiveSaving(false); return }
     setReceiveSaving(false); setReceiveModal(false)
     openDetail(detail); load()
   }
@@ -504,7 +421,7 @@ export default function TransfersPage() {
         <p className="text-muted-foreground text-sm mt-1">Move inventory between locations</p>
       </div>
       <div className="flex justify-end">
-        <button onClick={() => { setFromLoc(''); setToLoc(''); setLines([]); setWarehouseStock([]); setView('create') }} className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+        <button onClick={() => { setFromLoc(''); setToLoc(''); setTrip(null); setLines([]); setWarehouseStock([]); setView('create') }} className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> Create Transfer
         </button>
       </div>
@@ -539,6 +456,11 @@ export default function TransfersPage() {
                   {t.purchaseOrder && (
                     <p className="font-sans text-[10px] text-muted-foreground font-normal mt-0.5">
                       PO {t.purchaseOrder.poNumber}{t.legSequence ? ` · Leg ${t.legSequence}` : ''}
+                    </p>
+                  )}
+                  {t.trip && (
+                    <p className="font-sans text-[10px] text-[#8a7a4e] font-medium mt-0.5 flex items-center gap-1">
+                      <Ship className="h-3 w-3" /> {tripShortLabel(t.trip)}
                     </p>
                   )}
                 </td>
@@ -592,6 +514,7 @@ export default function TransfersPage() {
               <span className="font-mono text-xs font-semibold">
                 {t.transferNumber}
                 {t.purchaseOrder && <span className="font-sans font-normal text-muted-foreground"> · PO {t.purchaseOrder.poNumber}{t.legSequence ? ` L${t.legSequence}` : ''}</span>}
+                {t.trip && <span className="font-sans font-medium text-[#8a7a4e]"> · {tripShortLabel(t.trip)}</span>}
               </span>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[t.status] ?? ''}`}>{STATUS_LABEL[t.status] ?? t.status}</span>
@@ -655,12 +578,12 @@ export default function TransfersPage() {
           <button onClick={() => setView('list')} className="text-muted-foreground hover:text-foreground text-sm">← Back</button>
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Create Transfer</h2>
-            <p className="text-muted-foreground text-sm mt-0.5">Kirim stok antar lokasi</p>
+            <p className="text-muted-foreground text-sm mt-0.5">Move stock between locations</p>
           </div>
         </div>
         <div className="flex gap-3">
           <button onClick={() => setView('list')} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-          <button onClick={submit} disabled={saving} className="px-6 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">{saving ? 'Menyimpan...' : 'Create Transfer'}</button>
+          <button onClick={submit} disabled={saving} className="px-6 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">{saving ? 'Saving...' : 'Create Transfer'}</button>
         </div>
       </div>
 
@@ -677,7 +600,7 @@ export default function TransfersPage() {
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">From <span className="text-destructive">*</span></label>
                 <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={fromLoc} onChange={e => { setFromLoc(e.target.value); loadWarehouseStock(e.target.value) }}>
-                  <option value="">Pilih lokasi asal...</option>
+                  <option value="">Select source location...</option>
                   {renderLocationOptions(locations)}
                 </select>
               </div>
@@ -690,24 +613,16 @@ export default function TransfersPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To <span className="text-destructive">*</span></label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => {
-                  setToLoc(e.target.value); setTripBookingId(''); setTripBookingLabel('')
-                }}>
-                  <option value="">Pilih lokasi tujuan...</option>
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => setToLoc(e.target.value)}>
+                  <option value="">Select destination...</option>
                   {renderLocationOptions(locations, { excludeIds: new Set([fromLoc]) })}
                 </select>
               </div>
-              {(() => {
-                const toYachtId = locations.find(l => l.id === toLoc)?.yachtId
-                if (!toYachtId) return null
-                return (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Trip</label>
-                    <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} yachtId={toYachtId}
-                      onChange={(id, label) => { setTripBookingId(id); setTripBookingLabel(label) }} />
-                  </div>
-                )
-              })()}
+              <div className="space-y-1.5 pt-1 border-t">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block pt-3">For Trip <span className="normal-case font-normal">(optional)</span></label>
+                {/* Shipping to a vessel preselects that vessel's trips (still changeable). */}
+                <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === toLoc)?.yachtId} />
+              </div>
             </div>
           </div>
           <div className="rounded-xl border overflow-hidden">
@@ -715,7 +630,7 @@ export default function TransfersPage() {
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</h3>
             </div>
             <div className="p-5">
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" rows={3} placeholder="Catatan opsional..." value={notes} onChange={e => setNotes(e.target.value)} />
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" rows={3} placeholder="Optional notes..." value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         </div>
@@ -735,13 +650,13 @@ export default function TransfersPage() {
           {!fromLoc ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
               <Package className="h-8 w-8 opacity-20" />
-              <p className="text-sm">Pilih lokasi asal untuk melihat stok tersedia</p>
+              <p className="text-sm">Select a source location to see available stock</p>
             </div>
           ) : lines.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
               <Package className="h-8 w-8 opacity-20" />
-              <p className="text-sm">Belum ada item</p>
-              <button onClick={openPicker} className="text-sm text-[#bdac7e] hover:text-[#a89860] font-medium">+ Pilih item dari stok</button>
+              <p className="text-sm">No items yet</p>
+              <button onClick={openPicker} className="text-sm text-[#bdac7e] hover:text-[#a89860] font-medium">+ Select items from stock</button>
             </div>
           ) : (
             <>
@@ -749,7 +664,7 @@ export default function TransfersPage() {
                 <thead className="text-xs text-muted-foreground bg-muted/20 border-b">
                   <tr>
                     <th className="text-left px-5 py-2.5 font-medium">Item</th>
-                    <th className="text-right px-5 py-2.5 font-medium w-36">Stok Tersedia</th>
+                    <th className="text-right px-5 py-2.5 font-medium w-36">Available Stock</th>
                     <th className="text-right px-5 py-2.5 font-medium w-32">Qty to Ship</th>
                     <th className="w-10 px-3" />
                   </tr>
@@ -778,7 +693,7 @@ export default function TransfersPage() {
                             />
                             {line.purchaseUnit && line.purchaseUnit !== line.baseUnit && line.conversionFactor > 1 ? (
                               <button
-                                title="Klik untuk ganti satuan"
+                                title="Click to switch unit"
                                 onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit }))}
                                 className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors shrink-0 cursor-pointer ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground border-dashed border-[#bdac7e]/60 hover:border-[#bdac7e] hover:text-[#bdac7e]'}`}
                               >
@@ -808,7 +723,7 @@ export default function TransfersPage() {
                 </tbody>
               </table></div>
               <div className="px-5 py-2.5 border-t bg-muted/20">
-                <button onClick={openPicker} className="text-xs text-[#bdac7e] hover:text-[#a89860] font-medium">+ Tambah / ubah item</button>
+                <button onClick={openPicker} className="text-xs text-[#bdac7e] hover:text-[#a89860] font-medium">+ Add / change items</button>
               </div>
             </>
           )}
@@ -821,8 +736,8 @@ export default function TransfersPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
-                <h3 className="font-semibold text-base">Pilih Item</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{pickerSelected.size} item dipilih</p>
+                <h3 className="font-semibold text-base">Select Items</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{pickerSelected.size} selected</p>
               </div>
               <button onClick={() => setPickerOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
@@ -831,7 +746,7 @@ export default function TransfersPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   className="w-full pl-9 pr-3 h-9 border rounded-md text-sm focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
-                  placeholder="Cari nama item..."
+                  placeholder="Search item name..."
                   value={pickerSearch}
                   onChange={e => setPickerSearch(e.target.value)}
                   autoFocus
@@ -843,7 +758,7 @@ export default function TransfersPage() {
                   value={pickerPoFilter}
                   onChange={e => setPickerPoFilter(e.target.value)}
                 >
-                  <option value="">Semua sumber (stok &amp; PO manapun)</option>
+                  <option value="">All sources (stock &amp; any PO)</option>
                   {poOptions.map(po => <option key={po.id} value={po.id}>Dari PO {po.number}</option>)}
                 </select>
               )}
@@ -874,13 +789,13 @@ export default function TransfersPage() {
                   )
                 })}
               {pickerRows.length === 0 && (
-                <div className="py-10 text-center text-sm text-muted-foreground">Item tidak ditemukan</div>
+                <div className="py-10 text-center text-sm text-muted-foreground">No items found</div>
               )}
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/20">
-              <button onClick={() => setPickerOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Batal</button>
+              <button onClick={() => setPickerOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={confirmPicker} className="px-5 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] font-medium">
-                Konfirmasi ({pickerSelected.size} item)
+                Confirm ({pickerSelected.size} items)
               </button>
             </div>
           </div>
@@ -913,15 +828,15 @@ export default function TransfersPage() {
                   {' '}({detail.purchaseRequest.prNumber})
                 </p>
               )}
-              {detail.tripBooking && (
+              {detail.trip && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Trip: <span className="font-medium text-foreground">{fmtDate(detail.tripBooking.startDate)}–{fmtDate(detail.tripBooking.endDate)}</span>
-                  {detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}
+                  For trip: <span className="font-medium text-foreground">{tripShortLabel(detail.trip)}</span>
+                  {` (${tripDates(detail.trip)}) — ${detail.trip.label}`}
                 </p>
               )}
               {!!detail.totalValue && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  {detail.status === 'DISPATCHED' ? 'Transfer value: ' : detail.status === 'RECEIVED' ? 'Nilai barang diterima: ' : 'Nilai barang: '}
+                  {detail.status === 'DISPATCHED' ? 'Transfer value: ' : detail.status === 'RECEIVED' ? 'Received value: ' : 'Goods value: '}
                   <span className="font-semibold text-foreground">{fmtMoney(detail.totalValue)}</span>
                 </p>
               )}
@@ -929,7 +844,7 @@ export default function TransfersPage() {
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
               {detail.status !== 'CANCELLED' && (
-                <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print packing list untuk transfer ini"
+                <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print the packing list for this transfer"
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">
                   <FileDown className="h-3.5 w-3.5" /> Packing List
                 </button>
@@ -1103,7 +1018,7 @@ export default function TransfersPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Expected Receiver</label>
                 <input type="text" className="w-full border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition"
-                  placeholder="Nama penerima..." value={expectedReceiverName} onChange={e => setExpectedReceiverName(e.target.value)} />
+                  placeholder="Receiver name..." value={expectedReceiverName} onChange={e => setExpectedReceiverName(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">Qty Dispatched</label>
@@ -1203,7 +1118,7 @@ export default function TransfersPage() {
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/30">
               <button onClick={() => setDispatchModal(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={submitDispatch} disabled={dispatchSaving} className="px-4 py-2 text-sm text-white rounded-md font-medium disabled:opacity-50 bg-amber-600 hover:bg-amber-700">
-                {dispatchSaving ? 'Menyimpan...' : 'Confirm Dispatch'}
+                {dispatchSaving ? 'Saving...' : 'Confirm Dispatch'}
               </button>
             </div>
           </div>
@@ -1335,14 +1250,14 @@ export default function TransfersPage() {
                     })}
                   </tbody>
                 </table></div>
-                <p className="text-xs text-muted-foreground pt-1">Jika qty berbeda dari yang dikirim, exception Transfer Discrepancy akan dibuat otomatis.</p>
+                <p className="text-xs text-muted-foreground pt-1">If a qty differs from what was dispatched, a Transfer Discrepancy exception is created automatically.</p>
               </div>
               <PhotoUpload label="Receive Photo" value={receivePhoto} onChange={setReceivePhoto} />
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/30">
               <button onClick={() => setReceiveModal(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={submitReceive} disabled={receiveSaving} className="px-4 py-2 text-sm text-white rounded-md font-medium disabled:opacity-50 bg-green-600 hover:bg-green-700">
-                {receiveSaving ? 'Menyimpan...' : 'Confirm Receipt'}
+                {receiveSaving ? 'Saving...' : 'Confirm Receipt'}
               </button>
             </div>
           </div>
@@ -1358,11 +1273,11 @@ export default function TransfersPage() {
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Kirim link ini ke crew (misal via WhatsApp) — mereka bisa konfirmasi penerimaan barang langsung tanpa login ke ERP. Berlaku 14 hari.
+                Send this link to the crew (e.g. via WhatsApp) — they can confirm receiving the goods without logging in to the ERP. Valid for 14 days.
               </p>
               {crewLinkError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{crewLinkError}</div>}
               {crewLinkLoading ? (
-                <div className="text-sm text-muted-foreground py-4 text-center">Membuat link...</div>
+                <div className="text-sm text-muted-foreground py-4 text-center">Creating link...</div>
               ) : crewLink && (
                 <>
                   <div className="border rounded-md px-3 py-2.5 text-sm font-mono bg-muted/30 break-all">{crewLink}</div>
@@ -1370,10 +1285,10 @@ export default function TransfersPage() {
                     <button
                       onClick={() => { navigator.clipboard.writeText(crewLink); setCrewLinkCopied(true); setTimeout(() => setCrewLinkCopied(false), 2000) }}
                       className="flex-1 px-4 py-2 text-sm border rounded-md hover:bg-muted font-medium">
-                      {crewLinkCopied ? 'Tersalin!' : 'Copy Link'}
+                      {crewLinkCopied ? 'Copied!' : 'Copy Link'}
                     </button>
                     <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`Tolong konfirmasi penerimaan barang ${detail?.transferNumber ?? ''} di sini: ${crewLink}`)}`}
+                      href={`https://wa.me/?text=${encodeURIComponent(`Please confirm receipt of ${detail?.transferNumber ?? ''} here: ${crewLink}`)}`}
                       target="_blank" rel="noopener noreferrer"
                       className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium text-center">
                       Share via WhatsApp
@@ -1394,13 +1309,13 @@ export default function TransfersPage() {
               <button onClick={() => setAddItemModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="p-5 space-y-3">
-              <p className="text-xs text-muted-foreground">Dipilih dari stok yang ada di {detail.fromLocation?.name ?? 'lokasi asal'} saat ini.</p>
+              <p className="text-xs text-muted-foreground">Picked from the stock currently at {detail.fromLocation?.name ?? 'the source location'}.</p>
               {addItemError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{addItemError}</div>}
               {!addItemPicked ? (
                 <>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                    <input autoFocus value={addItemSearch} onChange={e => setAddItemSearch(e.target.value)} placeholder="Cari barang..."
+                    <input autoFocus value={addItemSearch} onChange={e => setAddItemSearch(e.target.value)} placeholder="Search items..."
                       className="w-full h-9 border rounded-md pl-8 pr-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
                   </div>
                   <div className="max-h-64 overflow-y-auto border rounded-md divide-y">
@@ -1413,7 +1328,7 @@ export default function TransfersPage() {
                           <span className="text-xs text-muted-foreground shrink-0">{s.qty} {s.baseUnit}</span>
                         </button>
                       ))}
-                    {warehouseStock.length === 0 && <p className="text-sm text-muted-foreground px-3 py-4 text-center">Tidak ada stok di lokasi ini.</p>}
+                    {warehouseStock.length === 0 && <p className="text-sm text-muted-foreground px-3 py-4 text-center">No stock at this location.</p>}
                   </div>
                 </>
               ) : (
@@ -1423,7 +1338,7 @@ export default function TransfersPage() {
                       <p className="text-sm font-medium">{addItemPicked.name}</p>
                       <p className="text-xs text-muted-foreground">Tersedia: {addItemPicked.qty} {addItemPicked.baseUnit}</p>
                     </div>
-                    <button onClick={() => setAddItemPicked(null)} className="text-xs text-muted-foreground hover:underline">Ganti</button>
+                    <button onClick={() => setAddItemPicked(null)} className="text-xs text-muted-foreground hover:underline">Change</button>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Qty ({addItemPicked.baseUnit})</label>
@@ -1437,7 +1352,7 @@ export default function TransfersPage() {
               <button onClick={() => setAddItemModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
               <button onClick={confirmAddItem} disabled={!addItemPicked || addItemSaving}
                 className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {addItemSaving ? 'Menambah...' : 'Tambah'}
+                {addItemSaving ? 'Adding...' : 'Add'}
               </button>
             </div>
           </div>

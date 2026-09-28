@@ -8,6 +8,7 @@ import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApprova
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
+import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 // WAREHOUSE sits in VIEW_ALLOWED, which (see GET below) skips the per-request ownership
@@ -49,7 +50,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       convertedBy: { select: { id: true, name: true } },
       rejectedBy: { select: { id: true, name: true } },
       cancelledBy: { select: { id: true, name: true } },
-      tripBooking: { select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
+      tripBooking: { select: tripBookingSelect },
+      openTrip: { select: openTripSelect },
       // Lets the frontend show how far conversion got — the detail Timeline fetches each
       // PO's full detail separately (GET /api/purchasing/orders/[id]) for its complete
       // journey, so only enough is needed here to know which POs exist and their status.
@@ -131,7 +133,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   })
 
-  return NextResponse.json({ ...request, items, requestedBy: requester, createdBy: requesterUser, canTransfer })
+  return NextResponse.json({ ...request, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -144,7 +146,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const {
     status, transferFulfillments, roomAssignments, edit,
     deliveryLocationId, requestedByEmployeeId, notes, neededByDate, isUrgent, urgentReason, items: editItems,
-    purpose, tripBookingId,
+    purpose, tripBookingId, openTripId,
   } = body as {
     status?: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
     transferFulfillments?: { requestItemId: string; fromLocationId: string }[]
@@ -156,7 +158,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
     items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
-    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
+    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string; openTripId?: string
   }
 
   // Editing a still-DRAFT request — reuses the same validation as creating one (POST
@@ -183,15 +185,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
       return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
     }
-    if (purpose === 'TRIP' && !tripBookingId) {
+    if (purpose === 'TRIP' && !tripBookingId && !openTripId) {
       return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
     }
     const loc = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { id: true } })
     if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
-    if (purpose === 'TRIP' && tripBookingId) {
-      const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
-      if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
-    }
+    const tripLink = purpose === 'TRIP' ? await resolveTripLink(db, { tripBookingId, openTripId }) : { tripBookingId: null, openTripId: null }
+    if ('error' in tripLink) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
     const inventoryItemIds = [...new Set(editItems.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]
     if (inventoryItemIds.length > 0) {
       const foundInventoryItems = await db.inventoryItem.findMany({ where: { id: { in: inventoryItemIds } }, select: { id: true } })
@@ -211,7 +211,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         isUrgent: !!isUrgent,
         urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
         purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
-        tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
+        tripBookingId: tripLink.tripBookingId,
+        openTripId: tripLink.openTripId,
         updatedAt: new Date(),
         items: {
           create: editItems.map(it => ({

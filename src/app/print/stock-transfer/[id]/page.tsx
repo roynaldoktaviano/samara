@@ -20,6 +20,7 @@ interface TransferDetail {
   status: string
   fromLocation: { name: string } | null
   toLocation: { name: string } | null
+  trip?: { tripNumber: number | null; endDate: string; yacht: { name: string } | null } | null
   items: TransferItem[]
   departAt: string | null
   etaAt: string | null
@@ -144,7 +145,7 @@ export default function StockTransferPackingListPage() {
       body: JSON.stringify({ action: 'add-item', itemId: item.id, qty }),
     })
     const data = await res.json().catch(() => null)
-    if (!res.ok) return data?.error ?? 'Gagal menambah barang'
+    if (!res.ok) return data?.error ?? 'Failed to add item'
     // The item was already on this transfer — the API bumped its requestedQty instead of
     // creating a second row for it. Drop any row(s) already showing that item locally and
     // add one fresh row (in the box just picked) with the new running total, so the
@@ -217,21 +218,21 @@ export default function StockTransferPackingListPage() {
             <div>
               <h1 className="text-lg font-semibold">Packing List — {transfer.transferNumber}</h1>
               <p className="text-xs text-gray-500 mt-0.5">
-                {transfer.fromLocation?.name ?? '—'} → {transfer.toLocation?.name ?? '—'} · atur box &amp; isi sebelum print
+                {transfer.fromLocation?.name ?? '—'} → {transfer.toLocation?.name ?? '—'} · arrange boxes &amp; contents before printing
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={addBox} className="px-3 py-2 text-sm border rounded-md hover:bg-gray-50">+ Box Baru</button>
+              <button onClick={addBox} className="px-3 py-2 text-sm border rounded-md hover:bg-gray-50">+ New Box</button>
               <button onClick={() => window.print()} className="px-4 py-2 text-sm rounded-md text-white font-medium" style={{ backgroundColor: ACCENT }}>
                 🖨 Print / Save as PDF
               </button>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Isi semua Vessel/PIC:</span>
+            <span className="text-xs text-gray-500">Set Vessel/PIC for all:</span>
             <input value={bulkVesselPic} onChange={e => setBulkVesselPic(e.target.value)}
               className="border rounded px-2 py-1 text-sm w-40" placeholder="mis. OTIUM" />
-            <button onClick={applyBulkVesselPic} className="text-xs px-2.5 py-1 border rounded-md hover:bg-gray-50">Terapkan ke semua</button>
+            <button onClick={applyBulkVesselPic} className="text-xs px-2.5 py-1 border rounded-md hover:bg-gray-50">Apply to all</button>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <label className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -261,7 +262,7 @@ export default function StockTransferPackingListPage() {
 
         {boxNumbers.length === 0 && (
           <div className="print:hidden text-center py-10">
-            <p className="text-sm text-gray-400 mb-2">Tidak ada item.</p>
+            <p className="text-sm text-gray-400 mb-2">No items.</p>
             <div className="flex justify-center">
               <AddRowControl box={1} pending={transfer.status === 'PENDING'} catalog={catalog}
                 onAddCatalog={addCatalogRow} onAddManual={addManualRow} />
@@ -283,6 +284,9 @@ export default function StockTransferPackingListPage() {
                     <p><span className="text-gray-500">Depart on</span>&nbsp;&nbsp;: {fmtDateID(departAt) || '—'}</p>
                     <p><span className="text-gray-500">{etaLabel}</span>&nbsp;&nbsp;: {fmtDateID(etaAt) || '—'}</p>
                     <p><span className="text-gray-500">Cargo</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {cargoName || '—'}</p>
+                    {transfer.trip && (
+                      <p><span className="text-gray-500">Trip</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {transfer.trip.yacht?.name ?? '—'} · {transfer.trip.tripNumber != null ? `${new Date(transfer.trip.endDate).getUTCFullYear()}/#${transfer.trip.tripNumber}` : '—'}</p>
+                    )}
                   </div>
                   <div className="border border-black text-center" style={{ width: 72 }}>
                     <div className="text-xs font-semibold border-b border-black py-0.5">BOX</div>
@@ -312,7 +316,7 @@ export default function StockTransferPackingListPage() {
                           <input value={r.description} onChange={e => updateRow(r.id, 'description', e.target.value)}
                             className="w-full outline-none border-0 bg-transparent" />
                           {r.linked && (
-                            <span className="print:hidden shrink-0 text-[9px] px-1 py-0.5 rounded border text-gray-500" title="Terhubung ke item Transfer ini">
+                            <span className="print:hidden shrink-0 text-[9px] px-1 py-0.5 rounded border text-gray-500" title="Linked to an item on this Transfer">
                               inv
                             </span>
                           )}
@@ -369,14 +373,14 @@ function OrderedByPicker({ row, employees, onPick }: {
       <span className="hidden print:inline">{row.orderedByName}</span>
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
         className={`print:hidden w-full text-left ${row.orderedByName ? '' : 'text-gray-300'}`}>
-        {row.orderedByName || 'Pilih...'}
+        {row.orderedByName || 'Select...'}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40 print:hidden" onClick={() => setOpen(false)} />
           <div className="print:hidden absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 w-56 max-h-56 flex flex-col text-left">
             <div className="p-1.5 border-b shrink-0">
-              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari karyawan..."
+              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search employees..."
                 className="w-full h-7 border rounded px-2 text-xs focus:outline-none" />
             </div>
             <div className="overflow-y-auto">
@@ -386,7 +390,7 @@ function OrderedByPicker({ row, employees, onPick }: {
                   Clear
                 </button>
               )}
-              {opts.length === 0 && <p className="px-2.5 py-2 text-xs text-gray-400">Tidak ada karyawan cocok.</p>}
+              {opts.length === 0 && <p className="px-2.5 py-2 text-xs text-gray-400">No matching employees.</p>}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onPick(e); setOpen(false) }}
                   className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-50">
@@ -427,7 +431,7 @@ function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
   async function confirmAdd() {
     if (!picked) return
     const n = Number(qty)
-    if (!Number.isFinite(n) || n <= 0) { setError('Qty harus lebih dari 0'); return }
+    if (!Number.isFinite(n) || n <= 0) { setError('Qty must be greater than 0'); return }
     setSaving(true)
     const err = await onAddCatalog(box, picked, n)
     setSaving(false)
@@ -438,7 +442,7 @@ function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
   if (!open) {
     return (
       <div className="print:hidden mt-1.5">
-        <button onClick={() => setOpen(true)} className="text-xs hover:underline" style={{ color: ACCENT }}>+ Tambah baris di Box {box}</button>
+        <button onClick={() => setOpen(true)} className="text-xs hover:underline" style={{ color: ACCENT }}>+ Add row to Box {box}</button>
       </div>
     )
   }
@@ -450,10 +454,10 @@ function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
         <>
           {pending ? (
             <>
-              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari barang di inventory..."
+              <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search inventory items..."
                 className="w-full border rounded px-2 py-1 text-xs bg-white" />
               <div className="max-h-40 overflow-y-auto border rounded divide-y bg-white">
-                {matches.length === 0 && <p className="text-xs text-gray-400 px-2 py-2">Tidak ada barang cocok.</p>}
+                {matches.length === 0 && <p className="text-xs text-gray-400 px-2 py-2">No matching items.</p>}
                 {matches.map(c => (
                   <button key={c.id} onClick={() => setPicked(c)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50">
                     {c.name} <span className="text-gray-400">({c.sku})</span>
@@ -462,11 +466,11 @@ function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
               </div>
             </>
           ) : (
-            <p className="text-xs text-gray-400">Transfer ini sudah diproses — baris baru tidak lagi bisa terhubung ke inventory, cuma manual.</p>
+            <p className="text-xs text-gray-400">This transfer has already been processed — new rows can no longer link to inventory, manual only.</p>
           )}
           <div className="flex items-center gap-3">
-            <button onClick={() => { onAddManual(box); reset() }} className="text-xs underline text-gray-500">+ Baris manual (non-inventory)</button>
-            <button onClick={reset} className="text-xs text-gray-400 ml-auto">Batal</button>
+            <button onClick={() => { onAddManual(box); reset() }} className="text-xs underline text-gray-500">+ Manual row (non-inventory)</button>
+            <button onClick={reset} className="text-xs text-gray-400 ml-auto">Cancel</button>
           </div>
         </>
       ) : (
@@ -475,9 +479,9 @@ function AddRowControl({ box, pending, catalog, onAddCatalog, onAddManual }: {
           <input type="number" min={0} step="any" value={qty} onChange={e => setQty(e.target.value)}
             className="w-20 border rounded px-2 py-1 text-xs bg-white" placeholder="Qty" />
           <button onClick={confirmAdd} disabled={saving} className="text-xs px-2.5 py-1 rounded text-white disabled:opacity-50" style={{ backgroundColor: ACCENT }}>
-            {saving ? 'Menambah...' : 'Tambah'}
+            {saving ? 'Adding...' : 'Add'}
           </button>
-          <button onClick={() => setPicked(null)} className="text-xs text-gray-400">Batal</button>
+          <button onClick={() => setPicked(null)} className="text-xs text-gray-400">Cancel</button>
         </div>
       )}
     </div>

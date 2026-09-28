@@ -16,10 +16,12 @@ import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
 import { roleMatches } from '@/lib/role-utils'
 import {
-  SupplierCombobox, EmployeeCombobox, TripCombobox, ReimburseAccountCombobox,
+  SupplierCombobox, EmployeeCombobox, ReimburseAccountCombobox,
   fmtDate, fmtDateTime, fmtMoney,
-  type SupplierOption, type EmployeeOption, type TripOption, type ReimburseAccountOption,
+  type SupplierOption, type EmployeeOption, type ReimburseAccountOption,
 } from '@/components/purchasing/orders/OrdersPage'
+import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
 interface PaymentRequest {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
@@ -40,8 +42,11 @@ interface ServiceOrder {
   createdByName: string | null
   requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null
   paymentStatus: string
-  booking: { bookingCode: string; tripType: string; leadGuestName: string; yacht: { name: string } | null } | null
+  trip: TripOption | null
+  // Where the service is for — a vessel, warehouse, office (Bali), etc. Optional.
+  deliveryLocation: { id: string; name: string } | null
 }
+interface LocationOption { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null; isActive?: boolean }
 interface ServiceOrderDetail extends ServiceOrder {
   extraCharges?: { label: string; amount: number }[] | null
   discountType?: 'PERCENT' | 'FIXED' | null
@@ -72,6 +77,7 @@ export default function ServicesPage() {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [trips, setTrips] = useState<TripOption[]>([])
+  const [locations, setLocations] = useState<LocationOption[]>([])
   const [reimburseAccounts, setReimburseAccounts] = useState<ReimburseAccountOption[]>([])
 
   const [statusTab, setStatusTab] = useState('ALL')
@@ -82,18 +88,20 @@ export default function ServicesPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [oRes, sRes, eRes, rRes, tRes] = await Promise.all([
+    const [oRes, sRes, eRes, rRes, tRes, lRes] = await Promise.all([
       fetch('/api/purchasing/orders?orderType=SERVICE'),
       fetch('/api/purchasing/suppliers'),
       fetch('/api/purchasing/employees'),
       fetch('/api/purchasing/reimburse-accounts'),
       fetch('/api/purchasing/trips'),
+      fetch('/api/purchasing/locations'),
     ])
     if (oRes.ok) setOrders(await oRes.json())
     if (sRes.ok) setSuppliers((await sRes.json()).filter((s: { isActive?: boolean }) => s.isActive !== false))
     if (eRes.ok) setEmployees(await eRes.json())
     if (rRes.ok) setReimburseAccounts(await rRes.json())
     if (tRes.ok) setTrips(await tRes.json())
+    if (lRes.ok) setLocations((await lRes.json()).filter((l: LocationOption) => l.isActive !== false))
     setLoading(false)
   }, [])
 
@@ -103,8 +111,8 @@ export default function ServicesPage() {
   const [supplier, setSupplier] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
-  const [bookingId, setBookingId] = useState('')
-  const [bookingLabel, setBookingLabel] = useState('')
+  const [trip, setTrip] = useState<TripOption | null>(null)
+  const [locationId, setLocationId] = useState('')
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ServiceLine[]>([{ itemName: '', unit: '', orderedQty: 1, unitCost: 0 }])
@@ -115,7 +123,7 @@ export default function ServicesPage() {
   const [saveError, setSaveError] = useState('')
 
   function resetForm() {
-    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setBookingId(''); setBookingLabel(''); setExpectedAt(''); setNotes('')
+    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setTrip(null); setLocationId(''); setExpectedAt(''); setNotes('')
     setLines([{ itemName: '', unit: '', orderedQty: 1, unitCost: 0 }])
     setExtraCharges([]); setDiscountType('PERCENT'); setDiscountValue(0); setSaveError('')
   }
@@ -133,7 +141,7 @@ export default function ServicesPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         orderType: 'SERVICE',
-        supplierId: supplierId || undefined, supplierName: supplier, bookingId: bookingId || undefined, expectedAt: expectedAt || undefined, notes,
+        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: locationId || undefined, ...tripLinkBody(trip, 'bookingId'), expectedAt: expectedAt || undefined, notes,
         requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.filter(l => l.itemName.trim()).map(l => ({ itemName: l.itemName.trim(), orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.unit || undefined })),
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
@@ -433,12 +441,19 @@ export default function ServicesPage() {
                 <EmployeeCombobox value={requestedByEmployeeId} employees={employees} onChange={setRequestedByEmployeeId} />
               </div>
               <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">Location <span className="font-normal">(optional)</span></label>
+                <select className={inp} value={locationId} onChange={e => setLocationId(e.target.value)}>
+                  <option value="">Select location (yacht, warehouse, office...)</option>
+                  {renderLocationOptions(locations, { topLevelOnly: true })}
+                </select>
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-sm font-medium text-muted-foreground">Scheduled Date <span className="font-normal">(optional)</span></label>
                 <input type="date" className={inp} value={expectedAt} onChange={e => setExpectedAt(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-2">
                 <label className="text-sm font-medium text-muted-foreground">For Trip <span className="font-normal">(optional)</span></label>
-                <TripCombobox value={bookingId} valueLabel={bookingLabel} trips={trips} onChange={(id, label) => { setBookingId(id); setBookingLabel(label) }} />
+                <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === locationId)?.yachtId} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -579,10 +594,15 @@ export default function ServicesPage() {
                   {(detail.requestedByOffice || detail.requestedByDepartment) && <span> — {[detail.requestedByOffice, detail.requestedByDepartment].filter(Boolean).join(' · ')}</span>}
                 </p>
               )}
-              {detail.booking && (
+              {detail.deliveryLocation && (
                 <p className="text-muted-foreground text-xs mt-0.5">
-                  For Trip <span className="font-medium text-foreground">{detail.booking.bookingCode}</span>
-                  {detail.booking.yacht && <span> · {detail.booking.yacht.name}</span>}
+                  Location <span className="font-medium text-foreground">{detail.deliveryLocation.name}</span>
+                </p>
+              )}
+              {detail.trip && (
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  For Trip <span className="font-medium text-foreground">{tripShortLabel(detail.trip)}</span>
+                  <span> · {tripDates(detail.trip)} · {detail.trip.label}</span>
                 </p>
               )}
             </div>

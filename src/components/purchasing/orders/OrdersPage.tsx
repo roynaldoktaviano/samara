@@ -11,6 +11,7 @@ import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { roleMatches } from '@/lib/role-utils'
 
 
@@ -54,17 +55,12 @@ interface PurchaseOrder {
   requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
   paymentStatus: string
   bookingId: string | null
-  booking: { bookingCode: string; tripType: string; startDate: string; endDate: string; leadGuestName: string; yacht: { name: string } | null } | null
+  openTripId: string | null
+  trip: TripOption | null
   transitStops?: TransitStop[]
   currentLegLabel?: string | null
 }
 export interface SupplierOption { id: string; name: string }
-export interface TripOption {
-  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
-  destination: string | null; status: string
-  yacht: { id: string; name: string } | null
-  leadGuestName: string; guestNames: string[]
-}
 interface FollowUp {
   id: string; note: string; isEscalation: boolean; escalatedToId: string | null
   escalatedTo: { name: string | null } | null; createdBy: { name: string | null }; createdAt: string
@@ -73,7 +69,7 @@ interface EscalationTarget { id: string; name: string | null }
 export interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 export interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
-interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null; yachtId?: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
   dispatchedByName?: string | null
@@ -440,90 +436,6 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
   )
 }
 
-export function TripCombobox({ value, valueLabel, trips, onChange }: {
-  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [yachtFilter, setYachtFilter] = useState('')
-  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
-  const q = search.trim().toLowerCase()
-  const opts = trips.filter(t => {
-    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
-    if (!q) return true
-    return t.bookingCode.toLowerCase().includes(q)
-      || (t.destination ?? '').toLowerCase().includes(q)
-      || t.leadGuestName.toLowerCase().includes(q)
-      || t.guestNames.some(n => n.toLowerCase().includes(q))
-  }).slice(0, 30)
-
-  return (
-    <>
-      <button type="button" onClick={() => { setOpen(true); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip (optional)...'}</span>
-        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      </button>
-      {open && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b shrink-0">
-              <h3 className="font-semibold text-lg">Select Trip</h3>
-              <button onClick={() => setOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
-            <div className="p-4 border-b shrink-0 space-y-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-9 border rounded-md px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <select className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
-                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
-                <option value="">All yachts</option>
-                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {value && (
-                <button type="button" onClick={() => { onChange('', ''); setOpen(false) }}
-                  className="w-full text-left px-5 py-2.5 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
-                  Clear selection
-                </button>
-              )}
-              {opts.length === 0 && (
-                <p className="px-5 py-6 text-sm text-muted-foreground text-center">No trips found</p>
-              )}
-              {opts.map(t => {
-                const label = `${fmtDate(t.startDate)}–${fmtDate(t.endDate)}${t.yacht ? ` — ${t.yacht.name}` : ''}`
-                return (
-                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
-                    className="w-full text-left px-5 py-3 text-sm hover:bg-amber-50 flex items-start gap-2.5 border-b last:border-0 transition-colors">
-                    <Ship className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{fmtDate(t.startDate)}–{fmtDate(t.endDate)}</span>
-                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
-                        </span>
-                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate mt-0.5">
-                        {t.yacht?.name ?? '—'}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate">
-                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
 
 function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: () => void }) {
   return (
@@ -607,8 +519,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [supplierId, setSupplierId] = useState('')
   const [requestedByEmployeeId, setRequestedByEmployeeId] = useState('')
   const [deliveryLocationId, setDeliveryLocationId] = useState('')
-  const [bookingId, setBookingId] = useState('')
-  const [bookingLabel, setBookingLabel] = useState('')
+  const [trip, setTrip] = useState<TripOption | null>(null)
   const [expectedAt, setExpectedAt] = useState('')
   const [notes, setNotes] = useState('')
   // Ordered intermediate stops between the supplier and deliveryLocationId (the final
@@ -826,7 +737,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // renderOrderFormFields) — this clears it back to a blank slate, needed before
   // opening Create so leftover data from a cancelled Edit session doesn't leak in.
   function resetOrderForm() {
-    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setBookingId(''); setBookingLabel(''); setExpectedAt(''); setNotes('')
+    setSupplier(''); setSupplierId(''); setRequestedByEmployeeId(''); setDeliveryLocationId(''); setTrip(null); setExpectedAt(''); setNotes('')
     setLines([{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
     setExtraCharges([])
     setDiscountType('PERCENT'); setDiscountValue(0)
@@ -847,7 +758,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, bookingId: bookingId || undefined, expectedAt: expectedAt || undefined, notes,
+        supplierId: supplierId || undefined, supplierName: supplier, deliveryLocationId: deliveryLocationId || undefined, ...tripLinkBody(trip, 'bookingId'), expectedAt: expectedAt || undefined, notes,
         requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.map(l => ({
           itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
@@ -1296,7 +1207,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-muted-foreground">For Trip <span className="font-normal">(optional)</span></label>
-                <TripCombobox value={bookingId} valueLabel={bookingLabel} trips={trips} onChange={(id, label) => { setBookingId(id); setBookingLabel(label) }} />
+                <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
               </div>
             </div>
 
@@ -1800,8 +1711,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     if (!detail) return
     setSupplier(detail.supplierName ?? ''); setSupplierId(detail.supplierId ?? '')
     setDeliveryLocationId(detail.deliveryLocationId ?? '')
-    setBookingId(detail.bookingId ?? '')
-    setBookingLabel(detail.booking ? `${fmtDate(detail.booking.startDate)}–${fmtDate(detail.booking.endDate)}${detail.booking.yacht ? ` — ${detail.booking.yacht.name}` : ''}` : '')
+    setTrip(detail.trip ?? null)
     setExpectedAt(detail.expectedAt ? detail.expectedAt.split('T')[0] : '')
     setRequestedByEmployeeId(detail.requestedByEmployeeId ?? '')
     setNotes(detail.notes ?? '')
@@ -1839,7 +1749,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         supplierId: supplierId || undefined, supplierName: supplier,
         deliveryLocationId: deliveryLocationId || '',
         requestedByEmployeeId: requestedByEmployeeId || '',
-        bookingId: bookingId || '',
+        ...tripLinkBody(trip, 'bookingId'),
         expectedAt: expectedAt || undefined, notes,
         // Shipping route is locked server-side once the PO has dispatched — don't send it
         // in that case (the API rejects any transitStops touch after dispatchedAt).
@@ -1902,12 +1812,11 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 )}
               </p>
             )}
-            {detail.booking && (
+            {detail.trip && (
               <p className="text-muted-foreground text-xs mt-0.5 flex items-center gap-1">
                 <Ship className="h-3 w-3 shrink-0" />
-                For Trip <span className="font-medium text-foreground">{fmtDate(detail.booking.startDate)}–{fmtDate(detail.booking.endDate)}</span>
-                {detail.booking.yacht && <span> · {detail.booking.yacht.name}</span>}
-                {detail.booking.tripType === 'PRIVATE_CHARTER' && <span> · {detail.booking.leadGuestName}</span>}
+                For Trip <span className="font-medium text-foreground">{tripShortLabel(detail.trip)}</span>
+                <span> · {tripDates(detail.trip)} · {detail.trip.label}</span>
               </p>
             )}
           </div>

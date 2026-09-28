@@ -91,7 +91,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   const transfer = await db.stockTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
   if (!transfer) return { ok: false, error: 'Not found', status: 404 }
   if (transfer.status !== 'DISPATCHED') return { ok: false, error: 'Transfer belum dikirim', status: 409 }
-  if (!params.receivePhotoKey) return { ok: false, error: 'Foto penerimaan wajib diupload', status: 400 }
+  if (!params.receivePhotoKey) return { ok: false, error: 'Receipt photo is required', status: 400 }
 
   const toLoc = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true } })
 

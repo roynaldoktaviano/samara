@@ -5,6 +5,7 @@ import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck,
 import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
+import { tripDates, tripShortLabel, type TripOption } from '@/components/purchasing/TripPicker'
 
 interface ApprovalRequest {
   id: string
@@ -32,7 +33,7 @@ interface RequestDetailItem {
 
 interface RequestDetail extends ApprovalRequest {
   purpose: 'STOCK_INVENTORY' | 'TRIP'
-  tripBooking: { id: string; bookingCode: string; yacht: { name: string } | null } | null
+  trip: TripOption | null
   items: RequestDetailItem[]
 }
 
@@ -762,10 +763,10 @@ export default function MyApprovalsPage() {
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Needed By</p>
                       <p className="mt-0.5">{detail.neededByDate ? fmtDate(detail.neededByDate) : '—'}</p>
                     </div>
-                    {detail.purpose === 'TRIP' && detail.tripBooking && (
+                    {detail.purpose === 'TRIP' && detail.trip && (
                       <div className="col-span-2">
                         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Trip</p>
-                        <p className="mt-0.5">{detail.tripBooking.bookingCode}{detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}</p>
+                        <p className="mt-0.5">{tripShortLabel(detail.trip)} · {tripDates(detail.trip)} · {detail.trip.label}</p>
                       </div>
                     )}
                   </div>

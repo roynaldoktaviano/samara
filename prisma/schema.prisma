@@ -849,7 +849,7 @@ model CabinPricingTier {
 }
 
 model OpenTrip {
-  id               String         @id @default(cuid())
+  id               String            @id @default(cuid())
   title            String
   description      String?
   yachtId          String
@@ -860,9 +860,9 @@ model OpenTrip {
   region           String?
   departurePort    String?
   arrivalPort      String?
-  pricePerCabin    Float          @default(0)
-  maxCapacity      Int            @default(0)
-  status           OpenTripStatus @default(open)
+  pricePerCabin    Float             @default(0)
+  maxCapacity      Int               @default(0)
+  status           OpenTripStatus    @default(open)
   closedReason     String?
   // Sequential position of this trip within its yacht+calendar-year (year bucketed by
   // endDate/checkout, not startDate — a trip departing Dec 31 and returning Jan 3 is next
@@ -876,10 +876,13 @@ model OpenTrip {
   tripNumber       Int?
   bookings         Booking[]
   waitingListItems WaitingList[]
-  yacht            Yacht          @relation(fields: [yachtId], references: [id], onDelete: Cascade)
-  destinationRef   Destination?   @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  stockTransfers   StockTransfer[]
+  purchaseRequests PurchaseRequest[]
+  purchaseOrders   PurchaseOrder[]
+  yacht            Yacht             @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  destinationRef   Destination?      @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([yachtId])
   @@index([status])
@@ -2268,6 +2271,9 @@ model PurchaseRequest {
   // items need to be ready for.
   purpose               PurchaseRequestPurpose   @default(STOCK_INVENTORY)
   tripBookingId         String?
+  // Open Trip alternative to tripBookingId (an Open Trip is shared by many bookings, so the
+  // departure itself is linked) — same convention as StockTransfer.openTripId.
+  openTripId            String?
   pdfKey                String?
   // Which Purchasing staffer's queue this belongs to — see PurchaseRequestDivision.
   // Set on the public /request-order form; null for internally-created PRs, which stay
@@ -2299,6 +2305,7 @@ model PurchaseRequest {
   approverEmployee    Employee?                 @relation("PRApproverEmployee", fields: [approverEmployeeId], references: [id], onDelete: SetNull)
   deliveryLocation    StockLocation?            @relation("PRDelivery", fields: [deliveryLocationId], references: [id], onDelete: SetNull)
   tripBooking         Booking?                  @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
+  openTrip            OpenTrip?                 @relation(fields: [openTripId], references: [id], onDelete: SetNull)
   approvedBy          User?                     @relation("PRApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   verifiedBy          User?                     @relation("PRVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
   convertedBy         User?                     @relation("PRConvertedBy", fields: [convertedById], references: [id], onDelete: SetNull)
@@ -2322,6 +2329,7 @@ model PurchaseRequest {
   @@index([verifiedById])
   @@index([approvedById])
   @@index([tripBookingId])
+  @@index([openTripId])
   @@index([division])
 }
 
@@ -2490,6 +2498,8 @@ model PurchaseOrder {
   // Which trip/booking this PO's goods are for — optional (a lot of purchasing is
   // general stock, not tied to one trip), set at creation, editable same as everything else.
   bookingId          String?
+  // Open Trip alternative to bookingId — same convention as StockTransfer.openTripId.
+  openTripId         String?
   status             PurchaseOrderStatus @default(ORDERED)
   dispatchPhotoKey   String?
   dispatchedAt       DateTime?
@@ -2538,6 +2548,7 @@ model PurchaseOrder {
   createdBy             User?                      @relation(fields: [createdById], references: [id], onDelete: SetNull)
   requestedByEmployee   Employee?                  @relation(fields: [requestedByEmployeeId], references: [id], onDelete: SetNull)
   booking               Booking?                   @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  openTrip              OpenTrip?                  @relation(fields: [openTripId], references: [id], onDelete: SetNull)
   items                 PurchaseOrderItem[]
   receipts              GoodsReceipt[]
   notifications         Notification[]
@@ -2556,6 +2567,7 @@ model PurchaseOrder {
   @@index([createdAt])
   @@index([requestId])
   @@index([deliveryLocationId])
+  @@index([openTripId])
   @@index([requestedByEmployeeId])
   @@index([bookingId])
   @@index([orderType])
@@ -2875,6 +2887,9 @@ model StockTransfer {
   // Optional link to the specific charter/departure this transfer's cargo is for — lets
   // Purchasing/Warehouse see which trip stock is headed to when shipping to a vessel.
   tripBookingId         String?
+  // Alternative to tripBookingId for Open Trips — an Open Trip is shared by many bookings,
+  // so the transfer links the departure itself. At most one of the two is set.
+  openTripId            String?
   // Set when this transfer is one leg of a PO's multi-stop transit route (auto-created,
   // see src/lib/purchasing/transitChain.ts). originGoodsReceiptId stays the same across every
   // leg spawned from one shipment, so partial deliveries get independent chains.
@@ -2909,6 +2924,7 @@ model StockTransfer {
   crewRequest        CrewRequest?        @relation(fields: [crewRequestId], references: [id], onDelete: SetNull)
   purchaseRequest    PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
   tripBooking        Booking?            @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
+  openTrip           OpenTrip?           @relation(fields: [openTripId], references: [id], onDelete: SetNull)
   purchaseOrder      PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   originGoodsReceipt GoodsReceipt?       @relation(fields: [originGoodsReceiptId], references: [id], onDelete: SetNull)
   dispatchedBy       User?               @relation("TransferDispatch", fields: [dispatchedById], references: [id], onDelete: SetNull)
@@ -2920,6 +2936,7 @@ model StockTransfer {
   @@index([createdAt])
   @@index([crewRequestId])
   @@index([tripBookingId])
+  @@index([openTripId])
   @@index([purchaseRequestId])
   @@index([purchaseOrderId])
   @@index([originGoodsReceiptId])

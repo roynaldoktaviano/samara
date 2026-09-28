@@ -1238,6 +1238,34 @@ export default function Home() {
                 )
               }
 
+              // Every other role (incl. custom roles via allowedModules): when its items span
+              // two or more modules, title each module's block (NAV_GROUPS order) so a long
+              // mixed list isn't ambiguous. Single-module roles keep the plain flat list.
+              const moduleGroups = NAV_GROUPS
+                .filter(g => g.key !== 'main')
+                .map(g => ({ ...g, items: visibleNavItems.filter(i => i.group === g.key) }))
+                .filter(g => g.items.length > 0)
+
+              if (moduleGroups.length >= 2) {
+                const mainItems = visibleNavItems.filter(i => i.group === 'main')
+                return (
+                  <SidebarGroup className="!p-3 pt-4">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                      Menu
+                    </SidebarGroupLabel>
+                    {mainItems.length > 0 && <SidebarMenu className="gap-5">{renderItems(mainItems)}</SidebarMenu>}
+                    {moduleGroups.map(group => (
+                      <div key={group.key} className="mt-6">
+                        <div className="px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#a8874f]">
+                          {group.label}
+                        </div>
+                        <SidebarMenu className="gap-5">{renderItems(group.items)}</SidebarMenu>
+                      </div>
+                    ))}
+                  </SidebarGroup>
+                )
+              }
+
               return (
                 <SidebarGroup className="!p-3 pt-4">
                   <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">

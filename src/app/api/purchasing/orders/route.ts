@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseOrderWhere } from '@/lib/purchasing/warehouseScope'
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
     include: {
       items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
-      booking: { select: { bookingCode: true, tripType: true, startDate: true, endDate: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
+      booking: { select: tripBookingSelect },
+      openTrip: { select: openTripSelect },
       createdBy: { select: { name: true } },
       request: {
         select: {
@@ -100,7 +102,9 @@ export async function GET(req: NextRequest) {
       requestedByOffice: o.requestedByOffice ?? o.request?.requestedByEmployee?.location?.name ?? null,
       requestedByDepartment: o.requestedByDepartment ?? o.request?.requestedByEmployee?.department ?? null,
       requestedByRole: o.requestedByRole ?? null,
-      booking: o.booking ? { bookingCode: o.booking.bookingCode, tripType: o.booking.tripType, startDate: o.booking.startDate, endDate: o.booking.endDate, leadGuestName: o.booking.customer.name, yacht: o.booking.yacht } : null,
+      booking: undefined,
+      openTrip: undefined,
+      trip: tripOf(o),
       request: undefined,
       createdBy: undefined,
       transitStops: o.transitStops.map(s => ({ locationId: s.locationId, sequence: s.sequence, location: s.location })),
@@ -122,7 +126,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, CREATE_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, transitStops } = body
+  const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, openTripId, transitStops } = body
   const orderType = body.orderType === 'SERVICE' ? 'SERVICE' : 'GOODS'
   if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
   if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
@@ -206,7 +210,8 @@ export async function POST(req: NextRequest) {
       supplierId: resolvedSupplierId,
       supplierName: supplierName.trim(),
       deliveryLocationId: deliveryLocationId || null,
-      bookingId: bookingId || null,
+      bookingId: openTripId ? null : (bookingId || null),
+      openTripId: openTripId || null,
       status: 'ORDERED',
       confirmedByName: actingUser?.name ?? null,
       expectedAt: expectedAt ? new Date(expectedAt) : null,

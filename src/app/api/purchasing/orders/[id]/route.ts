@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { notifyByRole, notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
 import { getOrCreatePoReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
@@ -33,7 +34,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         inventoryCategory: { select: { name: true } },
       } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true, address: true } },
-      booking: { select: { bookingCode: true, tripType: true, startDate: true, endDate: true, customer: { select: { name: true } }, yacht: { select: { name: true } } } },
+      booking: { select: tripBookingSelect },
+      openTrip: { select: openTripSelect },
       createdBy: { select: { name: true } },
       supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
       request: {
@@ -130,7 +132,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     currentLegLabel,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
-    booking: order.booking ? { bookingCode: order.booking.bookingCode, tripType: order.booking.tripType, startDate: order.booking.startDate, endDate: order.booking.endDate, leadGuestName: order.booking.customer.name, yacht: order.booking.yacht } : null,
+    booking: undefined,
+    openTrip: undefined,
+    trip: tripOf(order),
   })
 }
 
@@ -143,10 +147,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const {
     status, supplierName, expectedAt, notes, dispatchPhotoKey, cancellationReason,
-    supplierId, deliveryLocationId, requestedByEmployeeId, items, extraCharges, discountType, discountValue, bookingId, transitStops,
+    supplierId, deliveryLocationId, requestedByEmployeeId, items, extraCharges, discountType, discountValue, bookingId, openTripId, transitStops,
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
-    supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string
+    supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string; openTripId?: string
     items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
     transitStops?: string[]
@@ -179,7 +183,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Any of these being present means the caller is editing the PO's content (as
   // opposed to just a status transition like Mark In Transit / Cancel).
-  const editFieldsTouched = [supplierName, supplierId, deliveryLocationId, requestedByEmployeeId, expectedAt, notes, items, extraCharges, discountType, discountValue, bookingId].some(v => v !== undefined)
+  const editFieldsTouched = [supplierName, supplierId, deliveryLocationId, requestedByEmployeeId, expectedAt, notes, items, extraCharges, discountType, discountValue, bookingId, openTripId].some(v => v !== undefined)
   // Items/extraCharges/discount additionally set the PO's financial total — once money
   // has moved against that total (a receipt recorded a receivedQty, or a payment/
   // reimbursement request exists), rewriting them would silently desync
@@ -371,7 +375,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(supplierName !== undefined && { supplierName: supplierName.trim() || null }),
         ...(resolvedSupplierId !== undefined && { supplierId: resolvedSupplierId }),
         ...(deliveryLocationId !== undefined && { deliveryLocationId: deliveryLocationId || null }),
-        ...(bookingId !== undefined && { bookingId: bookingId || null }),
+        // Trip link — either field present means the caller is setting it; an Open Trip wins
+        // over a booking and clears it (at most one of the two is set).
+        ...((bookingId !== undefined || openTripId !== undefined) && { bookingId: openTripId ? null : (bookingId || null), openTripId: openTripId || null }),
         ...(expectedAt !== undefined && { expectedAt: expectedAt ? new Date(expectedAt) : null }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
         ...(dispatchPhotoKey !== undefined && { dispatchPhotoKey }),

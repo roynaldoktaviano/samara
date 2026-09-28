@@ -5,6 +5,7 @@ import { resolveTenantByRequestOrderToken } from '@/lib/resolve-tenant'
 import { sendPushToUser } from '@/lib/push'
 import { notifyByRoleForRequest, notifyPurchasingForRequest } from '@/lib/notify-purchasing'
 import { allItemsCustom } from '@/lib/purchasing/requestItems'
+import { resolveTripLink } from '@/lib/purchasing/tripLink'
 
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
@@ -55,10 +56,10 @@ export async function POST(req: NextRequest) {
   const { db } = resolved
 
   const body = await req.json()
-  const { employeeId, locationId, notes, items, neededByDate, isUrgent, urgentReason, purpose, tripBookingId, division } = body as {
+  const { employeeId, locationId, notes, items, neededByDate, isUrgent, urgentReason, purpose, tripBookingId, openTripId, division } = body as {
     employeeId?: string; locationId?: string; notes?: string; items?: RequestItemInput[]
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
-    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string
+    purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string; openTripId?: string
     division?: 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
   }
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
   if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
     return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
   }
-  if (purpose === 'TRIP' && !tripBookingId) {
+  if (purpose === 'TRIP' && !tripBookingId && !openTripId) {
     return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
   }
   if (!division || !['BOAT_OPERATION', 'BUILDING_MATERIAL'].includes(division)) {
@@ -91,10 +92,8 @@ export async function POST(req: NextRequest) {
     const loc = await db.stockLocation.findUnique({ where: { id: locationId }, select: { id: true } })
     if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
   }
-  if (purpose === 'TRIP' && tripBookingId) {
-    const trip = await db.booking.findUnique({ where: { id: tripBookingId }, select: { id: true } })
-    if (!trip) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
-  }
+  const tripLink = purpose === 'TRIP' ? await resolveTripLink(db, { tripBookingId, openTripId }) : { tripBookingId: null, openTripId: null }
+  if ('error' in tripLink) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
 
   // Route to the requester's manager for approval when the org chart supports it
   // (Employee.managerId set, and that manager has an ERP login to actually see/act on
@@ -124,7 +123,8 @@ export async function POST(req: NextRequest) {
       isUrgent: !!isUrgent,
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
-      tripBookingId: purpose === 'TRIP' ? (tripBookingId || null) : null,
+      tripBookingId: tripLink.tripBookingId,
+      openTripId: tripLink.openTripId,
       division,
       status: approverEmployeeId ? 'PENDING_APPROVAL' : (allCustom ? 'ON_PROCESS' : 'DRAFT'),
       updatedAt: new Date(),

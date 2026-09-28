@@ -14,6 +14,7 @@ import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { buildPoTimelineSteps, type PoTimelineDetail } from '@/lib/purchasing/poTimelineSteps'
 import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
@@ -40,7 +41,7 @@ function compressImage(file: File): Promise<string> {
 interface PurchaseItem { id: string; name: string; sku: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; imageKey: string | null; avgPrice: number; isActive: boolean }
 interface SupplierLocation { city: string; address: string }
 interface Supplier { id: string; name: string; locations: SupplierLocation[]; contact: string | null; phone: string | null; _count?: { orders: number } }
-interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive: boolean; parentId: string | null; yachtId?: string | null }
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
 interface Quotation { id: string; supplierId: string | null; supplierName: string; price: number; fileKey: string | null; submittedAt: string }
 interface InventoryItemOption {
@@ -75,7 +76,7 @@ interface PurchaseRequest {
   urgentReason: string | null
   purpose: 'STOCK_INVENTORY' | 'TRIP'
   division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null
-  tripBooking: { id: string; bookingCode: string; startDate: string; endDate: string; yacht: { name: string } | null } | null
+  trip: TripOption | null
   // The PO(s) this PR was converted into — lets the list badge show how far the request
   // actually got, down to exactly where a routed PO physically is right now (same text
   // as the PO's own list — see currentLocationLabel). The detail Timeline fetches each
@@ -88,12 +89,6 @@ interface PurchaseRequest {
     deliveryLocation: { name: string } | null
     currentLegLabel?: string | null
   }[]
-}
-interface TripOption {
-  id: string; bookingCode: string; tripType: string; startDate: string; endDate: string
-  destination: string | null; status: string
-  yacht: { id: string; name: string } | null
-  leadGuestName: string; guestNames: string[]
 }
 interface FollowUp {
   id: string; note: string; isEscalation: boolean; escalatedToId: string | null
@@ -170,92 +165,6 @@ function DivisionBadge({ division }: { division: 'BOAT_OPERATION' | 'BUILDING_MA
   )
 }
 
-// Trip picker for the "Purpose: Trip" option — same shape/behavior as the PO page's own
-// trip picker (search by booking code/guest/destination, filter by yacht).
-function TripCombobox({ value, valueLabel, trips, onChange }: {
-  value: string; valueLabel: string; trips: TripOption[]; onChange: (id: string, label: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [yachtFilter, setYachtFilter] = useState('')
-  const yachtOptions = Array.from(new Map(trips.filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!.name])).entries())
-  const q = search.trim().toLowerCase()
-  const opts = trips.filter(t => {
-    if (yachtFilter && t.yacht?.id !== yachtFilter) return false
-    if (!q) return true
-    return t.bookingCode.toLowerCase().includes(q)
-      || (t.destination ?? '').toLowerCase().includes(q)
-      || t.leadGuestName.toLowerCase().includes(q)
-      || t.guestNames.some(n => n.toLowerCase().includes(q))
-  }).slice(0, 30)
-
-  return (
-    <>
-      <button type="button" onClick={() => { setOpen(true); setSearch('') }}
-        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={value ? '' : 'text-muted-foreground'}>{value ? valueLabel : 'Select trip...'}</span>
-        <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      </button>
-      {open && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b shrink-0">
-              <h3 className="font-semibold text-lg">Select Trip</h3>
-              <button onClick={() => setOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
-            <div className="p-4 border-b shrink-0 space-y-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-9 border rounded-md px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search booking code, guest, destination..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <select className="w-full h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
-                value={yachtFilter} onChange={e => setYachtFilter(e.target.value)}>
-                <option value="">All yachts</option>
-                {yachtOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {value && (
-                <button type="button" onClick={() => { onChange('', ''); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-5 py-2.5 text-sm text-muted-foreground hover:bg-muted border-b transition-colors">
-                  Clear selection
-                </button>
-              )}
-              {opts.length === 0 && (
-                <p className="px-5 py-6 text-sm text-muted-foreground text-center">No trips found</p>
-              )}
-              {opts.map(t => {
-                const label = `${fmtDate(t.startDate)}–${fmtDate(t.endDate)}${t.yacht ? ` — ${t.yacht.name}` : ''}`
-                return (
-                  <button key={t.id} type="button" onClick={() => { onChange(t.id, label); setOpen(false); setSearch('') }}
-                    className="w-full text-left px-5 py-3 text-sm hover:bg-amber-50 flex items-start gap-2.5 border-b last:border-0 transition-colors">
-                    <Ship className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{fmtDate(t.startDate)}–{fmtDate(t.endDate)}</span>
-                        <span className={`px-1.5 py-0 rounded text-[10px] font-medium shrink-0 ${t.tripType === 'PRIVATE_CHARTER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {t.tripType === 'PRIVATE_CHARTER' ? 'Private' : 'Open Trip'}
-                        </span>
-                        {t.status === 'cancelled' && <span className="px-1.5 py-0 rounded text-[10px] font-medium bg-red-100 text-red-700 shrink-0">Cancelled</span>}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate mt-0.5">
-                        {t.yacht?.name ?? '—'}
-                      </span>
-                      <span className="block text-xs text-muted-foreground truncate">
-                        {t.tripType === 'PRIVATE_CHARTER' ? t.leadGuestName : (t.destination ?? '—')}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
 
 // Item names for a PR list row — a couple of names inline, "+N more" for the rest so a
 // PR with a long cart doesn't blow out the row height; full list on hover via title.
@@ -354,8 +263,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
   const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
-  const [tripBookingId, setTripBookingId] = useState('')
-  const [tripBookingLabel, setTripBookingLabel] = useState('')
+  const [trip, setTrip] = useState<TripOption | null>(null)
   const [trips, setTrips] = useState<TripOption[]>([])
   const [cart, setCart] = useState<RequestLine[]>([])
 
@@ -369,10 +277,6 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   function updateRequestedByEmployeeId(id: string) {
     setRequestedByEmployeeId(id)
     if (id) setCart(prev => prev.map(l => l.requestedByEmployeeId ? l : { ...l, requestedByEmployeeId: id, key: `${l.itemId}-${l.itemUnit}-${id}` }))
-  }
-  function setTripBooking(id: string, label: string) {
-    setTripBookingId(id)
-    setTripBookingLabel(label)
   }
   const [cartOpen, setCartOpen] = useState(false)
   const [catalogSearch, setCatalogSearch] = useState('')
@@ -619,8 +523,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     setIsUrgent(detail.isUrgent)
     setUrgentReason(detail.urgentReason || '')
     setPurpose(detail.purpose)
-    setTripBookingId(detail.tripBooking?.id || '')
-    setTripBookingLabel(detail.tripBooking ? `${fmtDate(detail.tripBooking.startDate)}–${fmtDate(detail.tripBooking.endDate)}${detail.tripBooking.yacht ? ` — ${detail.tripBooking.yacht.name}` : ''}` : '')
+    setTrip(detail.trip ?? null)
     setCart(detail.items.map(item => ({
       ...item,
       key: item.id,
@@ -971,7 +874,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     if (!deliveryLocationId) { setSaveError('Please select a delivery location'); setSaving(false); return }
     if (cart.length === 0) { setSaveError('Add at least one item to the request'); setSaving(false); return }
     if (isUrgent && !urgentReason.trim()) { setSaveError('Please explain why this request is urgent'); setSaving(false); return }
-    if (purpose === 'TRIP' && !tripBookingId) { setSaveError('Please select which trip this request is for'); setSaving(false); return }
+    if (purpose === 'TRIP' && !trip) { setSaveError('Please select which trip this request is for'); setSaving(false); return }
 
     if (editingRequestId) {
       const id = editingRequestId
@@ -982,7 +885,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
           edit: true,
           deliveryLocationId, requestedByEmployeeId: requestedByEmployeeId || undefined, notes,
           neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
-          purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : undefined,
+          purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
           items: cart.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
             unit: l.itemUnit || l.baseUnit || 'pcs', estimatedCost: l.estimatedCost || undefined,
@@ -998,7 +901,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
       setEditingRequestId(null)
       setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
       setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-      setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+      setPurpose('STOCK_INVENTORY'); setTrip(null)
       setCart([]); setCartOpen(false)
       toast.success(`Purchase Request ${data.prNumber} updated`)
       const listRes = await fetch('/api/purchasing/requests')
@@ -1032,7 +935,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
         body: JSON.stringify({
           deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: empId || undefined, notes,
           neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
-          purpose, tripBookingId: purpose === 'TRIP' ? tripBookingId : undefined,
+          purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
             unit: l.itemUnit || l.baseUnit || 'pcs', notes: l.notes, imageKeys: l.imageKeys,
@@ -1054,7 +957,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     setSaving(false)
     setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-    setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+    setPurpose('STOCK_INVENTORY'); setTrip(null)
     setCart([]); setCartOpen(false)
     if (created.length > 1) {
       toast.success(`${created.length} Purchase Requests created`, {
@@ -1482,7 +1385,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
         notes={notes} setNotes={setNotes}
         neededByDate={neededByDate} setNeededByDate={setNeededByDate}
         isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-        purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+        purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
         cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
         addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
         catalogSearch={catalogSearch} setCatalogSearch={setCatalogSearch}
@@ -1504,7 +1407,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
             setEditingRequestId(null)
             setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
             setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-            setPurpose('STOCK_INVENTORY'); setTripBookingId(''); setTripBookingLabel('')
+            setPurpose('STOCK_INVENTORY'); setTrip(null)
             setCart([]); setCartOpen(false)
             setView('detail')
           } else {
@@ -1696,7 +1599,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                 <p className="text-xs text-muted-foreground">Purpose</p>
                 <p className="font-medium">
                   {detail.purpose === 'TRIP'
-                    ? `Trip${detail.tripBooking ? ` — ${fmtDate(detail.tripBooking.startDate)}–${fmtDate(detail.tripBooking.endDate)}${detail.tripBooking.yacht ? ` (${detail.tripBooking.yacht.name})` : ''}` : ''}`
+                    ? `Trip${detail.trip ? ` — ${tripShortLabel(detail.trip)} (${tripDates(detail.trip)})` : ''}`
                     : 'Stock & Inventory'}
                 </p>
               </div>
@@ -2742,7 +2645,7 @@ function CreateRequestView({
   requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
-  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
+  purpose, setPurpose, trip, setTrip, trips,
   cart, cartOpen, setCartOpen,
   addToCart, changeCartQty, removeCartLine,
   catalogSearch, setCatalogSearch,
@@ -2768,7 +2671,7 @@ function CreateRequestView({
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
-  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
   cart: RequestLine[]; cartOpen: boolean; setCartOpen: (v: boolean) => void
   addToCart: (item: PurchaseItem, unit: string) => void
@@ -3016,7 +2919,7 @@ function CreateRequestView({
               notes={notes} setNotes={setNotes}
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-              purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+              purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
               catalogSource={catalogSource} setCatalogSource={setCatalogSource}
               submit={submit} saving={saving} editingPrNumber={editingPrNumber}
             />
@@ -3041,7 +2944,7 @@ function CreateRequestView({
                 notes={notes} setNotes={setNotes}
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-                purpose={purpose} setPurpose={setPurpose} tripBookingId={tripBookingId} tripBookingLabel={tripBookingLabel} setTripBooking={setTripBooking} trips={trips}
+                purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
                 catalogSource={catalogSource} setCatalogSource={setCatalogSource}
                 submit={submit} saving={saving} editingPrNumber={editingPrNumber}
                 embedded
@@ -3241,7 +3144,7 @@ function RequestCartPanel({
   employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
-  purpose, setPurpose, tripBookingId, tripBookingLabel, setTripBooking, trips,
+  purpose, setPurpose, trip, setTrip, trips,
   catalogSource, setCatalogSource,
   submit, saving,
   editingPrNumber,
@@ -3255,7 +3158,7 @@ function RequestCartPanel({
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
-  tripBookingId: string; tripBookingLabel: string; setTripBooking: (id: string, label: string) => void
+  trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
   catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void
   submit: () => void; saving: boolean
@@ -3300,7 +3203,7 @@ function RequestCartPanel({
             </button>
           </div>
           {purpose === 'TRIP' && (
-            <TripCombobox value={tripBookingId} valueLabel={tripBookingLabel} trips={trips} onChange={setTripBooking} />
+            <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
           )}
           {/* Stock vs Inventory — only meaningful once a vessel is picked as the delivery
               location. "Stock" browses the ordinary Purchasing catalog below (as before);

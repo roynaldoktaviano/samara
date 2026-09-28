@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -25,7 +26,7 @@ export async function GET() {
     include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })
   const locIds = [...new Set([...transfers.map(t => t.fromLocationId), ...transfers.map(t => t.toLocationId)])]
-  const [locations, purchaseOrders, purchaseRequests, tripBookings] = await Promise.all([
+  const [locations, purchaseOrders, purchaseRequests, tripBookings, openTrips] = await Promise.all([
     db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, type: true } }),
     db.purchaseOrder.findMany({ where: { id: { in: transfers.map(t => t.purchaseOrderId).filter((x): x is string => !!x) } }, select: { id: true, poNumber: true } }),
     db.purchaseRequest.findMany({
@@ -34,7 +35,11 @@ export async function GET() {
     }),
     db.booking.findMany({
       where: { id: { in: transfers.map(t => t.tripBookingId).filter((x): x is string => !!x) } },
-      select: { id: true, bookingCode: true, startDate: true, endDate: true, yacht: { select: { id: true, name: true } } },
+      select: tripBookingSelect,
+    }),
+    db.openTrip.findMany({
+      where: { id: { in: transfers.map(t => t.openTripId).filter((x): x is string => !!x) } },
+      select: openTripSelect,
     }),
   ])
   const locMap = new Map(locations.map(l => [l.id, l]))
@@ -43,7 +48,8 @@ export async function GET() {
     id: r.id, prNumber: r.prNumber,
     requestedByName: r.requestedByEmployee?.fullName ?? r.requestedBy?.name ?? null,
   }]))
-  const tripMap = new Map(tripBookings.map(b => [b.id, b]))
+  const tripMap = new Map(tripBookings.map(b => [b.id, tripFromBooking(b)]))
+  const openTripMap = new Map(openTrips.map(o => [o.id, tripFromOpenTrip(o)]))
   return NextResponse.json(transfers.map(t => {
     const first = t.items[0]?.itemName ?? null
     const extra = t.items.length > 1 ? t.items.length - 1 : 0
@@ -62,7 +68,7 @@ export async function GET() {
       toLocation: locMap.get(t.toLocationId) ?? null,
       purchaseOrder: t.purchaseOrderId ? (poMap.get(t.purchaseOrderId) ?? null) : null,
       purchaseRequest: t.purchaseRequestId ? (prMap.get(t.purchaseRequestId) ?? null) : null,
-      tripBooking: t.tripBookingId ? (tripMap.get(t.tripBookingId) ?? null) : null,
+      trip: (t.openTripId ? openTripMap.get(t.openTripId) : t.tripBookingId ? tripMap.get(t.tripBookingId) : null) ?? null,
     }
   }))
 }
@@ -73,10 +79,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { fromLocationId, toLocationId, notes, items, tripBookingId } = body
-  if (!fromLocationId || !toLocationId) return NextResponse.json({ error: 'Lokasi asal dan tujuan wajib dipilih' }, { status: 400 })
-  if (fromLocationId === toLocationId) return NextResponse.json({ error: 'Lokasi asal dan tujuan tidak boleh sama' }, { status: 400 })
-  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+  const { fromLocationId, toLocationId, notes, items, tripBookingId, openTripId } = body
+  if (!fromLocationId || !toLocationId) return NextResponse.json({ error: 'Source and destination locations are required' }, { status: 400 })
+  if (fromLocationId === toLocationId) return NextResponse.json({ error: 'Source and destination must be different' }, { status: 400 })
+  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'At least 1 item is required' }, { status: 400 })
 
   // Validate stock availability — non-catalog ("non-stock") items can have
   // several lots at once (one per receiving PO, see receipts/route.ts), so
@@ -85,13 +91,13 @@ export async function POST(req: NextRequest) {
     if (it.itemId) {
       const lot = await db.stockLot.findFirst({ where: { itemId: it.itemId, locationId: fromLocationId } })
       if (!lot || lot.quantity < Number(it.requestedQty)) {
-        return NextResponse.json({ error: `Stok "${it.itemName}" tidak cukup (tersedia: ${lot?.quantity ?? 0})` }, { status: 409 })
+        return NextResponse.json({ error: `Not enough stock for "${it.itemName}" (available: ${lot?.quantity ?? 0})` }, { status: 409 })
       }
     } else {
       const lots = await db.stockLot.findMany({ where: { itemId: null, itemName: it.itemName, locationId: fromLocationId } })
       const available = lots.reduce((s, l) => s + l.quantity, 0)
       if (available < Number(it.requestedQty)) {
-        return NextResponse.json({ error: `Stok "${it.itemName}" tidak cukup (tersedia: ${available})` }, { status: 409 })
+        return NextResponse.json({ error: `Not enough stock for "${it.itemName}" (available: ${available})` }, { status: 409 })
       }
     }
   }
@@ -105,7 +111,9 @@ export async function POST(req: NextRequest) {
       toLocationId,
       status: 'PENDING',
       notes: notes?.trim() || null,
-      tripBookingId: tripBookingId || null,
+      // One trip link at most — an Open Trip wins if both are somehow sent.
+      openTripId: openTripId || null,
+      tripBookingId: openTripId ? null : (tripBookingId || null),
       updatedAt: new Date(),
       items: {
         create: items.map((it: { itemId?: string; itemName: string; requestedQty: number }) => ({

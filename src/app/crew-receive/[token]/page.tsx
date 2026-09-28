@@ -19,7 +19,7 @@ interface TransferData {
 
 // Searchable "Received by" picker — a plain <select> doesn't let crew filter a long
 // employee list by typing, so this is a lightweight combobox instead (same pattern as
-// TripCombobox in RequestsPage.tsx, restyled to match this page's mobile-first look).
+// TripCombobox in src/components/purchasing/TripPicker.tsx, restyled to match this page's mobile-first look).
 function EmployeePicker({ employees, value, onChange }: {
   employees: EmployeeOption[]; value: string; onChange: (name: string) => void
 }) {
