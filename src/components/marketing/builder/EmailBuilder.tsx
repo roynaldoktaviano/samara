@@ -15,7 +15,7 @@ import {
   GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Sparkles, Lock, X,
 } from 'lucide-react'
 import {
-  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle,
+  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding,
   type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS,
 } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
@@ -446,9 +446,9 @@ function TemplateItem({ label, description, onClick }: { label: string; descript
 }
 
 function SortableCanvasBlock({
-  block, selected, onSelect, onDelete, onDuplicate, children,
+  block, selected, onSelect, onDelete, onDuplicate, mobile = false, children,
 }: {
-  block: EmailBlock; selected: boolean; onSelect: () => void; onDelete: () => void; onDuplicate: () => void; children?: ReactNode
+  block: EmailBlock; selected: boolean; onSelect: () => void; onDelete: () => void; onDuplicate: () => void; mobile?: boolean; children?: ReactNode
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
@@ -478,7 +478,7 @@ function SortableCanvasBlock({
           <GripVertical className="h-3.5 w-3.5" />
         </button>
       </div>
-      {children ?? <BlockPreview block={block} />}
+      {children ?? <BlockPreview block={block} mobile={mobile} />}
       {selected && (
         <div className="absolute top-1.5 right-1.5 flex gap-0.5 bg-white border rounded-md shadow-sm">
           <button onClick={e => { e.stopPropagation(); onDuplicate() }} className="p-1.5 hover:bg-gray-50 rounded-l-md" title="Duplicate">
@@ -522,9 +522,10 @@ function BlockList({
             onSelect={() => onSelect(block.id)}
             onDelete={() => onDelete(block.id)}
             onDuplicate={() => onDuplicate(block.id)}
+            mobile={mobile}
           >
             {block.type === 'columns' ? (
-              <div style={{ ...paddingStyle(block.padding), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+              <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
                 {block.columns.map((colList, i) => (
                   <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
                 ))}
@@ -532,7 +533,7 @@ function BlockList({
             ) : block.type === 'section' ? (
               <div
                 style={{
-                  ...paddingStyle(block.padding),
+                  ...paddingStyle(effectivePadding(block, mobile)),
                   backgroundColor: block.backgroundColor,
                   backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
                   backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,

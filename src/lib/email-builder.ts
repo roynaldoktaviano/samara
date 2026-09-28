@@ -20,6 +20,11 @@ export function paddingStyle(p: Padding): { paddingTop: number; paddingRight: nu
   return { paddingTop: p.top, paddingRight: p.right, paddingBottom: p.bottom, paddingLeft: p.left }
 }
 
+/** The padding a block shows at the given device — its mobile override when editing/previewing at mobile width, else its own. */
+export function effectivePadding(block: { padding: Padding; mobilePadding?: Padding }, mobile: boolean): Padding {
+  return mobile && block.mobilePadding ? block.mobilePadding : block.padding
+}
+
 /** Margin object → React inline-style fields, for the canvas preview (the sent HTML uses `marginCss` instead). Undefined margin = 0 on every side, matching every block saved before this field existed. */
 export function marginStyle(m?: Padding): { marginTop: number; marginRight: number; marginBottom: number; marginLeft: number } {
   return { marginTop: m?.top ?? 0, marginRight: m?.right ?? 0, marginBottom: m?.bottom ?? 0, marginLeft: m?.left ?? 0 }
@@ -66,6 +71,7 @@ export interface TextBlock {
   lineHeight: number
   letterSpacing: number
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
   mobile?: TextMobileOverride
 }
@@ -82,6 +88,7 @@ export interface HeadingBlock {
   lineHeight: number
   letterSpacing: number
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
   mobile?: TextMobileOverride
 }
@@ -105,6 +112,7 @@ export interface ImageBlock {
   fullWidthOnMobile: boolean // only meaningful when autoWidth is off
   fillHeight: boolean // stretch + crop (object-fit:cover) to match the height of sibling blocks in the same column row — ignores width/autoWidth
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   margin?: Padding // space around the <img> itself, separate from padding on its wrapping cell — optional, undefined = 0 on every side
   mobile?: MarginMobileOverride
   hideOn: HideOn
@@ -122,6 +130,7 @@ export interface LogoBlock {
   fullWidthOnMobile: boolean
   fillHeight: boolean
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   margin?: Padding
   mobile?: MarginMobileOverride
   hideOn: HideOn
@@ -135,6 +144,7 @@ export interface VideoBlock {
   width: number
   align: BlockAlign
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
 }
 
@@ -143,6 +153,7 @@ export interface HtmlBlock {
   type: 'html'
   code: string
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
 }
 
@@ -168,6 +179,7 @@ export interface ButtonBlock {
   align: BlockAlign
   borderRadius: number
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   margin?: Padding // space around the <a> button itself, separate from padding on its wrapping cell — optional, undefined = 0 on every side
   hideOn: HideOn
   mobile?: ButtonMobileOverride
@@ -181,6 +193,7 @@ export interface DividerBlock {
   width: number // percent of content width, 10-100
   align: BlockAlign
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
 }
 
@@ -205,6 +218,7 @@ export interface ColumnsBlock {
   type: 'columns'
   columns: EmailBlock[][] // 1-6 columns, evenly split
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   gap: number // total horizontal space between side-by-side columns, in px
   hideOn: HideOn
   stackOnMobile: boolean // below 600px, drop each column to full width, one per row
@@ -220,6 +234,7 @@ export interface SectionBlock {
   type: 'section'
   blocks: EmailBlock[]
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   backgroundColor: string
   backgroundImage: string // '' = none
   backgroundSize: SectionBackgroundSize
@@ -237,6 +252,7 @@ export interface SocialBlock {
   links: SocialLink[]
   align: BlockAlign
   padding: Padding
+  mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   hideOn: HideOn
 }
 
@@ -557,6 +573,12 @@ function hideOnClass(hideOn: HideOn): string {
   return hideOn === 'desktop' ? 'hide-desktop' : hideOn === 'mobile' ? 'hide-mobile' : ''
 }
 
+// A block with a mobile padding override gets a per-instance class on the <td> carrying its
+// padding; collectExtraStyles emits the matching max-width:600px rule that swaps it in.
+function pdClass(block: EmailBlock): string | undefined {
+  return 'mobilePadding' in block && block.mobilePadding ? `pd-${block.id}` : undefined
+}
+
 function classAttr(...classes: (string | false | undefined)[]): string {
   const cls = classes.filter(Boolean).join(' ')
   return cls ? ` class="${cls}"` : ''
@@ -723,12 +745,12 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // the color one level down onto a plain <span> dodges that targeted pass,
       // the same trick that fixed the button's forced link-color override.
       const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
     }
 
     case 'heading': {
       const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
-      return `<tr><td${classAttr(`lc-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
     }
 
     case 'image':
@@ -753,12 +775,12 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(`img-${block.id}`, fwmClass)} ${dims} />`
       const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
     }
 
     case 'video': {
       const img = `<img src="${esc(block.thumbnailSrc)}" alt="Video thumbnail" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         <a href="${esc(block.videoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-block;">
           ${img}
           <div style="margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;">&#9654; Watch video</div>
@@ -767,19 +789,19 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
     }
 
     case 'html':
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${block.code}</td></tr>`
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${block.code}</td></tr>`
 
     case 'button':
       // The text color lives on an inner <span>, not the <a> itself — Gmail's dark
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
-      return `<tr><td${classAttr(`btn-wrap-${block.id}`, hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+      return `<tr><td${classAttr(`btn-wrap-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;margin:${marginCss(block.margin)};"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
       </td></tr>`
 
     case 'divider': {
       const margin = block.align === 'center' ? '0 auto' : block.align === 'right' ? '0 0 0 auto' : '0 auto 0 0'
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div${classAttr(`div-${block.id}`)} style="border-top:${block.thickness}px solid ${darkModeSafe(block.color)};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};"><div${classAttr(`div-${block.id}`)} style="border-top:${block.thickness}px solid ${darkModeSafe(block.color)};line-height:0;font-size:0;width:${block.width}%;margin:${margin};">&nbsp;</div></td></tr>`
     }
 
     case 'spacer':
@@ -831,7 +853,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         }).join('')
         const msoTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(true)}</tr></table>`
         const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(false)}</tr></table>`
-        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
+        return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
           <!--[if mso]>${msoTable}<![endif]-->
           <!--[if !mso]><!-->${table}<!--<![endif]-->
         </td></tr>`
@@ -847,7 +869,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // Fixed percentage-width <td> cells never reflow on their own — identical
         // markup for every client (Outlook included), so there's nothing conditional
         // to branch on when the design intentionally keeps columns side by side.
-        return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
+        return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">${tdTable}</td></tr>`
       }
       // "Fluid hybrid" columns: each column is a `display:inline-block` div capped
       // at its desktop pixel width (max-width) but fluid down to `width:100%` of
@@ -881,7 +903,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // instead of flush against the left edge.
         return `<div class="col-${block.id}-${i}" style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
       }).join('')
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <!--[if mso]>${tdTable}<![endif]-->
         <!--[if !mso]><!--><div style="font-size:0;line-height:0;text-align:center;">${fluidCells}</div><!--<![endif]-->
       </td></tr>`
@@ -895,13 +917,13 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // Same nested-<table> hide-class duplication as columns above.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`, hideOnClass(block.hideOn))} bgcolor="${sectionBg}" style="${bg}"><tr>
-          <td style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks, contentWidth - block.padding.left - block.padding.right)}</td>
+          <td${classAttr(pdClass(block))} style="padding:${paddingCss(block.padding)};">${renderColumnCell(block.blocks, contentWidth - block.padding.left - block.padding.right)}</td>
         </tr></table>
       </td></tr>`
     }
 
     case 'social':
-      return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         ${block.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;text-decoration:underline;">${esc(l.platform)}</a>`).join('')}
       </td></tr>`
 
@@ -945,6 +967,9 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
 function collectExtraStyles(blocks: EmailBlock[]): string[] {
   const rules: string[] = []
   for (const b of blocks) {
+    if ('mobilePadding' in b && b.mobilePadding) {
+      rules.push(`@media only screen and (max-width:600px){.pd-${b.id}{padding:${paddingCss(b.mobilePadding)} !important;}}`)
+    }
     if (b.type === 'text' || b.type === 'heading') {
       // Reinforces the inline styleAnchors() stamp above (see its comment) for
       // clients that strip inline styles on <a> but keep a <style> block.

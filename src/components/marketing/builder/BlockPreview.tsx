@@ -1,4 +1,4 @@
-import { paddingStyle, marginStyle, type EmailBlock } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, effectivePadding, type EmailBlock } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -6,13 +6,13 @@ import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, Linke
  * markup used for the real email). The actual sent/saved HTML always comes
  * from `renderBlocksToHtml` — use the builder's "Preview" toggle for exact fidelity.
  */
-export default function BlockPreview({ block }: { block: EmailBlock }) {
+export default function BlockPreview({ block, mobile = false }: { block: EmailBlock; mobile?: boolean }) {
   switch (block.type) {
     case 'text':
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -21,7 +21,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(block.padding), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -29,7 +29,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
     case 'image':
     case 'logo':
       return (
-        <div style={{ ...paddingStyle(block.padding), textAlign: block.align, ...(block.fillHeight ? { height: '100%' } : {}) }} className={block.fillHeight ? 'h-full' : ''}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, ...(block.fillHeight ? { height: '100%' } : {}) }} className={block.fillHeight ? 'h-full' : ''}>
           {block.src ? (
             block.fillHeight ? (
               <img src={block.src} alt={block.alt} className="h-full w-full object-cover block" />
@@ -47,7 +47,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'video':
       return (
-        <div style={{ ...paddingStyle(block.padding), textAlign: block.align }}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }}>
           {block.thumbnailSrc ? (
             <div className="relative inline-block" style={{ width: `${block.width}%` }}>
               <img src={block.thumbnailSrc} alt="Video thumbnail" style={{ width: '100%', display: 'block' }} />
@@ -68,7 +68,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'html':
       return (
-        <div style={paddingStyle(block.padding)} className="relative">
+        <div style={paddingStyle(effectivePadding(block, mobile))} className="relative">
           <span className="absolute top-0 right-0 flex items-center gap-1 text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
             <Code2 className="h-3 w-3" /> HTML
           </span>
@@ -78,7 +78,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'button':
       return (
-        <div style={{ ...paddingStyle(block.padding), textAlign: block.align }}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }}>
           <span
             style={{
               ...marginStyle(block.margin),
@@ -92,7 +92,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'divider':
       return (
-        <div style={paddingStyle(block.padding)}>
+        <div style={paddingStyle(effectivePadding(block, mobile))}>
           <div style={{
             borderTop: `${block.thickness}px solid ${block.color}`,
             width: `${block.width}%`,
@@ -107,7 +107,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'columns':
       return (
-        <div style={{ ...paddingStyle(block.padding), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
           {block.columns.map((col, i) => (
             <div key={i} className="space-y-1">
               {col.length === 0 ? (
@@ -124,7 +124,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
       return (
         <div
           style={{
-            ...paddingStyle(block.padding),
+            ...paddingStyle(effectivePadding(block, mobile)),
             backgroundColor: block.backgroundColor,
             backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
             backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
@@ -142,7 +142,7 @@ export default function BlockPreview({ block }: { block: EmailBlock }) {
 
     case 'social':
       return (
-        <div style={{ ...paddingStyle(block.padding), textAlign: block.align }} className="text-xs space-x-3">
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }} className="text-xs space-x-3">
           {block.links.map((l, i) => (
             <span key={i} className="underline text-muted-foreground">{l.platform}</span>
           ))}

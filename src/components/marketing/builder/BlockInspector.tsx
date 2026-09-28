@@ -156,6 +156,26 @@ function PaddingField({ value, onChange, label = 'Padding', min = 0 }: { value: 
   )
 }
 
+/** Padding with its own Desktop/Mobile switch — Mobile edits `mobilePadding` (starts from the desktop values, applied below 600px wide); Desktop edits the block's own padding. */
+function ResponsivePaddingField({ block, onChange }: { block: EmailBlock & { padding: Padding; mobilePadding?: Padding }; onChange: (block: EmailBlock) => void }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+  return (
+    <div className="space-y-2">
+      <DeviceToggle device={device} onChange={setDevice} />
+      {device === 'desktop' ? (
+        <PaddingField key="desktop" value={block.padding} onChange={padding => onChange({ ...block, padding } as EmailBlock)} />
+      ) : (
+        <>
+          <PaddingField key="mobile" label="Mobile padding" value={block.mobilePadding ?? block.padding} onChange={mobilePadding => onChange({ ...block, mobilePadding } as EmailBlock)} />
+          {block.mobilePadding
+            ? <ResetMobileLink onClick={() => onChange({ ...block, mobilePadding: undefined } as EmailBlock)} />
+            : <p className="text-[10px] text-muted-foreground">Same as desktop until you change it.</p>}
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Desktop/Mobile tab switcher for a group of fields that support a mobile-only override (see TextMobileOverride/ButtonMobileOverride) — the same 2-icon pattern as HideOnField, but for style values instead of visibility. */
 function DeviceToggle({ device, onChange }: { device: 'desktop' | 'mobile'; onChange: (d: 'desktop' | 'mobile') => void }) {
   const base = 'flex items-center justify-center gap-1.5 h-7 px-3 rounded-md border text-xs font-medium transition-colors'
@@ -420,7 +440,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
           <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -472,7 +492,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Input value={block.link ?? ''} onChange={e => onChange({ ...block, link: e.target.value || undefined })} placeholder="https://..." className="h-8 text-sm" />
           </div>
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
           <DeviceToggle device={device} onChange={setDevice} />
           {device === 'desktop' ? (
@@ -499,7 +519,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -513,7 +533,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <p className="text-[11px] text-muted-foreground">For advanced use — inserted as-is into the email.</p>
           </div>
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -563,7 +583,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           )}
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
           <DeviceToggle device={device} onChange={setDevice} />
           {device === 'desktop' ? (
@@ -586,7 +606,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -633,7 +653,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Switch checked={block.stackOnMobile} onCheckedChange={stackOnMobile => onChange({ ...block, stackOnMobile })} />
           </div>
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -659,7 +679,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             </div>
           )}
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -689,7 +709,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </Button>
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
-          <PaddingField value={block.padding} onChange={padding => onChange({ ...block, padding })} />
+          <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )

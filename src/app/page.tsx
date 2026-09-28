@@ -98,6 +98,7 @@ import CompanySettings from '@/components/settings/CompanySettings'
 import FinanceStats from '@/components/statistics/FinanceStats'
 import FinanceRevenueTable from '@/components/statistics/FinanceRevenueTable'
 import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable'
+import TripStatsTable from '@/components/statistics/TripStatsTable'
 import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
 import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
 import AudiencesPage from '@/components/marketing/audiences/AudiencesPage'
@@ -112,6 +113,7 @@ const FINANCE_TABS = [
   { key: 'summary',           label: 'Revenue Summary'   },
   { key: 'overview',          label: 'Finance Overview'  },
   { key: 'sales-performance', label: 'Sales Performance' },
+  { key: 'trip-stats',        label: 'Trip Stats'        },
 ] as const
 type FinanceTab = typeof FINANCE_TABS[number]['key']
 
@@ -130,6 +132,7 @@ function FinanceTabView() {
       {tab === 'summary'           && <FinanceRevenueTable />}
       {tab === 'overview'          && <FinanceStats />}
       {tab === 'sales-performance' && <SalesPerformanceTable />}
+      {tab === 'trip-stats'        && <TripStatsTable />}
     </div>
   )
 }
