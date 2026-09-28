@@ -1,4 +1,4 @@
-import { paddingStyle, marginStyle, effectivePadding, type EmailBlock } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, effectivePadding, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -126,10 +126,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
           style={{
             ...paddingStyle(effectivePadding(block, mobile)),
             backgroundColor: block.backgroundColor,
-            backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
-            backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
-            backgroundRepeat: block.backgroundImage ? (block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat') : undefined,
-            backgroundPosition: 'center',
+            ...backgroundImageStyle(block),
           }}
         >
           {block.blocks.length === 0 ? (
@@ -152,7 +149,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
     case 'footer':
       return (
         <div
-          style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', color: '#9ca3af', lineHeight: block.lineHeight }}
+          style={{ padding: block.padding, textAlign: block.align, backgroundColor: block.backgroundColor || '#000000', ...backgroundImageStyle(block), color: '#9ca3af', lineHeight: block.lineHeight }}
           className="text-xs space-y-3"
         >
           {block.logoUrl && (

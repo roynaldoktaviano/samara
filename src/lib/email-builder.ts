@@ -225,7 +225,41 @@ export interface ColumnsBlock {
   mobile?: ColumnsMobileOverride // gap: vertical space between stacked columns, in px
 }
 
-export type SectionBackgroundSize = 'cover' | 'contain' | 'repeat'
+// Background image sizing/tiling, shared by Section and Footer. Size and repeat are
+// separate choices; 'auto' (original size) exists mainly so tiling can use the image's
+// own dimensions — and for legacy sections saved with the old combined 'repeat' value.
+export type BackgroundSize = 'cover' | 'contain' | 'auto'
+export type BackgroundRepeat = 'no-repeat' | 'repeat'
+export type SectionBackgroundSize = BackgroundSize
+
+export interface BackgroundImageFields {
+  backgroundImage: string // '' = none
+  backgroundSize: BackgroundSize
+  backgroundRepeat: BackgroundRepeat
+}
+
+// Inline CSS for a background image (the color is set separately by each block, and
+// always stays underneath as the fallback — see the Section/Footer renderers).
+export function backgroundImageCss(b: BackgroundImageFields): string {
+  if (!b.backgroundImage) return ''
+  return `background-image:url('${esc(b.backgroundImage)}');background-repeat:${b.backgroundRepeat};background-position:center;background-size:${b.backgroundSize};`
+}
+
+// Same as backgroundImageCss, as a React style object for the builder canvas/preview.
+export function backgroundImageStyle(b: BackgroundImageFields): Record<string, string | undefined> {
+  if (!b.backgroundImage) return {}
+  return { backgroundImage: `url(${b.backgroundImage})`, backgroundSize: b.backgroundSize, backgroundRepeat: b.backgroundRepeat, backgroundPosition: 'center' }
+}
+
+// Legacy 'repeat' (old combined fit option) → original-size tiling.
+function migrateBackground(raw: { backgroundImage?: string; backgroundSize?: string; backgroundRepeat?: string }): BackgroundImageFields {
+  const legacyRepeat = raw.backgroundSize === 'repeat'
+  return {
+    backgroundImage: raw.backgroundImage || '',
+    backgroundSize: legacyRepeat ? 'auto' : (raw.backgroundSize === 'contain' || raw.backgroundSize === 'auto' ? raw.backgroundSize : 'cover'),
+    backgroundRepeat: legacyRepeat || raw.backgroundRepeat === 'repeat' ? 'repeat' : 'no-repeat',
+  }
+}
 
 // A full-width container with its own background (color and/or image) — holds
 // a nested list of content blocks, same 2-level-tree restriction as columns.
@@ -237,7 +271,8 @@ export interface SectionBlock {
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   backgroundColor: string
   backgroundImage: string // '' = none
-  backgroundSize: SectionBackgroundSize
+  backgroundSize: BackgroundSize
+  backgroundRepeat: BackgroundRepeat
   hideOn: HideOn
 }
 
@@ -273,6 +308,10 @@ export interface FooterBlock {
   fontFamily: string
   padding: number // position/behavior is fixed (can't move/delete/duplicate — see EmailBuilder.tsx), but its content fields above are editable per template/campaign via BlockInspector
   backgroundColor: string // fixed to black by default — not exposed as an editable field, so every footer stays visually consistent
+  // Optional image over that color (color stays underneath as the fallback).
+  backgroundImage: string
+  backgroundSize: BackgroundSize
+  backgroundRepeat: BackgroundRepeat
 }
 
 export type EmailBlock =
@@ -322,7 +361,7 @@ export const DEFAULT_FOOTER_LOGO_URL = 'https://samaraliveaboard.com/wp-content/
 
 function fixedFooterBlock(): FooterBlock {
   return {
-    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', lineHeight: 1.6, fontFamily: DEFAULT_FONT,
+    id: nextId(), type: 'footer', align: 'center', showUnsubscribe: true, padding: 20, backgroundColor: '#000000', backgroundImage: '', backgroundSize: 'cover', backgroundRepeat: 'no-repeat', lineHeight: 1.6, fontFamily: DEFAULT_FONT,
     companyName: 'PT Samara Wisata Bahari',
     address: FIXED_FOOTER_ADDRESS,
     logoUrl: DEFAULT_FOOTER_LOGO_URL,
@@ -424,10 +463,11 @@ function migrateBlock(raw: EmailBlock): EmailBlock {
     case 'columns':
       return { ...raw, padding: migratePadding(raw.padding, 16), hideOn, columns: raw.columns.map(list => list.map(migrateBlock)), stackOnMobile: raw.stackOnMobile ?? true }
     case 'section':
-      return { ...raw, padding: migratePadding(raw.padding, 24), hideOn, blocks: raw.blocks.map(migrateBlock) }
+      return { ...raw, ...migrateBackground(raw), padding: migratePadding(raw.padding, 24), hideOn, blocks: raw.blocks.map(migrateBlock) }
     case 'footer':
       return {
         ...raw,
+        ...migrateBackground(raw),
         padding: typeof raw.padding === 'number' ? raw.padding : 20,
         backgroundColor: raw.backgroundColor || '#000000',
         lineHeight: typeof raw.lineHeight === 'number' ? raw.lineHeight : 1.6,
@@ -485,7 +525,7 @@ export function createBlock(type: EmailBlock['type']): EmailBlock {
     case 'columns':
       return { id: nextId(), type: 'columns', padding: uniformPadding(16), gap: 24, columns: [[], []], hideOn: 'none', stackOnMobile: true }
     case 'section':
-      return { id: nextId(), type: 'section', padding: uniformPadding(24), backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', blocks: [], hideOn: 'none' }
+      return { id: nextId(), type: 'section', padding: uniformPadding(24), backgroundColor: '#f9fafb', backgroundImage: '', backgroundSize: 'cover', backgroundRepeat: 'no-repeat', blocks: [], hideOn: 'none' }
     case 'social':
       return { id: nextId(), type: 'social', links: [{ platform: 'Instagram', url: 'https://instagram.com' }], align: 'center', padding: uniformPadding(16), hideOn: 'none' }
     case 'footer':
@@ -911,9 +951,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
 
     case 'section': {
       const sectionBg = darkModeSafe(block.backgroundColor)
-      const bg = block.backgroundImage
-        ? `background-color:${sectionBg};background-image:url('${esc(block.backgroundImage)}');background-repeat:${block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat'};background-position:center;background-size:${block.backgroundSize};`
-        : `background-color:${sectionBg};`
+      const bg = `background-color:${sectionBg};${backgroundImageCss(block)}`
       // Same nested-<table> hide-class duplication as columns above.
       return `<tr><td${classAttr(hideOnClass(block.hideOn))} style="padding:0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"${classAttr(`sec-${block.id}`, hideOnClass(block.hideOn))} bgcolor="${sectionBg}" style="${bg}"><tr>
@@ -952,7 +990,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const unsubscribe = block.showUnsubscribe
         ? `<div><span style="color:#9ca3af;">Don't want to receive emails from us? Manage your email preferences </span><a href="${UNSUBSCRIBE_TOKEN}" style="text-decoration:underline;"><span style="color:#9ca3af;">here</span></a><span style="color:#9ca3af;">.</span></div>`
         : ''
-      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:${block.fontFamily};font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};">
+      return `<tr><td class="footer-block" bgcolor="${footerBg}" style="padding:${block.padding}px;text-align:${block.align};font-family:${block.fontFamily};font-size:12px;line-height:${block.lineHeight};background-color:${footerBg};${backgroundImageCss(block)}">
         ${logo}
         ${renderFooterSocialRow(block)}
         ${sent}

@@ -16,8 +16,7 @@ import {
 } from 'lucide-react'
 import {
   createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding,
-  type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS,
-} from '@/lib/email-builder'
+  type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS, backgroundImageStyle } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
 
@@ -535,10 +534,7 @@ function BlockList({
                 style={{
                   ...paddingStyle(effectivePadding(block, mobile)),
                   backgroundColor: block.backgroundColor,
-                  backgroundImage: block.backgroundImage ? `url(${block.backgroundImage})` : undefined,
-                  backgroundSize: block.backgroundImage ? block.backgroundSize : undefined,
-                  backgroundRepeat: block.backgroundImage ? (block.backgroundSize === 'repeat' ? 'repeat' : 'no-repeat') : undefined,
-                  backgroundPosition: 'center',
+                  ...backgroundImageStyle(block),
                 }}
                 className="rounded-md"
               >

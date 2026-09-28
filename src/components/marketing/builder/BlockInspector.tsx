@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn } from '@/lib/email-builder'
+import { FONT_OPTIONS, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -664,20 +664,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette into the section on the canvas.</p>
           <ColorField label="Background color" value={block.backgroundColor} onChange={backgroundColor => onChange({ ...block, backgroundColor })} />
-          <ImageUploadField label="Background image (optional)" src={block.backgroundImage} onChange={backgroundImage => onChange({ ...block, backgroundImage })} />
-          {block.backgroundImage && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Background fit</Label>
-              <Select value={block.backgroundSize} onValueChange={v => onChange({ ...block, backgroundSize: v as typeof block.backgroundSize })}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cover">Cover</SelectItem>
-                  <SelectItem value="contain">Contain</SelectItem>
-                  <SelectItem value="repeat">Repeat (tile)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <BackgroundImageField value={block} onChange={bg => onChange({ ...block, ...bg })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
@@ -729,6 +716,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             websiteUrl: brand.websiteUrl ?? '',
           })} />
           <ImageUploadField label="Logo (optional)" src={block.logoUrl} onChange={logoUrl => onChange({ ...block, logoUrl })} />
+          <BackgroundImageField value={block} onChange={bg => onChange({ ...block, ...bg })} />
           <div className="space-y-1.5">
             <Label className="text-xs">Company name</Label>
             <Input value={block.companyName} onChange={e => onChange({ ...block, companyName: e.target.value })} className="h-8 text-sm" />
@@ -763,4 +751,40 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         </div>
       )
   }
+}
+
+// Background image + its Size / Repeat options — shared by Section and Footer. The
+// block's background color stays underneath as the fallback (image not loaded, blocked,
+// or not covering the whole area).
+function BackgroundImageField({ value, onChange }: { value: BackgroundImageFields; onChange: (v: BackgroundImageFields) => void }) {
+  return (
+    <>
+      <ImageUploadField label="Background image (optional)" src={value.backgroundImage} onChange={backgroundImage => onChange({ ...value, backgroundImage })} />
+      {value.backgroundImage && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Size</Label>
+            <Select value={value.backgroundSize} onValueChange={v => onChange({ ...value, backgroundSize: v as BackgroundImageFields['backgroundSize'] })}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cover">Cover</SelectItem>
+                <SelectItem value="contain">Contain</SelectItem>
+                <SelectItem value="auto">Original size</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Repeat</Label>
+            <Select value={value.backgroundRepeat} onValueChange={v => onChange({ ...value, backgroundRepeat: v as BackgroundImageFields['backgroundRepeat'] })}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no-repeat">No repeat</SelectItem>
+                <SelectItem value="repeat">Repeat</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
