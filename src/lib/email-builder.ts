@@ -742,7 +742,7 @@ function renderFooterSocialRow(block: FooterBlock): string {
     <td style="padding:0 6px;">
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
         <tr>
-          <td width="40" height="40" align="center" valign="middle" bgcolor="#010101" class="footer-badge" style="width:40px;height:40px;border-radius:50%;background-color:#010101;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
+          <td width="40" height="40" align="center" valign="middle" class="footer-badge" style="width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);font-size:0;line-height:0;">
             <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;text-decoration:none;">${footerIcon(l.icon)}</a>
           </td>
         </tr>
@@ -1073,12 +1073,10 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       // (their footer never leaves the authored black/light-gray look), so this
       // doesn't risk dark-on-dark anywhere the background pin actually holds.
       const darkText = '#374151'
-      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{background-color:#010101 !important;border-color:rgba(55,65,81,.35) !important;}}`)
+      rules.push(`@media (prefers-color-scheme: dark){.footer-block{background-color:${bg} !important;}.footer-block span{color:${darkText} !important;}.footer-badge{border-color:rgba(55,65,81,.35) !important;}}`)
       rules.push(darkOverride('.footer-block', `background-color:${bg} !important;`))
       rules.push(darkOverride('.footer-block span', `color:${darkText} !important;`))
-      // Badges stay solid black (#010101, darkModeSafe's pin) even when the footer itself
-      // gets flipped to white — the white icon inside needs a dark disc to stay visible.
-      rules.push(darkOverride('.footer-badge', 'background-color:#010101 !important;border-color:rgba(55,65,81,.35) !important;'))
+      rules.push(darkOverride('.footer-badge', 'border-color:rgba(55,65,81,.35) !important;'))
       if (b.logoUrl === DEFAULT_FOOTER_LOGO_URL) {
         // See the comment where these are rendered: swap to the dark-text logo variant
         // in lockstep with the footer background itself flipping to white.
