@@ -75,11 +75,41 @@ export function customFontOptions(fonts: EmailFontFace[]): { label: string; valu
   return Array.from(seen, ([label, value]) => ({ label, value }))
 }
 
-/** Only the faces whose family actually appears somewhere in the design (block fields or rich-text HTML). */
+// Weights the renderer actually asks for: body text 400, buttons 600, headings and
+// <strong>/<b> 700. Nothing else in the design model can request another weight.
+const RENDERED_WEIGHTS = [400, 600, 700]
+
+/**
+ * The faces the design actually needs: families that appear somewhere in it (block fields
+ * or rich-text HTML), and per family only the closest face to each rendered weight —
+ * italic ones only if the design has italic text. Keeping this minimal matters: Gmail
+ * discards <style> once the CSS passes ~16KB, which takes every mobile @media rule
+ * (column stacking, mobile font sizes) down with it. A family uploaded in all 9 weights
+ * used to add ~2KB on its own and was enough to tip a large design over.
+ */
 export function usedFontFaces(blocks: EmailBlock[], fonts: EmailFontFace[]): EmailFontFace[] {
   if (!fonts.length) return []
   const json = JSON.stringify(blocks)
-  return fonts.filter(f => json.includes(`'${f.family}'`) || json.includes(`&quot;${f.family}&quot;`))
+  const hasItalic = /<(em|i)[\s>]|italic/i.test(json)
+  const picked = new Set<EmailFontFace>()
+  const families = new Set(fonts.map(f => f.family))
+  for (const family of families) {
+    if (!json.includes(`'${family}'`) && !json.includes(`&quot;${family}&quot;`)) continue
+    for (const style of hasItalic ? ['normal', 'italic'] : ['normal']) {
+      const faces = fonts.filter(f => f.family === family && f.style === style)
+      for (const target of RENDERED_WEIGHTS) {
+        // Nearest weight; ties go lighter for body text, heavier for 600/700 (as CSS matching would).
+        const best = faces.reduce<EmailFontFace | null>((acc, f) => {
+          if (!acc) return f
+          const d = Math.abs(f.weight - target), da = Math.abs(acc.weight - target)
+          if (d !== da) return d < da ? f : acc
+          return (target <= 400 ? f.weight < acc.weight : f.weight > acc.weight) ? f : acc
+        }, null)
+        if (best) picked.add(best)
+      }
+    }
+  }
+  return fonts.filter(f => picked.has(f))
 }
 
 export function fontFaceCss(fonts: EmailFontFace[]): string {
@@ -1167,19 +1197,45 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
   return rules
 }
 
+// Block ids ("blk_mukvagja_62631") only ever appear in the output as per-block class
+// names, but they're repeated in dozens of selectors (dark-mode overrides alone list each
+// class 4+ times). Swapping them for short per-render tokens (b0, b1, …) cuts the CSS by
+// roughly a fifth — which matters because Gmail drops <style> once it passes ~16KB,
+// taking every mobile @media rule with it. The design JSON keeps its real ids.
+function shortBlockIdMap(blocks: EmailBlock[]): Map<string, string> {
+  const map = new Map<string, string>()
+  const walk = (list: EmailBlock[]) => {
+    for (const b of list) {
+      if (!map.has(b.id)) map.set(b.id, `b${map.size}`)
+      if (b.type === 'columns') b.columns.forEach(walk)
+      if (b.type === 'section') walk(b.blocks)
+    }
+  }
+  walk(blocks)
+  return map
+}
+
+function shortenBlockIds(out: string, map: Map<string, string>): string {
+  // Whole-token match so "blk_x_1" never rewrites the front of "blk_x_12".
+  return out.replace(/blk_[a-z0-9]+_\d+/g, id => map.get(id) ?? id)
+}
+
 export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>, fonts: EmailFontFace[] = []): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
   // Custom fonts go in <head> only, hidden from Outlook desktop behind a conditional
   // comment: Outlook that sees an @font-face it can't load falls back to Times New Roman
-  // instead of the next font in the stack, so it must never see the rule at all.
+  // instead of the next font in the stack, so it must never see the rule at all. Placed
+  // AFTER the main style block so that if Gmail's CSS size cap is ever hit, what gets cut
+  // is the font rules (which Gmail ignores anyway), not the layout/mobile rules.
   const faces = usedFontFaces(blocks, fonts)
   const fontFaceBlock = faces.length
     ? `\n    <!--[if !mso]><!--><style type="text/css">\n${fontFaceCss(faces)}\n    </style><!--<![endif]-->`
     : ''
   const pageBg = darkModeSafe(s.pageBackground)
   const contentBg = darkModeSafe(s.contentBackground)
-  const rows = blocks.map(b => renderBlock(b, s.contentWidth)).join('\n')
-  const extraStyles = collectExtraStyles(blocks).join('\n')
+  const shortIds = shortBlockIdMap(blocks)
+  const rows = shortenBlockIds(blocks.map(b => renderBlock(b, s.contentWidth)).join('\n'), shortIds)
+  const extraStyles = shortenBlockIds(collectExtraStyles(blocks).join('\n'), shortIds)
   // Every @media rule (mobile hide/show, columns stacking, dark mode) lives in this
   // one block, repeated verbatim right after <body> opens. Gmail's iOS/Android apps
   // are the reason: they strip <style> out of <head> entirely (any @media there is
@@ -1218,9 +1274,9 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="color-scheme" content="light">
-    <meta name="supported-color-schemes" content="light">${fontFaceBlock}
+    <meta name="supported-color-schemes" content="light">
     <style type="text/css">${styleBlock}
-    </style>
+    </style>${fontFaceBlock}
   </head>
   <body class="email-body" style="margin:0;padding:0;background:${pageBg};">
     <style type="text/css">${styleBlock}
