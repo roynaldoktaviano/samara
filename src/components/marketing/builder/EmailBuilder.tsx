@@ -19,6 +19,7 @@ import {
   type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS, backgroundImageStyle } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
+import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 
 const ACCENT = '#bdac7e'
 const DOT_GRID = { backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px)', backgroundSize: '18px 18px' }
@@ -588,6 +589,7 @@ export default function EmailBuilder({
   title?: string
 }) {
   const emailSettings = settings ?? DEFAULT_EMAIL_SETTINGS
+  const customFonts = useEmailFonts()
   // The fixed footer is rendered separately, outside the interactive/sortable tree,
   // so it can never be selected, dragged, deleted, or have other blocks dropped after it.
   const editableBlocks = blocks.filter(b => b.type !== 'footer')
@@ -823,7 +825,7 @@ export default function EmailBuilder({
           <div className="flex-1 overflow-auto flex justify-center p-6" style={DOT_GRID}>
             <iframe
               title="Email preview"
-              srcDoc={renderBlocksToHtml(blocks, emailSettings)}
+              srcDoc={renderBlocksToHtml(blocks, emailSettings, customFonts)}
               className="bg-white shadow-lg rounded-md transition-[width] duration-200"
               style={{ width: device === 'desktop' ? 640 : 375, height: '100%', minHeight: 600, border: 'none' }}
               sandbox=""

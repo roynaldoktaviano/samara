@@ -101,6 +101,7 @@ import SalesPerformanceTable from '@/components/statistics/SalesPerformanceTable
 import TripStatsTable from '@/components/statistics/TripStatsTable'
 import CampaignsPage from '@/components/marketing/campaigns/CampaignsPage'
 import TemplatesPage from '@/components/marketing/templates/TemplatesPage'
+import EmailFontsPage from '@/components/marketing/fonts/EmailFontsPage'
 import AudiencesPage from '@/components/marketing/audiences/AudiencesPage'
 import AutomationsPage from '@/components/marketing/automations/AutomationsPage'
 import CommandCenterPage from '@/components/marketing/dashboard/CommandCenterPage'
@@ -845,6 +846,7 @@ export default function Home() {
       case 'marketing-audiences': return <AudiencesPage />
       case 'marketing-content-studio': return <ContentStudioPage />
       case 'marketing-templates': return <TemplatesPage />
+      case 'marketing-fonts': return <EmailFontsPage />
       case 'marketing-publishing': return <MarketingComingSoon title="Publishing Center" desc="A weekly publishing queue and schedule across every channel." icon={Send} />
       case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
       case 'marketing-assets': return <MediaKit />

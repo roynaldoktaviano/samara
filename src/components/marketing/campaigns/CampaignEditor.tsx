@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical, Search, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
+import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 import { AudienceSourceFields, emptyAudience, buildAudienceSources, audienceStateFromSources, type AudienceState, type YachtSummary } from '@/components/marketing/audiences/AudienceSourceFields'
 import { createBlock, renderBlocksToHtml, normalizeDesign, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
 
@@ -87,6 +88,7 @@ export default function CampaignEditor({
   const [fromEmail, setFromEmail] = useState('')
   const [fromName, setFromName] = useState('')
   const [blocks, setBlocks] = useState<EmailBlock[]>([])
+  const customFonts = useEmailFonts()
   const [settings, setSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const [yachts, setYachts] = useState<YachtSummary[]>([])
@@ -456,7 +458,7 @@ export default function CampaignEditor({
             {step === 3 && (
               <div className="p-6 max-w-2xl mx-auto space-y-5">
                 <div className="border rounded-lg overflow-hidden">
-                  <iframe title="Campaign preview" srcDoc={renderBlocksToHtml(blocks, settings)} className="w-full bg-white" style={{ height: 420, border: 'none' }} sandbox="" />
+                  <iframe title="Campaign preview" srcDoc={renderBlocksToHtml(blocks, settings, customFonts)} className="w-full bg-white" style={{ height: 420, border: 'none' }} sandbox="" />
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm bg-muted/40 rounded-lg p-3">
                   <div><span className="text-muted-foreground">Subject:</span> {subject}</div>

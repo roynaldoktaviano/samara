@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { renderBlocksToHtml, injectUnsubscribeUrl, injectPreviewText, normalizeDesign } from '@/lib/email-builder'
+import { getDb } from '@/lib/get-db'
+import { injectUnsubscribeUrl, injectPreviewText, normalizeDesign } from '@/lib/email-builder'
+import { renderDesignHtml } from '@/lib/email-fonts'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 
@@ -26,7 +28,8 @@ export async function POST(request: NextRequest) {
   }
 
   const design = normalizeDesign(blocksJson)
-  let html = renderBlocksToHtml(design.blocks, design.settings)
+  const db = await getDb(session)
+  let html = await renderDesignHtml(db, design)
   html = injectUnsubscribeUrl(html, '#')
   if (previewText?.trim()) html = injectPreviewText(html, previewText.trim())
 

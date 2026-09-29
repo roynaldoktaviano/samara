@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { renderBlocksToHtml, normalizeDesign } from '@/lib/email-builder'
+import { normalizeDesign } from '@/lib/email-builder'
+import { renderDesignHtml } from '@/lib/email-fonts'
 import { isLikelyAutomated, UNSUBSCRIBE_URL_MARKER, type RecipientTab } from '@/lib/campaign-recipients'
 
 import { roleMatches } from '@/lib/role-utils'
@@ -110,7 +111,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(fromEmail !== undefined && { fromEmail: fromEmail.trim() }),
       ...(fromName !== undefined && { fromName: fromName?.trim() || null }),
       ...(templateId !== undefined && { templateId: templateId || null }),
-      ...(design && { blocksJson: JSON.parse(JSON.stringify(design)), bodyHtml: renderBlocksToHtml(design.blocks, design.settings) }),
+      ...(design && { blocksJson: JSON.parse(JSON.stringify(design)), bodyHtml: await renderDesignHtml(db, design) }),
       ...(audienceSources !== undefined && { audienceSources }),
       ...(status === 'CANCELED' && { status: 'CANCELED' as const, scheduledAt: null }),
       ...(scheduledAt !== undefined && status !== 'CANCELED' && {

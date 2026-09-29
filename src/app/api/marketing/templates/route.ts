@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { renderBlocksToHtml, normalizeDesign } from '@/lib/email-builder'
+import { normalizeDesign } from '@/lib/email-builder'
+import { renderDesignHtml } from '@/lib/email-fonts'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       description: description?.trim() || null,
       blocksJson: JSON.parse(JSON.stringify(design)),
-      bodyHtml: renderBlocksToHtml(design.blocks, design.settings),
+      bodyHtml: await renderDesignHtml(db, design),
       createdByUserId: session!.user.id,
       createdByName: session!.user.name ?? session!.user.email ?? 'Unknown',
     },

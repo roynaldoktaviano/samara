@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
+import { FONT_OPTIONS, customFontOptions, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle, Search, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 
 // Catches the ways a manual line break (Enter in the label, rendered as a real
 // <br> on every device — see renderMultilineLabel in email-builder.ts) can look
@@ -85,12 +86,27 @@ function AlignField({ value, onChange }: { value: BlockAlign; onChange: (v: Bloc
 }
 
 function FontField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const custom = customFontOptions(useEmailFonts())
+  // A block can still point at a custom family that was since deleted/renamed in Email
+  // Fonts — keep it selectable (it renders in its fallback) instead of showing a blank select.
+  const known = FONT_OPTIONS.some(f => f.value === value) || custom.some(f => f.value === value)
+  const orphanLabel = value.match(/^'([^']+)'/)?.[1] ?? value
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Font</Label>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
         <SelectContent>
+          {!known && value && <SelectItem value={value}>{orphanLabel} (not in library)</SelectItem>}
+          {custom.length > 0 && (
+            <>
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Custom Fonts</div>
+              {custom.map(f => (
+                <SelectItem key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</SelectItem>
+              ))}
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Standard Fonts</div>
+            </>
+          )}
           {FONT_OPTIONS.map(f => (
             <SelectItem key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</SelectItem>
           ))}

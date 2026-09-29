@@ -48,6 +48,46 @@ export const FONT_OPTIONS: { label: string; value: string }[] = [
 ]
 const DEFAULT_FONT = FONT_OPTIONS[0].value
 
+/**
+ * A custom font file uploaded via Marketing → Email Fonts (EmailFont model). Several rows
+ * can share a family (one per weight/style). A block that uses it stores the ordinary
+ * `fontFamily` string built by `customFontValue`, so nothing else in the design model
+ * changes — the renderer just needs the face list to emit matching @font-face rules.
+ */
+export interface EmailFontFace {
+  family: string
+  weight: number
+  style: string
+  format: string
+  fileUrl: string
+  fallback: string
+}
+
+/** The `fontFamily` value a block stores when set to a custom font — family first, web-safe fallback after. */
+export function customFontValue(family: string, fallback: string): string {
+  return `'${family}', ${fallback}`
+}
+
+/** One picker entry per family (first uploaded file's fallback wins), for the builder's font select. */
+export function customFontOptions(fonts: EmailFontFace[]): { label: string; value: string }[] {
+  const seen = new Map<string, string>()
+  for (const f of fonts) if (!seen.has(f.family)) seen.set(f.family, customFontValue(f.family, f.fallback))
+  return Array.from(seen, ([label, value]) => ({ label, value }))
+}
+
+/** Only the faces whose family actually appears somewhere in the design (block fields or rich-text HTML). */
+export function usedFontFaces(blocks: EmailBlock[], fonts: EmailFontFace[]): EmailFontFace[] {
+  if (!fonts.length) return []
+  const json = JSON.stringify(blocks)
+  return fonts.filter(f => json.includes(`'${f.family}'`) || json.includes(`&quot;${f.family}&quot;`))
+}
+
+export function fontFaceCss(fonts: EmailFontFace[]): string {
+  return fonts.map(f =>
+    `@font-face{font-family:'${f.family}';src:url('${f.fileUrl}') format('${f.format}');font-weight:${f.weight};font-style:${f.style};font-display:swap;}`,
+  ).join('\n')
+}
+
 // Mobile-only overrides for a text/heading block's size, alignment, and color —
 // applied via a max-width:600px media query in the exported HTML (see
 // collectExtraStyles) on top of the block's own (desktop) values. Undefined
@@ -1127,8 +1167,15 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
   return rules
 }
 
-export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>): string {
+export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>, fonts: EmailFontFace[] = []): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
+  // Custom fonts go in <head> only, hidden from Outlook desktop behind a conditional
+  // comment: Outlook that sees an @font-face it can't load falls back to Times New Roman
+  // instead of the next font in the stack, so it must never see the rule at all.
+  const faces = usedFontFaces(blocks, fonts)
+  const fontFaceBlock = faces.length
+    ? `\n    <!--[if !mso]><!--><style type="text/css">\n${fontFaceCss(faces)}\n    </style><!--<![endif]-->`
+    : ''
   const pageBg = darkModeSafe(s.pageBackground)
   const contentBg = darkModeSafe(s.contentBackground)
   const rows = blocks.map(b => renderBlock(b, s.contentWidth)).join('\n')
@@ -1171,7 +1218,7 @@ export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<Emai
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="color-scheme" content="light">
-    <meta name="supported-color-schemes" content="light">
+    <meta name="supported-color-schemes" content="light">${fontFaceBlock}
     <style type="text/css">${styleBlock}
     </style>
   </head>

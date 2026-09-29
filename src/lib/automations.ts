@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
-import { renderBlocksToHtml, normalizeDesign, injectUnsubscribeUrl } from '@/lib/email-builder'
+import { normalizeDesign, injectUnsubscribeUrl } from '@/lib/email-builder'
+import { renderDesignHtml } from '@/lib/email-fonts'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 
 // Bookings in these statuses represent a real, paying trip — on_hold/pending/cancelled/
@@ -114,7 +115,7 @@ export async function runAutomationsTick(db: PrismaClient, apiKey: string, appUr
     }
 
     const design = normalizeDesign(automation.template.blocksJson)
-    const baseHtml = renderBlocksToHtml(design.blocks, design.settings)
+    const baseHtml = await renderDesignHtml(db, design)
 
     const sendResult = await sendBulkEmail({
       apiKey,

@@ -1286,6 +1286,27 @@ model EmailTemplate {
   @@index([createdAt])
 }
 
+// A custom web font uploaded by Marketing for use in the email builder. Each row is one
+// file (one weight/style) of a family — rows sharing `family` show up as a single entry in
+// the builder's font picker, and every used family's @font-face rules are emitted into the
+// rendered email's <head>. `fallback` is the web-safe stack clients that ignore web fonts
+// (Outlook desktop, Gmail) will show instead.
+model EmailFont {
+  id              String   @id @default(cuid())
+  family          String
+  weight          Int      @default(400)
+  style           String   @default("normal")
+  format          String
+  fileUrl         String
+  fileName        String
+  fallback        String   @default("Arial, Helvetica, sans-serif")
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+
+  @@index([family])
+}
+
 // A saved, reusable audience definition — same `sources` shape as EmailCampaign.audienceSources
 // (see AudienceSources in src/lib/marketing.ts). Campaigns copy a segment's sources in as a
 // starting point rather than referencing it live, so editing a segment later never silently

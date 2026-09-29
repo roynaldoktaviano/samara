@@ -11,6 +11,7 @@ const FEATURE_GATED_API_PREFIXES = [
   { prefix: '/api/finance/po-reimbursements', feature: 'purchasing' },
   { prefix: '/api/marketing/campaigns', feature: 'marketing' },
   { prefix: '/api/marketing/templates', feature: 'marketing' },
+  { prefix: '/api/marketing/fonts', feature: 'marketing' },
 ]
 
 const PUBLIC_PATHS = [
