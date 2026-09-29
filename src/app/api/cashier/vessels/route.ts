@@ -16,7 +16,9 @@ export async function GET() {
     },
     select: {
       id: true, name: true, image: true,
-      stockLocations: { where: { type: 'VESSEL', isActive: true }, select: { id: true, name: true }, take: 1 },
+      // The yacht's marked POS bar; falls back to its first VESSEL location (by name, so the
+      // pick is at least stable) until a bar is set in Stock Locations.
+      stockLocations: { where: { type: 'VESSEL', isActive: true }, select: { id: true, name: true, isPosBar: true }, orderBy: [{ isPosBar: 'desc' }, { name: 'asc' }], take: 1 },
     },
     orderBy: { name: 'asc' },
   }))
@@ -26,5 +28,6 @@ export async function GET() {
     name: y.name,
     image: y.image,
     locationId: y.stockLocations[0]?.id ?? null,
+    barConfigured: y.stockLocations[0]?.isPosBar ?? false,
   })))
 }

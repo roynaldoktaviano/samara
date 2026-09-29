@@ -441,6 +441,20 @@ export const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
   contentPadding: 24,
 }
 
+/**
+ * Left/right gap between the content card and the page edge. Follows "Outer padding" but
+ * capped at 12px so a roomy top/bottom padding doesn't squeeze the card on phones — and at
+ * 0 the card runs edge to edge with no page-background strip on either side.
+ */
+export function outerSidePadding(s: Pick<EmailSettings, 'contentPadding'>): number {
+  return Math.min(Math.max(s.contentPadding, 0), 12)
+}
+
+/** Rounded card corners only make sense with a gap around the card — edge to edge they'd show page background in the corners. */
+export function contentCornerRadius(s: Pick<EmailSettings, 'contentPadding'>): number {
+  return s.contentPadding > 0 ? 8 : 0
+}
+
 export interface EmailDesign {
   blocks: EmailBlock[]
   settings: EmailSettings
@@ -1311,8 +1325,8 @@ export function renderBlocksToHtml(designBlocks: EmailBlock[], settings?: Partia
     </style>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${pageBg}" style="background:${pageBg};">
       <tr>
-        <td align="center" style="padding:${s.contentPadding}px 12px;">
-          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" bgcolor="${contentBg}" style="max-width:${s.contentWidth}px;width:100%;background:${contentBg};border-radius:8px;overflow:hidden;">
+        <td align="center" style="padding:${s.contentPadding}px ${outerSidePadding(s)}px;">
+          <table role="presentation" width="${s.contentWidth}" cellpadding="0" cellspacing="0" class="email-content" bgcolor="${contentBg}" style="max-width:${s.contentWidth}px;width:100%;background:${contentBg};border-radius:${contentCornerRadius(s)}px;overflow:hidden;">
             ${rows}
           </table>
         </td>

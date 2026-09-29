@@ -246,6 +246,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           data: {
             id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, quantity: qty, type: 'TRANSFER_OUT', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
             ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            unitCost, totalCost: qty * unitCost,
           },
         })
         await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { dispatchedQty: qty, unitCost } })

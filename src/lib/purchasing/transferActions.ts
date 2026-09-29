@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/get-db'
 import { movingAverageCost } from '@/lib/valuation'
+import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 // This function always owns its own $transaction (called with a full client, session- or
@@ -94,7 +95,12 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   if (transfer.status !== 'DISPATCHED') return { ok: false, error: 'Transfer belum dikirim', status: 409 }
   if (!params.receivePhotoKey) return { ok: false, error: 'Receipt photo is required', status: 400 }
 
-  const toLoc = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true } })
+  const [toLoc, fromLoc] = await Promise.all([
+    db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true, ...USAGE_LOCATION_SELECT } }),
+    db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: USAGE_LOCATION_SELECT }),
+  ])
+  // Stock → ship/galley is usage (pemakaian); ship → stock is a reversal. See usage.ts.
+  const usage = toLoc ? shipUsageOnArrival(fromLoc, toLoc) : null
   // Fallback cost for legacy lines dispatched before unitCost was snapshotted.
   const catalogIds = transfer.items.map(ti => ti.itemId).filter(Boolean) as string[]
   const stdCostMap = new Map((await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true } })).map(i => [i.id, i.standardCost]))
@@ -133,6 +139,14 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
         data: {
           id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, quantity: qty, type: 'TRANSFER_IN', referenceId: transferId, referenceType: 'StockTransfer', createdById: params.movementCreatedById,
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+          unitCost: incomingCost,
+          totalCost: qty * incomingCost * (usage?.sign ?? 1),
+          ...(usage && {
+            usageType: 'SHIP_USAGE' as const,
+            yachtId: usage.yachtId,
+            openTripId: transfer.openTripId,
+            tripBookingId: transfer.tripBookingId,
+          }),
         },
       })
       await tx.stockTransferItem.updateMany({ where: { transferId, itemId: it.itemId || null, itemName: it.itemName }, data: { receivedQty: qty } })

@@ -680,6 +680,7 @@ model Yacht {
   posMenuItems       PosMenuItem[]
   posPackages        PosPackage[]
   posDiscounts       PosDiscount[]
+  stockUsages        StockMovement[]
   documents          LegalDocument[]
   internalEvents     InternalEvent[]
   assignedUsers      User[]
@@ -879,6 +880,7 @@ model OpenTrip {
   stockTransfers   StockTransfer[]
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
+  stockUsages      StockMovement[]
   yacht            Yacht             @relation(fields: [yachtId], references: [id], onDelete: Cascade)
   destinationRef   Destination?      @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   createdAt        DateTime          @default(now())
@@ -970,6 +972,7 @@ model Booking {
   purchaseOrders                PurchaseOrder[]
   purchaseRequests              PurchaseRequest[]
   stockTransfers                StockTransfer[]
+  stockUsages                   StockMovement[]
   freelanceTripAssignments      FreelanceTripAssignment[]
 
   @@index([status])
@@ -1853,6 +1856,11 @@ enum StockLocationType {
   ADJUSTMENT
 }
 
+enum StockConsumptionMode {
+  HOLD_AS_STOCK
+  EXPENSE_ON_RECEIVE
+}
+
 model PurchaseItemTypeConfig {
   id        String   @id @default(cuid())
   code      String   @unique
@@ -2035,6 +2043,12 @@ model StockLocation {
   address      String?
   storageClass String?
   managedBy    String            @default("WAREHOUSE")
+  // When goods here count as used (pemakaian). null = auto by type (VESSEL → EXPENSE_ON_RECEIVE,
+  // everything else → HOLD_AS_STOCK); a POS bar is always HOLD_AS_STOCK. See
+  // effectiveConsumptionMode in src/lib/purchasing/consumptionMode.ts.
+  consumptionMode StockConsumptionMode?
+  // The yacht's bar the cashier sells from — at most one per yacht (enforced by the locations API).
+  isPosBar     Boolean           @default(false)
   isActive     Boolean           @default(true)
   createdAt    DateTime          @default(now())
 
@@ -2265,17 +2279,41 @@ model StockMovement {
   referenceId    String?
   referenceType  String?
   notes          String?
+  // Cost per base unit and total value of this movement (moving-average cost at the time).
+  unitCost       Float?
+  totalCost      Float?
+  // Set when this movement is usage (pemakaian) — the single ledger all usage reports read.
+  // totalCost is negative for a reversal (goods returned from a usage location to stock, or
+  // an opname surplus). yachtId/openTripId/tripBookingId attribute the usage.
+  usageType      StockUsageType?
+  yachtId        String?
+  openTripId     String?
+  tripBookingId  String?
   createdById    String
   createdAt      DateTime @default(now())
 
-  item      PurchaseItem? @relation(fields: [itemId], references: [id])
-  createdBy User          @relation(fields: [createdById], references: [id])
+  item        PurchaseItem? @relation(fields: [itemId], references: [id])
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  yacht       Yacht?        @relation(fields: [yachtId], references: [id], onDelete: SetNull)
+  openTrip    OpenTrip?     @relation(fields: [openTripId], references: [id], onDelete: SetNull)
+  tripBooking Booking?      @relation(fields: [tripBookingId], references: [id], onDelete: SetNull)
 
   @@index([itemId])
   @@index([itemName])
   @@index([type])
   @@index([createdAt])
   @@index([referenceId])
+  @@index([usageType, createdAt])
+  @@index([yachtId])
+  @@index([openTripId])
+  @@index([tripBookingId])
+}
+
+enum StockUsageType {
+  SHIP_USAGE     // received at an EXPENSE_ON_RECEIVE location (ship/galley/deck/engine)
+  BAR_COGS       // sold at the POS bar (recipe cost)
+  COMPLIMENTARY  // given free at the POS bar
+  SHRINKAGE      // stock-count variance at a HOLD_AS_STOCK location
 }
 
 model PurchaseRequest {

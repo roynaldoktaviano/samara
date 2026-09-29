@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 import { movingAverageCost } from '@/lib/valuation'
+import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 type Db = Awaited<ReturnType<typeof getDb>>
@@ -57,6 +58,8 @@ export async function receiveGoods(db: Db, params: {
       deliveryLocationId: true,
       poNumber: true,
       supplierName: true,
+      bookingId: true,
+      openTripId: true,
       deliveryLocation: { select: { name: true } },
       transitStops: { orderBy: { sequence: 'asc' }, select: { locationId: true, location: { select: { name: true } } } },
     },
@@ -74,6 +77,10 @@ export async function receiveGoods(db: Db, params: {
   const locationNameForExceptions = receivingLocationName ?? po.deliveryLocation?.name ?? effectiveLocationId
 
   const grNumber = await generateGrNumber(db)
+
+  // A PO delivered straight to a ship/galley (no warehouse in between) is usage on arrival.
+  const receivingLoc = await db.stockLocation.findUnique({ where: { id: effectiveLocationId }, select: USAGE_LOCATION_SELECT })
+  const usage = receivingLoc ? shipUsageOnArrival(null, receivingLoc) : null
 
   const itemIds = items.map(it => it.itemId).filter(Boolean) as string[]
   const purchaseItemsData = await db.purchaseItem.findMany({
@@ -167,11 +174,11 @@ export async function receiveGoods(db: Db, params: {
       // the PO/date/cost that brought it in, without ever pooling into a location's
       // stock balance or feeding min-stock/reorder logic.
       const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
+      const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
       if (it.itemId && isStockTracked) {
         // Moving average: the location's running cost is re-blended with this receipt's
         // invoice price, so later transfers/usage are valued at the true average cost.
         const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: effectiveLocationId } })
-        const incomingCost = baseCostPerUnit || itemDataMap.get(it.itemId)?.standardCost || 0
         if (lot) {
           await tx.stockLot.update({
             where: { id: lot.id },
@@ -198,6 +205,14 @@ export async function receiveGoods(db: Db, params: {
         data: {
           id: crypto.randomUUID(), toLocationId: effectiveLocationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: params.movementCreatedById,
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+          unitCost: incomingCost,
+          totalCost: baseQty * incomingCost,
+          ...(usage && {
+            usageType: 'SHIP_USAGE' as const,
+            yachtId: usage.yachtId,
+            openTripId: po.openTripId,
+            tripBookingId: po.bookingId,
+          }),
         },
       })
 

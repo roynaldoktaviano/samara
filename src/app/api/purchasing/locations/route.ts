@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { CONSUMPTION_MODES } from '@/lib/purchasing/consumptionMode'
+import type { StockConsumptionMode } from '@prisma/client'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // GET-only: Boat Captain/Cruise Director need the location list purely to populate the
@@ -55,21 +57,29 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { name, type, yachtId, parentId, manager, address, storageClass, managedBy } = body
+  const { name, type, yachtId, parentId, manager, address, storageClass, managedBy, consumptionMode, isPosBar } = body
   if (!name?.trim() || !type) return NextResponse.json({ error: 'name dan type wajib diisi' }, { status: 400 })
   if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'yachtId wajib untuk lokasi kapal' }, { status: 400 })
-  const location = await db.stockLocation.create({
-    data: {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      type,
-      yachtId: type === 'VESSEL' ? yachtId : null,
-      parentId: parentId || null,
-      manager: manager?.trim() || null,
-      address: address?.trim() || null,
-      storageClass: storageClass || null,
-      managedBy: managedBy || 'WAREHOUSE',
-    },
+  if (consumptionMode && !CONSUMPTION_MODES.includes(consumptionMode)) return NextResponse.json({ error: 'Invalid consumption mode' }, { status: 400 })
+  const posBar = type === 'VESSEL' && Boolean(isPosBar)
+  const location = await db.$transaction(async (tx) => {
+    // One POS bar per yacht — marking this one unmarks the yacht's previous bar.
+    if (posBar) await tx.stockLocation.updateMany({ where: { yachtId, isPosBar: true }, data: { isPosBar: false } })
+    return tx.stockLocation.create({
+      data: {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        type,
+        yachtId: type === 'VESSEL' ? yachtId : null,
+        parentId: parentId || null,
+        manager: manager?.trim() || null,
+        address: address?.trim() || null,
+        storageClass: storageClass || null,
+        managedBy: managedBy || 'WAREHOUSE',
+        consumptionMode: (consumptionMode || null) as StockConsumptionMode | null,
+        isPosBar: posBar,
+      },
+    })
   })
   return NextResponse.json(location, { status: 201 })
 }

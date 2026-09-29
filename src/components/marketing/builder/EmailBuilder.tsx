@@ -15,7 +15,7 @@ import {
   GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Sparkles, Lock, X,
 } from 'lucide-react'
 import {
-  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding,
+  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding, outerSidePadding, contentCornerRadius,
   type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS, backgroundImageStyle } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
@@ -932,19 +932,19 @@ export default function EmailBuilder({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6" style={DOT_GRID}>
-              {/* Mirrors the exported table cell (padding:${contentPadding}px 12px; background:pageBackground)
+              {/* Mirrors the exported table cell (padding:${contentPadding}px ${outerSidePadding}px; background:pageBackground)
                   so "Outer padding" is visible here, not just in the sent email. */}
               <div
                 className="mx-auto transition-[max-width] duration-200"
                 style={{
-                  maxWidth: (device === 'mobile' ? 375 : emailSettings.contentWidth) + 24,
-                  padding: `${emailSettings.contentPadding}px 12px`,
+                  maxWidth: (device === 'mobile' ? 375 : emailSettings.contentWidth) + outerSidePadding(emailSettings) * 2,
+                  padding: `${emailSettings.contentPadding}px ${outerSidePadding(emailSettings)}px`,
                   background: emailSettings.pageBackground,
                 }}
               >
                 <div
-                  className="rounded-lg shadow-sm min-h-100 flex flex-col"
-                  style={{ background: emailSettings.contentBackground }}
+                  className="shadow-sm min-h-100 flex flex-col"
+                  style={{ background: emailSettings.contentBackground, borderRadius: contentCornerRadius(emailSettings) }}
                 >
                   <div className="flex-1">
                     <BlockList

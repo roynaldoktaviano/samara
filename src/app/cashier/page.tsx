@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-interface Vessel { id: string; name: string; image: string | null; locationId: string | null }
+interface Vessel { id: string; name: string; image: string | null; locationId: string | null; barConfigured?: boolean }
 interface TripGuest { id: string | null; name: string; bookingId: string }
 interface Trip { id: string; tripType: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; startDate: string; endDate: string; guests: TripGuest[] }
 interface PosCategoryLite { id: string; name: string }
@@ -280,6 +280,11 @@ function TripSelect({ vessel, onSelect, onBack, branding }: { vessel: Vessel; on
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <div style={{ fontWeight: 700, fontSize: 22, color: GOLD_DARK }}>{vessel.name}</div>
         <div style={{ fontSize: 13, color: '#8a8378', marginTop: 4 }}>Select the trip currently running</div>
+        {vessel.barConfigured === false && (
+          <div style={{ fontSize: 12, color: '#b45309', background: '#fef3c7', borderRadius: 10, padding: '8px 12px', marginTop: 12, maxWidth: 420 }}>
+            No POS Bar is set for this vessel yet — sales deduct from its first stock location. Set one in Purchasing → Stock Locations.
+          </div>
+        )}
       </div>
 
       <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 10 }}>

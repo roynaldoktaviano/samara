@@ -9,6 +9,7 @@ interface StockLocation {
   id: string; name: string; type: string; yachtId: string | null
   parentId: string | null; manager: string | null; address: string | null; storageClass: string | null
   managedBy: string; isActive: boolean
+  consumptionMode: 'HOLD_AS_STOCK' | 'EXPENSE_ON_RECEIVE' | null; isPosBar: boolean
   yacht?: { id: string; name: string } | null
   parent?: { id: string; name: string } | null
 }
@@ -36,7 +37,15 @@ const STORAGE_COLOR: Record<string, string> = {
 
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
-const BLANK = { name: '', type: 'WAREHOUSE', yachtId: '', parentId: '', manager: '', address: '', storageClass: '', managedBy: 'WAREHOUSE' }
+const BLANK = { name: '', type: 'WAREHOUSE', yachtId: '', parentId: '', manager: '', address: '', storageClass: '', managedBy: 'WAREHOUSE', consumptionMode: '', isPosBar: false }
+
+// Mirrors effectiveConsumptionMode in src/lib/purchasing/consumptionMode.ts.
+function effectiveMode(l: { type: string; consumptionMode: string | null; isPosBar: boolean }) {
+  if (l.isPosBar) return 'HOLD_AS_STOCK'
+  if (l.consumptionMode) return l.consumptionMode
+  return l.type === 'VESSEL' ? 'EXPENSE_ON_RECEIVE' : 'HOLD_AS_STOCK'
+}
+const MODE_LABEL: Record<string, string> = { HOLD_AS_STOCK: 'Held as stock', EXPENSE_ON_RECEIVE: 'Expensed on receive' }
 
 export default function LocationsPage() {
   const [locations, setLocations] = useState<StockLocation[]>([])
@@ -83,6 +92,8 @@ export default function LocationsPage() {
       address: loc.address ?? '',
       storageClass: loc.storageClass ?? '',
       managedBy: loc.managedBy ?? 'WAREHOUSE',
+      consumptionMode: loc.consumptionMode ?? '',
+      isPosBar: loc.isPosBar,
     })
     setEditing(loc); setFormError(''); setModal(true)
   }
@@ -99,6 +110,8 @@ export default function LocationsPage() {
       address: form.address || undefined,
       storageClass: form.storageClass || undefined,
       managedBy: form.managedBy,
+      consumptionMode: form.isPosBar ? '' : form.consumptionMode,
+      isPosBar: form.type === 'VESSEL' && form.isPosBar,
     }
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     const data = await res.json()
@@ -261,6 +274,12 @@ export default function LocationsPage() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLOR[loc.type] ?? 'bg-gray-100 text-gray-600'}`}>
                       {TYPE_LABEL[loc.type] ?? loc.type}
                     </span>
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {loc.isPosBar && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-700">POS Bar</span>}
+                      <span className={`text-[10px] ${effectiveMode(loc) === 'EXPENSE_ON_RECEIVE' ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                        {MODE_LABEL[effectiveMode(loc)]}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {loc.yacht ? (
@@ -486,6 +505,41 @@ export default function LocationsPage() {
                       )
                     })}
                   </div>
+                </div>
+
+                {/* Usage (pemakaian) recognition */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">When is stock here counted as used?</label>
+                  {form.type === 'VESSEL' && (
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, isPosBar: !f.isPosBar }))}
+                      className={`w-full flex items-center justify-between px-3 py-3 rounded-xl border-2 transition-all text-left ${form.isPosBar ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-rose-200'}`}>
+                      <div>
+                        <p className="text-xs font-bold leading-none">POS Bar for this yacht</p>
+                        <p className="text-[10px] opacity-70 mt-0.5">The cashier sells from here. Stock is held and only counted as used when sold, given as complimentary, or lost in stock count. One bar per yacht.</p>
+                      </div>
+                      {form.isPosBar ? <ToggleRight className="h-5 w-5 shrink-0" /> : <ToggleLeft className="h-5 w-5 shrink-0" />}
+                    </button>
+                  )}
+                  {!form.isPosBar && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { value: '', label: 'Auto', desc: form.type === 'VESSEL' ? 'Vessel: used on receive' : 'Held as stock' },
+                        { value: 'HOLD_AS_STOCK', label: 'Hold as stock', desc: 'Used only when it leaves' },
+                        { value: 'EXPENSE_ON_RECEIVE', label: 'Used on receive', desc: 'Counted as used once received' },
+                      ] as const).map(({ value, label, desc }) => {
+                        const active = form.consumptionMode === value
+                        return (
+                          <button key={value || 'auto'} type="button"
+                            onClick={() => setForm(f => ({ ...f, consumptionMode: value }))}
+                            className={`px-3 py-2.5 rounded-xl border-2 transition-all text-left ${active ? 'border-[#bdac7e] bg-amber-50 text-amber-800' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-amber-200'}`}>
+                            <p className="text-xs font-bold leading-none">{label}</p>
+                            <p className="text-[10px] opacity-70 mt-0.5">{desc}</p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* PIC / Manager */}

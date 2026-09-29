@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { effectiveConsumptionMode } from '@/lib/purchasing/consumptionMode'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -67,7 +68,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(status === 'APPROVED' ? { approvedById: session.user.id, approvedAt: new Date() } : {}),
     },
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, consumptionMode: true, isPosBar: true, yachtId: true } },
       countedBy: { select: { id: true, name: true } },
       approvedBy: { select: { id: true, name: true } },
       items: {
@@ -78,16 +79,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   })
 
   if (status === 'APPROVED') {
+    // Variance at a stock-holding location (warehouse, bar) is shrinkage usage; at a ship/galley
+    // location the goods were already expensed on receive, so it's only a quantity correction.
+    const isStockLocation = effectiveConsumptionMode(updated.location) === 'HOLD_AS_STOCK'
     for (const ci of updated.items) {
       const variance = ci.countedQty - ci.systemQty
       if (!ci.itemId) continue
 
       // Apply stock adjustment
       const existingLot = await db.stockLot.findFirst({ where: { itemId: ci.itemId, locationId: updated.locationId } })
+      const unitCost = existingLot?.costPerUnit || ci.item?.standardCost || 0
       if (existingLot) {
         await db.stockLot.update({ where: { id: existingLot.id }, data: { quantity: ci.countedQty } })
       } else if (ci.countedQty > 0) {
-        await db.stockLot.create({ data: { id: crypto.randomUUID(), itemId: ci.itemId, locationId: updated.locationId, quantity: ci.countedQty, costPerUnit: ci.item?.standardCost ?? 0, updatedAt: new Date() } })
+        await db.stockLot.create({ data: { id: crypto.randomUUID(), itemId: ci.itemId, locationId: updated.locationId, quantity: ci.countedQty, costPerUnit: unitCost, updatedAt: new Date() } })
       }
 
       // Record movement
@@ -104,12 +109,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             referenceType: 'STOCK_COUNT',
             notes: `Opname ${updated.countNumber}`,
             createdById: session.user.id,
+            unitCost,
+            // As shrinkage, a loss (negative variance) is a positive usage cost and a surplus reverses it.
+            totalCost: isStockLocation ? -variance * unitCost : Math.abs(variance) * unitCost,
+            ...(isStockLocation && { usageType: 'SHRINKAGE' as const, yachtId: updated.location.yachtId }),
           },
         })
 
         // Auto-create Stock Count Variance exception
-        const standardCost = ci.item?.standardCost ?? 0
-        const varianceValue = Math.abs(variance) * standardCost
+        const varianceValue = Math.abs(variance) * unitCost
         await db.inventoryException.create({
           data: {
             id: crypto.randomUUID(),
