@@ -75,6 +75,33 @@ export function customFontOptions(fonts: EmailFontFace[]): { label: string; valu
   return Array.from(seen, ([label, value]) => ({ label, value }))
 }
 
+/** The custom family a stored `fontFamily` value starts with (`'Palmour', Arial, …` → Palmour), if any. */
+export function leadingFontFamily(value: string): string | null {
+  return value.match(/^'([^']+)'/)?.[1] ?? null
+}
+
+/**
+ * A block stores its whole font stack, fallback included, as picked at the time — so after
+ * the fallback is changed in Email Fonts, existing designs would keep the old one. At
+ * render time every stack that leads with a library family is rebuilt with that family's
+ * current fallback, so the library is always the source of truth.
+ */
+export function applyCustomFontFallbacks(blocks: EmailBlock[], fonts: EmailFontFace[]): EmailBlock[] {
+  if (!fonts.length) return blocks
+  const current = new Map(customFontOptions(fonts).map(o => [o.label, o.value]))
+  const fix = (b: EmailBlock): EmailBlock => {
+    if (b.type === 'columns') return { ...b, columns: b.columns.map(list => list.map(fix)) }
+    if (b.type === 'section') return { ...b, blocks: b.blocks.map(fix) }
+    if ('fontFamily' in b && typeof b.fontFamily === 'string') {
+      const family = leadingFontFamily(b.fontFamily)
+      const value = family ? current.get(family) : undefined
+      if (value && value !== b.fontFamily) return { ...b, fontFamily: value }
+    }
+    return b
+  }
+  return blocks.map(fix)
+}
+
 // Weights the renderer actually asks for: body text 400, buttons 600, headings and
 // <strong>/<b> 700. Nothing else in the design model can request another weight.
 const RENDERED_WEIGHTS = [400, 600, 700]
@@ -1220,8 +1247,9 @@ function shortenBlockIds(out: string, map: Map<string, string>): string {
   return out.replace(/blk_[a-z0-9]+_\d+/g, id => map.get(id) ?? id)
 }
 
-export function renderBlocksToHtml(blocks: EmailBlock[], settings?: Partial<EmailSettings>, fonts: EmailFontFace[] = []): string {
+export function renderBlocksToHtml(designBlocks: EmailBlock[], settings?: Partial<EmailSettings>, fonts: EmailFontFace[] = []): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
+  const blocks = applyCustomFontFallbacks(designBlocks, fonts)
   // Custom fonts go in <head> only, hidden from Outlook desktop behind a conditional
   // comment: Outlook that sees an @font-face it can't load falls back to Times New Roman
   // instead of the next font in the stack, so it must never see the rule at all. Placed

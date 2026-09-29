@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, customFontOptions, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
+import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -85,12 +85,16 @@ function AlignField({ value, onChange }: { value: BlockAlign; onChange: (v: Bloc
   )
 }
 
-function FontField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function FontField({ value: stored, onChange }: { value: string; onChange: (v: string) => void }) {
   const custom = customFontOptions(useEmailFonts())
+  // A stored stack whose fallback has since been changed in Email Fonts still means that
+  // family — match it by name (the renderer applies the current fallback the same way).
+  const family = leadingFontFamily(stored)
+  const value = custom.find(f => f.label === family)?.value ?? stored
   // A block can still point at a custom family that was since deleted/renamed in Email
   // Fonts — keep it selectable (it renders in its fallback) instead of showing a blank select.
   const known = FONT_OPTIONS.some(f => f.value === value) || custom.some(f => f.value === value)
-  const orphanLabel = value.match(/^'([^']+)'/)?.[1] ?? value
+  const orphanLabel = family ?? value
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Font</Label>

@@ -11,10 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
-import { CaseSensitive, Plus, Trash2, Loader2, Upload, Info } from 'lucide-react'
+import { CaseSensitive, Plus, Trash2, Loader2, Upload, Info, Pencil } from 'lucide-react'
 import { unzip } from 'fflate'
 import { useFileDrop } from '@/hooks/useFileDrop'
-import { customFontValue } from '@/lib/email-builder'
+import { customFontValue, FONT_OPTIONS } from '@/lib/email-builder'
 import { refreshEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 
 interface EmailFont {
@@ -37,12 +37,9 @@ const MAX_BYTES = 5 * 1024 * 1024
 // supported by email clients that render web fonts at all.
 const FORMAT_RANK: Record<string, number> = { woff2: 0, woff: 1, ttf: 2, otf: 3 }
 const extOf = (name: string) => name.split('.').pop()?.toLowerCase() ?? ''
-const FALLBACKS = [
-  { label: 'Sans-serif (Arial)', value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Serif (Georgia)', value: "Georgia, 'Times New Roman', serif" },
-  { label: 'Serif (Times New Roman)', value: "'Times New Roman', Times, serif" },
-  { label: 'Monospace (Courier New)', value: "'Courier New', Courier, monospace" },
-]
+// Same web-safe stacks as the builder's standard font list, so a fallback is always a font
+// the builder itself offers.
+const FALLBACKS = FONT_OPTIONS
 const WEIGHTS = [
   [100, 'Thin'], [200, 'Extra Light'], [300, 'Light'], [400, 'Regular'], [500, 'Medium'],
   [600, 'Semi Bold'], [700, 'Bold'], [800, 'Extra Bold'], [900, 'Black'],
@@ -113,6 +110,8 @@ export default function EmailFontsPage() {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [confirmDelete, setConfirmDelete] = useState<EmailFont | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [editFamily, setEditFamily] = useState<{ family: string; fallback: string } | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
   const [previewText, setPreviewText] = useState('The quick brown fox jumps over the lazy dog')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -248,6 +247,28 @@ export default function EmailFontsPage() {
     refreshEmailFonts()
   }
 
+  // The fallback is a family-level setting, stored on each face row — update them all.
+  const handleSaveFallback = async () => {
+    if (!editFamily) return
+    const faces = fonts.filter(f => f.family === editFamily.family)
+    setSavingEdit(true)
+    try {
+      const results = await Promise.all(faces.map(f => fetch(`/api/marketing/fonts/${f.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fallback: editFamily.fallback }),
+      })))
+      if (results.some(r => !r.ok)) throw new Error()
+      toast.success('Fallback updated')
+      setEditFamily(null)
+    } catch { toast.error('Failed to update fallback') }
+    finally {
+      setSavingEdit(false)
+      await fetchFonts()
+      refreshEmailFonts()
+    }
+  }
+
   const handleDelete = async (f: EmailFont) => {
     setDeleting(true)
     try {
@@ -309,11 +330,18 @@ export default function EmailFontsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-semibold text-sm">{family}</div>
-                      <div className="text-xs text-muted-foreground truncate">Fallback: {faces[0].fallback}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        Fallback: {FALLBACKS.find(f => f.value === faces[0].fallback)?.label ?? faces[0].fallback}
+                      </div>
                     </div>
-                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs shrink-0" onClick={() => openUpload(family)}>
-                      <Plus className="h-3.5 w-3.5" /> Add Weight
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setEditFamily({ family, fallback: faces[0].fallback })}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit Fallback
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openUpload(family)}>
+                        <Plus className="h-3.5 w-3.5" /> Add Weight
+                      </Button>
+                    </div>
                   </div>
                   <div className="divide-y rounded-md border">
                     {faces.map(f => (
@@ -422,6 +450,52 @@ export default function EmailFontsPage() {
             <Button onClick={handleUpload} disabled={uploading || reading || !selected.length}>
               {uploading && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
               {uploading ? `Uploading ${progress.done}/${progress.total}...` : `Upload${selected.length > 1 ? ` ${selected.length} Files` : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Fallback Dialog */}
+      <Dialog open={!!editFamily} onOpenChange={v => !savingEdit && !v && setEditFamily(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Fallback — {editFamily?.family}</DialogTitle>
+          </DialogHeader>
+          {editFamily && (
+            <div className="space-y-3 py-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fallback font</Label>
+                <Select value={editFamily.fallback} onValueChange={v => setEditFamily(e => e && { ...e, fallback: v })}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {!FALLBACKS.some(f => f.value === editFamily.fallback) && (
+                      <SelectItem value={editFamily.fallback}>{editFamily.fallback}</SelectItem>
+                    )}
+                    {FALLBACKS.map(f => <SelectItem key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Side by side so it's easy to pick the fallback closest to the real font. */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md border p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{editFamily.family}</div>
+                  <div className="text-lg truncate" style={{ fontFamily: customFontValue(editFamily.family, editFamily.fallback) }}>{previewText || 'Aa Bb Cc'}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Fallback (Gmail, Outlook)</div>
+                  <div className="text-lg truncate" style={{ fontFamily: editFamily.fallback }}>{previewText || 'Aa Bb Cc'}</div>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Applies to every template and campaign using {editFamily.family}, including existing ones — open and save them again to update their email HTML. Automations and test sends pick it up automatically.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditFamily(null)} disabled={savingEdit}>Cancel</Button>
+            <Button onClick={handleSaveFallback} disabled={savingEdit}>
+              {savingEdit && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
