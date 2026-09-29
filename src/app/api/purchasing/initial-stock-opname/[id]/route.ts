@@ -66,7 +66,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true } } },
+        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true, standardCost: true } } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -85,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (existingLot) {
         await db.stockLot.update({ where: { id: existingLot.id }, data: { quantity: ci.countedQty } })
       } else if (ci.countedQty > 0) {
-        await db.stockLot.create({ data: { id: crypto.randomUUID(), itemId: ci.itemId, locationId: updated.locationId, quantity: ci.countedQty, costPerUnit: 0, updatedAt: new Date() } })
+        await db.stockLot.create({ data: { id: crypto.randomUUID(), itemId: ci.itemId, locationId: updated.locationId, quantity: ci.countedQty, costPerUnit: ci.item?.standardCost ?? 0, updatedAt: new Date() } })
       }
 
       if (variance !== 0) {

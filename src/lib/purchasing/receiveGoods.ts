@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
+import { movingAverageCost } from '@/lib/valuation'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 type Db = Awaited<ReturnType<typeof getDb>>
@@ -167,12 +168,22 @@ export async function receiveGoods(db: Db, params: {
       // stock balance or feeding min-stock/reorder logic.
       const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
       if (it.itemId && isStockTracked) {
+        // Moving average: the location's running cost is re-blended with this receipt's
+        // invoice price, so later transfers/usage are valued at the true average cost.
         const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: effectiveLocationId } })
+        const incomingCost = baseCostPerUnit || itemDataMap.get(it.itemId)?.standardCost || 0
         if (lot) {
-          await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: baseQty }, updatedAt: new Date() } })
+          await tx.stockLot.update({
+            where: { id: lot.id },
+            data: {
+              quantity: { increment: baseQty },
+              costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, baseQty, incomingCost),
+              updatedAt: new Date(),
+            },
+          })
         } else {
           await tx.stockLot.create({
-            data: { id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(), itemId: it.itemId },
+            data: { id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: incomingCost, updatedAt: new Date(), itemId: it.itemId },
           })
         }
       } else {
@@ -273,7 +284,16 @@ export async function receiveGoods(db: Db, params: {
           legSequence: 1,
           fromLocationId: effectiveLocationId,
           toLocationId: nextHop,
-          items: transferableItems.map(i => ({ itemId: i.itemId, itemName: i.itemName, requestedQty: i.receivedQty })),
+          // GR lines are in purchase units, but stock lots/transfers are in base units.
+          items: transferableItems.map(i => {
+            const factor = i.itemId ? (conversionMap.get(i.itemId) ?? 1) : 1
+            return {
+              itemId: i.itemId,
+              itemName: i.itemName,
+              requestedQty: i.receivedQty * factor,
+              unitCost: i.unitCost > 0 ? i.unitCost / factor : (i.itemId ? itemDataMap.get(i.itemId)?.standardCost ?? 0 : 0),
+            }
+          }),
         })
       }
     }

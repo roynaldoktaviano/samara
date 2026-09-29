@@ -122,3 +122,15 @@ export function methodLabel(method: ValuationMethod): string {
   }
   return labels[method] ?? method
 }
+
+/**
+ * Moving-average cost after adding `addQty` units at `addCost` each to a lot currently holding
+ * `oldQty` at `oldCost` — the single costing rule for all stock (PO receipts, and later transfer
+ * receipts). Negative/zero on-hand (POS overselling) contributes nothing, so the incoming cost
+ * takes over; an unknown incoming cost (0) or a legacy zero-cost balance never dilutes the other.
+ */
+export function movingAverageCost(oldQty: number, oldCost: number, addQty: number, addCost: number): number {
+  if (addQty <= 0 || addCost <= 0) return oldCost
+  if (oldQty <= 0 || oldCost <= 0) return addCost
+  return (oldQty * oldCost + addQty * addCost) / (oldQty + addQty)
+}

@@ -67,6 +67,15 @@ function guessFromFileName(name: string): { family: string; weight: number; styl
   return { family: family || base, weight, style }
 }
 
+// Windows' own font files encode the face as a suffix glued to the family (georgia.ttf,
+// georgiab.ttf, georgiai.ttf, georgiaz.ttf; arialbd.ttf) — no separator for
+// guessFromFileName to split on. Only applied when the bare base name is also present
+// (in the batch or the library), so a family that merely ends in "b" or "i" is left alone.
+const WINDOWS_SUFFIXES: [string, number, 'normal' | 'italic'][] = [
+  ['bd', 700, 'normal'], ['bi', 700, 'italic'], ['bz', 700, 'italic'], ['li', 300, 'italic'], ['it', 400, 'italic'],
+  ['b', 700, 'normal'], ['i', 400, 'italic'], ['z', 700, 'italic'], ['l', 300, 'normal'],
+]
+
 interface UploadItem {
   key: string
   file: File
@@ -156,6 +165,17 @@ export default function EmailFontsPage() {
           const existing = families.find(fam => fam.family.toLowerCase() === guess.family.toLowerCase())
           return { key: `${i}-${file.name}`, file, family: presetFamily ?? existing?.family ?? guess.family, weight: guess.weight, style: guess.style, include: true }
         })
+
+      if (!presetFamily) {
+        const bases = new Map<string, string>()
+        for (const r of rows) bases.set(r.family.toLowerCase(), r.family)
+        for (const f of families) bases.set(f.family.toLowerCase(), f.family)
+        for (const r of rows) {
+          const fam = r.family.toLowerCase()
+          const hit = WINDOWS_SUFFIXES.find(([suf]) => fam.length > suf.length && fam.endsWith(suf) && bases.has(fam.slice(0, -suf.length)))
+          if (hit) Object.assign(r, { family: bases.get(fam.slice(0, -hit[0].length))!, weight: hit[1], style: hit[2] })
+        }
+      }
 
       const hasStatic = new Set(rows.filter(r => !/variable/i.test(r.file.name)).map(r => r.family.toLowerCase()))
       const seen = new Set<string>()

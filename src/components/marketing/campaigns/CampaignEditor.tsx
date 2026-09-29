@@ -458,7 +458,7 @@ export default function CampaignEditor({
             {step === 3 && (
               <div className="p-6 max-w-2xl mx-auto space-y-5">
                 <div className="border rounded-lg overflow-hidden">
-                  <iframe title="Campaign preview" srcDoc={renderBlocksToHtml(blocks, settings, customFonts)} className="w-full bg-white" style={{ height: 420, border: 'none' }} sandbox="" />
+                  <iframe title="Campaign preview" srcDoc={renderBlocksToHtml(blocks, settings, customFonts)} className="w-full bg-white" style={{ height: 420, border: 'none' }} sandbox="allow-same-origin" />
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm bg-muted/40 rounded-lg p-3">
                   <div><span className="text-muted-foreground">Subject:</span> {subject}</div>

@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/get-db'
+import { movingAverageCost } from '@/lib/valuation'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
 // This function always owns its own $transaction (called with a full client, session- or
@@ -94,6 +95,9 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   if (!params.receivePhotoKey) return { ok: false, error: 'Receipt photo is required', status: 400 }
 
   const toLoc = await db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true } })
+  // Fallback cost for legacy lines dispatched before unitCost was snapshotted.
+  const catalogIds = transfer.items.map(ti => ti.itemId).filter(Boolean) as string[]
+  const stdCostMap = new Map((await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true } })).map(i => [i.id, i.standardCost]))
 
   await db.$transaction(async (tx) => {
     for (const it of params.items) {
@@ -108,13 +112,19 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
       const lotWhere = it.itemId
         ? { itemId: it.itemId, locationId: transfer.toLocationId }
         : { itemId: null, itemName: it.itemName, locationId: transfer.toLocationId }
+      // The cost carried from the source location is blended into the destination's
+      // moving average (see movingAverageCost in src/lib/valuation.ts).
+      const incomingCost = transferItem?.unitCost || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
       const lot = await tx.stockLot.findFirst({ where: lotWhere })
       if (lot) {
-        await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { increment: qty }, updatedAt: new Date() } })
+        await tx.stockLot.update({
+          where: { id: lot.id },
+          data: { quantity: { increment: qty }, costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, qty, incomingCost), updatedAt: new Date() },
+        })
       } else {
         await tx.stockLot.create({
           data: {
-            id: crypto.randomUUID(), locationId: transfer.toLocationId, quantity: qty, costPerUnit: 0, updatedAt: new Date(),
+            id: crypto.randomUUID(), locationId: transfer.toLocationId, quantity: qty, costPerUnit: incomingCost, updatedAt: new Date(),
             ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           },
         })
@@ -171,7 +181,10 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
           legSequence: (transfer.legSequence ?? 1) + 1,
           fromLocationId: transfer.toLocationId,
           toLocationId: nextHop,
-          items: params.items.map(it => ({ itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0 })),
+          items: params.items.map(it => {
+            const ti = transfer.items.find(t => it.itemId ? t.itemId === it.itemId : t.itemName === it.itemName)
+            return { itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0, unitCost: ti?.unitCost ?? 0 }
+          }),
         })
       } else {
         await attemptFinalizePOStatus(tx, transfer.purchaseOrderId)

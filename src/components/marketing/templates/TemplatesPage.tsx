@@ -191,7 +191,7 @@ export default function TemplatesPage() {
                   <iframe
                     title={`Preview ${t.name}`}
                     srcDoc={t.bodyHtml}
-                    sandbox=""
+                    sandbox="allow-same-origin"
                     scrolling="no"
                     style={{ width: '400%', height: '400%', transform: 'scale(0.25)', transformOrigin: 'top left', border: 'none', pointerEvents: 'none' }}
                   />
@@ -266,7 +266,7 @@ export default function TemplatesPage() {
                         srcDoc={rawHtml || '<p style="color:#9ca3af;font-family:sans-serif;padding:12px">Belum ada isi...</p>'}
                         className="w-full h-full"
                         style={{ border: 'none' }}
-                        sandbox=""
+                        sandbox="allow-same-origin"
                       />
                     </div>
                   )}
@@ -352,7 +352,7 @@ export default function TemplatesPage() {
                   <iframe
                     title={`Preview ${t.label}`}
                     srcDoc={renderBlocksToHtml(t.build(), DEFAULT_EMAIL_SETTINGS)}
-                    sandbox=""
+                    sandbox="allow-same-origin"
                     scrolling="no"
                     style={{ width: '400%', height: '400%', transform: 'scale(0.25)', transformOrigin: 'top left', border: 'none', pointerEvents: 'none' }}
                   />
@@ -377,7 +377,7 @@ export default function TemplatesPage() {
               <iframe
                 title={`Preview ${previewTarget.name}`}
                 srcDoc={previewTarget.bodyHtml}
-                sandbox=""
+                sandbox="allow-same-origin"
                 className="w-full h-full"
                 style={{ border: 'none', minHeight: '70vh' }}
               />

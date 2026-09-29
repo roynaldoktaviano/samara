@@ -606,7 +606,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                 srcDoc={campaign.bodyHtml}
                 className="bg-white shadow-sm rounded-md border"
                 style={{ width: 640, height: 700, border: 'none', transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}
-                sandbox=""
+                sandbox="allow-same-origin"
               />
             </div>
           </CardContent>

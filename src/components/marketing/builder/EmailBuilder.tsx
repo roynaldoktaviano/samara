@@ -823,12 +823,15 @@ export default function EmailBuilder({
 
         {showPreview ? (
           <div className="flex-1 overflow-auto flex justify-center p-6" style={DOT_GRID}>
+            {/* allow-same-origin (still no allow-scripts): a bare sandbox gives the srcDoc an
+                opaque "null" origin, which the R2 bucket's CORS rule rejects — so uploaded
+                Email Fonts silently fell back in Preview. Scripts stay blocked either way. */}
             <iframe
               title="Email preview"
               srcDoc={renderBlocksToHtml(blocks, emailSettings, customFonts)}
               className="bg-white shadow-lg rounded-md transition-[width] duration-200"
               style={{ width: device === 'desktop' ? 640 : 375, height: '100%', minHeight: 600, border: 'none' }}
-              sandbox=""
+              sandbox="allow-same-origin"
             />
           </div>
         ) : (

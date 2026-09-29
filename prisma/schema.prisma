@@ -2971,6 +2971,10 @@ model StockTransferItem {
   requestedQty        Float
   dispatchedQty       Float   @default(0)
   receivedQty         Float   @default(0)
+  // Cost per BASE unit carried by this line — snapshotted from the source lot's moving-average
+  // cost at dispatch (or pre-set from the GR/previous leg on PO transit legs), and blended into
+  // the destination lot's moving average on receive. 0 = unknown (legacy rows).
+  unitCost            Float   @default(0)
   // Who requested/ordered this specific line — shown per row on the printed Packing
   // List ("Ordered by"), distinct per item within the same transfer/box.
   orderedByEmployeeId String?

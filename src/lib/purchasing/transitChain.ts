@@ -40,7 +40,9 @@ export async function spawnNextTransitLeg(tx: DbOrTx, params: {
   legSequence: number
   fromLocationId: string
   toLocationId: string
-  items: { itemId: string | null; itemName: string; requestedQty: number }[]
+  // unitCost = cost per base unit carried forward from the GR / previous leg, so the PO's
+  // actual price reaches the final destination (dispatch keeps a pre-set cost).
+  items: { itemId: string | null; itemName: string; requestedQty: number; unitCost?: number }[]
 }) {
   const transferNumber = await generateTransitTrNumber(tx)
   return tx.stockTransfer.create({
@@ -57,7 +59,7 @@ export async function spawnNextTransitLeg(tx: DbOrTx, params: {
       items: {
         create: params.items
           .filter(it => it.requestedQty > 0)
-          .map(it => ({ id: crypto.randomUUID(), itemId: it.itemId, itemName: it.itemName, requestedQty: it.requestedQty })),
+          .map(it => ({ id: crypto.randomUUID(), itemId: it.itemId, itemName: it.itemName, requestedQty: it.requestedQty, unitCost: it.unitCost ?? 0 })),
       },
     },
   })

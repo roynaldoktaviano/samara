@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Search, Pencil, Trash2, ToggleLeft, ToggleRight, X, Download, Upload, FileDown, CheckCircle2, AlertCircle, History, ArrowRight, ArrowLeft, Package, PackagePlus, ChevronRight, ChevronLeft, Layers, UtensilsCrossed, Wine, Wrench, Boxes, Waves, SprayCan, MapPin, type LucideIcon } from 'lucide-react'
-import { sortByMethod, computeStockValue, methodLabel, type ValuationMethod } from '@/lib/valuation'
+import { sortByMethod, computeStockValue, type ValuationMethod } from '@/lib/valuation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
@@ -57,7 +57,6 @@ interface PurchaseItem {
 const BASE_UNITS = ['pcs', 'kg', 'gram', 'liter', 'ml', 'meter', 'sheet', 'roll', 'set', 'bottle', 'can']
 const PURCHASE_UNITS = ['pcs', 'box', 'carton', 'dozen', 'sack', 'drum', 'gallon', 'bottle', 'can', 'pack', 'kg', 'liter']
 
-const VALUATION_METHODS = ['FIFO', 'LIFO', 'WEIGHTED_AVERAGE', 'STANDARD']
 
 function generateSku(prefix: string, existingItems: PurchaseItem[]): string {
   const nums = existingItems
@@ -457,7 +456,7 @@ export default function ItemsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
   const paginated = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
-  const colCount = trackedFilter === 'stock' ? 9 : 6
+  const colCount = trackedFilter === 'stock' ? 8 : 6
 
   return (
     <div className="space-y-4">
@@ -590,7 +589,6 @@ export default function ItemsPage() {
               <th className="text-left px-4 py-3 font-medium w-28">Unit</th>
               <th className="text-right px-4 py-3 font-medium w-36">Cost / Price</th>
               {trackedFilter === 'stock' && <th className="text-right px-4 py-3 font-medium w-20">Margin</th>}
-              {trackedFilter === 'stock' && <th className="text-left px-4 py-3 font-medium w-28">Valuation</th>}
               <th className="text-right px-4 py-3 font-medium w-40">{trackedFilter === 'stock' ? 'Stock' : 'Location'}</th>
               {trackedFilter === 'stock' && <th className="text-center px-4 py-3 font-medium w-16">Status</th>}
               <th className="px-4 py-3 w-20" />
@@ -612,7 +610,10 @@ export default function ItemsPage() {
                 {search || catFilter !== 'All' ? 'No results found' : 'No items yet. Click "Add" to get started.'}
               </td></tr>
             ) : paginated.map(item => {
-              const margin = calcMargin(item.standardCost, item.sellingPrice)
+              // Moving-average cost across all locations holding stock; falls back to the last
+              // purchase price for items with no stock on hand.
+              const avgCost = item.avgPrice > 0 ? item.avgPrice : item.standardCost
+              const margin = calcMargin(avgCost, item.sellingPrice)
               return (
                 <tr key={item.id} onClick={() => openHistory(item)} className={`hover:bg-amber-50/40 cursor-pointer transition-colors ${!item.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{item.sku}</td>
@@ -643,7 +644,10 @@ export default function ItemsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <p className="text-sm font-medium">{item.standardCost > 0 ? `Rp ${fmt(Math.round(item.standardCost))}` : <span className="text-muted-foreground font-normal">—</span>}</p>
+                    <p className="text-sm font-medium" title="Moving average cost">{avgCost > 0 ? `Rp ${fmt(Math.round(avgCost))}` : <span className="text-muted-foreground font-normal">—</span>}</p>
+                    {item.avgPrice > 0 && item.standardCost > 0 && Math.round(item.standardCost) !== Math.round(item.avgPrice) && (
+                      <p className="text-[10px] text-muted-foreground">last {fmt(Math.round(item.standardCost))}</p>
+                    )}
                     {item.sellingPrice > 0 && <p className="text-xs text-muted-foreground">sell {fmt(Math.round(item.sellingPrice))}</p>}
                   </td>
                   {trackedFilter === 'stock' && (
@@ -651,13 +655,6 @@ export default function ItemsPage() {
                       {item.sellingPrice > 0
                         ? <span className={`text-xs font-semibold ${margin >= 40 ? 'text-green-600' : margin >= 20 ? 'text-amber-600' : 'text-red-500'}`}>{margin.toFixed(1)}%</span>
                         : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                  )}
-                  {trackedFilter === 'stock' && (
-                    <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium whitespace-nowrap">
-                        {item.valuationMethod === 'WEIGHTED_AVERAGE' ? 'WA' : item.valuationMethod}
-                      </span>
                     </td>
                   )}
                   <td className="px-4 py-3 text-right">
@@ -954,12 +951,12 @@ export default function ItemsPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Standard Cost <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
+                        <label className="text-sm font-medium">Last Purchase Cost <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
                         <input
                           type="number" readOnly
                           className={`${num} bg-muted/40 cursor-not-allowed text-muted-foreground`}
                           value={form.standardCost || ''} placeholder="—" />
-                        <p className="text-xs text-muted-foreground">Auto-updated from actual received price (GR)</p>
+                        <p className="text-xs text-muted-foreground">Auto-updated from actual received price (GR). Stock is valued at moving average cost.</p>
                       </div>
                       {form.isSoldInPos && (
                         <div className="space-y-1.5">
@@ -985,12 +982,6 @@ export default function ItemsPage() {
                           <p className="text-xs text-muted-foreground">Auto-synced with Selling Price</p>
                         </div>
                       )}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Valuation Method</label>
-                        <select className={f2} value={form.valuationMethod} onChange={e => setForm(f => ({ ...f, valuationMethod: e.target.value }))}>
-                          {VALUATION_METHODS.map(m => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
-                        </select>
-                      </div>
                     </div>
                   </div>
 
@@ -1306,7 +1297,7 @@ export default function ItemsPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-sm font-bold">{s.qty} <span className="font-normal text-muted-foreground text-xs">{historyItem.baseUnit}</span></p>
-                              {s.costPerUnit > 0 && <p className="text-xs text-muted-foreground">@ Rp {new Intl.NumberFormat('id-ID').format(s.costPerUnit)}</p>}
+                              {s.costPerUnit > 0 && <p className="text-xs text-muted-foreground">avg @ Rp {new Intl.NumberFormat('id-ID').format(s.costPerUnit)}</p>}
                             </div>
                           </div>
                         ))}
@@ -1316,8 +1307,9 @@ export default function ItemsPage() {
 
                   {/* Lot Register */}
                   {(historyData?.lots?.length ?? 0) > 0 && (() => {
-                    const method = (historyData!.valuationMethod ?? 'FIFO') as ValuationMethod
-                    const stdCost = historyData!.standardCost ?? 0
+                    // All stock is valued at moving average: each lot is one location's running
+                    // balance and its costPerUnit is that location's average cost.
+                    const method: ValuationMethod = 'WEIGHTED_AVERAGE'
                     const lotsAsValuation = historyData!.lots.map(l => ({
                       id: l.id, locationId: l.locationId, quantity: l.quantity,
                       costPerUnit: l.costPerUnit, createdAt: l.createdAt,
@@ -1326,13 +1318,7 @@ export default function ItemsPage() {
                     const sorted = sortByMethod(lotsAsValuation, method)
                     const lotInfoMap = new Map(historyData!.lots.map(l => [l.id, l]))
                     const totalQty = lotsAsValuation.reduce((s, l) => s + l.quantity, 0)
-                    const totalValue = computeStockValue(lotsAsValuation, method, stdCost)
-                    const methodDesc: Record<string, string> = {
-                      FIFO: 'Oldest lot consumed first',
-                      LIFO: 'Newest lot consumed first',
-                      WEIGHTED_AVERAGE: 'All lots blended at average cost',
-                      STANDARD: 'Fixed standard cost per unit',
-                    }
+                    const totalValue = computeStockValue(lotsAsValuation, method)
                     return (
                       <div className="px-6 py-4 bg-slate-50/60">
                         <div className="flex items-center justify-between mb-3">
@@ -1341,8 +1327,8 @@ export default function ItemsPage() {
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lot Register</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">{method.replace('_', ' ')}</span>
-                            <span className="text-xs text-muted-foreground">{methodDesc[method]}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">MOVING AVERAGE</span>
+                            <span className="text-xs text-muted-foreground">Average cost per location, re-blended on every receipt</span>
                           </div>
                         </div>
                         <div className="rounded-lg border bg-white overflow-hidden">
@@ -1360,21 +1346,15 @@ export default function ItemsPage() {
                             </thead>
                             <tbody className="divide-y">
                               {sorted.map((lot, i) => {
-                                const effectiveCost = method === 'STANDARD' ? stdCost : method === 'WEIGHTED_AVERAGE'
-                                  ? (totalQty > 0 ? lotsAsValuation.reduce((s, l) => s + l.quantity * l.costPerUnit, 0) / totalQty : 0)
-                                  : lot.costPerUnit
+                                const effectiveCost = lot.costPerUnit
                                 const lotValue = lot.quantity * effectiveCost
                                 const isExpired = lot.expiresAt ? new Date(lot.expiresAt) < new Date() : false
                                 const isNearExpiry = lot.expiresAt && !isExpired
                                   ? (new Date(lot.expiresAt).getTime() - Date.now()) / 86400000 <= 30
                                   : false
                                 return (
-                                  <tr key={lot.id} className={i === 0 && (method === 'FIFO' || method === 'LIFO') ? 'bg-amber-50/50' : ''}>
-                                    <td className="px-3 py-2 text-muted-foreground">
-                                      {i === 0 && (method === 'FIFO' || method === 'LIFO')
-                                        ? <span className="text-[10px] font-semibold text-[#bdac7e]">NEXT</span>
-                                        : i + 1}
-                                    </td>
+                                  <tr key={lot.id}>
+                                    <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                                     <td className="px-3 py-2 font-medium">{lotInfoMap.get(lot.id)?.locationName ?? '—'}</td>
                                     <td className="px-3 py-2 text-muted-foreground">
                                       {new Date(lot.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
@@ -1411,9 +1391,7 @@ export default function ItemsPage() {
                                 </td>
                                 <td className="px-3 py-2 text-right font-bold text-xs">{fmt(totalQty)} <span className="font-normal text-muted-foreground">{historyItem?.baseUnit}</span></td>
                                 <td className="px-3 py-2 text-right text-xs text-muted-foreground">
-                                  {method === 'WEIGHTED_AVERAGE' && totalQty > 0
-                                    ? `WA: Rp ${fmt(Math.round(lotsAsValuation.reduce((s, l) => s + l.quantity * l.costPerUnit, 0) / totalQty))}`
-                                    : method === 'STANDARD' ? `Std: Rp ${fmt(stdCost)}` : ''}
+                                  {totalQty > 0 ? `Avg: Rp ${fmt(Math.round(totalValue / totalQty))}` : ''}
                                 </td>
                                 <td className="px-3 py-2 text-right font-bold text-xs">Rp {fmt(Math.round(totalValue))}</td>
                               </tr>

@@ -64,12 +64,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // lots, one per receiving PO, so their availableQty is the sum across them).
   const stockLots = await db.stockLot.findMany({ where: { locationId: transfer.fromLocationId } })
   const stockMap = new Map<string, number>()
+  const lotCostMap = new Map<string, number>()
   for (const lot of stockLots) {
     const key = lot.itemId ?? `name:${lot.itemName}`
     stockMap.set(key, (stockMap.get(key) ?? 0) + lot.quantity)
+    if (lot.costPerUnit > 0) lotCostMap.set(key, lot.costPerUnit)
   }
   const items = transfer.items.map(i => {
-    const unitCost = i.item?.standardCost ?? 0
+    // Snapshotted cost once dispatched; before that, the source location's moving average.
+    const unitCost = i.unitCost || lotCostMap.get(i.itemId ?? `name:${i.itemName}`) || (i.item?.standardCost ?? 0)
     return {
       ...i,
       baseUnit: i.item?.baseUnit ?? null,
@@ -210,6 +213,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: `Not enough stock for: ${detail}` }, { status: 409 })
     }
 
+    // Cost snapshot per line: a pre-set cost (PO transit legs carry the GR price forward)
+    // wins, else the source location's moving-average cost, else the item's last purchase cost.
+    const dispatchCatalogIds = dispatchItems.map(it => it.itemId).filter(Boolean) as string[]
+    const stdCostMap = new Map((await db.purchaseItem.findMany({ where: { id: { in: dispatchCatalogIds } }, select: { id: true, standardCost: true } })).map(i => [i.id, i.standardCost]))
+    const presetCost = new Map(transfer.items.map(ti => [ti.itemId ?? `name:${ti.itemName}`, ti.unitCost]))
+
     await db.$transaction(async (tx) => {
       for (const it of dispatchItems) {
         if (!it.dispatchedQty) continue
@@ -219,13 +228,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ? { itemId: it.itemId, locationId: transfer.fromLocationId }
           : { itemId: null, itemName: it.itemName, locationId: transfer.fromLocationId }
         const lot = await tx.stockLot.findFirst({ where: lotWhere })
+        const unitCost = presetCost.get(it.itemId ?? `name:${it.itemName}`)
+          || lot?.costPerUnit
+          || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
 
         if (lot) {
           await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: qty }, updatedAt: new Date() } })
         } else {
           await tx.stockLot.create({
             data: {
-              id: crypto.randomUUID(), locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: 0, updatedAt: new Date(),
+              id: crypto.randomUUID(), locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: unitCost, updatedAt: new Date(),
               ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
             },
           })
@@ -236,7 +248,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           },
         })
-        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { dispatchedQty: qty } })
+        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { dispatchedQty: qty, unitCost } })
       }
       await tx.stockTransfer.update({
         where: { id },
