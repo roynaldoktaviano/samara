@@ -13,6 +13,16 @@ import { getAgentCommissionPct } from '@/lib/agent-commission'
 //
 // Payment.amount is always the USD baseline; currency/exchangeRate are display metadata, so
 // an IDR payment's rupiah value is amount × exchangeRate.
+//
+// Trip cost = usage (pemakaian) from the StockMovement usage ledger, in Rupiah (moving-average
+// cost). A movement is charged to the trip it's linked to (openTripId / tripBookingId, set from
+// the Transfer / PO trip picker); an unlinked one falls back by date to the trip on that yacht
+// running when it happened, else the next one to depart (supplies loaded ahead of a trip).
+// Anything left over is reported as unassigned. Payment of the PO is cash flow, never cost here.
+
+const USAGE_TYPES = ['SHIP_USAGE', 'BAR_COGS', 'COMPLIMENTARY', 'SHRINKAGE'] as const
+type UsageKey = (typeof USAGE_TYPES)[number]
+const emptyCost = () => ({ SHIP_USAGE: 0, BAR_COGS: 0, COMPLIMENTARY: 0, SHRINKAGE: 0, total: 0 } as Record<UsageKey | 'total', number>)
 
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
@@ -174,8 +184,79 @@ export async function GET(request: NextRequest) {
     // (its own client, salesman, Agent/Direct, payments) instead of one merged "Mixed" row.
     const buildRow = (opts: RowOpts) => ({
       ...computeRow(opts),
+      ...costOf(opts.id),
       lines: opts.bookings.map(b => ({ bookingCode: b.bookingCode, ...computeRow({ ...opts, bookings: [b] }) })),
     })
+
+    // ── Usage cost per trip ──
+    // Absorbed Open Trips' usage belongs to the charter row that stands for them.
+    const absorbedInto = new Map<string, string>()
+    for (const t of openTrips) {
+      if (t.status !== 'closed' || !t.closedReason) continue
+      const c = charters.find(c => t.closedReason!.trimEnd().endsWith(` ${c.bookingCode}`))
+      if (c) absorbedInto.set(t.id, c.id)
+    }
+    const windows = [
+      ...openTrips.filter(t => !isAbsorbed(t)).map(t => ({ id: t.id, startDate: t.startDate, endDate: t.endDate })),
+      ...charters.map(c => ({ id: c.id, startDate: c.startDate, endDate: c.endDate })),
+    ].sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+    const dayStart = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+    const tripByDate = (when: Date) => {
+      const day = dayStart(when)
+      return windows.find(w => day >= dayStart(w.startDate) && day <= dayStart(w.endDate))
+        ?? windows.find(w => dayStart(w.startDate) > day)
+    }
+
+    const movements = await withRetry(db, () => db.stockMovement.findMany({
+      where: {
+        usageType: { not: null },
+        OR: [
+          { openTripId: { in: openTrips.map(t => t.id) } },
+          { tripBookingId: { in: charters.map(c => c.id) } },
+          { yachtId, openTripId: null, tripBookingId: null, createdAt: { gte: start, lt: end } },
+        ],
+      },
+      select: {
+        usageType: true, totalCost: true, quantity: true, createdAt: true, openTripId: true, tripBookingId: true,
+        itemId: true, itemName: true, item: { select: { name: true, baseUnit: true } },
+      },
+    }))
+
+    type CostItem = { name: string; unit: string; qty: number; cost: number; byDate: boolean; usageType: UsageKey }
+    const costByTrip = new Map<string, { cost: ReturnType<typeof emptyCost>; items: Map<string, CostItem> }>()
+    const unassigned = emptyCost()
+    for (const m of movements) {
+      const type = m.usageType as UsageKey
+      const cost = m.totalCost ?? 0
+      const linked = m.openTripId ? (absorbedInto.get(m.openTripId) ?? m.openTripId) : m.tripBookingId
+      const tripId = linked && windows.some(w => w.id === linked) ? linked : (!linked ? tripByDate(m.createdAt)?.id : undefined)
+      if (!tripId) { unassigned[type] += cost; unassigned.total += cost; continue }
+      const entry = costByTrip.get(tripId) ?? { cost: emptyCost(), items: new Map() }
+      costByTrip.set(tripId, entry)
+      entry.cost[type] += cost
+      entry.cost.total += cost
+      const name = m.item?.name ?? m.itemName ?? '—'
+      const key = `${type}|${m.itemId ?? name}|${linked ? 'L' : 'D'}`
+      const it = entry.items.get(key) ?? { name, unit: m.item?.baseUnit ?? '', qty: 0, cost: 0, byDate: !linked, usageType: type }
+      // Reversals carry a negative totalCost but a positive quantity.
+      it.qty += cost < 0 ? -m.quantity : m.quantity
+      it.cost += cost
+      entry.items.set(key, it)
+    }
+    const costOf = (id: string) => {
+      const e = costByTrip.get(id)
+      return {
+        cost: e?.cost ?? emptyCost(),
+        costItems: e ? [...e.items.values()].sort((a, b) => b.cost - a.cost) : [],
+      }
+    }
+
+    // Default USD→IDR rate for converting revenue when comparing it to Rupiah cost: the most
+    // recent confirmed IDR payment's rate. The UI lets Finance override it.
+    const lastIdr = await withRetry(db, () => db.payment.findFirst({
+      where: { status: 'confirmed', currency: 'IDR', exchangeRate: { gt: 0 } },
+      orderBy: { createdAt: 'desc' }, select: { exchangeRate: true },
+    }))
 
     const rows = [
       ...openTrips.filter(t => !isAbsorbed(t)).map(t => buildRow({
@@ -188,7 +269,7 @@ export async function GET(request: NextRequest) {
       })),
     ].sort((a, b) => (a.tripNumber ?? 1e9) - (b.tripNumber ?? 1e9) || a.startDate.getTime() - b.startDate.getTime())
 
-    return NextResponse.json({ year, yachtId, yachts, trips: rows })
+    return NextResponse.json({ year, yachtId, yachts, trips: rows, unassignedCost: unassigned, defaultForex: lastIdr?.exchangeRate ?? null })
   } catch (error) {
     console.error('Error building trip stats:', error)
     return NextResponse.json({ error: 'Failed to build trip stats' }, { status: 500 })

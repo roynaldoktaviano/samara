@@ -816,11 +816,14 @@ function footerIcon(kind: FooterIconKind): string {
   // solid black, not a real recolor — inconsistent with the plain white outline
   // (Lucide "feather-style") look every other icon here actually has. Redrawn from
   // the same Lucide facebook/linkedin glyphs, stroked in white, to match.
+  // Bumped to v=7 when icon-whatsapp*.png turned out to be a WebP file saved with a
+  // .png name — mail clients/image proxies flattened its alpha to solid black.
+  // Re-encoded as a real RGBA PNG.
   // A non-empty alt matters here specifically: Outlook and most corporate mail
   // clients block remote images by default until the recipient explicitly loads
   // them, and a blank alt="" renders as a bare broken-image box with no label —
   // a real word at least tells the recipient what's missing until then.
-  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=6" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
+  return `<img src="${appUrl}/email/icon-${kind}-mid.png?v=7" width="20" height="20" alt="${FOOTER_ICON_LABEL[kind]}" style="display:inline-block;vertical-align:middle;border:0;outline:none;" />`
 }
 
 // Table-based sizing (HTML width/height attributes, not just CSS) — the

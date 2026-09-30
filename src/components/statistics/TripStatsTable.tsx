@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RotateCw, Download } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 /* ── types ── */
 interface TripPayment { type: 'DP' | 'PELUNASAN'; amountUsd: number; month: string }
@@ -16,12 +17,27 @@ interface TripLine {
   balanceUsd: number; paidUsd: number; dueMonth: string | null; remark: string
   payments: TripPayment[]
 }
+type UsageKey = 'SHIP_USAGE' | 'BAR_COGS' | 'COMPLIMENTARY' | 'SHRINKAGE'
+type TripCost = Record<UsageKey | 'total', number>
+interface CostItem { name: string; unit: string; qty: number; cost: number; byDate: boolean; usageType: UsageKey }
 interface TripRow extends TripLine {
+  cost: TripCost; costItems: CostItem[]
   id: string; kind: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; closed: boolean
   tripNumber: number | null; startDate: string; endDate: string; dn: string; days: number
   lines: (TripLine & { bookingCode: string })[]
 }
-interface TripStatsData { year: number; yachtId: string | null; yachts: { id: string; name: string }[]; trips: TripRow[] }
+interface TripStatsData {
+  year: number; yachtId: string | null; yachts: { id: string; name: string }[]; trips: TripRow[]
+  unassignedCost?: TripCost; defaultForex?: number | null
+}
+
+const USAGE_COLS: { key: UsageKey; label: string }[] = [
+  { key: 'SHIP_USAGE', label: 'Ship Usage' },
+  { key: 'BAR_COGS', label: 'Bar COGS' },
+  { key: 'COMPLIMENTARY', label: 'Complimentary' },
+  { key: 'SHRINKAGE', label: 'Shrinkage' },
+]
+const USAGE_LABEL = Object.fromEntries(USAGE_COLS.map(c => [c.key, c.label])) as Record<UsageKey, string>
 
 /* ── helpers ── */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -53,6 +69,7 @@ const GROUP_STYLE = {
   revenue: 'bg-blue-100',
   usd:     'bg-emerald-100',
   idr:     'bg-amber-100',
+  cost:    'bg-rose-100',
 }
 
 /* ══════════════════════════════════════════
@@ -64,6 +81,8 @@ export default function TripStatsTable() {
   const [refreshing, setRefreshing] = useState(false)
   const [year, setYear]             = useState(new Date().getFullYear())
   const [yachtId, setYachtId]       = useState('')
+  const [forexInput, setForexInput] = useState('')
+  const [costTrip, setCostTrip]     = useState<TripRow | null>(null)
 
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true)
@@ -82,6 +101,14 @@ export default function TripStatsTable() {
   useEffect(() => { fetchData() }, [fetchData])
 
   const trips = data?.trips ?? []
+  // USD→IDR rate used to convert Rupiah cost to USD for Gross Profit; a trip's own booking rate wins.
+  const forex = Number(forexInput) || data?.defaultForex || 0
+  // Gross Profit (USD) = Net To Samara − trip cost converted to USD.
+  const grossProfit = (t: TripRow) => {
+    if (!t.cost.total) return t.net
+    const rate = t.forex ?? forex
+    return rate ? t.net - t.cost.total / rate : null
+  }
   const yachtName = data?.yachts.find(y => y.id === (yachtId || data?.yachtId))?.name ?? ''
 
   const totals = useMemo(() => {
@@ -93,8 +120,11 @@ export default function TripStatsTable() {
       usdDp: s(t => t.usd.dp), usdPel: s(t => t.usd.pel), usdBal: s(t => t.usd.balance),
       idrDp: s(t => t.idr.dp), idrPel: s(t => t.idr.pel), idrBal: s(t => t.idr.balance),
       idrPaidUsd: s(t => t.idr.paidUsd), idrBalUsd: s(t => t.idr.balanceUsd),
+      cost: Object.fromEntries([...USAGE_COLS.map(c => c.key), 'total'].map(k => [k, s(t => t.cost[k as UsageKey | 'total'])])) as TripCost,
+      gp: s(t => grossProfit(t) ?? 0),
     }
-  }, [trips])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trips, forex])
 
   // Payment status split — by each trip's Net To Samara.
   const status = useMemo(() => {
@@ -131,17 +161,25 @@ export default function TripStatsTable() {
     return { months, years: [...byYear.entries()].map(([y, v]) => ({ year: y, ...v })) }
   }, [trips])
 
+  const costCells = (t: TripRow) => {
+    const gp = grossProfit(t)
+    return [...USAGE_COLS.map(c => t.cost[c.key].toFixed(0)), t.cost.total.toFixed(0), t.net.toFixed(2), gp?.toFixed(2) ?? '']
+  }
+
   const exportCSV = () => {
     const head = ['No Trip', 'Start', 'End', 'D/N', 'Client', 'PAX', 'DAYS', 'Room', 'Salesman',
-      'Agent/Direct', 'Period', 'Amount', 'Tnk', 'Total', 'Agent Fee', 'Net To Samara', 'Forex',
-      'Rupiah', 'USD DP Period', 'USD DP Amount', 'USD Pelunasan Period', 'USD Pelunasan Amount', 'USD Balance Due',
-      'IDR DP Amount', 'IDR DP Period', 'IDR Pelunasan Amount', 'IDR Pelunasan Period', 'IDR Balance Due', 'Remark', 'IDR Paid (USD)', 'IDR Balance (USD)']
+      'Agent/Direct', 'Period', 'Amount', 'Services', 'Total', 'Agent Fee', 'Net To Samara', 'Forex',
+      'IDR Amount', 'USD DP Period', 'USD DP Amount', 'USD Final Payment Period', 'USD Final Payment Amount', 'USD Balance Due',
+      'IDR DP Amount', 'IDR DP Period', 'IDR Final Payment Amount', 'IDR Final Payment Period', 'IDR Balance Due', 'Remark', 'IDR Paid (USD)', 'IDR Balance (USD)',
+      ...USAGE_COLS.map(c => `${c.label} (IDR)`), 'Total Cost (IDR)', 'Revenue (USD)', 'Gross Profit (USD)']
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const lines = [head, ...trips.flatMap(t => (t.lines.length ? t.lines : [t]).map(l => [
+    const lines = [head, ...trips.flatMap(t => (t.lines.length ? t.lines : [t]).map((l, i) => [
       t.tripNumber ?? '', dateLabel(t.startDate), dateLabel(t.endDate), t.dn, l.client, l.pax, t.days, l.rooms || '', l.salesman,
       l.source, period(t.period), l.amount.toFixed(2), l.tnk.toFixed(2), l.total.toFixed(2), l.agentFee.toFixed(2), l.net.toFixed(2), l.forex ?? '',
       l.rupiah?.toFixed(0) ?? '', period(l.usd.dpPeriod), l.usd.dp.toFixed(2), period(l.usd.pelPeriod), l.usd.pel.toFixed(2), l.usd.balance.toFixed(2),
       l.idr.dp.toFixed(0), period(l.idr.dpPeriod), l.idr.pel.toFixed(0), period(l.idr.pelPeriod), l.idr.balance.toFixed(0), l.remark, l.idr.paidUsd.toFixed(2), l.idr.balanceUsd.toFixed(2),
+      // Cost is per trip, so it goes on the trip's first line only.
+      ...(i === 0 ? costCells(t) : Array(USAGE_COLS.length + 3).fill('')),
     ]))].map(r => r.map(esc).join(','))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }))
@@ -149,6 +187,14 @@ export default function TripStatsTable() {
     a.click()
     URL.revokeObjectURL(a.href)
   }
+
+  const costTotals = <>
+    {USAGE_COLS.map(c => <td key={c.key} className={tot}>{idr(totals.cost[c.key])}</td>)}
+    <td className={tot}>{idr(totals.cost.total)}</td>
+    <td className={tot}>{usd(totals.net)}</td>
+    <td className={tot}>{totals.gp < 0 ? '-' : ''}{usd(Math.abs(totals.gp))}</td>
+  </>
+  const unassigned = data?.unassignedCost
 
   if (loading) return (
     <div className="space-y-4">
@@ -168,6 +214,14 @@ export default function TripStatsTable() {
         <select value={year} onChange={e => setYear(Number(e.target.value))} className="h-9 rounded-md border px-2 text-sm bg-background">
           {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
+        <label className="h-9 flex items-center gap-1.5 rounded-md border px-2 text-sm bg-background" title="USD → IDR rate used to convert IDR trip cost to USD for Gross Profit (a trip booked in IDR uses its own rate)">
+          <span className="text-muted-foreground text-xs">USD rate</span>
+          <input
+            type="number" inputMode="decimal" value={forexInput} onChange={e => setForexInput(e.target.value)}
+            placeholder={data?.defaultForex ? String(data.defaultForex) : 'e.g. 16000'}
+            className="w-20 bg-transparent outline-none tabular-nums"
+          />
+        </label>
         <button onClick={() => fetchData(true)} className="h-9 px-3 rounded-md border text-sm flex items-center gap-1.5 hover:bg-muted">
           <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
         </button>
@@ -209,12 +263,15 @@ export default function TripStatsTable() {
                 <td className={td} />
                 <td className={tot}>{usd(totals.idrPaidUsd, 2)}</td>
                 <td className={tot}>{usd(totals.idrBalUsd, 2)}</td>
+                {costTotals}
               </tr>
               <tr>
                 <th colSpan={9} className={`${th} ${GROUP_STYLE.trip}`}>{yachtName.toUpperCase()}</th>
                 <th colSpan={8} className={`${th} ${GROUP_STYLE.revenue}`}>REVENUE (USD)</th>
                 <th colSpan={6} className={`${th} ${GROUP_STYLE.usd}`}>PAYMENT — USD</th>
                 <th colSpan={8} className={`${th} ${GROUP_STYLE.idr}`}>PAYMENT — IDR</th>
+                <th colSpan={USAGE_COLS.length + 1} className={`${th} ${GROUP_STYLE.cost}`}>TRIP COST — USAGE (IDR)</th>
+                <th colSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>PROFIT (USD)</th>
               </tr>
               <tr>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.trip}`}>No Trip</th>
@@ -227,21 +284,25 @@ export default function TripStatsTable() {
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Agent/Direct</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Period</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Amount</th>
-                <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Tnk</th>
+                <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Services</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Total</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Agent Fee</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Net To Samara</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Forex</th>
-                <th rowSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>Rupiah</th>
+                <th rowSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>IDR Amount</th>
                 <th colSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>DP</th>
-                <th colSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>Pelunasan</th>
+                <th colSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>Final Payment</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.usd}`}>Balance Due</th>
                 <th colSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>DP</th>
-                <th colSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Pelunasan</th>
+                <th colSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Final Payment</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Balance Due</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Remark</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Paid (USD)</th>
                 <th rowSpan={2} className={`${th} ${GROUP_STYLE.idr}`}>Balance (USD)</th>
+                {USAGE_COLS.map(c => <th key={c.key} rowSpan={2} className={`${th} ${GROUP_STYLE.cost}`}>{c.label}</th>)}
+                <th rowSpan={2} className={`${th} ${GROUP_STYLE.cost}`}>Total Cost</th>
+                <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Revenue</th>
+                <th rowSpan={2} className={`${th} ${GROUP_STYLE.revenue}`}>Gross Profit</th>
               </tr>
               <tr>
                 <th className={`${th} ${GROUP_STYLE.trip}`}>Start</th>
@@ -259,7 +320,7 @@ export default function TripStatsTable() {
             </thead>
             <tbody>
               {trips.length === 0 && (
-                <tr><td colSpan={31} className="px-4 py-10 text-center text-sm text-muted-foreground">No trips for this yacht & year yet.</td></tr>
+                <tr><td colSpan={31 + USAGE_COLS.length + 3} className="px-4 py-10 text-center text-sm text-muted-foreground">No trips for this yacht & year yet.</td></tr>
               )}
               {trips.map(t => {
                 // One line per booking; trip-level cells (number, dates, D/N, days, period) span them.
@@ -304,6 +365,21 @@ export default function TripStatsTable() {
                     <td className={`${td} max-w-[160px] truncate`} title={l.remark}>{l.remark}</td>
                     <td className={tdR}>{l.idr.paidUsd ? usd(l.idr.paidUsd, 2) : ''}</td>
                     <td className={tdR}>{l.idr.balanceUsd ? usd(l.idr.balanceUsd, 2) : ''}</td>
+                    {i === 0 && (() => {
+                      const gp = grossProfit(t)
+                      return <>
+                        {USAGE_COLS.map(c => <td key={c.key} rowSpan={span} className={`${tripCell} text-right tabular-nums`}>{idr(t.cost[c.key])}</td>)}
+                        <td rowSpan={span} className={`${tripCell} text-right tabular-nums font-semibold`}>
+                          {t.costItems.length
+                            ? <button onClick={() => setCostTrip(t)} className="underline decoration-dotted hover:text-blue-600">{idr(t.cost.total)}</button>
+                            : '-'}
+                        </td>
+                        <td rowSpan={span} className={`${tripCell} text-right tabular-nums`}>{usd(t.net)}</td>
+                        <td rowSpan={span} className={`${tripCell} text-right tabular-nums font-semibold ${gp != null && gp < 0 ? 'text-red-600' : ''}`}>
+                          {gp == null ? <span className="text-muted-foreground font-normal" title="Set a USD rate">?</span> : `${gp < 0 ? '-' : ''}${usd(Math.abs(gp))}`}
+                        </td>
+                      </>
+                    })()}
                   </tr>
                 ))
               })}
@@ -336,6 +412,7 @@ export default function TripStatsTable() {
                   <td className={td} />
                   <td className={tot}>{usd(totals.idrPaidUsd, 2)}</td>
                   <td className={tot}>{usd(totals.idrBalUsd, 2)}</td>
+                  {costTotals}
                 </tr>
                 <tr>
                   <td colSpan={19} className={`${td} text-right text-muted-foreground`}>% of Net To Samara</td>
@@ -343,13 +420,59 @@ export default function TripStatsTable() {
                   <td className={td} />
                   <td className={`${tdR} font-semibold`}>{totals.net ? `${Math.round(totals.usdPel / totals.net * 100)}%` : ''}</td>
                   <td className={`${tdR} font-semibold`}>{totals.net ? `${Math.round(totals.usdBal / totals.net * 100)}%` : ''}</td>
-                  <td colSpan={8} className={td} />
+                  <td colSpan={8 + USAGE_COLS.length + 3} className={td} />
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
       </div>
+
+      <p className="text-[11px] text-muted-foreground -mt-4">
+        Trip cost = usage at moving-average cost, in IDR. Gross Profit (USD) = Net To Samara − trip cost ÷ USD rate. Usage is charged to the trip picked on the Transfer / PO;
+        without one, it goes to the trip running that day on this yacht, else the next one to depart. PO payments are cash flow and not counted here.
+        {!forex && ' Set a USD rate to see Gross Profit for USD trips.'}
+        {!!unassigned?.total && <span className="ml-1 font-semibold text-amber-700">Unassigned usage this year (no matching trip): {idr(unassigned.total)}.</span>}
+      </p>
+
+      <Dialog open={!!costTrip} onOpenChange={o => !o && setCostTrip(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Trip Cost — #{costTrip?.tripNumber ?? '—'} {costTrip?.label}</DialogTitle>
+          </DialogHeader>
+          {costTrip && (
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className={`${th} bg-gray-50 text-left`}>Item</th>
+                  <th className={`${th} bg-gray-50`}>Type</th>
+                  <th className={`${th} bg-gray-50`}>Qty</th>
+                  <th className={`${th} bg-gray-50`}>Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {costTrip.costItems.map((it, i) => (
+                  <tr key={i}>
+                    <td className={td}>
+                      {it.name}
+                      {it.byDate && <span className="ml-1 text-[9px] font-semibold text-amber-600" title="Not linked to a trip on its Transfer/PO — allocated by date">BY DATE</span>}
+                    </td>
+                    <td className={td}>{USAGE_LABEL[it.usageType]}</td>
+                    <td className={tdR}>{num(it.qty, it.qty % 1 ? 2 : 0)} {it.unit}</td>
+                    <td className={`${tdR} ${it.cost < 0 ? 'text-red-600' : ''}`}>{it.cost < 0 ? '-' : ''}{idr(Math.abs(it.cost))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50">
+                  <td colSpan={3} className={`${td} font-bold`}>Total</td>
+                  <td className={`${tdR} font-bold`}>{idr(costTrip.cost.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Summaries */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -390,7 +513,7 @@ export default function TripStatsTable() {
                 <tr>
                   <th className={`${th} bg-gray-50`}>Period</th>
                   <th className={`${th} bg-emerald-50`}>DP Received</th>
-                  <th className={`${th} bg-emerald-50`}>Pelunasan Received</th>
+                  <th className={`${th} bg-emerald-50`}>Final Payment Received</th>
                   <th className={`${th} bg-blue-50`}>Balance Due</th>
                 </tr>
               </thead>
@@ -428,7 +551,7 @@ export default function TripStatsTable() {
             </table>
           </div>
           <p className="px-4 py-2 text-[11px] text-muted-foreground border-t">
-            DP/Pelunasan are grouped by the month the payment was received (IDR payments converted to USD). Balance Due is grouped by the final payment due month.
+            DP/Final Payments are grouped by the month the payment was received (IDR payments converted to USD). Balance Due is grouped by the final payment due month.
           </p>
         </div>
       </div>

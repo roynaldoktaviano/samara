@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical, Search, Mail } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Users, Send, FlaskConical, Search, Mail, BookmarkPlus, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import EmailBuilder from '@/components/marketing/builder/EmailBuilder'
 import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 import { AudienceSourceFields, emptyAudience, buildAudienceSources, audienceStateFromSources, type AudienceState, type YachtSummary } from '@/components/marketing/audiences/AudienceSourceFields'
@@ -99,6 +101,13 @@ export default function CampaignEditor({
   const [audienceLoading, setAudienceLoading] = useState(false)
   const [savedAudiences, setSavedAudiences] = useState<AudienceSegmentOption[]>([])
   const [savingAudience, setSavingAudience] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  // The template this campaign's design was saved into — once set, "Save Template" updates it in
+  // place instead of creating another one. Persisted as EmailCampaign.templateId.
+  const [linkedTemplateId, setLinkedTemplateId] = useState<string | null>(null)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDescription, setTemplateDescription] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
@@ -112,6 +121,7 @@ export default function CampaignEditor({
     setSettings(DEFAULT_EMAIL_SETTINGS)
     setAudience(emptyAudience()); setAudienceCount(null); setScheduledAt('')
     setTestEmail('')
+    setLinkedTemplateId(null)
   }, [campaignId])
 
   useEffect(() => {
@@ -133,6 +143,7 @@ export default function CampaignEditor({
           setBlocks(design.blocks)
           setSettings(design.settings)
           setAudience(audienceStateFromSources(c.audienceSources))
+          setLinkedTemplateId(c.templateId ?? null)
           setStep(0)
         })
         .finally(() => setLoading(false))
@@ -149,6 +160,60 @@ export default function CampaignEditor({
     const design = normalizeDesign(t.blocksJson)
     setBlocks(design.blocks)
     setSettings(design.settings)
+    setLinkedTemplateId(null)
+  }
+
+  const linkedTemplate = templates.find(t => t.id === linkedTemplateId) ?? null
+
+  const openSaveAsNewTemplate = () => {
+    if (blocks.length === 0) { toast.error('Add at least one block before saving as a template'); return }
+    setTemplateName(linkedTemplate ? `${linkedTemplate.name} (copy)` : name.trim())
+    setTemplateDescription('')
+    setTemplateDialogOpen(true)
+  }
+
+  const saveAsNewTemplate = async () => {
+    if (!templateName.trim()) { toast.error('Template name is required'); return }
+    setSavingTemplate(true)
+    try {
+      const res = await fetch('/api/marketing/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: templateName.trim(), description: templateDescription, blocksJson: { blocks, settings } }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to save template'); return }
+      setTemplates(prev => [{ id: data.id, name: data.name }, ...prev])
+      setLinkedTemplateId(data.id)
+      setTemplateDialogOpen(false)
+      if (id) {
+        fetch(`/api/marketing/campaigns/${id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId: data.id }),
+        }).catch(() => {})
+      }
+      toast.success(`Saved as template "${data.name}"`)
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  const saveToLinkedTemplate = async () => {
+    if (!linkedTemplate) return
+    if (blocks.length === 0) { toast.error('Add at least one block before saving the template'); return }
+    setSavingTemplate(true)
+    try {
+      const res = await fetch(`/api/marketing/templates/${linkedTemplate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocksJson: { blocks, settings } }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to update template'); return }
+      toast.success(`Template "${linkedTemplate.name}" updated`)
+    } finally {
+      setSavingTemplate(false)
+    }
   }
 
   const previewAudience = useCallback(async () => {
@@ -239,6 +304,7 @@ export default function CampaignEditor({
         name, subject, previewText, fromEmail, fromName,
         blocksJson: { blocks, settings },
         audienceSources: buildAudienceSources(audience),
+        templateId: linkedTemplateId,
       }
       const res = await fetch(id ? `/api/marketing/campaigns/${id}` : '/api/marketing/campaigns', {
         method: id ? 'PUT' : 'POST',
@@ -386,17 +452,43 @@ export default function CampaignEditor({
 
             {step === 1 && (
               <div className="h-full flex flex-col">
-                {templates.length > 0 && (
-                  <div className="flex items-center gap-2 px-4 py-2 border-b">
-                    <Label className="text-xs shrink-0">Start from template</Label>
-                    <Select onValueChange={applyTemplate}>
-                      <SelectTrigger className="h-8 text-sm max-w-xs"><SelectValue placeholder="Choose a template..." /></SelectTrigger>
-                      <SelectContent>
-                        {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 px-4 py-2 border-b">
+                  {templates.length > 0 && (
+                    <>
+                      <Label className="text-xs shrink-0">Start from template</Label>
+                      <Select onValueChange={applyTemplate}>
+                        <SelectTrigger className="h-8 text-sm max-w-xs"><SelectValue placeholder="Choose a template..." /></SelectTrigger>
+                        <SelectContent>
+                          {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
+                  {linkedTemplate ? (
+                    <div className="ml-auto flex items-center">
+                      <Button type="button" variant="outline" size="sm" className="h-8 rounded-r-none border-r-0" onClick={saveToLinkedTemplate} disabled={savingTemplate} title={`Overwrite template "${linkedTemplate.name}" with this design`}>
+                        {savingTemplate ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />}
+                        <span className="max-w-[220px] truncate">Save to &ldquo;{linkedTemplate.name}&rdquo;</span>
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="outline" size="sm" className="h-8 px-2 rounded-l-none" disabled={savingTemplate}>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={saveToLinkedTemplate}>Save to &ldquo;{linkedTemplate.name}&rdquo;</DropdownMenuItem>
+                          <DropdownMenuItem onClick={openSaveAsNewTemplate}>Save as new template…</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" className="h-8 ml-auto" onClick={openSaveAsNewTemplate} disabled={savingTemplate}>
+                      <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />
+                      Save as Template
+                    </Button>
+                  )}
+                </div>
                 <div className="flex-1 min-h-0">
                   <EmailBuilder blocks={blocks} onBlocksChange={setBlocks} settings={settings} onSettingsChange={setSettings} />
                 </div>
@@ -491,6 +583,32 @@ export default function CampaignEditor({
           )}
         </div>
       </SheetContent>
+
+      <Dialog open={templateDialogOpen} onOpenChange={o => { if (!savingTemplate) setTemplateDialogOpen(o) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as new template</DialogTitle>
+          </DialogHeader>
+          <form className="space-y-3" onSubmit={e => { e.preventDefault(); saveAsNewTemplate() }}>
+            <div className="space-y-1.5">
+              <Label>Template name <span className="text-red-500">*</span></Label>
+              <Input autoFocus value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="e.g. Mischief Raja Ampat" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Input value={templateDescription} onChange={e => setTemplateDescription(e.target.value)} placeholder="Optional" />
+            </div>
+            <p className="text-[11px] text-muted-foreground">Reusable on other campaigns and automations. Later edits here can be saved back to this template.</p>
+            <DialogFooter>
+              <Button type="button" variant="outline" size="sm" onClick={() => setTemplateDialogOpen(false)} disabled={savingTemplate}>Cancel</Button>
+              <Button type="submit" size="sm" disabled={savingTemplate || !templateName.trim()} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                {savingTemplate && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                Save Template
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   )
 }
