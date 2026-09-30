@@ -10,6 +10,7 @@ import { allItemsCustom } from '@/lib/purchasing/requestItems'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
+import { yachtCrewWhere } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -167,6 +168,11 @@ export async function POST(req: NextRequest) {
   // chart genuinely has no usable manager on file. The requester is whoever this PR is
   // for: the explicit requestedByEmployeeId when Purchasing is filing on someone else's
   // behalf, otherwise the logged-in user's own Employee profile.
+  // Boat Captain / Cruise Director may only file on behalf of their own yacht's crew.
+  if (requestedByEmployeeId && !roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']) && roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])) {
+    const ok = await db.employee.count({ where: { id: requestedByEmployeeId, ...(await yachtCrewWhere(db, session.user.id)) } })
+    if (!ok) return NextResponse.json({ error: 'You can only request on behalf of your own yacht crew' }, { status: 403 })
+  }
   const requesterEmployee = requestedByEmployeeId
     ? await db.employee.findUnique({ where: { id: requestedByEmployeeId }, select: { id: true, fullName: true, managerId: true } })
     : await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true, fullName: true, managerId: true } })
