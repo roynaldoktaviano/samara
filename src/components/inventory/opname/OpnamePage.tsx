@@ -6,7 +6,7 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { PhotoSourceMenu, FilePreview } from '@/components/ui/file-preview'
 import { readUploadFile } from '@/lib/fileUpload'
 
-interface StockLocation { id: string; name: string; type: string; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId: string | null }
 interface Room { id: string; name: string; locationId: string }
 
 interface OpnameEntry {
@@ -33,6 +33,7 @@ export default function OpnamePage() {
 
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [noAssignedShip, setNoAssignedShip] = useState(false)
   const [startLocationId, setStartLocationId] = useState('')
   const [startRoomId, setStartRoomId] = useState('')
   const [starting, setStarting] = useState(false)
@@ -56,7 +57,18 @@ export default function OpnamePage() {
   useEffect(() => { if (view === 'list') loadList() }, [view, loadList])
 
   useEffect(() => {
-    fetch('/api/purchasing/locations').then(r => r.json()).then(setLocations)
+    // Boat Captain / Cruise Director only get their assigned ship (the API enforces this too).
+    Promise.all([
+      fetch('/api/purchasing/locations').then(r => r.json()),
+      fetch('/api/inventory/opnames/scope').then(r => r.ok ? r.json() : { scoped: false }),
+    ]).then(([locs, scope]: [StockLocation[], { scoped: boolean; yachtId?: string | null }]) => {
+      const list = Array.isArray(locs) ? locs : []
+      const allowed = scope.scoped ? list.filter(l => !!scope.yachtId && l.yachtId === scope.yachtId) : list
+      setLocations(allowed)
+      setNoAssignedShip(scope.scoped && allowed.length === 0)
+      const top = allowed.filter(l => !l.parentId)
+      if (scope.scoped && top.length === 1) setStartLocationId(top[0].id)
+    })
   }, [])
 
   useEffect(() => {
@@ -201,6 +213,12 @@ export default function OpnamePage() {
           <h2 className="text-2xl font-bold tracking-tight">Start Stock Opname</h2>
           <p className="text-muted-foreground text-sm mt-1">Select the ship/place, then the room you want to check</p>
         </div>
+
+        {noAssignedShip && (
+          <div className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> No ship is assigned to your account yet. Ask an admin to assign one in Users.
+          </div>
+        )}
 
         {startError && (
           <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

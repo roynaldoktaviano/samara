@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
-import { applyItemsToSale, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
+import { applyItemsToSale, markSaleComplimentary, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -57,19 +57,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         discountFields = { discountId: resolved.discountId, discountName: resolved.discountName, discountAmount: resolved.discountAmount }
       }
 
-      const result = await withRetry(db, () => db.cashierSale.update({
-        where: { id },
-        data: {
-          status: 'closed', payMethod, closedAt: new Date(),
-          ...discountFields,
-          ...(employeeId ? { employeeId, employeeName: employeeName || null } : {}),
-          ...(payMethod === 'Complimentary' ? { complimentaryReason: complimentaryReason || null } : {}),
-        },
-        include: {
-          items: { orderBy: { createdAt: 'asc' } },
-          booking: { select: { bookingCode: true } },
-          guest: { select: { customer: { select: { email: true } } } },
-        },
+      const result = await withRetry(db, () => db.$transaction(async (tx) => {
+        if (payMethod === 'Complimentary') await markSaleComplimentary(tx, id)
+        return tx.cashierSale.update({
+          where: { id },
+          data: {
+            status: 'closed', payMethod, closedAt: new Date(),
+            ...discountFields,
+            ...(employeeId ? { employeeId, employeeName: employeeName || null } : {}),
+            ...(payMethod === 'Complimentary' ? { complimentaryReason: complimentaryReason || null } : {}),
+          },
+          include: {
+            items: { orderBy: { createdAt: 'asc' } },
+            booking: { select: { bookingCode: true } },
+            guest: { select: { customer: { select: { email: true } } } },
+          },
+        })
       }))
 
       return NextResponse.json(result)

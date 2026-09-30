@@ -64,6 +64,7 @@ import InventoryRoomsPage from '@/components/inventory/rooms/RoomsPage'
 import InventoryOpnamePage from '@/components/inventory/opname/OpnamePage'
 import PosCategoriesPage from '@/components/pos/categories/PosCategoriesPage'
 import PosMenuPage from '@/components/pos/menu/PosMenuPage'
+import PosRecipesPage from '@/components/pos/recipes/PosRecipesPage'
 import PosPackagesPage from '@/components/pos/packages/PosPackagesPage'
 import PosDiscountsPage from '@/components/pos/discounts/PosDiscountsPage'
 import PosBillingHistoryPage from '@/components/pos/billing/PosBillingHistoryPage'
@@ -884,6 +885,7 @@ export default function Home() {
       case 'inventory-rooms':         return <InventoryRoomsPage />
       case 'inventory-opname':        return <InventoryOpnamePage />
       case 'pos-categories': return <PosCategoriesPage />
+      case 'pos-recipes':    return <PosRecipesPage />
       case 'pos-menu':       return <PosMenuPage />
       case 'pos-packages':   return <PosPackagesPage />
       case 'pos-discounts':  return <PosDiscountsPage />

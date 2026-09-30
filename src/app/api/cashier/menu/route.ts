@@ -16,11 +16,13 @@ export async function GET(request: NextRequest) {
   const location = await withRetry(db, () => db.stockLocation.findFirst({
     where: { yachtId, type: 'VESSEL', isActive: true },
     select: { id: true },
+    // Same pick as /api/cashier/vessels: the yacht's POS bar first.
+    orderBy: [{ isPosBar: 'desc' }, { name: 'asc' }],
   }))
   if (!location) return NextResponse.json({ error: 'No vessel stock location for this yacht' }, { status: 404 })
 
   const now = new Date()
-  const [menuRows, packageRows, discountRows, lots] = await Promise.all([
+  const [menuRows, packageRows, recipeRows, discountRows, lots] = await Promise.all([
     withRetry(db, () => db.posMenuItem.findMany({
       where: { isActive: true, OR: [{ yachtId }, { yachtId: null }] },
       include: {
@@ -33,6 +35,13 @@ export async function GET(request: NextRequest) {
       include: {
         category: { select: { id: true, name: true, sortOrder: true } },
         items: { include: { item: { select: { name: true } } } },
+      },
+    })),
+    withRetry(db, () => db.posRecipe.findMany({
+      where: { isActive: true, OR: [{ yachtId }, { yachtId: null }] },
+      include: {
+        category: { select: { id: true, name: true, sortOrder: true } },
+        lines: { include: { item: { select: { name: true, baseUnit: true } } } },
       },
     })),
     withRetry(db, () => db.posDiscount.findMany({
@@ -65,6 +74,7 @@ export async function GET(request: NextRequest) {
   const categoryMap = new Map<string, { id: string; name: string; sortOrder: number }>()
   for (const r of effectiveMenuRows) categoryMap.set(r.category.id, r.category)
   for (const p of packageRows) categoryMap.set(p.category.id, p.category)
+  for (const r of recipeRows) categoryMap.set(r.category.id, r.category)
   const categories = Array.from(categoryMap.values()).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
   const items = effectiveMenuRows
@@ -95,11 +105,29 @@ export async function GET(request: NextRequest) {
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  // A Menu (recipe) is available as many times as its scarcest ingredient allows.
+  const recipes = recipeRows
+    .filter(r => r.lines.length > 0)
+    .map(r => ({
+      kind: 'recipe' as const,
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      imageKey: r.imageKey,
+      price: r.price,
+      categoryId: r.category.id,
+      categoryName: r.category.name,
+      stock: Math.max(0, Math.min(...r.lines.map(l => Math.floor((stockMap.get(l.itemId) ?? 0) / l.qty)))),
+      components: r.lines.map(l => ({ name: l.item.name, qty: l.qty, unit: l.item.baseUnit })),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   return NextResponse.json({
     locationId: location.id,
     categories,
     items,
     packages,
+    recipes,
     discounts: discountRows.map(d => ({ id: d.id, name: d.name, type: d.type, value: d.value })),
   })
 }

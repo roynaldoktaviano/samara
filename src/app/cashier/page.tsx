@@ -14,12 +14,14 @@ interface Trip { id: string; tripType: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: s
 interface PosCategoryLite { id: string; name: string }
 interface MenuItem { kind: 'item'; id: string; name: string; categoryId: string; categoryName: string; unit: string; price: number; imageKey: string | null; stock: number }
 interface PackageEntry { kind: 'package'; id: string; name: string; categoryId: string; categoryName: string; price: number; imageKey: string | null; description: string | null; components: { name: string; qty: number }[] }
-type CatalogEntry = MenuItem | PackageEntry
+// A Menu made from ingredients (recipe); stock = portions the scarcest ingredient still allows.
+interface RecipeEntry { kind: 'recipe'; id: string; name: string; categoryId: string; categoryName: string; price: number; imageKey: string | null; description: string | null; stock: number; components: { name: string; qty: number; unit: string }[] }
+type CatalogEntry = MenuItem | PackageEntry | RecipeEntry
 interface DiscountEntry { id: string; name: string; type: 'PERCENT' | 'FIXED'; value: number }
 interface Branding { logoUrl: string; name: string }
 interface StaffMember { id: string; fullName: string; department: string | null }
 
-interface CartLine { kind: 'item' | 'package'; itemId: string | null; packageId: string | null; name: string; price: number; qty: number; unit: string }
+interface CartLine { kind: 'item' | 'package' | 'recipe'; itemId: string | null; packageId: string | null; recipeId?: string | null; name: string; price: number; qty: number; unit: string }
 interface SaleItem { id: string; itemId: string | null; packageId: string | null; name: string; unit: string; price: number; qty: number; round: number }
 interface Sale {
   id: string; yachtId: string; locationId: string; bookingId: string | null; guestId: string | null
@@ -766,6 +768,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
   const [receipt, setReceipt]     = useState<Sale | null>(null)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [packages, setPackages]   = useState<PackageEntry[]>([])
+  const [recipes, setRecipes]     = useState<RecipeEntry[]>([])
   const [posCategories, setPosCategories] = useState<PosCategoryLite[]>([])
   const [discounts, setDiscounts] = useState<DiscountEntry[]>([])
   const [busy, setBusy]           = useState(false)
@@ -776,6 +779,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
     fetch(`/api/cashier/menu?yachtId=${vessel.id}`).then(r => r.json()).then(d => {
       setMenuItems(Array.isArray(d.items) ? d.items : [])
       setPackages(Array.isArray(d.packages) ? d.packages : [])
+      setRecipes(Array.isArray(d.recipes) ? d.recipes : [])
       setPosCategories(Array.isArray(d.categories) ? d.categories : [])
       setDiscounts(Array.isArray(d.discounts) ? d.discounts : [])
     })
@@ -791,7 +795,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
 
   useEffect(() => { loadMenu(); loadSales(); loadStaff() }, [loadMenu, loadSales, loadStaff])
 
-  const catalog = useMemo<CatalogEntry[]>(() => [...menuItems, ...packages], [menuItems, packages])
+  const catalog = useMemo<CatalogEntry[]>(() => [...recipes, ...menuItems, ...packages], [recipes, menuItems, packages])
   const categoryTabs = useMemo(() =>
     posCategories.filter(c => catalog.some(x => x.categoryId === c.id)),
     [posCategories, catalog])
@@ -811,18 +815,20 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
       (!search || x.name.toLowerCase().includes(search.toLowerCase()))
     ), [catalog, activeCat, search])
 
-  const cartKey = (c: Pick<CartLine, 'kind' | 'itemId' | 'packageId'>) => `${c.kind}:${c.kind === 'package' ? c.packageId : c.itemId}`
+  type CartRef = Pick<CartLine, 'kind' | 'itemId' | 'packageId' | 'recipeId'>
+  const cartKey = (c: CartRef) => `${c.kind}:${c.kind === 'package' ? c.packageId : c.kind === 'recipe' ? c.recipeId : c.itemId}`
+  const entryKey = (e: CatalogEntry) => `${e.kind}:${e.id}`
 
   const addToCart = (entry: CatalogEntry) => setCart(prev => {
-    const key = entry.kind === 'package' ? `package:${entry.id}` : `item:${entry.id}`
+    const key = entryKey(entry)
     const ex = prev.find(c => cartKey(c) === key)
     if (ex) return prev.map(c => cartKey(c) === key ? { ...c, qty: c.qty + 1 } : c)
-    return entry.kind === 'package'
-      ? [...prev, { kind: 'package', itemId: null, packageId: entry.id, name: entry.name, price: entry.price, qty: 1, unit: 'pkg' }]
-      : [...prev, { kind: 'item', itemId: entry.id, packageId: null, name: entry.name, price: entry.price, qty: 1, unit: entry.unit }]
+    if (entry.kind === 'package') return [...prev, { kind: 'package', itemId: null, packageId: entry.id, name: entry.name, price: entry.price, qty: 1, unit: 'pkg' }]
+    if (entry.kind === 'recipe') return [...prev, { kind: 'recipe', itemId: null, packageId: null, recipeId: entry.id, name: entry.name, price: entry.price, qty: 1, unit: 'portion' }]
+    return [...prev, { kind: 'item', itemId: entry.id, packageId: null, name: entry.name, price: entry.price, qty: 1, unit: entry.unit }]
   })
 
-  const chgQty = (target: Pick<CartLine, 'kind' | 'itemId' | 'packageId'>, d: number) => setCart(prev =>
+  const chgQty = (target: CartRef, d: number) => setCart(prev =>
     prev.map(c => cartKey(c) === cartKey(target) ? { ...c, qty: c.qty + d } : c).filter(c => c.qty > 0)
   )
 
@@ -1026,12 +1032,12 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
               {filtered.map(item => {
-                const inCart = cart.find(c => cartKey(c) === (item.kind === 'package' ? `package:${item.id}` : `item:${item.id}`))
-                const outOfStock = item.kind === 'item' && item.stock <= 0
-                const atStockLimit = item.kind === 'item' && !!inCart && inCart.qty >= item.stock
+                const inCart = cart.find(c => cartKey(c) === entryKey(item))
+                const outOfStock = item.kind !== 'package' && item.stock <= 0
+                const atStockLimit = item.kind !== 'package' && !!inCart && inCart.qty >= item.stock
                 const Icon = item.kind === 'package' ? Gift : Utensils
                 return (
-                  <div key={cartKey({ kind: item.kind, itemId: item.kind === 'item' ? item.id : null, packageId: item.kind === 'package' ? item.id : null })} style={{ background: '#fff', border: inCart ? `1.5px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 14, padding: 12, display: 'flex', gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
+                  <div key={entryKey(item)} style={{ background: '#fff', border: inCart ? `1.5px solid ${GOLD}` : '1px solid #ece6d8', borderRadius: 14, padding: 12, display: 'flex', gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: outOfStock ? 0.55 : 1 }}>
                     <div style={{ width: 76, height: 76, borderRadius: 10, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {item.imageKey ? <img src={item.imageKey} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon size={22} color="#cfc8b8" />}
                     </div>
@@ -1044,7 +1050,7 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
                         <div style={{ ...S.mono, fontSize: 13, fontWeight: 800, color: ac, whiteSpace: 'nowrap', flexShrink: 0 }}>{fmt(item.price)}</div>
                       </div>
                       <div style={{ fontSize: 11, color: outOfStock ? '#dc6868' : '#8a8378', marginTop: 3 }}>
-                        {item.categoryName} · {item.kind === 'package' ? `${item.components.length} item${item.components.length !== 1 ? 's' : ''} included` : (outOfStock ? 'Out of stock' : `${item.stock} ${item.unit} left`)}
+                        {item.categoryName} · {item.kind === 'package' ? `${item.components.length} item${item.components.length !== 1 ? 's' : ''} included` : outOfStock ? 'Out of stock' : item.kind === 'recipe' ? `${item.stock} left` : `${item.stock} ${item.unit} left`}
                       </div>
 
                       {inCart ? (
@@ -1133,8 +1139,8 @@ function CashierApp({ vessel, trip, onBack, branding }: { vessel: Vessel; trip: 
               ) : (
                 <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 14 }}>
                   {cart.map(item => {
-                    const mi = item.kind === 'item' ? menuItems.find(m => m.id === item.itemId) : undefined
-                    const atLimit = item.kind === 'item' && item.qty >= (mi?.stock ?? Infinity)
+                    const mi = item.kind === 'item' ? menuItems.find(m => m.id === item.itemId) : item.kind === 'recipe' ? recipes.find(r => r.id === item.recipeId) : undefined
+                    const atLimit = item.kind !== 'package' && item.qty >= (mi?.stock ?? Infinity)
                     return (
                     <div key={cartKey(item)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #ece6d8' }}>
                       <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f1ede2', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

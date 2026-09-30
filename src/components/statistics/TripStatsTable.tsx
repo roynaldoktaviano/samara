@@ -123,7 +123,6 @@ export default function TripStatsTable() {
       cost: Object.fromEntries([...USAGE_COLS.map(c => c.key), 'total'].map(k => [k, s(t => t.cost[k as UsageKey | 'total'])])) as TripCost,
       gp: s(t => grossProfit(t) ?? 0),
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trips, forex])
 
   // Payment status split — by each trip's Net To Samara.

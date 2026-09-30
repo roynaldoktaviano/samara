@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import type { PrismaClient } from '@prisma/client'
 
 import { roleMatches } from '@/lib/role-utils'
+import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnameScope'
 
 const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+
+/** 404s an opname on a ship outside the user's scope (Boat Captain / Cruise Director → own yacht only). */
+async function outOfScope(db: PrismaClient, role: string, userId: string, opnameId: string) {
+  const scope = await resolveOpnameScope(db, role, userId)
+  if (!scope.scoped) return false
+  const o = await db.inventoryOpname.findUnique({ where: { id: opnameId }, select: { location: { select: { yachtId: true } } } })
+  return !opnameLocationAllowed(scope, o?.location ?? null)
+}
 
 const OPNAME_INCLUDE = {
   location: { select: { id: true, name: true, type: true } },
@@ -26,6 +36,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, OPNAME_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await outOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const opname = await db.inventoryOpname.findUnique({ where: { id }, include: OPNAME_INCLUDE })
   if (!opname) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -38,6 +49,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, OPNAME_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await outOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const { entries, status, notes } = await req.json() as {
     entries?: { id: string; rating?: number | null; photoKey?: string | null; notes?: string | null }[]
@@ -90,6 +102,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, OPNAME_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await outOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const opname = await db.inventoryOpname.findUnique({ where: { id } })
   if (!opname) return NextResponse.json({ error: 'Not found' }, { status: 404 })

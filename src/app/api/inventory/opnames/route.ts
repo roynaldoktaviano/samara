@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { nextVal } from '@/lib/counter'
+import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnameScope'
 
 const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
@@ -14,7 +15,9 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, OPNAME_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
+  const scope = await resolveOpnameScope(db, role, session.user.id)
   const opnames = await db.inventoryOpname.findMany({
+    where: scope.scoped ? { location: { yachtId: scope.yachtId ?? '__none__' } } : {},
     include: {
       location: { select: { id: true, name: true, type: true } },
       room: { select: { id: true, name: true } },
@@ -36,6 +39,14 @@ export async function POST(req: NextRequest) {
   const { locationId, roomId, notes } = await req.json()
   if (!locationId) return NextResponse.json({ error: 'Please select a ship/location first' }, { status: 400 })
   if (!roomId) return NextResponse.json({ error: 'Please select a room first' }, { status: 400 })
+
+  const scope = await resolveOpnameScope(db, role, session.user.id)
+  if (scope.scoped) {
+    const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { yachtId: true } })
+    if (!opnameLocationAllowed(scope, location)) {
+      return NextResponse.json({ error: 'You can only run stock opname on your assigned ship' }, { status: 403 })
+    }
+  }
 
   const room = await db.inventoryRoom.findUnique({ where: { id: roomId }, select: { id: true, locationId: true } })
   if (!room || room.locationId !== locationId) return NextResponse.json({ error: 'Room not found at this location' }, { status: 400 })

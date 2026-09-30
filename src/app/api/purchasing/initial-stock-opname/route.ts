@@ -4,10 +4,11 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { isWarehouseOnly } from '@/lib/purchasing/initialOpnameScope'
 
 // Temporary onboarding-only feature — see memory project-initial-stock-opname-temporary.
-// Restricted to Admin/Finance Director since it finalizes without an approval step.
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR']
+// Finalizes without an approval step. Admin/Finance Director: any location; Warehouse: warehouse locations only.
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -15,8 +16,9 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
+  const warehouseOnly = isWarehouseOnly(role)
   const opnames = await db.stockCount.findMany({
-    where: { type: 'INITIAL' },
+    where: { type: 'INITIAL', ...(warehouseOnly && { location: { type: 'WAREHOUSE' as const } }) },
     include: {
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
@@ -32,7 +34,7 @@ export async function GET() {
     select: { locationId: true },
   })
 
-  return NextResponse.json({ opnames, completedLocationIds: completed.map(c => c.locationId) })
+  return NextResponse.json({ opnames, completedLocationIds: completed.map(c => c.locationId), warehouseOnly })
 }
 
 export async function POST(req: NextRequest) {
@@ -43,6 +45,11 @@ export async function POST(req: NextRequest) {
 
   const { locationId } = await req.json()
   if (!locationId) return NextResponse.json({ error: 'locationId wajib diisi' }, { status: 400 })
+
+  if (isWarehouseOnly(role)) {
+    const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { type: true } })
+    if (location?.type !== 'WAREHOUSE') return NextResponse.json({ error: 'Warehouse accounts can only set up warehouse locations' }, { status: 403 })
+  }
 
   const existing = await db.stockCount.findFirst({ where: { type: 'INITIAL', locationId, status: { not: 'APPROVED' } } })
   if (existing?.status === 'COMPLETED') {

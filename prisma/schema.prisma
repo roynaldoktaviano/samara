@@ -722,6 +722,7 @@ model Yacht {
   agentClawbackRates AgentClawbackRate[]
   posMenuItems       PosMenuItem[]
   posPackages        PosPackage[]
+  posRecipes         PosRecipe[]
   posDiscounts       PosDiscount[]
   stockUsages        StockMovement[]
   documents          LegalDocument[]
@@ -2067,6 +2068,7 @@ model PurchaseItem {
   currentLocation       StockLocation?        @relation("PurchaseItemCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   posMenuItems          PosMenuItem[]
   posPackageItems       PosPackageItem[]
+  posRecipeLines        PosRecipeLine[]
   // Set by the one-time migration script when this legacy non-stock item is converted
   // into a proper InventoryItem (see InventoryItem.sourcePurchaseItemId) — back-relation only.
   migratedInventoryItem InventoryItem?
@@ -2167,6 +2169,8 @@ model CashierSaleItem {
   // PurchaseItem, so it never triggers stock movement (see applyItemsToSale, which already
   // skips stock logic whenever itemId is null).
   packageId String?
+  // Set when this line is a Menu (recipe) sale — stock is deducted per recipe line, not itemId.
+  recipeId  String?
   name      String
   unit      String
   price     Float
@@ -2177,10 +2181,12 @@ model CashierSaleItem {
   sale    CashierSale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
   item    PurchaseItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
   package PosPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  recipe  PosRecipe?    @relation(fields: [recipeId], references: [id], onDelete: SetNull)
 
   @@index([saleId])
   @@index([itemId])
   @@index([packageId])
+  @@index([recipeId])
 }
 
 // ─── POS (Point of Sale) ────────────────────────────────────────────────────
@@ -2201,6 +2207,7 @@ model PosCategory {
 
   menuItems PosMenuItem[]
   packages  PosPackage[]
+  recipes   PosRecipe[]
 }
 
 model PosMenuItem {
@@ -2258,6 +2265,46 @@ model PosPackageItem {
   item    PurchaseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([packageId])
+  @@index([itemId])
+}
+
+// A Menu entry sold in the Cashier app that is made from stock ingredients (e.g. a cocktail:
+// 45 ml rum + 1 pcs soda). Selling one deducts every line's qty (in the item's base unit)
+// from the bar and records the cost as BAR_COGS / COMPLIMENTARY usage. Same Global/yacht
+// scoping as PosPackage; small ingredients (ice, sugar, garnish) are simply left out.
+model PosRecipe {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  categoryId  String
+  yachtId     String?
+  price       Float
+  imageKey    String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  PosCategory       @relation(fields: [categoryId], references: [id])
+  yacht     Yacht?            @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  lines     PosRecipeLine[]
+  saleItems CashierSaleItem[]
+
+  @@index([yachtId])
+  @@index([categoryId])
+}
+
+model PosRecipeLine {
+  id       String @id @default(cuid())
+  recipeId String
+  itemId   String
+  // In the item's base unit (ml, pcs, …).
+  qty      Float
+
+  recipe PosRecipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  item   PurchaseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
   @@index([itemId])
 }
 

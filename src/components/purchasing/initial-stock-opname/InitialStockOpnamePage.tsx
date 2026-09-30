@@ -183,12 +183,18 @@ export default function InitialStockOpnamePage() {
       fetch('/api/purchasing/initial-stock-opname'),
       fetch('/api/purchasing/locations'),
     ])
+    let warehouseOnly = false
     if (oRes.ok) {
       const data = await oRes.json()
       setOpnames(data.opnames)
       setCompletedLocationIds(data.completedLocationIds)
+      warehouseOnly = !!data.warehouseOnly
     }
-    if (lRes.ok) setLocations(await lRes.json())
+    // Warehouse accounts only set up gudang, never a ship (the API enforces this too).
+    if (lRes.ok) {
+      const locs: Location[] = await lRes.json()
+      setLocations(warehouseOnly ? locs.filter(l => l.type === 'WAREHOUSE') : locs)
+    }
     setLoading(false)
   }, [])
 

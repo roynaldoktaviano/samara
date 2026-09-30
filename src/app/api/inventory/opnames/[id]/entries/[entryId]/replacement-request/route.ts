@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnameScope'
 import { notifyByRoleForRequest, PURCHASING_ROLES } from '@/lib/notify-purchasing'
 import { sendPushToUser } from '@/lib/push'
 
@@ -33,10 +34,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     where: { id: entryId },
     include: {
       item: { select: { id: true, name: true, itemNumber: true, unitPrice: true, vendorName: true } },
-      opname: { select: { id: true, opnameNumber: true, locationId: true, room: { select: { name: true } } } },
+      opname: { select: { id: true, opnameNumber: true, locationId: true, room: { select: { name: true } }, location: { select: { yachtId: true } } } },
     },
   })
   if (!entry || entry.opnameId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!opnameLocationAllowed(await resolveOpnameScope(db, role, session.user.id), entry.opname.location)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   if (entry.rating === null || entry.rating > 2) {
     return NextResponse.json({ error: 'Only units rated 2 stars or below can request a replacement' }, { status: 400 })
   }
