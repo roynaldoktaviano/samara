@@ -18,9 +18,13 @@ const ALWAYS_ON: Partial<Record<Role, string[]>> = {
   SUPER_ADMIN: ['users', 'roles'],
 }
 
+// Personal modules every login account gets regardless of role or admin override — e.g.
+// "My Works" is a private to-do list, so there's nothing to restrict.
+const ALWAYS_ON_EVERY_ROLE = ['my-works']
+
 /** Modules a role can never have unchecked (used to grey out those checkboxes client-side too). */
 export function getForcedModules(role: Role): string[] {
-  return ALWAYS_ON[role] ?? []
+  return [...ALWAYS_ON_EVERY_ROLE, ...(ALWAYS_ON[role] ?? [])]
 }
 
 /** The hardcoded fallback access list for a role — what it had before any admin override. */
@@ -31,7 +35,7 @@ export function defaultModulesForRole(role: string): string[] {
 /** DB override (if any) merged with the always-on set, else the hardcoded default. */
 export function effectiveModulesFromOverride(role: Role, overrideModules: string[] | null): string[] {
   const modules = overrideModules ?? defaultModulesForRole(role)
-  const forced = ALWAYS_ON[role] ?? []
+  const forced = getForcedModules(role)
   return Array.from(new Set([...modules, ...forced]))
 }
 

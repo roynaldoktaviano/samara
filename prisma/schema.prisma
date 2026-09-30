@@ -204,8 +204,51 @@ model User {
   inventoryOpnamesCounted                InventoryOpname[]
   assignedWhatsappConversations          WhatsappConversation[]            @relation("WhatsappConversationAssignedTo")
   whatsappDistributionParticipants       WhatsappDistributionParticipant[]
+  todos                                  Todo[]
 
   @@index([assignedYachtId])
+}
+
+enum TodoPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TodoStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+// Personal task board behind the "My Works" menu (List / Kanban / Timeline views) — every
+// task belongs to exactly one login account and is only ever visible to that account.
+model Todo {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  notes       String?
+  // Free-text label shown as a coloured tag (e.g. "Dashboard", "Mobile App").
+  type        String?
+  // Estimation range — startDate..dueDate drives the Timeline bar; either can be empty.
+  startDate   DateTime?
+  dueDate     DateTime?
+  priority    TodoPriority @default(MEDIUM)
+  status      TodoStatus   @default(TODO)
+  // Manual order within a status column (Kanban drag & drop), ascending.
+  sortOrder   Int          @default(0)
+  // Attached files, uploaded straight to R2 under my-works/<userId>/ —
+  // [{ url, name, size, contentType, uploadedAt }]. See src/lib/todo.ts.
+  attachments Json         @default("[]")
+  // Legacy flag from before `status` existed — always kept equal to (status == DONE).
+  completed   Boolean      @default(false)
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, status])
 }
 
 model Customer {
@@ -2034,23 +2077,23 @@ model PurchaseItem {
 }
 
 model StockLocation {
-  id           String            @id @default(cuid())
-  name         String
-  type         StockLocationType @default(WAREHOUSE)
-  yachtId      String?
-  parentId     String?
-  manager      String?
-  address      String?
-  storageClass String?
-  managedBy    String            @default("WAREHOUSE")
+  id              String                @id @default(cuid())
+  name            String
+  type            StockLocationType     @default(WAREHOUSE)
+  yachtId         String?
+  parentId        String?
+  manager         String?
+  address         String?
+  storageClass    String?
+  managedBy       String                @default("WAREHOUSE")
   // When goods here count as used (pemakaian). null = auto by type (VESSEL → EXPENSE_ON_RECEIVE,
   // everything else → HOLD_AS_STOCK); a POS bar is always HOLD_AS_STOCK. See
   // effectiveConsumptionMode in src/lib/purchasing/consumptionMode.ts.
   consumptionMode StockConsumptionMode?
   // The yacht's bar the cashier sells from — at most one per yacht (enforced by the locations API).
-  isPosBar     Boolean           @default(false)
-  isActive     Boolean           @default(true)
-  createdAt    DateTime          @default(now())
+  isPosBar        Boolean               @default(false)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
 
   yacht             Yacht?                     @relation(fields: [yachtId], references: [id], onDelete: SetNull)
   parent            StockLocation?             @relation("LocationParent", fields: [parentId], references: [id], onDelete: SetNull)
@@ -2268,7 +2311,7 @@ model StockLot {
 }
 
 model StockMovement {
-  id             String   @id @default(cuid())
+  id             String          @id @default(cuid())
   itemId         String?
   // Fallback label for non-catalog PO items — see StockLot.itemName.
   itemName       String?
@@ -2290,7 +2333,7 @@ model StockMovement {
   openTripId     String?
   tripBookingId  String?
   createdById    String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime        @default(now())
 
   item        PurchaseItem? @relation(fields: [itemId], references: [id])
   createdBy   User          @relation(fields: [createdById], references: [id])
@@ -2310,10 +2353,10 @@ model StockMovement {
 }
 
 enum StockUsageType {
-  SHIP_USAGE     // received at an EXPENSE_ON_RECEIVE location (ship/galley/deck/engine)
-  BAR_COGS       // sold at the POS bar (recipe cost)
-  COMPLIMENTARY  // given free at the POS bar
-  SHRINKAGE      // stock-count variance at a HOLD_AS_STOCK location
+  SHIP_USAGE // received at an EXPENSE_ON_RECEIVE location (ship/galley/deck/engine)
+  BAR_COGS // sold at the POS bar (recipe cost)
+  COMPLIMENTARY // given free at the POS bar
+  SHRINKAGE // stock-count variance at a HOLD_AS_STOCK location
 }
 
 model PurchaseRequest {

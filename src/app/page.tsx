@@ -71,6 +71,7 @@ import EmployeesPage from '@/components/hr/EmployeesPage'
 import HROverview from '@/components/hr/HROverview'
 import LeaveRequestsPage from '@/components/hr/LeaveRequestsPage'
 import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
+import MyWorksPage from '@/components/my-works/MyWorksPage'
 import BusinessTripsPage from '@/components/hr/BusinessTripsPage'
 import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
 import OvertimeRequestsPage from '@/components/hr/OvertimeRequestsPage'
@@ -853,6 +854,7 @@ export default function Home() {
       case 'marketing-performance': return <PerformancePage />
       case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
       case 'marketing-settings': return <MarketingBrands />
+      case 'my-works':       return <MyWorksPage />
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'my-business-trips': return <MyBusinessTripsPage />
