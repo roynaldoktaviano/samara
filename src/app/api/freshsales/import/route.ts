@@ -180,8 +180,9 @@ function buildInquiryPayload(c: FreshsalesContact): InquiryPayload | null {
   const latestCampaign = c.latest_campaign || null
   const url = extractFormUrl(c.recent_note)
   // Most Freshsales records carry no form URL — fall back to the "(#MC)" brand tag
-  // on the trip type, which marks Mischief Voyage inquiries.
-  const website = hostnameOf(url) ?? (tripType?.includes('#MC') ? 'mischiefvoyage.com' : null)
+  // on the trip type (or a Samara-form trip type naming the Mischief boat, e.g.
+  // "Private Charter Mischief (#SL)"), which marks Mischief Voyage inquiries.
+  const website = hostnameOf(url) ?? (tripType && /#MC|mischief/i.test(tripType) ? 'mischiefvoyage.com' : null)
 
   const hasSignal = checkInDate || checkOutDate || guestCount != null || tripType || message
     || utmSource || utmMedium || utmCampaign || utmTerm || gclid || leadSource || refererField
