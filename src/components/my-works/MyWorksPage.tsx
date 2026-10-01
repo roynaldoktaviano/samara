@@ -249,9 +249,9 @@ export default function MyWorksPage() {
       ) : view === 'list' ? (
         <ListView todos={visible} onAdd={openCreate} onEdit={openEdit} onDelete={remove} onStatus={changeStatus} onSubtasks={changeSubtasks} onPatch={patchTodo} types={types} />
       ) : view === 'kanban' ? (
-        <KanbanView todos={visible} onAdd={openCreate} onEdit={openEdit} onReorder={reorder} />
+        <KanbanView todos={visible} onAdd={openCreate} onEdit={openEdit} onReorder={reorder} onSubtasks={changeSubtasks} />
       ) : view === 'calendar' ? (
-        <CalendarView todos={visible} onEdit={openEdit} onCreateOn={day => openCreate('TODO', day)} onMove={moveDates} />
+        <CalendarView todos={visible} onEdit={openEdit} onCreateOn={day => openCreate('TODO', day)} onMove={moveDates} onSubtasks={changeSubtasks} />
       ) : (
         <TimelineView todos={visible} onEdit={openEdit} />
       )}

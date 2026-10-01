@@ -1,9 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, fmtRange, type Todo } from './shared'
+import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, type Todo, type Subtask, type Priority } from './shared'
 
 const DAY_MS = 86400000
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -21,18 +21,37 @@ interface Props {
   onCreateOn: (day: string) => void
   // Drag a task onto another day → shift its whole range by the difference.
   onMove: (t: Todo, startDate: string | null, dueDate: string | null) => void
+  // Sub task edits (drag to another day) save the task's whole sub task tree.
+  onSubtasks: (t: Todo, subtasks: Subtask[]) => void
 }
 
-interface Placed { todo: Todo; startCol: number; endCol: number; lane: number; clipLeft: boolean; clipRight: boolean }
+// One bar on the calendar: a task, or one of its (nested) sub tasks. Clicking a sub task opens its task.
+interface Entry {
+  id: string; todo: Todo; sub: Subtask | null
+  title: string; startDate: string | null; dueDate: string | null
+  priority: Priority | null; done: boolean; overdue: boolean
+}
+
+function entriesOf(todos: Todo[], today: string): Entry[] {
+  return todos.flatMap(t => [
+    { id: t.id, todo: t, sub: null, title: t.title, startDate: t.startDate, dueDate: t.dueDate, priority: t.priority, done: t.status === 'DONE', overdue: isOverdue(t, today) },
+    ...flattenWithDepth(t.subtasks).map(({ sub }) => ({
+      id: sub.id, todo: t, sub, title: sub.title, startDate: sub.startDate, dueDate: sub.dueDate,
+      priority: sub.priority, done: sub.done, overdue: isSubOverdue(sub, today),
+    })),
+  ])
+}
+
+interface Placed { todo: Entry; startCol: number; endCol: number; lane: number; clipLeft: boolean; clipRight: boolean }
 
 // Range a task occupies on the calendar: start..due, or a single day if only one is set.
-function span(t: Todo): [number, number] | null {
+function span(t: Pick<Entry, 'startDate' | 'dueDate'>): [number, number] | null {
   const s = t.startDate ?? t.dueDate, e = t.dueDate ?? t.startDate
   if (!s || !e) return null
   return [toUtc(dayKey(s)), toUtc(dayKey(e))]
 }
 
-export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Props) {
+export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubtasks }: Props) {
   const today = todayKey()
   const todayMs = toUtc(today)
   const [mode, setMode] = useState<Mode>('month')
@@ -48,9 +67,11 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
     : 1
   const maxLanes = mode === 'month' ? 3 : 12
 
-  const scheduled = useMemo(() => todos.map(t => ({ t, s: span(t) })).filter((x): x is { t: Todo; s: [number, number] } => !!x.s)
-    .sort((a, b) => a.s[0] - b.s[0] || (b.s[1] - b.s[0]) - (a.s[1] - a.s[0])), [todos])
-  const unscheduled = todos.length - scheduled.length
+  const entries = useMemo(() => entriesOf(todos, today), [todos, today])
+  const scheduled = useMemo(() => entries.map(t => ({ t, s: span(t) })).filter((x): x is { t: Entry; s: [number, number] } => !!x.s)
+    .sort((a, b) => a.s[0] - b.s[0] || (b.s[1] - b.s[0]) - (a.s[1] - a.s[0])), [entries])
+  // Undated sub tasks aren't worth a warning — only count tasks.
+  const unscheduled = todos.filter(t => !span(t)).length
 
   // Lay each week out independently: bars are clipped to the week and packed into the
   // lowest free lane so multi-day tasks never overlap.
@@ -81,7 +102,7 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
   }
 
   function drop(day: string) {
-    const t = todos.find(x => x.id === dragId)
+    const t = entries.find(x => x.id === dragId)
     setDragId(null); setDropDay(null)
     if (!t) return
     const s = span(t)
@@ -89,7 +110,8 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
     const delta = toUtc(day) - s[0]
     if (!delta) return
     const move = (v: string | null) => v ? keyOf(toUtc(dayKey(v)) + delta) : null
-    onMove(t, move(t.startDate), move(t.dueDate))
+    if (t.sub) onSubtasks(t.todo, mapSubtaskTree(t.todo.subtasks ?? [], t.sub.id, x => ({ ...x, startDate: move(x.startDate), dueDate: move(x.dueDate) })))
+    else onMove(t.todo, move(t.startDate), move(t.dueDate))
   }
 
   const title = mode === 'month'
@@ -159,9 +181,11 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
                               {new Date(d.ms).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' })}
                             </p>
                             {d.all.map(p => (
-                              <button key={p.todo.id} onClick={() => onEdit(p.todo)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted text-left text-sm">
-                                <span className={`h-2 w-2 rounded-full shrink-0 ${STATUS_META[p.todo.status].dot}`} />
-                                <span className={`truncate ${p.todo.status === 'DONE' ? 'line-through text-muted-foreground' : ''}`}>{p.todo.title}</span>
+                              <button key={p.todo.id} onClick={() => onEdit(p.todo.todo)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted text-left text-sm">
+                                {p.todo.sub
+                                  ? <CornerDownRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                  : <span className={`h-2 w-2 rounded-full shrink-0 ${STATUS_META[p.todo.todo.status].dot}`} />}
+                                <span className={`truncate ${p.todo.done ? 'line-through text-muted-foreground' : ''}`}>{p.todo.title}</span>
                               </button>
                             ))}
                           </PopoverContent>
@@ -175,8 +199,7 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
                 <div className="absolute inset-x-0 top-2 pointer-events-none">
                   {week.placed.filter(p => p.lane < maxLanes).map(p => {
                     const t = p.todo
-                    const done = t.status === 'DONE'
-                    const overdue = isOverdue(t, today)
+                    const { done, overdue } = t
                     return (
                       <button key={t.id}
                         draggable
@@ -186,17 +209,18 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove }: Prop
                           setTimeout(() => setDragId(t.id), 0)
                         }}
                         onDragEnd={() => { setDragId(null); setDropDay(null) }}
-                        onClick={e => { e.stopPropagation(); onEdit(t) }}
-                        title={`${t.title}${fmtRange(t) ? ` · ${fmtRange(t)}` : ''}`}
+                        onClick={e => { e.stopPropagation(); onEdit(t.todo) }}
+                        title={`${t.sub ? `${t.todo.title} › ` : ''}${t.title}${fmtRange(t) ? ` · ${fmtRange(t)}` : ''}`}
                         className={`${dragId ? 'pointer-events-none' : 'pointer-events-auto'} absolute h-[20px] flex items-center gap-1.5 px-2 text-xs font-medium border truncate cursor-grab active:cursor-grabbing transition-opacity
-                          ${STATUS_META[t.status].soft} ${overdue ? 'border-red-300' : 'border-transparent'} ${dragId === t.id ? 'opacity-40' : 'hover:brightness-95'}
+                          ${t.sub ? 'bg-background text-foreground/80' : STATUS_META[t.todo.status].soft} ${overdue ? 'border-red-300' : t.sub ? 'border-dashed border-muted-foreground/40' : 'border-transparent'} ${dragId === t.id ? 'opacity-40' : 'hover:brightness-95'}
                           ${p.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${p.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}
                         style={{
                           top: p.lane * LANE_H,
                           left: `calc(${(p.startCol / 7) * 100}% + ${p.clipLeft ? 0 : 4}px)`,
                           width: `calc(${((p.endCol - p.startCol + 1) / 7) * 100}% - ${(p.clipLeft ? 0 : 4) + (p.clipRight ? 0 : 4)}px)`,
                         }}>
-                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${PRIORITY_META[t.priority].dot}`} />
+                        {t.sub && <CornerDownRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                        {t.priority && <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${PRIORITY_META[t.priority].dot}`} />}
                         <span className={`truncate ${done ? 'line-through opacity-70' : ''}`}>{t.title}</span>
                       </button>
                     )

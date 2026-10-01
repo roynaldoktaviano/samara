@@ -7,7 +7,12 @@ export type Status = 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE'
 
 export interface Attachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
 
-export interface Subtask { id: string; title: string; done: boolean; dueDate: string | null; priority: Priority | null }
+export interface Subtask {
+  id: string; title: string; done: boolean; notes: string | null; type: string | null
+  startDate: string | null; dueDate: string | null; priority: Priority | null
+  // Nested sub tasks; missing on rows saved before nesting existed.
+  children?: Subtask[]
+}
 
 export interface Todo {
   id: string
@@ -96,15 +101,35 @@ export function fmtSize(bytes: number) {
 
 export const newSubtaskId = () => Math.random().toString(36).slice(2, 12)
 
+// Levels of sub tasks allowed under a task (sub → sub-sub → sub-sub-sub). Mirrors TODO_SUBTASK_MAX_DEPTH.
+export const MAX_SUBTASK_DEPTH = 3
+
+/** Every sub task in the tree, depth-first. */
+export const flattenSubtasks = (subs: Subtask[] | undefined): Subtask[] =>
+  (subs ?? []).flatMap(s => [s, ...flattenSubtasks(s.children)])
+
+/** Every sub task with its nesting level (1 = direct child of the task), depth-first. */
+export const flattenWithDepth = (subs: Subtask[] | undefined, depth = 1): { sub: Subtask; depth: number }[] =>
+  (subs ?? []).flatMap(s => [{ sub: s, depth }, ...flattenWithDepth(s.children, depth + 1)])
+
+export const isSubOverdue = (s: Subtask, today = todayKey()) => !s.done && !!s.dueDate && s.dueDate < today
+
+export const mapSubtaskTree = (subs: Subtask[], id: string, fn: (s: Subtask) => Subtask | null): Subtask[] =>
+  subs.flatMap(s => {
+    if (s.id === id) { const r = fn(s); return r ? [r] : [] }
+    return [s.children?.length ? { ...s, children: mapSubtaskTree(s.children, id, fn) } : s]
+  })
+
 /** "2/5" checklist counter; renders nothing when the task has no sub tasks. */
 export function SubtaskCount({ subtasks, className = '' }: { subtasks: Subtask[] | undefined; className?: string }) {
-  if (!subtasks?.length) return null
-  const done = subtasks.filter(s => s.done).length
-  const all = done === subtasks.length
+  const flat = flattenSubtasks(subtasks)
+  if (!flat.length) return null
+  const done = flat.filter(s => s.done).length
+  const all = done === flat.length
   return (
     <span className={`inline-flex items-center gap-0.5 text-xs ${all ? 'text-emerald-600' : 'text-muted-foreground'} ${className}`}
-      title={`${done} of ${subtasks.length} sub tasks done`}>
-      <ListChecks className="h-3 w-3" />{done}/{subtasks.length}
+      title={`${done} of ${flat.length} sub tasks done`}>
+      <ListChecks className="h-3 w-3" />{done}/{flat.length}
     </span>
   )
 }

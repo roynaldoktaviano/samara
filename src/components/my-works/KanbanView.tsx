@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { SubtaskCheck } from './SubtasksField'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, closestCorners, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Plus, CalendarDays, AlignLeft, Paperclip } from 'lucide-react'
-import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, type Todo, type Status } from './shared'
+import { Plus, CalendarDays, AlignLeft, Paperclip, ChevronDown } from 'lucide-react'
+import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, flattenSubtasks, flattenWithDepth, mapSubtaskTree, isSubOverdue, fmtDay, type Subtask, type Todo, type Status } from './shared'
 
 type Columns = Record<Status, string[]>
 
@@ -18,6 +19,7 @@ interface Props {
   onEdit: (t: Todo) => void
   // Called once per drop with the destination column's full new top-to-bottom order.
   onReorder: (status: Status, ids: string[]) => void
+  onSubtasks: (t: Todo, subtasks: Subtask[]) => void
 }
 
 const buildColumns = (todos: Todo[]): Columns => {
@@ -26,7 +28,7 @@ const buildColumns = (todos: Todo[]): Columns => {
   return cols
 }
 
-export default function KanbanView({ todos, onAdd, onEdit, onReorder }: Props) {
+export default function KanbanView({ todos, onAdd, onEdit, onReorder, onSubtasks }: Props) {
   const [cols, setCols] = useState<Columns>(() => buildColumns(todos))
   const [activeId, setActiveId] = useState<string | null>(null)
   const startCol = useRef<Status | null>(null)
@@ -98,7 +100,7 @@ export default function KanbanView({ todos, onAdd, onEdit, onReorder }: Props) {
             <SortableContext items={cols[s.key]} strategy={verticalListSortingStrategy}>
               {cols[s.key].map(id => {
                 const t = byId.get(id)
-                return t ? <SortableCard key={id} todo={t} onEdit={openCard} /> : null
+                return t ? <SortableCard key={id} todo={t} onEdit={openCard} onSubtasks={onSubtasks} /> : null
               })}
             </SortableContext>
           </Column>
@@ -131,17 +133,18 @@ function Column({ status, label, bar, count, onAdd, children }: {
   )
 }
 
-function SortableCard({ todo, onEdit }: { todo: Todo; onEdit: (t: Todo) => void }) {
+function SortableCard({ todo, onEdit, onSubtasks }: { todo: Todo; onEdit: (t: Todo) => void; onSubtasks: Props['onSubtasks'] }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
       className={isDragging ? 'opacity-30' : ''} onClick={() => onEdit(todo)}>
-      <Card todo={todo} />
+      <Card todo={todo} onSubtasks={onSubtasks} />
     </div>
   )
 }
 
-function Card({ todo, dragging }: { todo: Todo; dragging?: boolean }) {
+function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; onSubtasks?: Props['onSubtasks'] }) {
+  const [showSubs, setShowSubs] = useState(false)
   const range = fmtRange(todo)
   const overdue = isOverdue(todo, todayKey())
   const done = todo.status === 'DONE'
@@ -160,10 +163,26 @@ function Card({ todo, dragging }: { todo: Todo; dragging?: boolean }) {
       {todo.subtasks?.length > 0 && (
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-            <div className="h-full bg-emerald-500" style={{ width: `${(todo.subtasks.filter(s => s.done).length / todo.subtasks.length) * 100}%` }} />
+            <div className="h-full bg-emerald-500" style={{ width: `${(flattenSubtasks(todo.subtasks).filter(s => s.done).length / flattenSubtasks(todo.subtasks).length) * 100}%` }} />
           </div>
-          <SubtaskCount subtasks={todo.subtasks} />
+          <button onClick={e => { e.stopPropagation(); setShowSubs(v => !v) }} onPointerDown={e => e.stopPropagation()}
+            className="flex items-center gap-0.5 rounded hover:bg-muted px-0.5" title={showSubs ? 'Hide sub tasks' : 'Show sub tasks'}>
+            <SubtaskCount subtasks={todo.subtasks} />
+            <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${showSubs ? '' : '-rotate-90'}`} />
+          </button>
         </div>
+      )}
+      {showSubs && onSubtasks && todo.subtasks?.length > 0 && (
+        // Own clicks/pointer events so ticking a sub task neither opens the modal nor starts a drag.
+        <ul className="space-y-1 border-t pt-2 cursor-default" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+          {flattenWithDepth(todo.subtasks).map(({ sub, depth }) => (
+            <li key={sub.id} className="flex items-start gap-1.5 text-xs" style={{ paddingLeft: (depth - 1) * 14 }}>
+              <span className="mt-px"><SubtaskCheck done={sub.done} onToggle={() => onSubtasks(todo, mapSubtaskTree(todo.subtasks, sub.id, s => ({ ...s, done: !s.done })))} /></span>
+              <span className={`flex-1 break-words ${sub.done ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</span>
+              {sub.dueDate && <span className={`shrink-0 ${isSubOverdue(sub) ? 'text-red-600' : 'text-muted-foreground'}`}>{fmtDay(sub.dueDate).replace(/, \d{4}$/, '')}</span>}
+            </li>
+          ))}
+        </ul>
       )}
       {(range || todo.attachments?.length > 0) && (
         <div className="flex items-center justify-between gap-2 text-xs">

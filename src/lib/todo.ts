@@ -6,8 +6,14 @@ export const TODO_STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'] as con
 
 export interface TodoAttachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
 
-export interface TodoSubtask { id: string; title: string; done: boolean; dueDate: string | null; priority: string | null }
-export const TODO_SUBTASK_MAX_COUNT = 100
+export interface TodoSubtask {
+  id: string; title: string; done: boolean; notes: string | null; type: string | null
+  startDate: string | null; dueDate: string | null; priority: string | null
+  children: TodoSubtask[]
+}
+// Sub tasks nest up to 3 levels below the task; the cap counts every node in the tree.
+export const TODO_SUBTASK_MAX_DEPTH = 3
+export const TODO_SUBTASK_MAX_COUNT = 300
 
 export const TODO_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024 // 25MB per file
 export const TODO_ATTACHMENT_MAX_COUNT = 20
@@ -33,20 +39,33 @@ function parseAttachments(v: unknown, userId: string): TodoAttachment[] | null {
   return out
 }
 
-function parseSubtasks(v: unknown): TodoSubtask[] | null {
-  if (!Array.isArray(v) || v.length > TODO_SUBTASK_MAX_COUNT) return null
+function parseSubtasks(v: unknown, depth = 1, seen = { n: 0 }): TodoSubtask[] | null {
+  if (v == null && depth > 1) return []
+  if (!Array.isArray(v)) return null
+  seen.n += v.length
+  if (seen.n > TODO_SUBTASK_MAX_COUNT) return null
   const out: TodoSubtask[] = []
   for (const st of v) {
     if (!st || typeof st !== 'object') return null
-    const { id, title, done, dueDate, priority } = st as Record<string, unknown>
+    const { id, title, done, notes, type, startDate, dueDate, priority, children } = st as Record<string, unknown>
+    const day = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null
+    const start = day(startDate), due = day(dueDate)
+    if (start && due && due < start) return null
     if (typeof title !== 'string' || !title.trim()) continue // blank rows are dropped, not an error
+    // Anything nested deeper than the max depth is dropped.
+    const kids = depth < TODO_SUBTASK_MAX_DEPTH ? parseSubtasks(children, depth + 1, seen) : []
+    if (!kids) return null
     out.push({
       id: typeof id === 'string' && id ? id.slice(0, 64) : Math.random().toString(36).slice(2, 12),
       title: title.trim().slice(0, 500),
       done: done === true,
+      notes: typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 5000) : null,
+      type: typeof type === 'string' && type.trim() ? type.trim().slice(0, 100) : null,
       // Plain YYYY-MM-DD, same convention as the task dates on the client.
-      dueDate: typeof dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : null,
+      startDate: start,
+      dueDate: due,
       priority: TODO_PRIORITIES.includes(priority as never) ? priority as string : null,
+      children: kids,
     })
   }
   return out

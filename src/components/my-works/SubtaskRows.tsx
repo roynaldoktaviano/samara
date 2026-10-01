@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { CalendarDays, Flag, Trash2, CornerDownLeft, X } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { CalendarDays, Flag, Trash2, CornerDownLeft, X, ChevronDown, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { PRIORITIES, PRIORITY_META, fmtDay, todayKey, newSubtaskId, type Subtask, type Priority, type Todo } from './shared'
+import { PRIORITIES, PRIORITY_META, fmtDay, todayKey, newSubtaskId, MAX_SUBTASK_DEPTH, flattenSubtasks, mapSubtaskTree, SubtaskCount, type Subtask, type Priority, type Todo } from './shared'
 import { SubtaskCheck } from './SubtasksField'
+import { TextCell, TypeCell, RangeCell } from './InlineCells'
 
 // ClickUp-style sub task rows for the List view: one table row per sub task (aligned to the
 // parent table's 7 columns) plus an inline "create" row. Every change is saved immediately
@@ -65,41 +66,85 @@ export function PriorityPick({ value, onChange, compact, required }: { value: Pr
   )
 }
 
-export function SubtaskRow({ sub, onUpdate, onDelete }: {
-  sub: Subtask; onUpdate: (patch: Partial<Subtask>) => void; onDelete: () => void
+// Left padding of the name cell per nesting level (level 1 = direct sub task of the task).
+const indent = (depth: number) => ({ paddingLeft: `${12 + depth * 24}px` })
+
+export interface SubtaskTreeState {
+  expanded: Set<string>
+  toggleExpand: (id: string) => void
+  // Parent id (task or sub task) currently showing the inline "new sub task" row.
+  creatingFor: string | null
+  startCreate: (parentId: string) => void
+  cancelCreate: () => void
+  typesList: string
+}
+
+/** Renders `subs` (one nesting level) and, recursively, their open children. */
+export function SubtaskTree({ subs, depth, parentId, ops, state }: {
+  subs: Subtask[]; depth: number; parentId: string; ops: ReturnType<typeof subtaskOps>; state: SubtaskTreeState
 }) {
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(sub.title)
-  function commit() {
-    setEditing(false)
-    const t = title.trim()
-    if (t && t !== sub.title) onUpdate({ title: t })
-    else setTitle(sub.title)
-  }
+  return (
+    <>
+      {subs.map(st => {
+        const kids = st.children ?? []
+        const open = state.expanded.has(st.id)
+        return (
+          <Fragment key={st.id}>
+            <SubtaskRow sub={st} depth={depth} open={open} state={state}
+              onUpdate={patch => ops.update(st.id, patch)} onDelete={() => ops.remove(st.id)} />
+            {open && kids.length > 0 && <SubtaskTree subs={kids} depth={depth + 1} parentId={st.id} ops={ops} state={state} />}
+          </Fragment>
+        )
+      })}
+      {state.creatingFor === parentId && (
+        <SubtaskCreateRow depth={depth} onCreate={sub => ops.add(parentId, sub)} onCancel={state.cancelCreate} />
+      )}
+    </>
+  )
+}
+
+function SubtaskRow({ sub, depth, open, state, onUpdate, onDelete }: {
+  sub: Subtask; depth: number; open: boolean; state: SubtaskTreeState
+  onUpdate: (patch: Partial<Subtask>) => void; onDelete: () => void
+}) {
+  const overdue = !sub.done && !!sub.dueDate && sub.dueDate < todayKey()
+  const kids = sub.children ?? []
+  const canNest = depth < MAX_SUBTASK_DEPTH
   return (
     <tr className="border-b bg-muted/10 hover:bg-muted/30 transition-colors group">
       <td />
-      <td className="pl-9 pr-3 py-2">
-        <div className="flex items-center gap-2">
+      <td className="pr-3 py-2" style={indent(depth)}>
+        <div className="flex items-center gap-1.5">
+          {kids.length > 0 ? (
+            <button onClick={() => state.toggleExpand(sub.id)} className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0" title={open ? 'Hide sub tasks' : 'Show sub tasks'}>
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
+            </button>
+          ) : <span className="w-[18px] shrink-0" />}
           <SubtaskCheck done={sub.done} onToggle={() => onUpdate({ done: !sub.done })} />
-          {editing ? (
-            <input autoFocus className="flex-1 min-w-0 h-7 border rounded px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-              value={title} onChange={e => setTitle(e.target.value)} onBlur={commit}
-              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setTitle(sub.title); setEditing(false) } }} />
-          ) : (
-            <button onClick={() => { setTitle(sub.title); setEditing(true) }} title="Rename"
-              className={`text-left text-sm break-words hover:text-amber-700 ${sub.done ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</button>
+          <div className="flex-1 min-w-0">
+            <TextCell value={sub.title} required onSave={title => onUpdate({ title })}
+              className={`text-sm break-words ${sub.done ? 'line-through text-muted-foreground' : ''}`} />
+          </div>
+          {kids.length > 0 && <button onClick={() => state.toggleExpand(sub.id)} className="shrink-0"><SubtaskCount subtasks={kids} /></button>}
+          {canNest && (
+            <button onClick={() => state.startCreate(sub.id)} title="Create sub task"
+              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">
+              <Plus className="h-4 w-4" />
+            </button>
           )}
         </div>
       </td>
-      <td className="border-l" />
-      <td className="px-3 py-2 border-l whitespace-nowrap">
-        <DatePick value={sub.dueDate} onChange={dueDate => onUpdate({ dueDate })} />
+      <td className="px-3 py-2 border-l text-muted-foreground">
+        <TextCell value={sub.notes} multiline onSave={notes => onUpdate({ notes: notes || null })} className="line-clamp-2 break-words whitespace-pre-line" />
       </td>
-      <td className="border-l" />
+      <td className="px-3 py-2 border-l">
+        <RangeCell startDate={sub.startDate} dueDate={sub.dueDate} overdue={overdue} onSave={(startDate, dueDate) => onUpdate({ startDate, dueDate })} />
+      </td>
+      <td className="px-3 py-2 border-l"><TypeCell value={sub.type} datalist={state.typesList} onSave={type => onUpdate({ type: type || null })} /></td>
       <td className="px-3 py-2 border-l"><PriorityPick value={sub.priority} onChange={priority => onUpdate({ priority })} /></td>
       <td className="px-2 py-2 border-l text-center">
-        <button onClick={onDelete} title="Delete sub task" className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => { if (!kids.length || confirm(`Delete "${sub.title}" and its ${flattenSubtasks(kids).length} sub task(s)?`)) onDelete() }}
+          title="Delete sub task" className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </td>
@@ -107,7 +152,7 @@ export function SubtaskRow({ sub, onUpdate, onDelete }: {
   )
 }
 
-export function SubtaskCreateRow({ onCreate, onCancel }: { onCreate: (sub: Subtask) => void; onCancel: () => void }) {
+function SubtaskCreateRow({ depth, onCreate, onCancel }: { depth: number; onCreate: (sub: Subtask) => void; onCancel: () => void }) {
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState<string | null>(null)
   const [priority, setPriority] = useState<Priority | null>(null)
@@ -115,17 +160,18 @@ export function SubtaskCreateRow({ onCreate, onCancel }: { onCreate: (sub: Subta
   function save() {
     const t = title.trim()
     if (!t) return
-    onCreate({ id: newSubtaskId(), title: t, done: false, dueDate, priority })
+    onCreate({ id: newSubtaskId(), title: t, done: false, notes: null, type: null, startDate: null, dueDate, priority, children: [] })
     setTitle(''); setDueDate(null); setPriority(null)
   }
   return (
     <tr className="border-b bg-background">
       <td />
-      <td colSpan={6} className="pl-9 pr-3 py-2">
+      <td colSpan={6} className="pr-3 py-2" style={indent(depth)}>
         <div className="flex items-center gap-2">
+          <span className="w-[18px] shrink-0" />
           <span className="h-4 w-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
           <input autoFocus className="flex-1 min-w-0 h-8 text-sm bg-transparent focus:outline-none placeholder:text-muted-foreground"
-            placeholder="Sub task name" value={title} onChange={e => setTitle(e.target.value)}
+            placeholder={depth > 1 ? `Level ${depth} sub task name` : 'Sub task name'} value={title} onChange={e => setTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } if (e.key === 'Escape') onCancel() }} />
           <DatePick value={dueDate} onChange={setDueDate} compact />
           <PriorityPick value={priority} onChange={setPriority} compact />
@@ -140,11 +186,15 @@ export function SubtaskCreateRow({ onCreate, onCancel }: { onCreate: (sub: Subta
   )
 }
 
+/** Tree edits for one task; each returns the task's full new sub task array via `onSubtasks`. */
 export const subtaskOps = (t: Todo, onSubtasks: (t: Todo, subs: Subtask[]) => void) => {
   const subs = t.subtasks ?? []
   return {
-    update: (id: string, patch: Partial<Subtask>) => onSubtasks(t, subs.map(s => s.id === id ? { ...s, ...patch } : s)),
-    remove: (id: string) => onSubtasks(t, subs.filter(s => s.id !== id)),
-    add: (sub: Subtask) => onSubtasks(t, [...subs, sub]),
+    update: (id: string, patch: Partial<Subtask>) => onSubtasks(t, mapSubtaskTree(subs, id, s => ({ ...s, ...patch }))),
+    remove: (id: string) => onSubtasks(t, mapSubtaskTree(subs, id, () => null)),
+    // parentId = the task's own id for a level-1 sub task, otherwise the parent sub task's id.
+    add: (parentId: string, sub: Subtask) => onSubtasks(t, parentId === t.id
+      ? [...subs, sub]
+      : mapSubtaskTree(subs, parentId, p => ({ ...p, children: [...(p.children ?? []), sub] }))),
   }
 }

@@ -33,7 +33,7 @@ export default function SubtasksField({ value, onChange }: Props) {
   function add() {
     const title = draft.trim()
     if (!title) return
-    onChange([...value, { id: newSubtaskId(), title, done: false, dueDate: null, priority: null }])
+    onChange([...value, { id: newSubtaskId(), title, done: false, notes: null, type: null, startDate: null, dueDate: null, priority: null, children: [] }])
     setDraft('')
   }
 

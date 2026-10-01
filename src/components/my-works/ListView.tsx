@@ -7,7 +7,7 @@ import {
   DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { STATUSES, STATUS_META, isOverdue, todayKey, SubtaskCount, type Todo, type Status, type Subtask } from './shared'
-import { SubtaskRow, SubtaskCreateRow, subtaskOps, PriorityPick } from './SubtaskRows'
+import { SubtaskTree, subtaskOps, PriorityPick, type SubtaskTreeState } from './SubtaskRows'
 import { TextCell, TypeCell, RangeCell } from './InlineCells'
 
 interface Props {
@@ -32,6 +32,9 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
   function startCreate(id: string) {
     setCreatingFor(id)
     setExpanded(e => new Set(e).add(id))
+  }
+  const treeState: SubtaskTreeState = {
+    expanded, toggleExpand, creatingFor, startCreate, cancelCreate: () => setCreatingFor(null), typesList: 'my-works-list-types',
   }
   const today = todayKey()
 
@@ -79,7 +82,6 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                       const done = t.status === 'DONE'
                       const subs = t.subtasks ?? []
                       const isOpen = subs.length > 0 && expanded.has(t.id)
-                      const creating = creatingFor === t.id
                       const ops = subtaskOps(t, onSubtasks)
                       return (
                         <Fragment key={t.id}>
@@ -152,10 +154,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                             </DropdownMenu>
                           </td>
                         </tr>
-                        {isOpen && subs.map(st => (
-                          <SubtaskRow key={st.id} sub={st} onUpdate={patch => ops.update(st.id, patch)} onDelete={() => ops.remove(st.id)} />
-                        ))}
-                        {creating && <SubtaskCreateRow onCreate={ops.add} onCancel={() => setCreatingFor(null)} />}
+                        {(isOpen || creatingFor === t.id) && <SubtaskTree subs={isOpen ? subs : []} depth={1} parentId={t.id} ops={ops} state={treeState} />}
                         </Fragment>
                       )
                     })}
