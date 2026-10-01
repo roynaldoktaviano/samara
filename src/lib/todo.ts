@@ -6,6 +6,9 @@ export const TODO_STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'] as con
 
 export interface TodoAttachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
 
+export interface TodoSubtask { id: string; title: string; done: boolean; dueDate: string | null; priority: string | null }
+export const TODO_SUBTASK_MAX_COUNT = 100
+
 export const TODO_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024 // 25MB per file
 export const TODO_ATTACHMENT_MAX_COUNT = 20
 export const todoUploadPrefix = (userId: string) => `my-works/${userId}/`
@@ -25,6 +28,25 @@ function parseAttachments(v: unknown, userId: string): TodoAttachment[] | null {
       size: typeof size === 'number' ? size : 0,
       contentType: typeof contentType === 'string' ? contentType : 'application/octet-stream',
       uploadedAt: typeof uploadedAt === 'string' ? uploadedAt : new Date().toISOString(),
+    })
+  }
+  return out
+}
+
+function parseSubtasks(v: unknown): TodoSubtask[] | null {
+  if (!Array.isArray(v) || v.length > TODO_SUBTASK_MAX_COUNT) return null
+  const out: TodoSubtask[] = []
+  for (const st of v) {
+    if (!st || typeof st !== 'object') return null
+    const { id, title, done, dueDate, priority } = st as Record<string, unknown>
+    if (typeof title !== 'string' || !title.trim()) continue // blank rows are dropped, not an error
+    out.push({
+      id: typeof id === 'string' && id ? id.slice(0, 64) : Math.random().toString(36).slice(2, 12),
+      title: title.trim().slice(0, 500),
+      done: done === true,
+      // Plain YYYY-MM-DD, same convention as the task dates on the client.
+      dueDate: typeof dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : null,
+      priority: TODO_PRIORITIES.includes(priority as never) ? priority as string : null,
     })
   }
   return out
@@ -85,6 +107,11 @@ export function parseTodoInput(body: Record<string, unknown>, userId: string, ex
     const files = parseAttachments(body.attachments, userId)
     if (!files) return { error: 'Invalid attachments' }
     data.attachments = files as unknown as Prisma.InputJsonValue
+  }
+  if ('subtasks' in body) {
+    const subtasks = parseSubtasks(body.subtasks)
+    if (!subtasks) return { error: 'Invalid sub tasks' }
+    data.subtasks = subtasks as unknown as Prisma.InputJsonValue
   }
   if ('sortOrder' in body && Number.isInteger(body.sortOrder)) data.sortOrder = body.sortOrder as number
   return { data }

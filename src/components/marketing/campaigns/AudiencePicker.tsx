@@ -19,7 +19,7 @@ const PAGE_SIZE = 100
  * from an otherwise-broad source (e.g. "everyone except these two").
  */
 export default function AudiencePicker({
-  source, label, hint, enabled, onToggle, search, onSearchChange, excludeIds, onExcludeIdsChange, yachtId, onYachtChange, yachts, hideList,
+  source, label, hint, enabled, onToggle, search, onSearchChange, excludeIds, onExcludeIdsChange, yachtId, onYachtChange, yachts, websites, hideList,
 }: {
   source: AudienceSourceKey
   label: string
@@ -33,6 +33,8 @@ export default function AudiencePicker({
   yachtId?: string
   onYachtChange?: (v: string) => void
   yachts?: Yacht[]
+  /** Leads only — narrows the list to leads with an inquiry from any of these sites. */
+  websites?: string[]
   /** Skip the search/per-person checklist below the toggle — used when membership is
    * already fully determined by rule-based conditions (see GuestConditions), so picking
    * individuals would be both redundant and impractical against a list of hundreds. */
@@ -43,11 +45,15 @@ export default function AudiencePicker({
   const [loading, setLoading] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Joined so the fetch only re-runs when the selection actually changes, not on every new array identity.
+  const websitesKey = websites?.join(',') ?? ''
+
   const fetchMembers = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams({ source, limit: String(PAGE_SIZE) })
     if (search) params.set('search', search)
     if (yachtId) params.set('yachtId', yachtId)
+    if (websitesKey) params.set('websites', websitesKey)
     fetch(`/api/marketing/audience-members?${params}`)
       .then(async r => {
         if (!r.ok) return
@@ -55,7 +61,7 @@ export default function AudiencePicker({
         setTotal(Number(r.headers.get('X-Total-Count')) || 0)
       })
       .finally(() => setLoading(false))
-  }, [source, search, yachtId])
+  }, [source, search, yachtId, websitesKey])
 
   useEffect(() => {
     if (!enabled || hideList) return

@@ -8,7 +8,8 @@ import KanbanView from './KanbanView'
 import TimelineView from './TimelineView'
 import CalendarView from './CalendarView'
 import AttachmentsField from './AttachmentsField'
-import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment } from './shared'
+import SubtasksField from './SubtasksField'
+import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment, type Subtask } from './shared'
 
 type ViewMode = 'kanban' | 'timeline' | 'list' | 'calendar'
 const VIEW_KEY = 'my-works:view'
@@ -20,8 +21,8 @@ const VIEWS: { key: ViewMode; label: string; icon: React.ElementType }[] = [
   { key: 'timeline', label: 'Timeline', icon: GanttChart },
 ]
 
-interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[] }
-const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [] })
+interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[]; subtasks: Subtask[] }
+const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [], subtasks: [] })
 
 export default function MyWorksPage() {
   const [loading, setLoading] = useState(true)
@@ -87,7 +88,7 @@ export default function MyWorksPage() {
     setForm({
       title: t.title, notes: t.notes ?? '', type: t.type ?? '',
       startDate: t.startDate ? dayKey(t.startDate) : '', dueDate: t.dueDate ? dayKey(t.dueDate) : '',
-      priority: t.priority, status: t.status, attachments: t.attachments ?? [],
+      priority: t.priority, status: t.status, attachments: t.attachments ?? [], subtasks: t.subtasks ?? [],
     })
     setFormError(''); setModalOpen(true)
   }
@@ -123,6 +124,20 @@ export default function MyWorksPage() {
     if (res.ok) { const { todo } = await res.json(); setTodos(ts => ts.map(x => x.id === t.id ? todo : x)) }
     else setTodos(ts => ts.map(x => x.id === t.id ? t : x))
   }
+
+  // Inline List view edits (cells + sub tasks) — optimistic, rolled back on failure.
+  async function patchTodo(t: Todo, patch: Partial<Todo>) {
+    setTodos(ts => ts.map(x => x.id === t.id ? { ...x, ...patch } : x))
+    const res = await fetch(`/api/my-works/${t.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    })
+    if (res.ok) { const { todo } = await res.json(); setTodos(ts => ts.map(x => x.id === t.id ? todo : x)) }
+    else {
+      setTodos(ts => ts.map(x => x.id === t.id ? t : x))
+      alert((await res.json().catch(() => null))?.error ?? 'Failed to save')
+    }
+  }
+  const changeSubtasks = (t: Todo, subtasks: Subtask[]) => patchTodo(t, { subtasks })
 
   async function moveDates(t: Todo, startDate: string | null, dueDate: string | null) {
     setTodos(ts => ts.map(x => x.id === t.id ? { ...x, startDate, dueDate } : x))
@@ -232,7 +247,7 @@ export default function MyWorksPage() {
           {[...Array(4)].map((_, i) => <div key={i} className="px-5 py-4 border-t first:border-t-0 flex gap-4"><div className="h-4 w-4 rounded bg-muted" /><div className="h-4 w-64 rounded bg-muted" /></div>)}
         </div>
       ) : view === 'list' ? (
-        <ListView todos={visible} onAdd={openCreate} onEdit={openEdit} onDelete={remove} onStatus={changeStatus} />
+        <ListView todos={visible} onAdd={openCreate} onEdit={openEdit} onDelete={remove} onStatus={changeStatus} onSubtasks={changeSubtasks} onPatch={patchTodo} types={types} />
       ) : view === 'kanban' ? (
         <KanbanView todos={visible} onAdd={openCreate} onEdit={openEdit} onReorder={reorder} />
       ) : view === 'calendar' ? (
@@ -293,6 +308,10 @@ export default function MyWorksPage() {
                   <input list="my-works-types" className={inputCls} placeholder="e.g. Report" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} />
                   <datalist id="my-works-types">{types.map(t => <option key={t} value={t} />)}</datalist>
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className={labelCls}>Sub Tasks{form.subtasks.length > 0 && ` (${form.subtasks.filter(s => s.done).length}/${form.subtasks.length})`}</label>
+                <SubtasksField value={form.subtasks} onChange={subtasks => setForm(f => ({ ...f, subtasks }))} />
               </div>
               <div className="space-y-1.5">
                 <label className={labelCls}>Attachments{form.attachments.length > 0 && ` (${form.attachments.length})`}</label>

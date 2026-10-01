@@ -11,6 +11,7 @@ export interface AudienceSourceFilter {
   search?: string
   yachtId?: string // customers only — restricts to guests with a booking on this yacht (legacy single-select, still used by the per-person picker's boat filter)
   conditions?: CustomerConditions // customers only — rule-based membership, independent of the per-person picker
+  websites?: string[] // leads only — lead has at least one inquiry submitted from ANY of these sites (Inquiry.website)
   excludeIds?: string[] // individually unchecked in the per-person picker
 }
 
@@ -97,6 +98,7 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
         { email: { contains: leadFilter.search, mode: 'insensitive' } },
       ]
     }
+    if (leadFilter.websites?.length) where.inquiries = { some: { website: { in: leadFilter.websites } } }
     const leads = await db.lead.findMany({ where, select: { id: true, name: true, email: true } })
     for (const l of leads) {
       if (l.email && !excluded.has(l.id) && !byEmail.has(l.email.toLowerCase())) {

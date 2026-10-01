@@ -242,6 +242,8 @@ model Todo {
   // Attached files, uploaded straight to R2 under my-works/<userId>/ —
   // [{ url, name, size, contentType, uploadedAt }]. See src/lib/todo.ts.
   attachments Json         @default("[]")
+  // Checklist of sub tasks — [{ id, title, done }], in display order. See src/lib/todo.ts.
+  subtasks    Json         @default("[]")
   // Legacy flag from before `status` existed — always kept equal to (status == DONE).
   completed   Boolean      @default(false)
   completedAt DateTime?

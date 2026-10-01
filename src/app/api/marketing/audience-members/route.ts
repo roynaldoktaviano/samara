@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   if (!source || !SOURCES.includes(source)) return NextResponse.json({ error: 'Invalid source' }, { status: 400 })
   const search = searchParams.get('search') ?? ''
   const yachtId = searchParams.get('yachtId') ?? ''
+  // leads only — comma-separated Inquiry.website values, matches a lead with an inquiry from ANY of them
+  const websites = (searchParams.get('websites') ?? '').split(',').map(w => w.trim()).filter(Boolean)
   const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50') || 50, 200)
   const skip = (page - 1) * limit
@@ -49,7 +51,11 @@ export async function GET(req: NextRequest) {
       db.customer.count({ where }),
     ])
   } else if (source === 'leads') {
-    const where = { deletedAt: null, email: { not: null, contains: '@' }, ...searchOr(['name', 'email']) }
+    const where = {
+      deletedAt: null, email: { not: null, contains: '@' },
+      ...(websites.length > 0 && { inquiries: { some: { website: { in: websites } } } }),
+      ...searchOr(['name', 'email']),
+    }
     ;[members, total] = await Promise.all([
       db.lead.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.lead.count({ where }),

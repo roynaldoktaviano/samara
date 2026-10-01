@@ -245,6 +245,9 @@ export default function InvoicePage() {
   const guestsWithCabin = b.guests.filter(g => g.cabin)
   const hasCabins = guestsWithCabin.length > 0
   const namedGuestsWithCabin = guestsWithCabin.filter(g => g.customer?.name && !g.customer.name.toLowerCase().includes('tbd'))
+  // One guest can occupy several cabins (one guest row per cabin) — list each name only once.
+  const uniqueGuestNames = [...new Map(namedGuestsWithCabin.map(g => [g.customer!.name.trim().toLowerCase(), g.customer!.name.trim()])).values()]
+  const paxCount = b.guestCount || b.guests.length
 
   // Cabin booking summary for the invoice, grouped by named guest — a "pending" pax (cabin
   // reserved, no customer attached yet) isn't a real name to bill against, so it never gets
@@ -460,10 +463,10 @@ export default function InvoicePage() {
                 {(billToOverride?.address ?? b.agent!.address) && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>{billToOverride?.address ?? b.agent!.address}</div>}
                 {billToOverride?.taxId && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 3 }}>Tax ID / GST No.: {billToOverride.taxId}</div>}
                 <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
-                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{namedGuestsWithCabin.length > 1 ? 'Guests' : 'Guest'}</div>
-                  {namedGuestsWithCabin.length > 0 ? (
-                    namedGuestsWithCabin.map((g, i) => (
-                      <div key={i} style={{ fontSize: 11, color: '#6b7280' }}>{g.customer!.name}</div>
+                  <div style={{ fontSize: 8, color: '#9ca3af', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{uniqueGuestNames.length > 1 ? 'Guests' : 'Guest'}</div>
+                  {uniqueGuestNames.length > 0 ? (
+                    uniqueGuestNames.map((name, i) => (
+                      <div key={i} style={{ fontSize: 11, color: '#6b7280' }}>{name}</div>
                     ))
                   ) : (
                     <div style={{ fontSize: 11, color: '#6b7280' }}>{[salutation(b.customer.gender), b.customer.name].filter(Boolean).join(' ')}</div>
@@ -487,6 +490,7 @@ export default function InvoicePage() {
               ['Package',       packageLabel],
               ['Destination',   destination],
               ['Sailing Dates', `${fmtDateShort(b.startDate)} – ${fmtDateShort(b.endDate)}`],
+              ...(paxCount > 0 ? [['Pax', `${paxCount} ${paxCount === 1 ? 'Guest' : 'Guests'}`]] : []),
               ...(b.depositDueDate ? [['Deposit Due', fmtDateShort(b.depositDueDateInvoiceOverride ?? b.depositDueDate)]] : []),
               ...(b.finalDueDate   ? [['Balance Due', fmtDateShort(b.finalDueDateInvoiceOverride ?? b.finalDueDate)]]   : []),
               ...(b.salesperson    ? [['Sales',        b.salesperson]]                  : []),

@@ -168,101 +168,133 @@ export async function POST(request: NextRequest) {
     // ── Resolve owner: an existing Guest first, then an existing Lead, else a new Lead ──
     // Checking Guest first means someone who already converted and inquires again
     // attaches to their existing Customer instead of spawning a duplicate Lead.
-    let ownerType: 'customer' | 'lead'
-    let ownerId: string
+    //
+    // Resolution + inquiry insert run under a per-contact advisory lock: the same
+    // submission can arrive twice within milliseconds (double-click, or the site firing
+    // the webhook twice), and without the lock both requests miss each other's "find
+    // existing" check and each create a Lead.
+    const lockKeys = [email && `cf7:email:${email.toLowerCase()}`, phone && `cf7:phone:${phone}`]
+      .filter((k): k is string => !!k)
+      .sort() // fixed order so two requests locking the same pair can't deadlock
 
-    const existingCustomer = await (email
-      ? db.customer.findFirst({ where: { email, deletedAt: null } })
-      : Promise.resolve(null))
-    const matchedCustomer = existingCustomer ?? (phone ? await db.customer.findFirst({ where: { phone, deletedAt: null } }) : null)
+    const { ownerType, ownerId, duplicate } = await db.$transaction(async (tx) => {
+      for (const key of lockKeys) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`
+      }
 
-    if (matchedCustomer) {
-      ownerType = 'customer'
-      const updated = await db.customer.update({
-        where: { id: matchedCustomer.id },
-        data: {
-          name: fullName,
-          ...(firstName && { firstName }),
-          ...(lastName  && { lastName  }),
-          ...(email     && { email     }),
-          ...(phone     && { phone     }),
-        },
-        select: { id: true },
-      })
-      ownerId = updated.id
-    } else {
-      const existingLead = await (email
-        ? db.lead.findFirst({ where: { email, deletedAt: null }, select: { id: true, nationality: true } })
+      let ownerType: 'customer' | 'lead'
+      let ownerId: string
+
+      const existingCustomer = await (email
+        ? tx.customer.findFirst({ where: { email, deletedAt: null } })
         : Promise.resolve(null))
-      const matchedLead = existingLead ?? (phone ? await db.lead.findFirst({ where: { phone, deletedAt: null }, select: { id: true, nationality: true } }) : null)
+      const matchedCustomer = existingCustomer ?? (phone ? await tx.customer.findFirst({ where: { phone, deletedAt: null } }) : null)
 
-      if (matchedLead) {
-        ownerType = 'lead'
-        const updated = await db.lead.update({
-          where: { id: matchedLead.id },
+      if (matchedCustomer) {
+        ownerType = 'customer'
+        const updated = await tx.customer.update({
+          where: { id: matchedCustomer.id },
           data: {
             name: fullName,
             ...(firstName && { firstName }),
             ...(lastName  && { lastName  }),
             ...(email     && { email     }),
             ...(phone     && { phone     }),
-            ...(!matchedLead.nationality && ipCountry && { nationality: ipCountry }),
           },
           select: { id: true },
         })
         ownerId = updated.id
       } else {
-        ownerType = 'lead'
-        const created = await db.lead.create({
-          data: {
-            name:        fullName,
-            firstName:   firstName || null,
-            lastName:    lastName  || null,
-            email:       email     || null,
-            phone:       phone     || null,
-            nationality: ipCountry || null,
-          },
-          select: { id: true },
-        })
-        ownerId = created.id
-      }
-    }
+        const existingLead = await (email
+          ? tx.lead.findFirst({ where: { email, deletedAt: null }, select: { id: true, nationality: true } })
+          : Promise.resolve(null))
+        const matchedLead = existingLead ?? (phone ? await tx.lead.findFirst({ where: { phone, deletedAt: null }, select: { id: true, nationality: true } }) : null)
 
-    await db.inquiry.create({
-      data: {
-        source: 'CF7',
-        ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
-        checkInDate:  parseDate(checkIn),
-        checkOutDate: parseDate(checkOut),
-        guestCount:   numGuests ? parseInt10(numGuests) : null,
-        tripType:     tripType || null,
-        message:      message  || null,
-        website:      website || null,
-        url:          url     || null,
-        // First touch — prefers the form's ft_* capture; falls back to the bare field so
-        // this keeps working even before ft_* fields exist on a given form.
-        utmSource:    ftUtmSource   || utmSource   || null,
-        utmMedium:    ftUtmMedium   || utmMedium   || null,
-        utmCampaign:  ftUtmCampaign || utmCampaign || null,
-        utmTerm:      ftUtmTerm     || utmTerm     || null,
-        utmContent:   ftUtmContent  || utmContent  || null,
-        gclid:        ftGclid       || gclid       || null,
-        gbraid:       ftGbraid      || gbraid      || null,
-        wbraid:       ftWbraid      || wbraid      || null,
-        fbclid:       ftFbclid      || fbclid      || null,
-        // This submission's own touch — always the bare (non-ft_) fields.
-        lastSource:   utmSource   || null,
-        lastMedium:   utmMedium   || null,
-        lastCampaign: utmCampaign || null,
-        lastTerm:     utmTerm     || null,
-        lastContent:  utmContent  || null,
-        lastGclid:    gclid       || null,
-        lastGbraid:   gbraid      || null,
-        lastWbraid:   wbraid      || null,
-        lastFbclid:   fbclid      || null,
-        rawPayload:   toJsonSafe(data),
-      },
+        if (matchedLead) {
+          ownerType = 'lead'
+          const updated = await tx.lead.update({
+            where: { id: matchedLead.id },
+            data: {
+              name: fullName,
+              ...(firstName && { firstName }),
+              ...(lastName  && { lastName  }),
+              ...(email     && { email     }),
+              ...(phone     && { phone     }),
+              ...(!matchedLead.nationality && ipCountry && { nationality: ipCountry }),
+            },
+            select: { id: true },
+          })
+          ownerId = updated.id
+        } else {
+          ownerType = 'lead'
+          const created = await tx.lead.create({
+            data: {
+              name:        fullName,
+              firstName:   firstName || null,
+              lastName:    lastName  || null,
+              email:       email     || null,
+              phone:       phone     || null,
+              nationality: ipCountry || null,
+            },
+            select: { id: true },
+          })
+          ownerId = created.id
+        }
+      }
+
+      // Same submission already recorded moments ago → don't store a second copy.
+      const duplicate = await tx.inquiry.findFirst({
+        where: {
+          source: 'CF7',
+          ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
+          message: message || null,
+          url: url || null,
+          createdAt: { gte: new Date(Date.now() - 2 * 60_000) },
+        },
+        select: { id: true },
+      })
+      if (duplicate) return { ownerType, ownerId, duplicate: true }
+
+      await tx.inquiry.create({
+        data: {
+          source: 'CF7',
+          ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
+          checkInDate:  parseDate(checkIn),
+          checkOutDate: parseDate(checkOut),
+          guestCount:   numGuests ? parseInt10(numGuests) : null,
+          tripType:     tripType || null,
+          message:      message  || null,
+          website:      website || null,
+          url:          url     || null,
+          // First touch — prefers the form's ft_* capture; falls back to the bare field so
+          // this keeps working even before ft_* fields exist on a given form.
+          utmSource:    ftUtmSource   || utmSource   || null,
+          utmMedium:    ftUtmMedium   || utmMedium   || null,
+          utmCampaign:  ftUtmCampaign || utmCampaign || null,
+          utmTerm:      ftUtmTerm     || utmTerm     || null,
+          utmContent:   ftUtmContent  || utmContent  || null,
+          gclid:        ftGclid       || gclid       || null,
+          gbraid:       ftGbraid      || gbraid      || null,
+          wbraid:       ftWbraid      || wbraid      || null,
+          fbclid:       ftFbclid      || fbclid      || null,
+          // This submission's own touch — always the bare (non-ft_) fields.
+          lastSource:   utmSource   || null,
+          lastMedium:   utmMedium   || null,
+          lastCampaign: utmCampaign || null,
+          lastTerm:     utmTerm     || null,
+          lastContent:  utmContent  || null,
+          lastGclid:    gclid       || null,
+          lastGbraid:   gbraid      || null,
+          lastWbraid:   wbraid      || null,
+          lastFbclid:   fbclid      || null,
+          rawPayload:   toJsonSafe(data),
+        },
+      })
+
+      return { ownerType, ownerId, duplicate: false }
     })
+
+    if (duplicate) return json({ ok: true, ownerType, ownerId, duplicate: true })
 
     // New or still-unowned Lead → rotate it to a sales rep from that website's brand pool
     // (see autoAssignWebsiteLead). Best-effort: never fails the form submission.

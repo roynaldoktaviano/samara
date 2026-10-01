@@ -8,7 +8,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, CalendarDays, AlignLeft, Paperclip } from 'lucide-react'
-import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, type Todo, type Status } from './shared'
+import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, type Todo, type Status } from './shared'
 
 type Columns = Record<Status, string[]>
 
@@ -157,6 +157,14 @@ function Card({ todo, dragging }: { todo: Todo; dragging?: boolean }) {
         {todo.type && <TypeTag type={todo.type} />}
         <PriorityTag priority={todo.priority} />
       </div>
+      {todo.subtasks?.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+            <div className="h-full bg-emerald-500" style={{ width: `${(todo.subtasks.filter(s => s.done).length / todo.subtasks.length) * 100}%` }} />
+          </div>
+          <SubtaskCount subtasks={todo.subtasks} />
+        </div>
+      )}
       {(range || todo.attachments?.length > 0) && (
         <div className="flex items-center justify-between gap-2 text-xs">
           {range ? (

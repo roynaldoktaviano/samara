@@ -179,7 +179,9 @@ function buildInquiryPayload(c: FreshsalesContact): InquiryPayload | null {
   const latestMedium = c.latest_medium || null
   const latestCampaign = c.latest_campaign || null
   const url = extractFormUrl(c.recent_note)
-  const website = hostnameOf(url)
+  // Most Freshsales records carry no form URL — fall back to the "(#MC)" brand tag
+  // on the trip type, which marks Mischief Voyage inquiries.
+  const website = hostnameOf(url) ?? (tripType?.includes('#MC') ? 'mischiefvoyage.com' : null)
 
   const hasSignal = checkInDate || checkOutDate || guestCount != null || tripType || message
     || utmSource || utmMedium || utmCampaign || utmTerm || gclid || leadSource || refererField

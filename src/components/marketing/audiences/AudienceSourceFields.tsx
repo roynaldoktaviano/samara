@@ -18,7 +18,8 @@ export interface AudienceState {
   // yachtIds/minSpend: rule-based conditions — a guest qualifies if they've sailed on
   // ANY selected yacht AND (if set) their total confirmed spend meets the minimum.
   customers: AudienceSourceState & { yachtId: string; yachtIds: string[]; minSpend: string }
-  leads: AudienceSourceState
+  // websites: lead qualifies if any of its inquiries came from ANY selected site (Inquiry.website).
+  leads: AudienceSourceState & { websites: string[] }
   agents: AudienceSourceState
   agentLeads: AudienceSourceState
   internal: AudienceSourceState
@@ -31,7 +32,7 @@ const emptySource = (): AudienceSourceState => ({ enabled: false, search: '', ex
 
 export const emptyAudience = (): AudienceState => ({
   customers: { ...emptySource(), enabled: true, yachtId: '', yachtIds: [], minSpend: '' },
-  leads: emptySource(),
+  leads: { ...emptySource(), websites: [] },
   agents: emptySource(),
   agentLeads: emptySource(),
   internal: emptySource(),
@@ -68,7 +69,7 @@ function buildCustomersFilter(c: AudienceState['customers']) {
 export function buildAudienceSources(a: AudienceState) {
   return {
     ...(a.customers.enabled && { customers: buildCustomersFilter(a.customers) }),
-    ...(a.leads.enabled && { leads: toFilter(a.leads) }),
+    ...(a.leads.enabled && { leads: toFilter(a.leads, a.leads.websites.length > 0 ? { websites: a.leads.websites } : undefined) }),
     ...(a.agents.enabled && { agents: toFilter(a.agents) }),
     ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
     ...(a.internal.enabled && { internal: toFilter(a.internal) }),
@@ -89,7 +90,7 @@ export function audienceStateFromSources(sources: any): AudienceState {
       yachtIds: sources?.customers?.conditions?.yachtIds ?? [],
       minSpend: sources?.customers?.conditions?.minSpend != null ? String(sources.customers.conditions.minSpend) : '',
     },
-    leads: fill(sources?.leads),
+    leads: { ...fill(sources?.leads), websites: sources?.leads?.websites ?? [] },
     agents: fill(sources?.agents),
     agentLeads: fill(sources?.agentLeads),
     internal: fill(sources?.internal),
@@ -178,6 +179,45 @@ function GuestConditionCount({ customers }: { customers: AudienceState['customer
   )
 }
 
+function LeadConditions({ audience, setAudience }: {
+  audience: AudienceState
+  setAudience: (updater: (a: AudienceState) => AudienceState) => void
+}) {
+  const [websites, setWebsites] = useState<string[]>([])
+  useEffect(() => {
+    fetch('/api/leads/websites').then(r => r.ok ? r.json() : []).then(setWebsites).catch(() => {})
+  }, [])
+
+  const selected = audience.leads.websites
+  const toggleWebsite = (w: string) => setAudience(a => ({
+    ...a,
+    leads: { ...a.leads, websites: a.leads.websites.includes(w) ? a.leads.websites.filter(x => x !== w) : [...a.leads.websites, w] },
+  }))
+
+  if (websites.length === 0) return null
+  return (
+    <div className="ml-6 border rounded-lg p-3 space-y-1.5 bg-muted/20">
+      <Label className="text-xs">Came from website (optional)</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {websites.map(w => {
+          const active = selected.includes(w)
+          return (
+            <button key={w} type="button" onClick={() => toggleWebsite(w)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground hover:border-[#bdac7e]/60'}`}>
+              {w}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {selected.length === 0
+          ? 'No website selected — all leads are included.'
+          : 'Matches leads with an inquiry from any one of the selected websites. Leads imported from Freshsales have no website recorded, so they are left out.'}
+      </p>
+    </div>
+  )
+}
+
 export function AudienceSourceFields({ audience, setAudience, yachts }: {
   audience: AudienceState
   setAudience: (updater: (a: AudienceState) => AudienceState) => void
@@ -197,12 +237,16 @@ export function AudienceSourceFields({ audience, setAudience, yachts }: {
         />
         {audience.customers.enabled && <GuestConditions audience={audience} setAudience={setAudience} yachts={yachts} />}
       </div>
-      <AudiencePicker
-        source="leads" label="Leads"
-        enabled={audience.leads.enabled} onToggle={v => setAudience(a => ({ ...a, leads: { ...a.leads, enabled: v } }))}
-        search={audience.leads.search} onSearchChange={v => setAudience(a => ({ ...a, leads: { ...a.leads, search: v } }))}
-        excludeIds={audience.leads.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, leads: { ...a.leads, excludeIds: ids } }))}
-      />
+      <div className="space-y-2">
+        <AudiencePicker
+          source="leads" label="Leads"
+          enabled={audience.leads.enabled} onToggle={v => setAudience(a => ({ ...a, leads: { ...a.leads, enabled: v } }))}
+          search={audience.leads.search} onSearchChange={v => setAudience(a => ({ ...a, leads: { ...a.leads, search: v } }))}
+          excludeIds={audience.leads.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, leads: { ...a.leads, excludeIds: ids } }))}
+          websites={audience.leads.websites}
+        />
+        {audience.leads.enabled && <LeadConditions audience={audience} setAudience={setAudience} />}
+      </div>
       <AudiencePicker
         source="agents" label="Agent"
         enabled={audience.agents.enabled} onToggle={v => setAudience(a => ({ ...a, agents: { ...a.agents, enabled: v } }))}

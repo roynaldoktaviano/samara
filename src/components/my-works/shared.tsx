@@ -1,9 +1,13 @@
 'use client'
 
+import { ListChecks } from 'lucide-react'
+
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
 export type Status = 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE'
 
 export interface Attachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
+
+export interface Subtask { id: string; title: string; done: boolean; dueDate: string | null; priority: Priority | null }
 
 export interface Todo {
   id: string
@@ -16,6 +20,7 @@ export interface Todo {
   status: Status
   sortOrder: number
   attachments: Attachment[]
+  subtasks: Subtask[]
   completedAt: string | null
   createdAt: string
 }
@@ -87,4 +92,19 @@ export function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+export const newSubtaskId = () => Math.random().toString(36).slice(2, 12)
+
+/** "2/5" checklist counter; renders nothing when the task has no sub tasks. */
+export function SubtaskCount({ subtasks, className = '' }: { subtasks: Subtask[] | undefined; className?: string }) {
+  if (!subtasks?.length) return null
+  const done = subtasks.filter(s => s.done).length
+  const all = done === subtasks.length
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs ${all ? 'text-emerald-600' : 'text-muted-foreground'} ${className}`}
+      title={`${done} of ${subtasks.length} sub tasks done`}>
+      <ListChecks className="h-3 w-3" />{done}/{subtasks.length}
+    </span>
+  )
 }
