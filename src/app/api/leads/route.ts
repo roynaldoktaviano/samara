@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { leadWebsiteWhere } from '@/lib/lead-website'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -32,11 +33,9 @@ export async function GET(request: NextRequest) {
     // first/latest. Kept as separate `some` clauses (not one shared filter)
     // so a website match and a source match don't have to be the same inquiry.
     const inquiryFilters: Record<string, unknown>[] = []
-    if (website) inquiryFilters.push({ website })
-    if (source)  inquiryFilters.push({ OR: [{ utmSource: source }, { lastSource: source }] })
-    if (inquiryFilters.length > 0) {
-      where.AND = inquiryFilters.map(f => ({ inquiries: { some: f } }))
-    }
+    if (website) inquiryFilters.push(leadWebsiteWhere([website]))
+    if (source)  inquiryFilters.push({ inquiries: { some: { OR: [{ utmSource: source }, { lastSource: source }] } } })
+    if (inquiryFilters.length > 0) where.AND = inquiryFilters
 
     const [leads, total] = await Promise.all([
       db.lead.findMany({

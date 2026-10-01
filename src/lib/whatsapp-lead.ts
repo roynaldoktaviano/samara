@@ -183,15 +183,20 @@ export async function setLeadOwner(db: PrismaClient, leadId: string, ownerId: st
   return true
 }
 
-// Which brand's sales pool a website inquiry belongs to. An Otium trip type ("OTIUM - Komodo",
-// "OTIUM (#SL)" picked on the Samara site's form, "… #OT") wins over the page's hostname;
+// Which brand's sales pool a website inquiry belongs to. A brand-tagged trip type wins over
+// the page's hostname — Otium ("OTIUM - Komodo", "OTIUM (#SL)" picked on the Samara site's
+// form, "… #OT") first, then Mischief ("Mischief (#SL)", "Leisure (#MC)", "Diving (MC)");
 // otherwise it goes by hostname. Unknown or missing hosts (older forms / Freshsales imports
 // don't send a URL) fall back to Samara, the main brand. A bare "OT" trip type is NOT Otium —
 // it's what old (2022) Freshsales imports used for Open Trip.
-const OTIUM_TRIP_TYPE = /otium|#OT\b/i
+const OTIUM_TRIP_TYPE = /otium|#OT\b/
+const OTIUM_TRIP_TYPE_CI = /otium/i
+const MISCHIEF_TRIP_TYPE_CI = /mischief/i
+const MISCHIEF_TAG = /#MC|\(MC\)/
 
 export function brandForInquiry(hostname: string | null | undefined, tripType?: string | null): WhatsappBrand {
-  if (tripType && OTIUM_TRIP_TYPE.test(tripType)) return 'OTIUM'
+  if (tripType && (OTIUM_TRIP_TYPE_CI.test(tripType) || OTIUM_TRIP_TYPE.test(tripType))) return 'OTIUM'
+  if (tripType && (MISCHIEF_TRIP_TYPE_CI.test(tripType) || MISCHIEF_TAG.test(tripType))) return 'MISCHIEF'
   const host = (hostname ?? '').toLowerCase()
   if (host.includes('otium')) return 'OTIUM'
   if (host.includes('mischief')) return 'MISCHIEF'
@@ -205,12 +210,17 @@ export function inquiryBrandWhere(brand: WhatsappBrand): Prisma.InquiryWhereInpu
     { tripType: { contains: 'otium', mode: 'insensitive' } },
     { tripType: { contains: '#OT' } },
   ] }
+  const mischiefTrip: Prisma.InquiryWhereInput = { OR: [
+    { tripType: { contains: 'mischief', mode: 'insensitive' } },
+    { tripType: { contains: '#MC' } },
+    { tripType: { contains: '(MC)' } },
+  ] }
+  const not = (w: Prisma.InquiryWhereInput): Prisma.InquiryWhereInput => ({ OR: [{ tripType: null }, { NOT: w }] })
   const hostIs = (s: string): Prisma.InquiryWhereInput => ({ website: { contains: s, mode: 'insensitive' } })
-  const notOtiumTrip: Prisma.InquiryWhereInput = { OR: [{ tripType: null }, { NOT: otiumTrip }] }
   const hostIsNot = (s: string): Prisma.InquiryWhereInput => ({ OR: [{ website: null }, { NOT: hostIs(s) }] })
-  if (brand === 'OTIUM') return { OR: [otiumTrip, hostIs('otium')] }
-  if (brand === 'MISCHIEF') return { AND: [notOtiumTrip, hostIsNot('otium'), hostIs('mischief')] }
-  return { AND: [notOtiumTrip, hostIsNot('otium'), hostIsNot('mischief')] }
+  if (brand === 'OTIUM') return { OR: [otiumTrip, { AND: [not(mischiefTrip), hostIs('otium')] }] }
+  if (brand === 'MISCHIEF') return { AND: [not(otiumTrip), { OR: [mischiefTrip, { AND: [hostIsNot('otium'), hostIs('mischief')] }] }] }
+  return { AND: [not(otiumTrip), not(mischiefTrip), hostIsNot('otium'), hostIsNot('mischief')] }
 }
 
 // Auto-assigns a website-form Lead that has no owner yet, rotating through the same

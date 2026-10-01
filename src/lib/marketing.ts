@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client'
 import { renderBlocksToHtml, injectUnsubscribeUrl, injectPreviewText, type EmailBlock } from '@/lib/email-builder'
 import { sendBulkEmail } from '@/lib/resend-mailer'
+import { leadWebsiteWhere } from '@/lib/lead-website'
 
 export interface CustomerConditions {
   yachtIds?: string[] // guest has at least one booking on ANY of these yachts (OR)
@@ -98,7 +99,7 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
         { email: { contains: leadFilter.search, mode: 'insensitive' } },
       ]
     }
-    if (leadFilter.websites?.length) where.inquiries = { some: { website: { in: leadFilter.websites } } }
+    if (leadFilter.websites?.length) where.AND = [leadWebsiteWhere(leadFilter.websites)]
     const leads = await db.lead.findMany({ where, select: { id: true, name: true, email: true } })
     for (const l of leads) {
       if (l.email && !excluded.has(l.id) && !byEmail.has(l.email.toLowerCase())) {

@@ -212,7 +212,7 @@ function LeadConditions({ audience, setAudience }: {
       <p className="text-[11px] text-muted-foreground">
         {selected.length === 0
           ? 'No website selected — all leads are included.'
-          : 'Matches leads with an inquiry from any one of the selected websites. Leads imported from Freshsales have no website recorded, so they are left out.'}
+          : 'Matches leads with an inquiry from any one of the selected websites. Anonymous = leads whose inquiries have no website recorded (mostly Freshsales imports).'}
       </p>
     </div>
   )

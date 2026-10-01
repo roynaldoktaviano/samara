@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { leadWebsiteWhere } from '@/lib/lead-website'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -53,8 +54,8 @@ export async function GET(req: NextRequest) {
   } else if (source === 'leads') {
     const where = {
       deletedAt: null, email: { not: null, contains: '@' },
-      ...(websites.length > 0 && { inquiries: { some: { website: { in: websites } } } }),
       ...searchOr(['name', 'email']),
+      ...(websites.length > 0 && { AND: [leadWebsiteWhere(websites)] }),
     }
     ;[members, total] = await Promise.all([
       db.lead.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
