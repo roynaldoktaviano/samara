@@ -1,7 +1,7 @@
 import type { PrismaClient, WhatsappBrand } from '@prisma/client'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
-import { brandForWebsite, setLeadOwner } from '@/lib/whatsapp-lead'
+import { brandForInquiry, setLeadOwner } from '@/lib/whatsapp-lead'
 
 export const STAGNANT_HOURS = 24
 
@@ -41,10 +41,10 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
       deletedAt: null, stage: 'NEW', ownerId: { not: null }, ownerAssignedAt: { lt: cutoff },
       whatsappConversations: { none: { category: 'SALES' } },
     },
-    select: { id: true, inquiries: { orderBy: { createdAt: 'desc' }, take: 1, select: { website: true } } },
+    select: { id: true, inquiries: { orderBy: { createdAt: 'desc' }, take: 1, select: { website: true, tripType: true } } },
   })
   for (const l of idle) {
-    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForWebsite(l.inquiries[0]?.website), why: `masih New ${STAGNANT_HOURS} jam setelah di-assign` })
+    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForInquiry(l.inquiries[0]?.website, l.inquiries[0]?.tripType), why: `masih New ${STAGNANT_HOURS} jam setelah di-assign` })
   }
 
   if (stagnant.size === 0) return { reassigned: 0, escalated: 0 }

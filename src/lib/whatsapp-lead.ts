@@ -1,4 +1,4 @@
-import type { LeadAssignmentReason, PrismaClient, WhatsappBrand } from '@prisma/client'
+import type { LeadAssignmentReason, Prisma, PrismaClient, WhatsappBrand } from '@prisma/client'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 
@@ -183,13 +183,34 @@ export async function setLeadOwner(db: PrismaClient, leadId: string, ownerId: st
   return true
 }
 
-// Which brand's sales pool a website form belongs to, from the page's hostname. Unknown
-// or missing hosts (older forms don't send a URL) fall back to Samara, the main brand.
-export function brandForWebsite(hostname: string | null | undefined): WhatsappBrand {
+// Which brand's sales pool a website inquiry belongs to. An Otium trip type ("OTIUM - Komodo",
+// "OTIUM (#SL)" picked on the Samara site's form, "… #OT") wins over the page's hostname;
+// otherwise it goes by hostname. Unknown or missing hosts (older forms / Freshsales imports
+// don't send a URL) fall back to Samara, the main brand. A bare "OT" trip type is NOT Otium —
+// it's what old (2022) Freshsales imports used for Open Trip.
+const OTIUM_TRIP_TYPE = /otium|#OT\b/i
+
+export function brandForInquiry(hostname: string | null | undefined, tripType?: string | null): WhatsappBrand {
+  if (tripType && OTIUM_TRIP_TYPE.test(tripType)) return 'OTIUM'
   const host = (hostname ?? '').toLowerCase()
   if (host.includes('otium')) return 'OTIUM'
   if (host.includes('mischief')) return 'MISCHIEF'
   return 'SAMARA'
+}
+
+// Prisma mirror of brandForInquiry — matches the inquiries that resolve to `brand`. Nullable
+// columns are spelled as `null OR NOT …`, since a bare NOT(...) on NULL drops the row.
+export function inquiryBrandWhere(brand: WhatsappBrand): Prisma.InquiryWhereInput {
+  const otiumTrip: Prisma.InquiryWhereInput = { OR: [
+    { tripType: { contains: 'otium', mode: 'insensitive' } },
+    { tripType: { contains: '#OT' } },
+  ] }
+  const hostIs = (s: string): Prisma.InquiryWhereInput => ({ website: { contains: s, mode: 'insensitive' } })
+  const notOtiumTrip: Prisma.InquiryWhereInput = { OR: [{ tripType: null }, { NOT: otiumTrip }] }
+  const hostIsNot = (s: string): Prisma.InquiryWhereInput => ({ OR: [{ website: null }, { NOT: hostIs(s) }] })
+  if (brand === 'OTIUM') return { OR: [otiumTrip, hostIs('otium')] }
+  if (brand === 'MISCHIEF') return { AND: [notOtiumTrip, hostIsNot('otium'), hostIs('mischief')] }
+  return { AND: [notOtiumTrip, hostIsNot('otium'), hostIsNot('mischief')] }
 }
 
 // Auto-assigns a website-form Lead that has no owner yet, rotating through the same
@@ -197,11 +218,11 @@ export function brandForWebsite(hostname: string | null | undefined): WhatsappBr
 // Chat > WhatsApp Distribution. If that brand's pool is empty it falls back to Samara's so
 // leads never sit unowned just because a pool hasn't been set up. Notifies the new owner.
 // Returns the assigned user id, or null if the lead already had one / no pool at all.
-export async function autoAssignWebsiteLead(db: PrismaClient, leadId: string, hostname: string | null | undefined, leadName: string): Promise<string | null> {
+export async function autoAssignWebsiteLead(db: PrismaClient, leadId: string, hostname: string | null | undefined, leadName: string, tripType?: string | null): Promise<string | null> {
   const lead = await db.lead.findUnique({ where: { id: leadId }, select: { ownerId: true } })
   if (!lead || lead.ownerId) return null
 
-  const brand = brandForWebsite(hostname)
+  const brand = brandForInquiry(hostname, tripType)
   const ownerId = await pickNextSalesUserId(db, brand) ?? (brand !== 'SAMARA' ? await pickNextSalesUserId(db, 'SAMARA') : null)
   if (!ownerId) return null
   // Guarded so a concurrent claim/assignment isn't overwritten.

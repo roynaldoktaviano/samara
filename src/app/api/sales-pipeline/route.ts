@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { LEAD_STAGES, type LeadStage } from '@/lib/lead-pipeline'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { inquiryBrandWhere } from '@/lib/whatsapp-lead'
 
 const DAY = 24 * 60 * 60 * 1000
 // ~28k historical Freshsales imports all sit at NEW — the board's NEW column only shows
@@ -53,7 +54,11 @@ export async function GET(req: NextRequest) {
   if (channel === 'website') filters.push({ inquiries: { some: {} } })
   else if (channel === 'whatsapp') filters.push({ whatsappConversations: { some: salesChat } })
   else if (channel === 'manual') filters.push({ inquiries: { none: {} }, whatsappConversations: { none: salesChat } })
-  if (brand) filters.push({ whatsappConversations: { some: { ...salesChat, brand } } })
+  // Brand = a SALES chat on that brand's number, or a website inquiry for that brand.
+  if (brand) filters.push({ OR: [
+    { whatsappConversations: { some: { ...salesChat, brand } } },
+    { inquiries: { some: inquiryBrandWhere(brand) } },
+  ] })
   if (q) filters.push({ OR: [
     { name: { contains: q, mode: 'insensitive' } },
     { email: { contains: q, mode: 'insensitive' } },

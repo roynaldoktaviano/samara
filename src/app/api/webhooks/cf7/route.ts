@@ -296,10 +296,10 @@ export async function POST(request: NextRequest) {
 
     if (duplicate) return json({ ok: true, ownerType, ownerId, duplicate: true })
 
-    // New or still-unowned Lead → rotate it to a sales rep from that website's brand pool
+    // New or still-unowned Lead → rotate it to a sales rep from that inquiry's brand pool
     // (see autoAssignWebsiteLead). Best-effort: never fails the form submission.
     if (ownerType === 'lead') {
-      await autoAssignWebsiteLead(db, ownerId, website, fullName).catch(e => console.error('[CF7 webhook] auto-assign failed', e))
+      await autoAssignWebsiteLead(db, ownerId, website, fullName, tripType).catch(e => console.error('[CF7 webhook] auto-assign failed', e))
     }
 
     logActivity({
