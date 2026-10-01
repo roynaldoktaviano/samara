@@ -18,7 +18,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Search, Edit, BedDouble, AlertCircle,
-  CreditCard, Receipt, Upload, ImageIcon, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
+  CreditCard, Receipt, Upload, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, ChevronLeft, Clock, Users,
   Link2, Copy, Check, ExternalLink, Crown, FileCheck, UserPlus,
 } from 'lucide-react'
@@ -27,9 +27,8 @@ import { BookingWizard } from './BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from './WaitingListManager'
 import { toast } from 'sonner'
-import { readUploadFile } from '@/lib/fileUpload'
 import { FilePreview } from '@/components/ui/file-preview'
-import { useFileDrop } from '@/hooks/useFileDrop'
+import { ProofFilesInput } from '@/components/bookings/ProofFilesInput'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -299,7 +298,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [payShowNote,     setPayShowNote]     = useState(false)
   const [payMode,         setPayMode]         = useState<'new' | 'existing'>('new')
   const [payLinkedId,     setPayLinkedId]     = useState('')
-  const [payProof,        setPayProof]        = useState<string | null>(null)
+  const [payProof,        setPayProof]        = useState<string[]>([])
   const [payDate,         setPayDate]         = useState('')
   const [payCurrency,     setPayCurrency]     = useState<CurrencyCode>('USD')
   const [payExchangeRate, setPayExchangeRate] = useState(1)
@@ -310,12 +309,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
   /* proof / submit payment */
   const [proofPayment,   setProofPayment]   = useState<PaymentRecord | null>(null)
-  const [proofPreview,   setProofPreview]   = useState<string | null>(null)
+  const [proofPreview,   setProofPreview]   = useState<string[]>([])
   const [proofMethod,    setProofMethod]    = useState('Transfer Bank')
   const [proofUploading, setProofUploading] = useState(false)
   const [proofFetching,  setProofFetching]  = useState(false)
-  const proofInputRef = useRef<HTMLInputElement>(null)
-  const payProofInputRef = useRef<HTMLInputElement>(null)
 
   /* payments list (for payment column context) */
   const [payments,        setPayments]        = useState<PaymentRecord[]>([])
@@ -758,7 +755,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setPayShowNote(false)
     setPayMode('new')
     setPayLinkedId('')
-    setPayProof(null)
+    setPayProof([])
     setPayDate(new Date().toISOString().slice(0, 10))
     const [bCur, bRate] = bookingDefaultCurrency(b)
     setPayCurrency(bCur)
@@ -766,20 +763,6 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setPayLinkedCurrency('USD')
     setPayLinkedExchangeRate(1)
   }
-  const processPayProofFile = (file: File) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-    if (!allowed.includes(file.type)) {
-      toast.error('Only JPG, PNG or PDF files are allowed')
-      return
-    }
-    readUploadFile(file).then(setPayProof).catch(() => toast.error('Failed to process file'))
-  }
-  const handlePayProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    processPayProofFile(file)
-  }
-  const { isDragging: isDraggingPayProof, dropProps: payProofDropProps } = useFileDrop(files => { if (files[0]) processPayProofFile(files[0]) })
   const submitPayment = async () => {
     if (!paymentBooking) return
     setPaymentSaving(true)
@@ -797,7 +780,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     if (amount <= 0 || amount > remaining) { setPaymentSaving(false); return }
     if (!payDate) { setPaymentSaving(false); return }
     if (payCurrency !== 'USD' && payExchangeRate <= 0) { setPaymentSaving(false); return }
-    if (payMode === 'existing' && (!payLinkedId || !payProof)) { setPaymentSaving(false); return }
+    if (payMode === 'existing' && (!payLinkedId || payProof.length === 0)) { setPaymentSaving(false); return }
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
@@ -808,7 +791,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               notes: paymentNotes,
               amount,
               linkedPaymentId: payLinkedId,
-              proofOfTransfer: payProof,
+              proofOfTransfer: payProof[0],
+              proofOfTransferExtra: payProof.slice(1),
               paymentMethod: payMethod || undefined,
               paymentDate: payDate || undefined,
               currency: payCurrency,
@@ -1010,7 +994,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   /* ── submit payment proof ── */
   const openProofUpload = (p: PaymentRecord) => {
     setProofPayment(p)
-    setProofPreview(null)
+    setProofPreview([])
   }
   const handleDeleteGuest = async (bookingId: string, bookingGuestId: string) => {
     if (!confirm('Remove this guest from the booking?')) return
@@ -1048,33 +1032,19 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setSettingLeadId(null)
   }
 
-  const processProofFile = (file: File) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
-    if (!allowed.includes(file.type)) {
-      toast.error('Only JPG, PNG or PDF files are allowed')
-      return
-    }
-    readUploadFile(file).then(setProofPreview).catch(() => toast.error('Failed to process file'))
-  }
-  const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    processProofFile(file)
-  }
-  const { isDragging: isDraggingProof, dropProps: proofDropProps } = useFileDrop(files => { if (files[0]) processProofFile(files[0]) })
   const saveProof = async () => {
-    if (!proofPayment || !proofPreview) return
+    if (!proofPayment || proofPreview.length === 0) return
     setProofUploading(true)
     try {
       const res = await fetch(`/api/payments/${proofPayment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'submit_proof', proofOfTransfer: proofPreview }),
+        body: JSON.stringify({ action: 'submit_proof', proofOfTransfer: proofPreview[0], proofOfTransferExtra: proofPreview.slice(1) }),
       })
       if (res.ok) {
         await Promise.all([fetchPayments(), fetchBookings()])
         setProofPayment(null)
-        setProofPreview(null)
+        setProofPreview([])
         window.dispatchEvent(new CustomEvent('payment-updated'))
       }
     } catch (e) { console.error(e) }
@@ -1540,7 +1510,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           onClick={() => {
                             setPayMode(opt.v)
                             setPayLinkedId('')
-                            setPayProof(null)
+                            setPayProof([])
                             const [bCur, bRate] = bookingDefaultCurrency(paymentBooking)
                             setPayCurrency(bCur)
                             setPayExchangeRate(bRate)
@@ -1903,29 +1873,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {payMode === 'existing' && (
                   <div className="space-y-1.5">
                     <Label>Transfer Proof <span className="text-red-500">*</span></Label>
-                    <div
-                      {...payProofDropProps}
-                      className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer ${
-                        isDraggingPayProof ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
-                      }`}
-                      onClick={() => payProofInputRef.current?.click()}
-                    >
-                      {payProof ? (
-                        <FilePreview src={payProof} alt="Transfer proof" className="w-full max-h-72 object-contain" />
-                      ) : (
-                        <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                          <ImageIcon className="h-10 w-10 opacity-30" />
-                          <p className="text-sm">{isDraggingPayProof ? 'Drop to upload' : 'Click or drag to select image or PDF'}</p>
-                          <p className="text-xs opacity-60">JPG, JPEG, PNG or PDF · Auto-compressed</p>
-                        </div>
-                      )}
-                    </div>
-                    <input ref={payProofInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" className="hidden" onChange={handlePayProofFile} />
-                    {payProof && (
-                      <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => payProofInputRef.current?.click()}>
-                        Change file
-                      </Button>
-                    )}
+                    <ProofFilesInput value={payProof} onChange={setPayProof} />
                   </div>
                 )}
 
@@ -1943,7 +1891,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
                   <Button
-                    disabled={paymentSaving || previewAmt <= 0 || !payDate || (payMode === 'existing' && (!payLinkedId || !payProof))}
+                    disabled={paymentSaving || previewAmt <= 0 || !payDate || (payMode === 'existing' && (!payLinkedId || payProof.length === 0))}
                     onClick={submitPayment}
                     style={{ backgroundColor: ACCENT, color: 'white' }}
                     className="hover:opacity-90"
@@ -1958,7 +1906,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
       </Dialog>
 
       {/* ════ Submit Pembayaran Dialog ════ */}
-      <Dialog open={!!proofPayment} onOpenChange={v => { if (!v) { setProofPayment(null); setProofPreview(null) } }}>
+      <Dialog open={!!proofPayment} onOpenChange={v => { if (!v) { setProofPayment(null); setProofPreview([]) } }}>
         <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
           {proofPayment && (
             <>
@@ -1998,35 +1946,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
               <div className="space-y-1.5">
                 <Label>Transfer Proof <span className="text-red-500">*</span></Label>
-                <div
-                  {...proofDropProps}
-                  className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors min-h-36 overflow-hidden cursor-pointer ${
-                    isDraggingProof ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
-                  }`}
-                  onClick={() => proofInputRef.current?.click()}
-                >
-                  {proofPreview ? (
-                    <FilePreview src={proofPreview} alt="Transfer proof" className="w-full max-h-72 object-contain" />
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                      <ImageIcon className="h-10 w-10 opacity-30" />
-                      <p className="text-sm">{isDraggingProof ? 'Drop to upload' : 'Click or drag to select image or PDF'}</p>
-                      <p className="text-xs opacity-60">JPG, JPEG, PNG or PDF · Auto-compressed</p>
-                    </div>
-                  )}
-                </div>
-                <input ref={proofInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" className="hidden" onChange={handleProofFile} />
-                {proofPreview && (
-                  <Button variant="ghost" size="sm" className="text-xs w-full" onClick={() => proofInputRef.current?.click()}>
-                    Change file
-                  </Button>
-                )}
+                <ProofFilesInput value={proofPreview} onChange={setProofPreview} />
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview(null) }}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview([]) }}>Cancel</Button>
                 <Button
-                  disabled={!proofPreview || proofUploading}
+                  disabled={proofPreview.length === 0 || proofUploading}
                   onClick={saveProof}
                   style={{ backgroundColor: ACCENT, color: 'white' }}
                   className="hover:opacity-90"

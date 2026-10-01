@@ -247,7 +247,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     // ── Sales: submit proof of transfer ───────────────────────────────────────
     if (action === 'submit_proof') {
-      const { proofOfTransfer, paymentMethod } = body
+      const { proofOfTransfer, proofOfTransferExtra, paymentMethod } = body
       if (!proofOfTransfer) {
         return NextResponse.json({ error: 'Payment proof must be attached' }, { status: 400 })
       }
@@ -267,6 +267,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         where: { id },
         data: {
           proofOfTransfer,
+          // Always overwrite — a resubmit replaces the whole set of proofs.
+          proofOfTransferExtra: Array.isArray(proofOfTransferExtra) ? proofOfTransferExtra.filter((x: unknown) => typeof x === 'string' && x) : [],
           ...(paymentMethod !== undefined && { paymentMethod: paymentMethod || null }),
           status: 'pending_confirmation',
           // Clear the previous rejection's stamp so the UI doesn't keep showing

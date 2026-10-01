@@ -55,6 +55,7 @@ interface Payment {
   status: string
   notes: string | null
   proofOfTransfer: string | null
+  proofOfTransferExtra?: string[]
   hasProof?: boolean
   billToType: string | null
   showNetAmount: boolean
@@ -493,7 +494,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
         const res = await fetch(`/api/payments/${p.id}`)
         if (res.ok) {
           const full = await res.json()
-          setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null, paymentDate: full.paymentDate ?? null, history: full.history ?? [] }) as Payment : prev)
+          setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null, proofOfTransferExtra: full.proofOfTransferExtra ?? [], paymentDate: full.paymentDate ?? null, history: full.history ?? [] }) as Payment : prev)
         }
       } catch { /* non-critical */ } finally {
         setProofLoading(false)
@@ -1662,38 +1663,50 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                         <span className="text-sm">Checking transfer proof...</span>
                       </div>
-                    ) : selected.proofOfTransfer ? (
+                    ) : selected.proofOfTransfer ? (() => {
+                      const proofs = [selected.proofOfTransfer, ...(selected.proofOfTransferExtra ?? [])]
+                      return (
                       <div className="mt-2 space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
                           <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                          <span className="text-sm text-green-700 font-medium">Proof submitted by Sales</span>
-                          <div className="ml-auto flex items-center gap-1.5">
-                            <Button
-                              size="sm" variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() => setProofPreview(proofPreview ? null : selected.proofOfTransfer)}
-                            >
-                              <Eye className="h-3 w-3 mr-1" />
-                              {proofPreview ? 'Hide' : 'View'}
-                            </Button>
-                            <a
-                              href={selected.proofOfTransfer}
-                              download={`bukti-${selected.invoiceNumber}.${extFromDataUrl(selected.proofOfTransfer)}`}
-                              className="inline-flex items-center gap-1 h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            >
-                              <Download className="h-3 w-3" /> Download
-                            </a>
-                          </div>
+                          <span className="text-sm text-green-700 font-medium">
+                            Proof submitted by Sales{proofs.length > 1 ? ` (${proofs.length} files)` : ''}
+                          </span>
                         </div>
-                        {proofPreview && (
-                          <FilePreview
-                            src={proofPreview}
-                            alt="Transfer Proof"
-                            className="max-h-64 rounded-md border object-contain w-full"
-                          />
-                        )}
+                        {proofs.map((src, i) => (
+                          <div key={i} className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              {proofs.length > 1 && <span className="text-xs text-muted-foreground">File {i + 1}</span>}
+                              <div className="ml-auto flex items-center gap-1.5">
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => setProofPreview(proofPreview === src ? null : src)}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  {proofPreview === src ? 'Hide' : 'View'}
+                                </Button>
+                                <a
+                                  href={src}
+                                  download={`bukti-${selected.invoiceNumber}${proofs.length > 1 ? `-${i + 1}` : ''}.${extFromDataUrl(src)}`}
+                                  className="inline-flex items-center gap-1 h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                >
+                                  <Download className="h-3 w-3" /> Download
+                                </a>
+                              </div>
+                            </div>
+                            {proofPreview === src && (
+                              <FilePreview
+                                src={src}
+                                alt={`Transfer Proof ${i + 1}`}
+                                className="max-h-64 rounded-md border object-contain w-full"
+                              />
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ) : (
+                      )
+                    })() : (
                       <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                         <AlertCircle className="h-4 w-4" />
                         Transfer proof not yet submitted by Sales

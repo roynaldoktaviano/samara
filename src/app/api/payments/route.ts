@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, paymentDate, currency, exchangeRate } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, proofOfTransferExtra, paymentDate, currency, exchangeRate } = body
     const parsedPaymentDate = paymentDate ? new Date(paymentDate) : new Date()
     // Currency the payment was actually received in — amount is always stored in USD;
     // currency/exchangeRate are display metadata (see print/invoice page's toLocal()).
@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
           notes: notes || null,
           status: 'pending_confirmation',
           proofOfTransfer,
+          proofOfTransferExtra: Array.isArray(proofOfTransferExtra) ? proofOfTransferExtra.filter((x: unknown) => typeof x === 'string' && x) : [],
           hasDocument: false,
           parentPaymentId: parent.id,
           submittedByUserId,

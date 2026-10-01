@@ -1185,6 +1185,8 @@ model Payment {
   status             PaymentStatus  @default(pending_confirmation)
   notes              String?
   proofOfTransfer    String?
+  // Extra transfer proofs when one payment was paid in several transfers (first file stays in proofOfTransfer).
+  proofOfTransferExtra String[]     @default([])
   // Optional note + evidence Finance attaches when editing an already-generated invoice (e.g.
   // "amount received doesn't match the DP on file") — shown to Sales on the booking so they
   // know what changed and why, without forcing them to resubmit proof of transfer.
