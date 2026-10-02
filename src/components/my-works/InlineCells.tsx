@@ -10,9 +10,10 @@ import { dayKey, fmtRange, TypeTag } from './shared'
 const cellBtn = 'w-full text-left rounded px-1.5 py-1 -mx-1.5 -my-1 hover:bg-muted/70 cursor-text min-h-7'
 const editCls = 'w-full border rounded-md px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500'
 
-export function TextCell({ value, onSave, multiline, required, placeholder = '-', className = '', datalist }: {
+// `readOnly` (a task assigned to me by someone else) renders the plain value with no editor.
+export function TextCell({ value, onSave, multiline, required, placeholder = '-', className = '', datalist, readOnly }: {
   value: string | null; onSave: (v: string) => void; multiline?: boolean; required?: boolean
-  placeholder?: string; className?: string; datalist?: string
+  placeholder?: string; className?: string; datalist?: string; readOnly?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -32,6 +33,7 @@ export function TextCell({ value, onSave, multiline, required, placeholder = '-'
     if (e.key === 'Enter' && !(multiline && e.shiftKey)) { e.preventDefault(); (e.target as HTMLElement).blur() } // commits via onBlur
   }
 
+  if (readOnly) return <span className={`block ${className}`}>{value || <span className="text-muted-foreground">{placeholder}</span>}</span>
   if (editing) return multiline
     ? <textarea autoFocus rows={3} className={`${editCls} py-1.5 resize-y`} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
     : <input autoFocus list={datalist} className={`${editCls} h-8`} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
@@ -43,8 +45,9 @@ export function TextCell({ value, onSave, multiline, required, placeholder = '-'
   )
 }
 
-export function TypeCell({ value, onSave, datalist }: { value: string | null; onSave: (v: string) => void; datalist: string }) {
+export function TypeCell({ value, onSave, datalist, readOnly }: { value: string | null; onSave: (v: string) => void; datalist: string; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false)
+  if (readOnly) return <TypeTag type={value} />
   if (editing) return <TypeInput value={value} datalist={datalist} onDone={v => { setEditing(false); if (v !== null && v !== (value ?? '')) onSave(v) }} />
   return <button type="button" onClick={() => setEditing(true)} className={cellBtn}><TypeTag type={value} /></button>
 }
@@ -60,9 +63,9 @@ function TypeInput({ value, datalist, onDone }: { value: string | null; datalist
   )
 }
 
-export function RangeCell({ startDate, dueDate, overdue, onSave }: {
+export function RangeCell({ startDate, dueDate, overdue, onSave, readOnly }: {
   startDate: string | null; dueDate: string | null; overdue: boolean
-  onSave: (startDate: string | null, dueDate: string | null) => void
+  onSave: (startDate: string | null, dueDate: string | null) => void; readOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [start, setStart] = useState('')
@@ -80,6 +83,7 @@ export function RangeCell({ startDate, dueDate, overdue, onSave }: {
     setOpen(false)
   }
 
+  if (readOnly) return <span className={`whitespace-nowrap ${overdue ? 'text-red-600 font-medium' : ''}`}>{range ?? <span className="text-muted-foreground">-</span>}</span>
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>

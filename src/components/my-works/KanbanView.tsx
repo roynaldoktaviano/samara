@@ -9,7 +9,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, CalendarDays, AlignLeft, Paperclip, ChevronDown } from 'lucide-react'
-import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, flattenSubtasks, flattenWithDepth, mapSubtaskTree, isSubOverdue, fmtDay, type Subtask, type Todo, type Status } from './shared'
+import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, flattenSubtasks, mapSubtaskTree, isSubOverdue, fmtDay, useWorks, canProgressTask, canTickSub, isOwnTask, AvatarStack, userLabel, type Subtask, type Todo, type Status } from './shared'
 
 type Columns = Record<Status, string[]>
 
@@ -112,7 +112,7 @@ export default function KanbanView({ todos, onAdd, onEdit, onReorder, onSubtasks
 }
 
 function Column({ status, label, bar, count, onAdd, children }: {
-  status: Status; label: string; bar: string; count: number; onAdd: () => void; children: React.ReactNode
+  status: Status; label: string; bar: string; count: number; onAdd?: () => void; children: React.ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status })
   return (
@@ -121,9 +121,11 @@ function Column({ status, label, bar, count, onAdd, children }: {
         <span className={`h-4 w-1 rounded-full ${bar}`} />
         <span className="font-semibold text-sm">{label}</span>
         <span className="text-xs px-1.5 py-0.5 rounded-md bg-background border text-muted-foreground font-medium">{count}</span>
-        <button onClick={onAdd} className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title={`Add task to ${label}`}>
-          <Plus className="h-4 w-4" />
-        </button>
+        {onAdd && (
+          <button onClick={onAdd} className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title={`Add task to ${label}`}>
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <div ref={setNodeRef} className={`flex-1 min-h-32 px-2 pb-2 space-y-2 rounded-b-xl transition-colors ${isOver ? 'bg-amber-50/60' : ''}`}>
         {children}
@@ -134,7 +136,9 @@ function Column({ status, label, bar, count, onAdd, children }: {
 }
 
 function SortableCard({ todo, onEdit, onSubtasks }: { todo: Todo; onEdit: (t: Todo) => void; onSubtasks: Props['onSubtasks'] }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
+  const { meId } = useWorks()
+  // On someone else's task only people on the task itself may move it between columns.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id, disabled: !canProgressTask(todo, meId) })
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
       className={isDragging ? 'opacity-30' : ''} onClick={() => onEdit(todo)}>
@@ -148,10 +152,17 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
   const range = fmtRange(todo)
   const overdue = isOverdue(todo, todayKey())
   const done = todo.status === 'DONE'
+  const { meId } = useWorks()
+  // Sub tasks with whether the viewer may tick them (inherited from an assigned ancestor).
+  const walk = (subs: Subtask[], depth: number, inherited: boolean): { sub: Subtask; depth: number; can: boolean }[] =>
+    subs.flatMap(sub => { const can = canTickSub(sub, inherited, meId); return [{ sub, depth, can }, ...walk(sub.children ?? [], depth + 1, can)] })
   return (
     <div className={`rounded-lg border bg-background p-3 space-y-2 cursor-grab active:cursor-grabbing select-none hover:border-amber-300 transition-colors ${dragging ? 'shadow-xl rotate-1' : 'shadow-sm'}`}>
       <div className="flex items-start justify-between gap-2">
-        <p className={`text-sm font-medium break-words ${done ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+        <div className="min-w-0">
+          <p className={`text-sm font-medium break-words ${done ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+          {!isOwnTask(todo, meId) && todo.user && <p className="text-xs text-sky-700">Assigned by {userLabel(todo.user)}</p>}
+        </div>
       </div>
       {todo.notes && (
         <p className="text-xs text-muted-foreground line-clamp-2 break-words flex gap-1"><AlignLeft className="h-3 w-3 mt-0.5 shrink-0" />{todo.notes}</p>
@@ -159,6 +170,7 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
       <div className="flex flex-wrap items-center gap-1.5">
         {todo.type && <TypeTag type={todo.type} />}
         <PriorityTag priority={todo.priority} />
+        {todo.assigneeIds?.length > 0 && <span className="ml-auto"><AvatarStack ids={todo.assigneeIds} size={20} /></span>}
       </div>
       {todo.subtasks?.length > 0 && (
         <div className="flex items-center gap-2">
@@ -175,10 +187,11 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
       {showSubs && onSubtasks && todo.subtasks?.length > 0 && (
         // Own clicks/pointer events so ticking a sub task neither opens the modal nor starts a drag.
         <ul className="space-y-1 border-t pt-2 cursor-default" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
-          {flattenWithDepth(todo.subtasks).map(({ sub, depth }) => (
+          {walk(todo.subtasks, 1, canProgressTask(todo, meId)).map(({ sub, depth, can }) => (
             <li key={sub.id} className="flex items-start gap-1.5 text-xs" style={{ paddingLeft: (depth - 1) * 14 }}>
-              <span className="mt-px"><SubtaskCheck done={sub.done} onToggle={() => onSubtasks(todo, mapSubtaskTree(todo.subtasks, sub.id, s => ({ ...s, done: !s.done })))} /></span>
+              <span className={`mt-px ${can ? '' : 'pointer-events-none opacity-40'}`}><SubtaskCheck done={sub.done} onToggle={() => onSubtasks(todo, mapSubtaskTree(todo.subtasks, sub.id, s => ({ ...s, done: !s.done })))} /></span>
               <span className={`flex-1 break-words ${sub.done ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</span>
+              {(sub.assigneeIds?.length ?? 0) > 0 && <AvatarStack ids={sub.assigneeIds!} size={16} max={2} />}
               {sub.dueDate && <span className={`shrink-0 ${isSubOverdue(sub) ? 'text-red-600' : 'text-muted-foreground'}`}>{fmtDay(sub.dueDate).replace(/, \d{4}$/, '')}</span>}
             </li>
           ))}

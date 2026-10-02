@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, type Todo, type Subtask, type Priority } from './shared'
+import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, useWorks, isOwnTask, type Todo, type Subtask, type Priority } from './shared'
 
 const DAY_MS = 86400000
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -52,6 +52,7 @@ function span(t: Pick<Entry, 'startDate' | 'dueDate'>): [number, number] | null 
 }
 
 export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubtasks }: Props) {
+  const { meId } = useWorks()
   const today = todayKey()
   const todayMs = toUtc(today)
   const [mode, setMode] = useState<Mode>('month')
@@ -165,8 +166,8 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                       onDragOver={e => { if (dragId) { e.preventDefault(); setDropDay(d.key) } }}
                       onDragLeave={() => setDropDay(k => k === d.key ? null : k)}
                       onDrop={e => { e.preventDefault(); drop(d.key) }}
-                      className={`relative border-l first:border-l-0 cursor-pointer transition-colors
-                        ${weekend || !d.inMonth ? 'bg-muted/40' : 'bg-background'} hover:bg-amber-50/40
+                      className={`relative border-l first:border-l-0 transition-colors
+                        ${weekend || !d.inMonth ? 'bg-muted/40' : 'bg-background'} cursor-pointer hover:bg-amber-50/40
                         ${dropDay === d.key ? 'bg-amber-100/60' : ''}
                         ${isToday ? 'outline outline-2 -outline-offset-2 outline-amber-500' : ''}`}>
                       <span className={`absolute bottom-2 right-3 text-sm ${isToday ? 'text-amber-600 font-semibold' : d.inMonth ? 'text-foreground/70' : 'text-muted-foreground/50'}`}>{d.date}</span>
@@ -202,7 +203,8 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                     const { done, overdue } = t
                     return (
                       <button key={t.id}
-                        draggable
+                        // Dates of a task assigned to me belong to its owner — not draggable.
+                        draggable={isOwnTask(t.todo, meId)}
                         onDragStart={e => {
                           e.dataTransfer.effectAllowed = 'move'
                           // Deferred: re-rendering the source synchronously in dragstart can cancel the drag in Chrome.

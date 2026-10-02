@@ -2,20 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { parseTodoInput, todoUploadPrefix } from '@/lib/todo'
+import { parseTodoInput, todoUploadPrefix, referencedAssignees, notifyNewAssignees } from '@/lib/todo'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
-// "My Works" — personal task board. Every logged-in user only ever sees/edits their own
-// Todo rows (scoped by session.user.id), so there is no role gate beyond being logged in.
-export async function GET() {
+// "My Works" — one board per user: their own Todo rows plus tasks other people assigned to
+// them (on the task or one of its sub tasks). `?scope=assigned` returns only the latter (sidebar
+// badge). No role gate beyond being logged in.
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const me = session.user.id
+  const assigned = req.nextUrl.searchParams.get('scope') === 'assigned'
 
   const todos = await db.todo.findMany({
-    where: { userId: session.user.id },
+    where: assigned
+      ? { userId: { not: me }, OR: [{ assigneeIds: { has: me } }, { subAssigneeIds: { has: me } }] }
+      : { OR: [{ userId: me }, { assigneeIds: { has: me } }, { subAssigneeIds: { has: me } }] },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+    include: { user: { select: { id: true, name: true, email: true } } },
   })
-  return NextResponse.json({ todos, uploadPrefix: todoUploadPrefix(session.user.id) })
+  return NextResponse.json({ todos, uploadPrefix: todoUploadPrefix(me) })
 }
 
 export async function POST(req: NextRequest) {
@@ -27,6 +34,11 @@ export async function POST(req: NextRequest) {
   if (!('title' in body)) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
   const parsed = parseTodoInput(body, session.user.id)
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
+
+  const ids = referencedAssignees(parsed.data)
+  if (ids.length && await db.user.count({ where: { id: { in: ids } } }) !== ids.length) {
+    return NextResponse.json({ error: 'Unknown assignee' }, { status: 400 })
+  }
 
   // New tasks go to the top of their status column.
   const status = (parsed.data.status as string | undefined) ?? 'TODO'
@@ -43,5 +55,9 @@ export async function POST(req: NextRequest) {
       sortOrder: (first?.sortOrder ?? 1) - 1,
     },
   })
+  if (ids.length) {
+    await notifyNewAssignees(db, session.user, null, todo)
+    emitTenantEvent(session.user.tenantId, 'my-works')
+  }
   return NextResponse.json({ todo }, { status: 201 })
 }

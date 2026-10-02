@@ -390,6 +390,8 @@ export default function Home() {
   const [pendingTransfers, setPendingTransfers] = useState(0)
   const [pendingDraftPOs, setPendingDraftPOs] = useState(0)
   const [pendingMyApprovals, setPendingMyApprovals] = useState(0)
+  // Open (not Done) tasks other people assigned to me — My Works sidebar badge.
+  const [openAssignedWorks, setOpenAssignedWorks] = useState(0)
   const [pendingHrLeaveRequests, setPendingHrLeaveRequests] = useState(0)
   const [pendingHrBusinessTrips, setPendingHrBusinessTrips] = useState(0)
   const [pendingHrOvertime, setPendingHrOvertime] = useState(0)
@@ -573,6 +575,16 @@ export default function Home() {
     } catch { /* silent */ }
   }, [session])
 
+  const fetchAssignedWorks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/my-works?scope=assigned')
+      if (res.ok) {
+        const data = await res.json()
+        setOpenAssignedWorks(Array.isArray(data?.todos) ? data.todos.filter((t: { status: string }) => t.status !== 'DONE').length : 0)
+      }
+    } catch { /* silent */ }
+  }, [])
+
   const fetchUnreadEmailInbox = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
@@ -599,13 +611,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchPendingHrOvertime(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchPendingHrOvertime(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchAssignedWorks() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchAssignedWorks])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -625,12 +637,14 @@ export default function Home() {
       'finance-business-trip-reimbursements': fetchPendingPurchasingFinance,
       // Also refetch the notification bell so a new WhatsApp chat shows up as a toast+chime
       // within ~1-2s, instead of waiting for its own 120s poll.
+      // Shared My Works task changed — refresh the badge, any open board, and the bell (new assignment).
+      'my-works': () => { fetchAssignedWorks(); fetchNotifications(); window.dispatchEvent(new Event('my-works-changed')) },
       'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchNotifications() },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchNotifications])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchNotifications, fetchAssignedWorks])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -714,7 +728,9 @@ export default function Home() {
   const handleNotifClick = async (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
-    if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
+    if (n.type === 'TASK_ASSIGNED') {
+      setCurrentView('my-works')
+    } else if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')
       if (n.orderId) setDeepLink({ view: 'finance-po-payments', id: n.orderId })
     } else if (n.type === 'PO_REIMBURSEMENT_REQUESTED' && isFinance) {
@@ -816,7 +832,7 @@ export default function Home() {
       case 'destinations': return <Destinations />
       case 'bookings':     return <Bookings deepLinkId={deepLink?.view === 'bookings' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'customers':    return <Customers />
-      case 'leads':        return <Leads />
+      case 'leads':        return <Leads onOpenWhatsapp={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'calendar':     return <CalendarView />
       case 'chat-inbox':   return <UnifiedInbox initialWhatsappId={whatsappDeepLinkId} onDeepLinkHandled={() => setWhatsappDeepLinkId(null)} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'sales-pipeline': return <SalesPipeline onOpenChat={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} />
@@ -1008,6 +1024,7 @@ export default function Home() {
                   (item.id === 'purchasing-transfers' && pendingTransfers > 0) ||
                   (item.id === 'purchasing-orders' && pendingDraftPOs > 0) ||
                   (item.id === 'my-approvals' && pendingMyApprovals > 0) ||
+                  (item.id === 'my-works' && openAssignedWorks > 0) ||
                   (item.id === 'hr-leave-requests' && pendingHrLeaveRequests > 0) ||
                   (item.id === 'hr-business-trips' && pendingHrBusinessTrips > 0) ||
                   (item.id === 'hr-overtime' && pendingHrOvertime > 0) ||
@@ -1025,6 +1042,7 @@ export default function Home() {
                   item.id === 'purchasing-transfers' ? pendingTransfers :
                   item.id === 'purchasing-orders' ? pendingDraftPOs :
                   item.id === 'my-approvals' ? pendingMyApprovals :
+                  item.id === 'my-works' ? openAssignedWorks :
                   item.id === 'hr-leave-requests' ? pendingHrLeaveRequests :
                   item.id === 'hr-business-trips' ? pendingHrBusinessTrips :
                   item.id === 'hr-overtime' ? pendingHrOvertime :

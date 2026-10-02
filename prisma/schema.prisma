@@ -225,30 +225,36 @@ enum TodoStatus {
 // Personal task board behind the "My Works" menu (List / Kanban / Timeline views) — every
 // task belongs to exactly one login account and is only ever visible to that account.
 model Todo {
-  id          String       @id @default(cuid())
-  userId      String
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  notes       String?
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  notes          String?
   // Free-text label shown as a coloured tag (e.g. "Dashboard", "Mobile App").
-  type        String?
+  type           String?
   // Estimation range — startDate..dueDate drives the Timeline bar; either can be empty.
-  startDate   DateTime?
-  dueDate     DateTime?
-  priority    TodoPriority @default(MEDIUM)
-  status      TodoStatus   @default(TODO)
+  startDate      DateTime?
+  dueDate        DateTime?
+  priority       TodoPriority @default(MEDIUM)
+  status         TodoStatus   @default(TODO)
   // Manual order within a status column (Kanban drag & drop), ascending.
-  sortOrder   Int          @default(0)
+  sortOrder      Int          @default(0)
   // Attached files, uploaded straight to R2 under my-works/<userId>/ —
   // [{ url, name, size, contentType, uploadedAt }]. See src/lib/todo.ts.
-  attachments Json         @default("[]")
+  attachments    Json         @default("[]")
   // Checklist of sub tasks — [{ id, title, done }], in display order. See src/lib/todo.ts.
-  subtasks    Json         @default("[]")
+  subtasks       Json         @default("[]")
+  // Users this task is assigned to (besides the owner). They see it under "Assigned to Me"
+  // and may only update progress — see restrictToProgress in src/lib/todo.ts.
+  assigneeIds    String[]     @default([])
+  // Union of every sub task's assigneeIds, kept in sync on save so "Assigned to Me" can
+  // find tasks where someone is only on a sub task without scanning the JSON.
+  subAssigneeIds String[]     @default([])
   // Legacy flag from before `status` existed — always kept equal to (status == DONE).
-  completed   Boolean      @default(false)
-  completedAt DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  completed      Boolean      @default(false)
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([userId, status])
 }
@@ -717,6 +723,7 @@ model Yacht {
   stockLocations     StockLocation[]
   crewRequests       CrewRequest[]
   cashierSales       CashierSale[]
+  cashierTerminal    CashierTerminal?
   destinationPrices  YachtDestinationPrice[]
   mediaFiles         MediaFile[]
   mediaFolders       MediaFolder[]
@@ -1174,48 +1181,48 @@ model Bank {
 }
 
 model Payment {
-  id                 String         @id @default(cuid())
-  bookingId          String
-  invoiceNumber      String         @unique
-  paymentType        String         @default("DP")
-  paymentMethod      String?
-  amount             Float
-  previouslyPaid     Float          @default(0)
-  paymentDate        DateTime?
-  currency           String         @default("USD")
-  exchangeRate       Float?
-  status             PaymentStatus  @default(pending_confirmation)
-  notes              String?
-  proofOfTransfer    String?
+  id                   String         @id @default(cuid())
+  bookingId            String
+  invoiceNumber        String         @unique
+  paymentType          String         @default("DP")
+  paymentMethod        String?
+  amount               Float
+  previouslyPaid       Float          @default(0)
+  paymentDate          DateTime?
+  currency             String         @default("USD")
+  exchangeRate         Float?
+  status               PaymentStatus  @default(pending_confirmation)
+  notes                String?
+  proofOfTransfer      String?
   // Extra transfer proofs when one payment was paid in several transfers (first file stays in proofOfTransfer).
-  proofOfTransferExtra String[]     @default([])
+  proofOfTransferExtra String[]       @default([])
   // Optional note + evidence Finance attaches when editing an already-generated invoice (e.g.
   // "amount received doesn't match the DP on file") — shown to Sales on the booking so they
   // know what changed and why, without forcing them to resubmit proof of transfer.
-  changeProofNote    String?
-  changeProofUrl     String?
-  billToType         String?
-  showNetAmount      Boolean        @default(false)
-  showCommissionNote Boolean        @default(false)
-  bankId             String?
-  paymentLink        String?
-  submittedByUserId  String?
-  submittedByName    String?
-  invoiceGeneratedBy String?
-  invoiceGeneratedAt DateTime?
-  confirmedBy        String?
-  confirmedAt        DateTime?
+  changeProofNote      String?
+  changeProofUrl       String?
+  billToType           String?
+  showNetAmount        Boolean        @default(false)
+  showCommissionNote   Boolean        @default(false)
+  bankId               String?
+  paymentLink          String?
+  submittedByUserId    String?
+  submittedByName      String?
+  invoiceGeneratedBy   String?
+  invoiceGeneratedAt   DateTime?
+  confirmedBy          String?
+  confirmedAt          DateTime?
   // hasDocument=false: an additional DP tacked onto parentPayment's invoice — no new invoice
   // document was generated, sales attaches proof of transfer directly at creation.
-  hasDocument        Boolean        @default(true)
-  parentPaymentId    String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  booking            Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  bank               Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
-  notifications      Notification[]
-  parentPayment      Payment?       @relation("PaymentParent", fields: [parentPaymentId], references: [id], onDelete: SetNull)
-  childPayments      Payment[]      @relation("PaymentParent")
+  hasDocument          Boolean        @default(true)
+  parentPaymentId      String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  booking              Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bank                 Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  notifications        Notification[]
+  parentPayment        Payment?       @relation("PaymentParent", fields: [parentPaymentId], references: [id], onDelete: SetNull)
+  childPayments        Payment[]      @relation("PaymentParent")
 
   @@index([bookingId])
   @@index([status])
@@ -4618,4 +4625,25 @@ model EmailInboxMessage {
   createdAt         DateTime                @default(now())
 
   @@index([conversationId, createdAt])
+}
+
+// Per-yacht cashier terminal credentials. The cashier (cashier.<domain>/<vessel>) has no ERP
+// login — crew unlock it with this PIN only. Kept off the Yacht row so the many plain
+// yacht.findMany() calls can never leak the hash.
+model CashierTerminal {
+  id         String   @id @default(cuid())
+  yachtId    String   @unique
+  yacht      Yacht    @relation(fields: [yachtId], references: [id], onDelete: Cascade)
+  pinHash    String
+  pinLength  Int
+  // Bumped on every PIN change — cashier cookies carry the value they were issued with, so a
+  // PIN reset signs every open terminal out immediately.
+  pinSetAt   DateTime
+  // ERP user who set the PIN. Cashier stock movements need a real createdById, so they are
+  // attributed to this user.
+  pinSetById String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("cashier_terminals")
 }

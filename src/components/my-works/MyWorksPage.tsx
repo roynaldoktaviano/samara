@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, X, Search, Kanban, GanttChart, List, Filter, Trash2, ListTodo, CalendarDays } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import ListView from './ListView'
@@ -9,7 +10,8 @@ import TimelineView from './TimelineView'
 import CalendarView from './CalendarView'
 import AttachmentsField from './AttachmentsField'
 import SubtasksField from './SubtasksField'
-import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment, type Subtask } from './shared'
+import AssigneePicker from './AssigneePicker'
+import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment, type Subtask, type WorkUser, WorksContext, canProgressTask, isOwnTask, userLabel } from './shared'
 
 type ViewMode = 'kanban' | 'timeline' | 'list' | 'calendar'
 const VIEW_KEY = 'my-works:view'
@@ -21,10 +23,19 @@ const VIEWS: { key: ViewMode; label: string; icon: React.ElementType }[] = [
   { key: 'timeline', label: 'Timeline', icon: GanttChart },
 ]
 
-interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[]; subtasks: Subtask[] }
-const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [], subtasks: [] })
+interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[]; subtasks: Subtask[]; assigneeIds: string[] }
+const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [], subtasks: [], assigneeIds: [] })
 
+type Source = 'all' | 'mine' | 'assigned'
+
+/**
+ * One board for my own tasks (full edit) and tasks other people assigned to me or to one of
+ * their sub tasks (progress only — see restrictToProgress in src/lib/todo.ts).
+ */
 export default function MyWorksPage() {
+  const meId = useSession().data?.user?.id ?? ''
+  const [users, setUsers] = useState<WorkUser[]>([])
+  const [source, setSource] = useState<Source>('all')
   const [loading, setLoading] = useState(true)
   const [todos, setTodos] = useState<Todo[]>([])
   const [view, setView] = useState<ViewMode>('list')
@@ -63,11 +74,25 @@ export default function MyWorksPage() {
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    fetch('/api/my-works/users').then(r => r.ok ? r.json() : null).then(d => {
+      if (d) setUsers(d.users ?? [])
+    }).catch(() => {})
+  }, [])
+  // src/app/page.tsx re-broadcasts the 'my-works' realtime topic (someone assigned/updated a
+  // shared task) as this window event.
+  useEffect(() => {
+    const onChange = () => { load() }
+    window.addEventListener('my-works-changed', onChange)
+    return () => window.removeEventListener('my-works-changed', onChange)
+  }, [load])
+  const ctxValue = useMemo(() => ({ meId, users, byId: new Map(users.map(u => [u.id, u])) }), [meId, users])
 
   const sorted = useMemo(() => [...todos].sort((a, b) => a.sortOrder - b.sortOrder || b.createdAt.localeCompare(a.createdAt)), [todos])
   const types = useMemo(() => Array.from(new Set(todos.map(t => t.type).filter((t): t is string => !!t))).sort(), [todos])
   const today = todayKey()
   const overdueCount = todos.filter(t => isOverdue(t, today)).length
+  const assignedCount = todos.filter(t => !isOwnTask(t, meId) && t.status !== 'DONE').length
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -75,10 +100,11 @@ export default function MyWorksPage() {
       (!q || t.title.toLowerCase().includes(q) || (t.notes ?? '').toLowerCase().includes(q) || (t.type ?? '').toLowerCase().includes(q)) &&
       (!priorityFilter.length || priorityFilter.includes(t.priority)) &&
       (!typeFilter.length || (t.type && typeFilter.includes(t.type))) &&
-      (!overdueOnly || isOverdue(t, today)))
-  }, [sorted, search, priorityFilter, typeFilter, overdueOnly, today])
+      (!overdueOnly || isOverdue(t, today)) &&
+      (source === 'all' || (source === 'mine') === isOwnTask(t, meId)))
+  }, [sorted, search, priorityFilter, typeFilter, overdueOnly, today, source, meId])
 
-  const activeFilters = priorityFilter.length + typeFilter.length + (overdueOnly ? 1 : 0)
+  const activeFilters = priorityFilter.length + typeFilter.length + (overdueOnly ? 1 : 0) + (source !== 'all' ? 1 : 0)
 
   function openCreate(status: Status = 'TODO', day?: string) {
     setEditing(null); setForm({ ...emptyForm(status), ...(day ? { startDate: day, dueDate: day } : {}) }); setFormError(''); setModalOpen(true)
@@ -88,7 +114,7 @@ export default function MyWorksPage() {
     setForm({
       title: t.title, notes: t.notes ?? '', type: t.type ?? '',
       startDate: t.startDate ? dayKey(t.startDate) : '', dueDate: t.dueDate ? dayKey(t.dueDate) : '',
-      priority: t.priority, status: t.status, attachments: t.attachments ?? [], subtasks: t.subtasks ?? [],
+      priority: t.priority, status: t.status, attachments: t.attachments ?? [], subtasks: t.subtasks ?? [], assigneeIds: t.assigneeIds ?? [],
     })
     setFormError(''); setModalOpen(true)
   }
@@ -98,7 +124,10 @@ export default function MyWorksPage() {
     if (uploadBusy) return
     if (form.startDate && form.dueDate && form.dueDate < form.startDate) { setFormError('End date must be on or after the start date'); return }
     setSaving(true); setFormError('')
-    const payload = { ...form, startDate: form.startDate || null, dueDate: form.dueDate || null }
+    const ro = !!editing && !isOwnTask(editing, meId)
+    const payload = ro
+      ? { status: form.status, attachments: form.attachments }
+      : { ...form, startDate: form.startDate || null, dueDate: form.dueDate || null }
     const res = await fetch(editing ? `/api/my-works/${editing.id}` : '/api/my-works', {
       method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
@@ -149,6 +178,9 @@ export default function MyWorksPage() {
   }
 
   async function reorder(status: Status, ids: string[]) {
+    // A task assigned to me keeps its owner's column order, so dropping it only changes its
+    // status; the reorder route below ignores ids I don't own.
+    for (const t of todos) if (!isOwnTask(t, meId) && ids.includes(t.id) && t.status !== status) changeStatus(t, status)
     // Kanban only sees the filtered cards; keep hidden ones of that column after them so
     // their relative order survives.
     const shown = new Set(ids)
@@ -168,7 +200,13 @@ export default function MyWorksPage() {
   const inputCls = 'w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500'
   const labelCls = 'text-xs font-semibold text-muted-foreground uppercase tracking-wide'
 
+  // Open task belongs to someone else (assigned to me): progress-only modal.
+  const ro = !!editing && !isOwnTask(editing, meId)
+  const canProgress = !editing || canProgressTask(editing, meId)
+  const disabledCls = 'disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed'
+
   return (
+    <WorksContext.Provider value={ctxValue}>
     <div className="space-y-5">
       {/* Title */}
       <div className="flex items-center gap-3">
@@ -178,7 +216,8 @@ export default function MyWorksPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">My Works</h2>
           <p className="text-muted-foreground text-sm">
-            Your personal task board — only you can see it
+            Your tasks and tasks assigned to you
+            {assignedCount > 0 && <> · <button onClick={() => setSource(s => s === 'assigned' ? 'all' : 'assigned')} className="font-medium text-sky-700 hover:underline">{assignedCount} assigned to you</button></>}
             {overdueCount > 0 && <> · <span className="font-medium text-red-600">{overdueCount} overdue</span></>}
           </p>
         </div>
@@ -208,6 +247,15 @@ export default function MyWorksPage() {
             </PopoverTrigger>
             <PopoverContent align="end" className="w-64 space-y-4">
               <div className="space-y-2">
+                <p className={labelCls}>Show</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {([['all', 'All'], ['mine', 'Created by me'], ['assigned', 'Assigned to me']] as const).map(([k, l]) => (
+                    <button key={k} onClick={() => setSource(k)}
+                      className={`px-2.5 py-1 rounded-md border text-xs font-medium ${source === k ? 'bg-amber-50 border-amber-300 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
                 <p className={labelCls}>Priority</p>
                 <div className="flex flex-wrap gap-1.5">
                   {PRIORITIES.map(p => (
@@ -232,7 +280,7 @@ export default function MyWorksPage() {
                 Overdue only
               </label>
               {activeFilters > 0 && (
-                <button onClick={() => { setPriorityFilter([]); setTypeFilter([]); setOverdueOnly(false) }} className="text-xs text-muted-foreground hover:text-foreground underline">Clear filters</button>
+                <button onClick={() => { setPriorityFilter([]); setTypeFilter([]); setOverdueOnly(false); setSource('all') }} className="text-xs text-muted-foreground hover:text-foreground underline">Clear filters</button>
               )}
             </PopoverContent>
           </Popover>
@@ -262,7 +310,8 @@ export default function MyWorksPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div className="flex items-center gap-2">
                 <ListTodo className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">{editing ? 'Edit Task' : 'New Task'}</h3>
+                <h3 className="font-bold text-sm">{ro ? 'Task' : editing ? 'Edit Task' : 'New Task'}</h3>
+                {ro && editing?.user && <span className="text-xs text-sky-700">Assigned by {userLabel(editing.user)}</span>}
               </div>
               <button onClick={() => setModalOpen(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                 <X className="h-4 w-4" />
@@ -270,71 +319,87 @@ export default function MyWorksPage() {
             </div>
             <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
               {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+              {ro && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {canProgress ? 'You can update the status, add files and tick sub tasks. Other fields belong to the task owner.' : 'Only sub tasks are assigned to you — tick them from the List or Kanban view.'}
+                </p>
+              )}
+              {/* Owner-only fields; the disabled fieldset makes them read-only on the Assigned board. */}
+              <fieldset disabled={ro} className="space-y-4 min-w-0">
               <div className="space-y-1.5">
                 <label className={labelCls}>Task Name</label>
-                <input autoFocus className={inputCls} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                <input autoFocus={!ro} className={`${inputCls} ${disabledCls}`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') save() }} />
               </div>
               <div className="space-y-1.5">
                 <label className={labelCls}>Description</label>
-                <textarea rows={3} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+                <textarea rows={3} className={`w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none ${disabledCls}`}
                   value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className={labelCls}>Start Date</label>
-                  <input type="date" className={inputCls} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                  <input type="date" className={`${inputCls} ${disabledCls}`} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelCls}>End Date</label>
-                  <input type="date" className={inputCls} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+                  <input type="date" className={`${inputCls} ${disabledCls}`} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
                 </div>
               </div>
+              </fieldset>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <label className={labelCls}>Status</label>
-                  <select className={inputCls} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Status }))}>
+                  <select disabled={!canProgress} className={`${inputCls} ${disabledCls}`} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Status }))}>
                     {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelCls}>Priority</label>
-                  <select className={inputCls} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}>
+                  <select disabled={ro} className={`${inputCls} ${disabledCls}`} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}>
                     {PRIORITIES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelCls}>Type</label>
-                  <input list="my-works-types" className={inputCls} placeholder="e.g. Report" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} />
+                  <input list="my-works-types" disabled={ro} className={`${inputCls} ${disabledCls}`} placeholder="e.g. Report" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} />
                   <datalist id="my-works-types">{types.map(t => <option key={t} value={t} />)}</datalist>
                 </div>
               </div>
               <div className="space-y-1.5">
+                <label className={labelCls}>Assignees</label>
+                <div className="min-h-10 border rounded-lg px-3 flex items-center">
+                  <AssigneePicker value={form.assigneeIds} readOnly={ro} onChange={assigneeIds => setForm(f => ({ ...f, assigneeIds }))} />
+                </div>
+              </div>
+              {!ro && <div className="space-y-1.5">
                 <label className={labelCls}>Sub Tasks{form.subtasks.length > 0 && ` (${form.subtasks.filter(s => s.done).length}/${form.subtasks.length})`}</label>
                 <SubtasksField value={form.subtasks} onChange={subtasks => setForm(f => ({ ...f, subtasks }))} />
-              </div>
-              <div className="space-y-1.5">
+              </div>}
+              {canProgress && <div className="space-y-1.5">
                 <label className={labelCls}>Attachments{form.attachments.length > 0 && ` (${form.attachments.length})`}</label>
                 <AttachmentsField value={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files }))}
-                  uploadPrefix={uploadPrefix} onBusyChange={setUploadBusy} />
-              </div>
+                  uploadPrefix={uploadPrefix} onBusyChange={setUploadBusy}
+                  lockedUrls={ro ? new Set((editing?.attachments ?? []).map(a => a.url)) : undefined} />
+              </div>}
             </div>
             <div className="flex items-center gap-2 px-6 py-4 border-t bg-gray-50/80">
-              {editing && (
+              {editing && !ro && (
                 <button onClick={() => remove(editing)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                   <Trash2 className="h-4 w-4" />Delete
                 </button>
               )}
               <div className="ml-auto flex gap-2">
                 <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-                <button onClick={save} disabled={saving || uploadBusy} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                {canProgress && <button onClick={save} disabled={saving || uploadBusy} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
                   {saving ? 'Saving...' : uploadBusy ? 'Uploading...' : editing ? 'Save' : 'Create Task'}
-                </button>
+                </button>}
               </div>
             </div>
           </div>
         </div>
       )}
     </div>
+    </WorksContext.Provider>
   )
 }

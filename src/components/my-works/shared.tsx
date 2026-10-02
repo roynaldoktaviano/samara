@@ -1,5 +1,6 @@
 'use client'
 
+import { createContext, useContext } from 'react'
 import { ListChecks } from 'lucide-react'
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -12,10 +13,13 @@ export interface Subtask {
   startDate: string | null; dueDate: string | null; priority: Priority | null
   // Nested sub tasks; missing on rows saved before nesting existed.
   children?: Subtask[]
+  assigneeIds?: string[]
 }
 
 export interface Todo {
   id: string
+  // Owner. Tasks owned by someone else are on this board because they're assigned to me.
+  userId: string
   title: string
   notes: string | null
   type: string | null
@@ -26,6 +30,10 @@ export interface Todo {
   sortOrder: number
   attachments: Attachment[]
   subtasks: Subtask[]
+  assigneeIds: string[]
+  subAssigneeIds: string[]
+  // Owner's name, for the "from …" label on tasks assigned to me.
+  user?: { id: string; name: string | null; email: string }
   completedAt: string | null
   createdAt: string
 }
@@ -97,6 +105,52 @@ export function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ── People / board mode ─────────────────────────────────────────────────────
+
+export interface WorkUser { id: string; name: string | null; email: string }
+
+interface WorksCtx { meId: string; users: WorkUser[]; byId: Map<string, WorkUser> }
+export const WorksContext = createContext<WorksCtx>({ meId: '', users: [], byId: new Map() })
+export const useWorks = () => useContext(WorksContext)
+
+// The board mixes my own tasks (full edit) with tasks other people assigned to me, where I may
+// only update progress: status + files when I'm on the task, ticks on sub tasks I'm on.
+export const isOwnTask = (t: Todo, meId: string) => t.userId === meId
+
+/** Can the viewer change this task's status/files? */
+export const canProgressTask = (t: Todo, meId: string) => isOwnTask(t, meId) || (t.assigneeIds ?? []).includes(meId)
+
+/** Can the viewer tick this sub task? `inherited` = they own/are on the task or an ancestor sub task. */
+export const canTickSub = (s: Subtask, inherited: boolean, meId: string) => inherited || (s.assigneeIds ?? []).includes(meId)
+
+export const userLabel = (u: WorkUser | undefined) => u ? (u.name || u.email) : 'Unknown user'
+const initials = (u: WorkUser | undefined) => userLabel(u).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('')
+const AVATAR_COLORS = ['bg-violet-500', 'bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500']
+const avatarColor = (id: string) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length] }
+
+export function Avatar({ user, id, size = 24 }: { user: WorkUser | undefined; id: string; size?: number }) {
+  return (
+    <span title={userLabel(user)} style={{ width: size, height: size, fontSize: size * 0.4 }}
+      className={`inline-flex items-center justify-center rounded-full text-white font-semibold ring-2 ring-background shrink-0 ${avatarColor(id)}`}>
+      {initials(user)}
+    </span>
+  )
+}
+
+export function AvatarStack({ ids, size = 24, max = 3 }: { ids: string[]; size?: number; max?: number }) {
+  const { byId } = useWorks()
+  if (!ids.length) return null
+  return (
+    <span className="inline-flex items-center -space-x-1.5">
+      {ids.slice(0, max).map(id => <Avatar key={id} id={id} user={byId.get(id)} size={size} />)}
+      {ids.length > max && (
+        <span style={{ width: size, height: size, fontSize: size * 0.4 }} title={ids.slice(max).map(i => userLabel(byId.get(i))).join(', ')}
+          className="inline-flex items-center justify-center rounded-full bg-muted text-muted-foreground font-semibold ring-2 ring-background">+{ids.length - max}</span>
+      )}
+    </span>
+  )
 }
 
 export const newSubtaskId = () => Math.random().toString(36).slice(2, 12)

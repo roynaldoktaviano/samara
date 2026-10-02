@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { getTenantBranding } from '@/lib/tenant-branding'
 
+// Public — shown on the sign-in screen before a PIN is entered.
 export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  return NextResponse.json(getTenantBranding(session.user.tenantSlug))
+  return NextResponse.json(getTenantBranding(process.env.CASHIER_TENANT_SLUG || 'samara'))
 }

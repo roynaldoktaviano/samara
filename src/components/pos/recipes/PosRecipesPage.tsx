@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Search, Martini, Pencil, Trash2, X, Globe, Anchor } from 'lucide-react'
+import { Plus, Search, Martini, Pencil, Trash2, X, Globe, Anchor, Check } from 'lucide-react'
 
 interface Yacht { id: string; name: string }
 interface Category { id: string; name: string; isActive: boolean }
@@ -33,7 +33,7 @@ export default function PosRecipesPage() {
   const [form, setForm] = useState(BLANK_FORM)
   const [editId, setEditId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [itemSearch, setItemSearch] = useState('')
+  const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [extraCosts, setExtraCosts] = useState<Record<string, number>>({})
@@ -54,22 +54,23 @@ export default function PosRecipesPage() {
 
   function openAdd() {
     setForm({ ...BLANK_FORM, lines: [] })
-    setEditId(null); setSaveError(''); setItemSearch(''); setShowForm(true)
+    setEditId(null); setSaveError(''); setShowForm(true)
   }
   function openEdit(r: Recipe) {
     setForm({
       name: r.name, description: r.description ?? '', categoryId: r.categoryId, price: String(r.price),
       lines: r.lines.map(l => ({ itemId: l.itemId, name: l.item.name, unit: l.item.baseUnit, qty: String(l.qty) })),
     })
-    setEditId(r.id); setSaveError(''); setItemSearch(''); setShowForm(true)
+    setEditId(r.id); setSaveError(''); setShowForm(true)
   }
 
-  function addLine(c: CatalogItem) {
-    if (form.lines.some(l => l.itemId === c.id)) return
-    setForm(f => ({ ...f, lines: [...f.lines, { itemId: c.id, name: c.name, unit: c.baseUnit, qty: '' }] }))
-    setItemSearch('')
-    if (!unitCostOf.has(c.id)) {
-      fetch(`/api/pos/recipes/item-costs?ids=${c.id}`).then(r => r.ok ? r.json() : {}).then(d => setExtraCosts(prev => ({ ...prev, ...d })))
+  /** Ingredient picker modal result — replaces the whole recipe line list. */
+  function applyPicked(lines: FormLine[]) {
+    setForm(f => ({ ...f, lines }))
+    setShowPicker(false)
+    const missing = lines.map(l => l.itemId).filter(id => !unitCostOf.has(id))
+    if (missing.length) {
+      fetch(`/api/pos/recipes/item-costs?ids=${missing.join(',')}`).then(r => r.ok ? r.json() : {}).then(d => setExtraCosts(prev => ({ ...prev, ...d })))
     }
   }
   const removeLine = (itemId: string) => setForm(f => ({ ...f, lines: f.lines.filter(l => l.itemId !== itemId) }))
@@ -110,12 +111,6 @@ export default function PosRecipesPage() {
     await fetch(`/api/pos/recipes/${r.id}`, { method: 'DELETE' })
     load()
   }
-
-  const itemResults = useMemo(() => {
-    const q = itemSearch.toLowerCase()
-    if (!q) return []
-    return catalog.filter(c => !form.lines.some(l => l.itemId === c.id) && (c.name.toLowerCase().includes(q) || c.sku.toLowerCase().includes(q))).slice(0, 8)
-  }, [catalog, itemSearch, form.lines])
 
   // Live cost estimate in the form, from the unit costs the list already loaded.
   const unitCostOf = new Map<string, number>([
@@ -272,19 +267,11 @@ export default function PosRecipesPage() {
                   <p className="text-[11px] text-muted-foreground -mt-1">
                     Quantity is in the item&apos;s stock unit (e.g. ml for spirits, pcs for cans). Leave out small ingredients like ice, sugar or garnish.
                   </p>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <input className={`${inp} pl-8`} placeholder="Search Item Master to add an ingredient…" value={itemSearch} onChange={e => setItemSearch(e.target.value)} />
-                    {itemResults.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                        {itemResults.map(c => (
-                          <button key={c.id} type="button" onClick={() => addLine(c)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors">
-                            {c.name} <span className="text-xs text-muted-foreground">· {c.category} · per {c.baseUnit}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <button type="button" onClick={() => setShowPicker(true)}
+                    className={`${inp} pl-8 relative text-left text-muted-foreground hover:border-amber-500`}>
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5" />
+                    {form.lines.length ? 'Add / edit ingredients from Item Master…' : 'Search Item Master to add ingredients…'}
+                  </button>
                   {form.lines.length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">No ingredients added yet</p>
                   ) : (
@@ -326,6 +313,105 @@ export default function PosRecipesPage() {
           </div>
         </>
       )}
+
+      {showPicker && (
+        <IngredientPicker catalog={catalog} initial={form.lines} onClose={() => setShowPicker(false)} onApply={applyPicked} />
+      )}
     </div>
+  )
+}
+
+/** Multi-select ingredient modal: tick several Item Master items and set each quantity in one go. */
+function IngredientPicker({ catalog, initial, onClose, onApply }: {
+  catalog: CatalogItem[]; initial: FormLine[]; onClose: () => void; onApply: (lines: FormLine[]) => void
+}) {
+  const [q, setQ] = useState('')
+  // Insertion-ordered so the recipe keeps the order items were picked in.
+  const [picked, setPicked] = useState<FormLine[]>(initial)
+  const [error, setError] = useState('')
+  const pickedIds = useMemo(() => new Set(picked.map(p => p.itemId)), [picked])
+
+  const results = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    const list = s ? catalog.filter(c => c.name.toLowerCase().includes(s) || c.sku.toLowerCase().includes(s)) : catalog
+    return list.slice(0, 100)
+  }, [catalog, q])
+
+  const toggle = (c: CatalogItem) => setPicked(p => pickedIds.has(c.id) ? p.filter(x => x.itemId !== c.id) : [...p, { itemId: c.id, name: c.name, unit: c.baseUnit, qty: '' }])
+  const setQty = (c: CatalogItem, qty: string) => setPicked(p => pickedIds.has(c.id)
+    ? p.map(x => x.itemId === c.id ? { ...x, qty } : x)
+    : [...p, { itemId: c.id, name: c.name, unit: c.baseUnit, qty }])
+  const qtyOf = (id: string) => picked.find(p => p.itemId === id)?.qty ?? ''
+
+  function apply() {
+    if (picked.some(p => !(Number(p.qty) > 0))) { setError('Set a quantity above 0 for every ticked ingredient'); return }
+    onApply(picked)
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none">
+        <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col max-h-[85vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
+            <div>
+              <h3 className="text-sm font-semibold">Pick Ingredients</h3>
+              <p className="text-[11px] text-muted-foreground">Tick items and set the quantity per 1 portion (in the item&apos;s stock unit).</p>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="px-5 pt-4 pb-2 shrink-0 space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input autoFocus className={`${inp} pl-8`} placeholder="Search by name or SKU…" value={q} onChange={e => setQ(e.target.value)} />
+            </div>
+            {picked.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {picked.map(p => (
+                  <span key={p.itemId} className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${Number(p.qty) > 0 ? 'bg-amber-100 text-amber-800' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                    {p.name}{Number(p.qty) > 0 && ` · ${p.qty} ${p.unit}`}
+                    <button onClick={() => setPicked(prev => prev.filter(x => x.itemId !== p.itemId))} className="hover:text-red-600"><X className="h-3 w-3" /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 pb-2">
+            {results.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground py-8">No items found</p>
+            ) : (
+              <div className="divide-y border rounded-lg">
+                {results.map(c => {
+                  const on = pickedIds.has(c.id)
+                  return (
+                    <div key={c.id} className={`flex items-center gap-3 px-3 py-2 ${on ? 'bg-amber-50/60' : 'hover:bg-muted/30'}`}>
+                      <button type="button" onClick={() => toggle(c)}
+                        className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center ${on ? 'bg-amber-600 border-amber-600 text-white' : 'bg-white'}`}>
+                        {on && <Check className="h-3 w-3" />}
+                      </button>
+                      <button type="button" onClick={() => toggle(c)} className="flex-1 min-w-0 text-left">
+                        <p className="text-sm truncate">{c.name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{c.sku} · {c.category}</p>
+                      </button>
+                      <input type="number" min="0" step="any" placeholder="0" value={qtyOf(c.id)} onChange={e => setQty(c, e.target.value)}
+                        className="w-20 h-7 border rounded px-1.5 text-xs text-right bg-white focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      <span className="text-xs text-muted-foreground w-10">{c.baseUnit}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {results.length === 100 && <p className="text-[11px] text-muted-foreground text-center py-2">Showing first 100 — refine the search to find more.</p>}
+          </div>
+          <div className="flex items-center justify-between gap-2 px-5 py-4 border-t shrink-0">
+            <span className={`text-xs ${error ? 'text-red-600' : 'text-muted-foreground'}`}>{error || `${picked.length} ingredient${picked.length === 1 ? '' : 's'} selected`}</span>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={apply} className="px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold transition-colors">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

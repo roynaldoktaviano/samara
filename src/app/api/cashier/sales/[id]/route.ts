@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
+import { resolveCashierSession } from '@/lib/cashier-access'
 import { withRetry } from '@/lib/db'
 import { applyItemsToSale, markSaleComplimentary, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const session = await resolveCashierSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
   const { id } = await params
 
   try {
@@ -16,7 +14,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { action } = body
 
     const sale = await withRetry(db, () => db.cashierSale.findUnique({ where: { id } }))
-    if (!sale) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+    if (!sale || sale.yachtId !== session.yachtId) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
     if (sale.status !== 'open') return NextResponse.json({ error: 'Sale is already closed' }, { status: 400 })
 
     if (action === 'add_items') {
@@ -28,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const result = await withRetry(db, () => db.$transaction(async (tx) => {
         const maxRound = await tx.cashierSaleItem.aggregate({ where: { saleId: id }, _max: { round: true } })
         const round = (maxRound._max.round ?? 0) + 1
-        const total = await applyItemsToSale(tx, id, sale.locationId, items as CashierCartItem[], round, session.user.id)
+        const total = await applyItemsToSale(tx, id, sale.locationId, items as CashierCartItem[], round, session.userId)
         return tx.cashierSale.update({
           where: { id },
           data: { total: { increment: total } },

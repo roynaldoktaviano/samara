@@ -23,9 +23,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X, DollarSign } from 'lucide-react'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X, DollarSign, KeyRound } from 'lucide-react'
 import LegalDocumentsPanel from '@/components/hr/LegalDocumentsPanel'
 import YachtPricingPage from '@/components/yachts/YachtPricingPage'
+import CashierPinDialog from '@/components/yachts/CashierPinDialog'
 
 interface PricingTier { nights: number; price: number }
 // destinationId: null = fallback rate applying regardless of destination (the original
@@ -111,6 +112,7 @@ export default function Yachts() {
   const [error,        setError]        = useState('')
   const [docsTarget,   setDocsTarget]   = useState<YachtRecord | null>(null)
   const [pricingYacht, setPricingYacht] = useState<YachtRecord | null>(null)
+  const [pinYacht,     setPinYacht]     = useState<YachtRecord | null>(null)
 
   /* form state */
   const [name,        setName]    = useState('')
@@ -769,6 +771,9 @@ export default function Yachts() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Cashier PIN ── */}
+      {pinYacht && <CashierPinDialog yacht={pinYacht} onClose={() => setPinYacht(null)} />}
+
       {/* ── Documents Panel ── */}
       {/* Plain overlay, not the shadcn Dialog used above — DialogContent centers itself with a
           CSS transform, which becomes a containing block for LegalDocumentsPanel's own
@@ -880,6 +885,13 @@ export default function Yachts() {
                                   onClick={() => setPricingYacht(y)}
                                 >
                                   <DollarSign className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Cashier PIN"
+                                  onClick={() => setPinYacht(y)}
+                                >
+                                  <KeyRound className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"

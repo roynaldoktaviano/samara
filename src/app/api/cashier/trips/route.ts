@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
+import { resolveCashierSession } from '@/lib/cashier-access'
 import { withRetry } from '@/lib/db'
 
 function isTbd(name: string | null | undefined) {
@@ -9,13 +7,14 @@ function isTbd(name: string | null | undefined) {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const session = await resolveCashierSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
 
   const { searchParams } = new URL(request.url)
-  const yachtId = searchParams.get('yachtId')
-  if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
+  // The terminal is locked to the yacht its PIN unlocked.
+  const yachtId = session.yachtId
+  if (searchParams.get('yachtId') && searchParams.get('yachtId') !== yachtId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)

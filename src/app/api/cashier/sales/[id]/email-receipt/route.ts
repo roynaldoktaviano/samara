@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
+import { resolveCashierSession } from '@/lib/cashier-access'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { sendBulkEmail } from '@/lib/resend-mailer'
 
 const fmt = (v: number) => `Rp ${Number(v || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id || !session.user.tenantId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const session = await resolveCashierSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
   const { id } = await params
 
   const body = await request.json().catch(() => ({}))
@@ -27,12 +25,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       booking: { select: { bookingCode: true } },
     },
   })
-  if (!sale) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+  if (!sale || sale.yachtId !== session.yachtId) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
   if (sale.status !== 'closed') return NextResponse.json({ error: 'Only a closed bill can be emailed' }, { status: 400 })
 
   const [apiKey, fromAddress] = await Promise.all([
-    getTenantSecret(session.user.tenantId, 'resendApiKey'),
-    getTenantSecret(session.user.tenantId, 'emailInboxFromAddress'),
+    getTenantSecret(session.tenantId, 'resendApiKey'),
+    getTenantSecret(session.tenantId, 'emailInboxFromAddress'),
   ])
   if (!apiKey || !fromAddress) {
     return NextResponse.json({ error: 'Email sending is not configured for this account yet — contact an admin.' }, { status: 500 })

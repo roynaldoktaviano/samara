@@ -19,11 +19,13 @@ function iconFor(a: { name: string; contentType: string }) {
 
 interface Uploading { id: string; name: string; progress: number; error?: string }
 
-export default function AttachmentsField({ value, onChange, uploadPrefix, onBusyChange }: {
+export default function AttachmentsField({ value, onChange, uploadPrefix, onBusyChange, lockedUrls }: {
   value: Attachment[]
   onChange: (files: Attachment[]) => void
   uploadPrefix: string
   onBusyChange?: (busy: boolean) => void
+  // Files that can't be removed here (an assignee may add files but not delete the owner's).
+  lockedUrls?: Set<string>
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState<Uploading[]>([])
@@ -87,9 +89,11 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
                   <p className="text-xs text-muted-foreground">{fmtSize(a.size)}</p>
                 </div>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" download={a.name} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="Open / download"><Download className="h-4 w-4" /></a>
-                <button type="button" onClick={() => onChange(value.filter(x => x.url !== a.url))} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600" title="Remove">
-                  <X className="h-4 w-4" />
-                </button>
+                {!lockedUrls?.has(a.url) && (
+                  <button type="button" onClick={() => onChange(value.filter(x => x.url !== a.url))} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600" title="Remove">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             )
           })}

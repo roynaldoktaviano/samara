@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
+import { resolveCashierSession } from '@/lib/cashier-access'
 import { withRetry } from '@/lib/db'
 import { applyItemsToSale, resolveDiscount, type CashierCartItem } from '@/lib/cashier'
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const session = await resolveCashierSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
 
   const { searchParams } = new URL(request.url)
-  const yachtId = searchParams.get('yachtId')
+  // The terminal is locked to the yacht its PIN unlocked.
+  const yachtId = session.yachtId
   const status  = searchParams.get('status')
-  if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
+  if (searchParams.get('yachtId') && searchParams.get('yachtId') !== yachtId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const sales = await withRetry(db, () => db.cashierSale.findMany({
     where: { yachtId, ...(status ? { status } : {}) },
@@ -30,13 +29,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const session = await resolveCashierSession(request)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { db } = session
 
   const body = await request.json()
   const { yachtId, locationId, bookingId, guestId, guestName, employeeId, employeeName, complimentaryReason, items, payMethod, closeImmediately, openedBy, discountId } = body
   if (!yachtId || !locationId) return NextResponse.json({ error: 'yachtId and locationId are required' }, { status: 400 })
+  if (yachtId !== session.yachtId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const location = await db.stockLocation.findFirst({ where: { id: locationId, yachtId }, select: { id: true } })
+  if (!location) return NextResponse.json({ error: 'Invalid stock location' }, { status: 400 })
   if (closeImmediately && payMethod === 'Complimentary' && (!employeeId || !String(complimentaryReason || '').trim())) {
     return NextResponse.json({ error: 'Complimentary requires a staff member and a reason' }, { status: 400 })
   }
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
 
       let total = 0
       if (Array.isArray(items) && items.length > 0) {
-        total = await applyItemsToSale(tx, sale.id, locationId, items as CashierCartItem[], 1, session.user.id)
+        total = await applyItemsToSale(tx, sale.id, locationId, items as CashierCartItem[], 1, session.userId)
       }
 
       return tx.cashierSale.update({

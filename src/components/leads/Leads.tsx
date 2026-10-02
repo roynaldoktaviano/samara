@@ -12,13 +12,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2 } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2 } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
+import { Textarea } from '@/components/ui/textarea'
+import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Lead {
@@ -102,10 +104,18 @@ const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
-export default function Leads() {
+export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
+  // Hand-off to the Chat module once a follow-up is sent, so the rep lands in the thread.
+  onOpenWhatsapp?: (conversationId: string) => void
+  onOpenEmail?: (conversationId: string) => void
+} = {}) {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
   const role = (session?.user as { role?: string })?.role ?? ''
+  // Follow-ups go out through the Chat module's WA/Email APIs, which only ADMIN/SALES can use.
+  const canFollowUp = ['ADMIN', 'SALES'].includes(role)
+  const [waFollowUp, setWaFollowUp] = useState<Lead | null>(null)
+  const [emailFollowUp, setEmailFollowUp] = useState<Lead | null>(null)
   const canExportGoogleAds = ['ADMIN', 'MARKETING', 'SUPER_ADMIN'].includes(role)
   const [exportingGoogleAds, setExportingGoogleAds] = useState(false)
 
@@ -149,6 +159,19 @@ export default function Leads() {
   const [loadingFailures, setLoadingFailures] = useState(false)
 
   const PAGE_SIZE = 20
+
+  async function sendWhatsappFollowUp(payload: NewChatPayload) {
+    const res = await fetch('/api/whatsapp/conversations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error ?? 'Failed to start conversation' }
+    setWaFollowUp(null)
+    if (data.providerError) toast.error(`Saved, but WhatsApp rejected it: ${data.providerError}`)
+    else toast.success('WhatsApp follow-up sent')
+    onOpenWhatsapp?.(data.conversationId)
+    return { ok: true }
+  }
 
   const fetchLeads = useCallback(async (p = 1) => {
     setLoading(true)
@@ -514,6 +537,18 @@ export default function Leads() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        {canFollowUp && l.email && (
+                          <Button variant="ghost" size="icon" title="Follow up by Email" className="text-blue-600 hover:text-blue-600 hover:bg-blue-50"
+                            onClick={e => { e.stopPropagation(); setEmailFollowUp(l) }}>
+                            <Mail className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canFollowUp && l.phone && (
+                          <Button variant="ghost" size="icon" title="Follow up by WhatsApp" className="text-green-600 hover:text-green-600 hover:bg-green-50"
+                            onClick={e => { e.stopPropagation(); setWaFollowUp(l) }}>
+                            <MessageCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={e => openEdit(l, e)}><Edit className="h-4 w-4" /></Button>
                         {isAdmin && (
                           <Button
@@ -604,9 +639,21 @@ export default function Leads() {
             <div className="flex-1 flex items-start justify-between">
               <h3 className="text-xl font-bold tracking-tight">{detail?.name}</h3>
               {detail && (
-                <Button size="sm" variant="outline" onClick={e => openEdit(detail, e)}>
-                  <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {canFollowUp && detail.email && (
+                    <Button size="sm" variant="outline" className="text-blue-700 border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={() => setEmailFollowUp(detail)}>
+                      <Mail className="h-3.5 w-3.5 mr-1.5" /> Follow up by Email
+                    </Button>
+                  )}
+                  {canFollowUp && detail.phone && (
+                    <Button size="sm" variant="outline" className="text-green-700 border-green-200 hover:bg-green-50 hover:text-green-700" onClick={() => setWaFollowUp(detail)}>
+                      <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> Follow up by WhatsApp
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={e => openEdit(detail, e)}>
+                    <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -847,6 +894,26 @@ export default function Leads() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Follow up by WhatsApp ─────────────────────────────────────────── */}
+      <Dialog open={!!waFollowUp} onOpenChange={open => { if (!open) setWaFollowUp(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Follow up by WhatsApp</DialogTitle>
+            <DialogDescription>First message must be an approved template — replies continue in Chat.</DialogDescription>
+          </DialogHeader>
+          {waFollowUp && (
+            <NewChatForm key={waFollowUp.id} onSubmit={sendWhatsappFollowUp} initialPhone={waFollowUp.phone ?? ''} initialName={waFollowUp.name} />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Follow up by Email ────────────────────────────────────────────── */}
+      <EmailFollowUpDialog
+        lead={emailFollowUp}
+        onClose={() => setEmailFollowUp(null)}
+        onSent={id => { setEmailFollowUp(null); onOpenEmail?.(id) }}
+      />
+
       {/* ── Single Delete Confirmation ────────────────────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>
         <AlertDialogContent>
@@ -904,5 +971,65 @@ export default function Leads() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onClose: () => void; onSent: (conversationId: string) => void }) {
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!lead) return
+    setSubject('Following up on your inquiry')
+    setBody(`Hi ${lead.firstName || lead.name},\n\n`)
+    setError(null)
+  }, [lead])
+
+  async function send() {
+    if (!lead?.email || !subject.trim() || !body.trim()) return
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/email-inbox/conversations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: lead.email, name: lead.name, subject, body }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data?.error ?? 'Failed to send email'); return }
+      if (data.providerError) toast.error(`Saved, but email failed to send: ${data.providerError}`)
+      else toast.success('Email follow-up sent')
+      onSent(data.conversationId)
+    } finally { setSending(false) }
+  }
+
+  return (
+    <Dialog open={!!lead} onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Follow up by Email</DialogTitle>
+          <DialogDescription>Sent from the shared Email inbox — replies continue in Chat › Email.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">To</label>
+            <Input value={lead?.email ?? ''} disabled className="h-9" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Subject</label>
+            <Input value={subject} onChange={e => setSubject(e.target.value)} className="h-9" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Message</label>
+            <Textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className="text-sm" />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <Button onClick={send} disabled={!subject.trim() || !body.trim() || sending} className="w-full h-9">
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4 mr-1.5" /> Send Email</>}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

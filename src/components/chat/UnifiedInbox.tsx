@@ -252,11 +252,16 @@ export default function UnifiedInbox({ onOpenEmail, initialWhatsappId, onDeepLin
  * Template (Meta rejects free text outside the 24h customer-service window) — see
  * Chat > WhatsApp Templates (src/lib/whatsapp-templates.ts) and POST /api/whatsapp/conversations.
  */
-interface NewChatPayload { phone: string; brand: WhatsappBrand; templateName: string; templateLanguage: string; templateParams: string[]; contactName?: string }
+export interface NewChatPayload { phone: string; brand: WhatsappBrand; templateName: string; templateLanguage: string; templateParams: string[]; contactName?: string }
 
-function NewChatForm({ onSubmit }: { onSubmit: (payload: NewChatPayload) => Promise<{ ok: boolean; error?: string; providerError?: string }> }) {
-  const [phone, setPhone] = useState('')
-  const [contactName, setContactName] = useState('')
+export function NewChatForm({ onSubmit, initialPhone = '', initialName = '' }: {
+  onSubmit: (payload: NewChatPayload) => Promise<{ ok: boolean; error?: string; providerError?: string }>
+  // Prefill when started from somewhere that already knows the contact (e.g. Leads' "Follow up by WhatsApp").
+  initialPhone?: string
+  initialName?: string
+}) {
+  const [phone, setPhone] = useState(initialPhone)
+  const [contactName, setContactName] = useState(initialName)
   const [brand, setBrand] = useState<WhatsappBrand>('SAMARA')
   const [templateName, setTemplateName] = useState('')
   const [templateParams, setTemplateParams] = useState<string[]>([])

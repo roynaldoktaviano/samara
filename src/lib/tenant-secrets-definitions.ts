@@ -16,6 +16,9 @@ export type TenantSecretKey =
   | 'whatsappMischiefApiToken'
   | 'whatsappOtiumPhoneNumberId'
   | 'whatsappOtiumApiToken'
+  | 'whatsappSamaraWabaId'
+  | 'whatsappMischiefWabaId'
+  | 'whatsappOtiumWabaId'
   | 'whatsappWebhookSecret'
   | 'whatsappAppSecret'
   | 'instagramApiUrl'
@@ -38,6 +41,9 @@ export interface TenantSecrets {
   whatsappMischiefApiToken?: string
   whatsappOtiumPhoneNumberId?: string
   whatsappOtiumApiToken?: string
+  whatsappSamaraWabaId?: string
+  whatsappMischiefWabaId?: string
+  whatsappOtiumWabaId?: string
   whatsappWebhookSecret?: string
   whatsappAppSecret?: string
   instagramApiUrl?: string
@@ -66,6 +72,9 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'whatsappMischiefApiToken', label: 'WhatsApp API Token — Mischief', description: 'System User (permanent) or temporary access token for the Mischief number', envFallback: 'WHATSAPP_MISCHIEF_API_TOKEN' },
   { key: 'whatsappOtiumPhoneNumberId', label: 'WhatsApp Phone Number ID — Otium', description: "Meta phone number ID for the Otium brand's WhatsApp Business number", envFallback: 'WHATSAPP_OTIUM_PHONE_NUMBER_ID' },
   { key: 'whatsappOtiumApiToken', label: 'WhatsApp API Token — Otium', description: 'System User (permanent) or temporary access token for the Otium number', envFallback: 'WHATSAPP_OTIUM_API_TOKEN' },
+  { key: 'whatsappSamaraWabaId', label: 'WhatsApp Business Account ID — Samara', description: 'WABA ID that owns the Samara number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_SAMARA_WABA_ID' },
+  { key: 'whatsappMischiefWabaId', label: 'WhatsApp Business Account ID — Mischief', description: 'WABA ID that owns the Mischief number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_MISCHIEF_WABA_ID' },
+  { key: 'whatsappOtiumWabaId', label: 'WhatsApp Business Account ID — Otium', description: 'WABA ID that owns the Otium number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_OTIUM_WABA_ID' },
   { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
   { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256) — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_APP_SECRET' },
   { key: 'instagramApiUrl', label: 'Instagram Send API URL', description: 'Graph API endpoint for sending Instagram DMs once connected', envFallback: 'INSTAGRAM_API_URL' },

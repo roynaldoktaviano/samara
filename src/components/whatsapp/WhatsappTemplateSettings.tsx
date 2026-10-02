@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { FileText, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { FileText, Plus, Pencil, Trash2, Loader2, RefreshCw } from 'lucide-react'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { countTemplateParams } from '@/lib/whatsapp-templates'
 
@@ -30,6 +30,7 @@ export default function WhatsappTemplateSettings() {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const load = useCallback(async (forBrand: WhatsappBrand) => {
     setLoading(true)
@@ -66,6 +67,26 @@ export default function WhatsappTemplateSettings() {
     }
   }
 
+  async function syncFromMeta() {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/whatsapp/templates/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to sync')
+      toast.success(`Synced from Meta: ${data.created} new, ${data.updated} updated`)
+      if (data.skipped?.length) toast.warning(`Skipped ${data.skipped.length} template(s):\n${data.skipped.join('\n')}`, { duration: 10000 })
+      await load(brand)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to sync')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   async function remove(row: TemplateRow) {
     if (!confirm(`Hapus template "${row.label}" dari ERP? (Template di Meta tidak ikut terhapus.)`)) return
     const res = await fetch(`/api/whatsapp/templates/${row.id}`, { method: 'DELETE' })
@@ -92,9 +113,14 @@ export default function WhatsappTemplateSettings() {
             {WHATSAPP_BRANDS.map(b => <TabsTrigger key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</TabsTrigger>)}
           </TabsList>
         </Tabs>
-        <Button size="sm" onClick={() => setForm({ ...EMPTY_FORM })}>
-          <Plus className="h-4 w-4 mr-1" /> Tambah Template
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={syncFromMeta} disabled={syncing}>
+            {syncing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />} Sync from Meta
+          </Button>
+          <Button size="sm" onClick={() => setForm({ ...EMPTY_FORM })}>
+            <Plus className="h-4 w-4 mr-1" /> Tambah Template
+          </Button>
+        </div>
       </div>
 
       <Card>
