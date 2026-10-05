@@ -72,8 +72,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const existing = await db.todo.findFirst({ where: { id, userId: session.user.id }, select: { attachments: true, assigneeIds: true, subAssigneeIds: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Comment files live in R2 too; the activity rows themselves go with the task (cascade).
+  const comments = await db.todoActivity.findMany({ where: { todoId: id, kind: 'COMMENT' }, select: { attachments: true } })
   await db.todo.delete({ where: { id } })
-  await deleteTodoFiles(attachmentsOf(existing.attachments))
+  await deleteTodoFiles([...attachmentsOf(existing.attachments), ...comments.flatMap(c => attachmentsOf(c.attachments))])
   if (existing.assigneeIds.length || existing.subAssigneeIds.length) emitTenantEvent(session.user.tenantId, 'my-works')
   return NextResponse.json({ ok: true })
 }

@@ -62,13 +62,13 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
 
             {open && (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[1040px]">
+                <table className="w-full text-sm min-w-[1100px]">
                   <thead className="text-xs text-muted-foreground">
                     <tr className="border-b">
                       <th className="w-10 px-3 py-2.5" />
                       <th className="text-left px-3 py-2.5 font-medium w-[22%]"><span className="inline-flex items-center gap-1.5"><ListTodo className="h-3.5 w-3.5" />Task Name</span></th>
                       <th className="text-left px-3 py-2.5 font-medium border-l"><span className="inline-flex items-center gap-1.5"><Text className="h-3.5 w-3.5" />Description</span></th>
-                      <th className="text-left px-3 py-2.5 font-medium border-l w-32"><span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Assignee</span></th>
+                      <th className="text-left px-3 py-2.5 font-medium border-l w-44"><span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Assignee</span></th>
                       <th className="text-left px-3 py-2.5 font-medium border-l w-56"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Estimation</span></th>
                       <th className="text-left px-3 py-2.5 font-medium border-l w-32"><span className="inline-flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />Type</span></th>
                       <th className="text-left px-3 py-2.5 font-medium border-l w-28"><span className="inline-flex items-center gap-1.5"><Flag className="h-3.5 w-3.5" />Priority</span></th>

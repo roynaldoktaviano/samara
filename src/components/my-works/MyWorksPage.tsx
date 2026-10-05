@@ -336,8 +336,9 @@ export default function MyWorksPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setModalOpen(false) }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
+          {/* Existing task = wide ClickUp-style layout: details left, Activity panel right. */}
+          <div className={`bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col ${editing ? 'max-w-6xl h-[90vh]' : 'max-w-lg'}`}>
+            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
               <div className="flex items-center gap-2">
                 <ListTodo className="h-4 w-4 text-amber-600" />
                 <h3 className="font-bold text-sm">{ro ? 'Task' : editing ? 'Edit Task' : 'New Task'}</h3>
@@ -347,7 +348,9 @@ export default function MyWorksPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className={editing ? 'flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden' : ''}>
+            <div className={editing ? 'md:flex-1 md:min-w-0 md:min-h-0 flex flex-col' : ''}>
+            <div className={`px-6 py-5 space-y-4 ${editing ? 'md:flex-1 md:overflow-y-auto' : 'max-h-[70vh] overflow-y-auto'}`}>
               {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
               {ro && (
                 <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -358,7 +361,7 @@ export default function MyWorksPage() {
               <fieldset disabled={ro} className="space-y-4 min-w-0">
               <div className="space-y-1.5">
                 <label className={labelCls}>Task Name</label>
-                <input autoFocus={!ro} className={`${inputCls} ${disabledCls}`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                <input autoFocus={!ro} className={`${inputCls} ${disabledCls} ${editing ? 'h-11 text-lg font-semibold' : ''}`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') save() }} />
               </div>
               <div className="space-y-1.5">
@@ -413,12 +416,8 @@ export default function MyWorksPage() {
                   uploadPrefix={uploadPrefix} onBusyChange={setUploadBusy}
                   lockedUrls={ro ? new Set((editing?.attachments ?? []).map(a => a.url)) : undefined} />
               </div>}
-              {editing && <div className="space-y-1.5 border-t pt-4">
-                <label className={labelCls}>Activity</label>
-                <ActivityField todoId={editing.id} />
-              </div>}
             </div>
-            <div className="flex items-center gap-2 px-6 py-4 border-t bg-gray-50/80">
+            <div className="flex items-center gap-2 px-6 py-4 border-t bg-gray-50/80 shrink-0">
               {editing && !ro && (
                 <button onClick={() => remove(editing)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                   <Trash2 className="h-4 w-4" />Delete
@@ -430,6 +429,14 @@ export default function MyWorksPage() {
                   {saving ? 'Saving...' : uploadBusy ? 'Uploading...' : editing ? 'Save' : 'Create Task'}
                 </button>}
               </div>
+            </div>
+            </div>
+            {editing && (
+              <aside className="h-[75vh] md:h-auto md:w-[400px] shrink-0 border-t md:border-t-0 md:border-l bg-gray-50/60 min-h-0">
+                <ActivityField todoId={editing.id} uploadPrefix={uploadPrefix} createdAt={editing.createdAt}
+                  createdBy={{ id: editing.userId, user: editing.user ?? users.find(u => u.id === editing.userId) }} />
+              </aside>
+            )}
             </div>
           </div>
         </div>

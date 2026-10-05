@@ -87,6 +87,14 @@ function parseSubtasks(v: unknown, depth = 1, seen = { n: 0 }): TodoSubtask[] | 
   return out
 }
 
+export const TODO_COMMENT_MAX_FILES = 10
+/** Files on a new comment — must be fresh uploads in the author's own folder. */
+export function parseCommentAttachments(v: unknown, userId: string): TodoAttachment[] | null {
+  if (v == null) return []
+  if (Array.isArray(v) && v.length > TODO_COMMENT_MAX_FILES) return null
+  return parseAttachments(v, userId, new Set())
+}
+
 export function attachmentsOf(v: Prisma.JsonValue): TodoAttachment[] {
   return Array.isArray(v) ? (v as unknown as TodoAttachment[]) : []
 }

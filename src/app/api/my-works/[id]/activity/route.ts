@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { taskParticipants } from '@/lib/todo'
+import { taskParticipants, parseCommentAttachments, attachmentsOf, deleteTodoFiles, TODO_COMMENT_MAX_FILES } from '@/lib/todo'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
@@ -38,16 +38,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!todo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const body = await req.json().catch(() => ({}))
   const text = typeof body.body === 'string' ? body.body.trim() : ''
-  if (!text) return NextResponse.json({ error: 'Comment is empty' }, { status: 400 })
   if (text.length > 5000) return NextResponse.json({ error: 'Comment is too long (max 5000 characters)' }, { status: 400 })
+  const files = parseCommentAttachments(body.attachments, me)
+  if (!files) return NextResponse.json({ error: `Invalid attachments (max ${TODO_COMMENT_MAX_FILES} files)` }, { status: 400 })
+  if (!text && !files.length) return NextResponse.json({ error: 'Comment is empty' }, { status: 400 })
 
-  const activity = await db.todoActivity.create({ data: { todoId: todo.id, userId: me, kind: 'COMMENT', body: text }, include })
+  const activity = await db.todoActivity.create({
+    data: { todoId: todo.id, userId: me, kind: 'COMMENT', body: text, attachments: files as never },
+    include,
+  })
 
   // Bell + push to everyone else on the task.
   const others = taskParticipants(todo).filter(u => u !== me)
   if (others.length) {
     const title = `New comment: ${todo.title}`
-    const preview = `${session.user.name || 'Someone'}: ${text.length > 120 ? text.slice(0, 120) + '…' : text}`
+    const said = text ? (text.length > 120 ? text.slice(0, 120) + '…' : text) : `attached ${files.length} file${files.length > 1 ? 's' : ''}`
+    const preview = `${session.user.name || 'Someone'}: ${said}`
     await db.notification.createMany({ data: others.map(userId => ({ userId, type: 'TASK_COMMENT', title, body: preview })) }).catch(() => {})
     sendPushToUsers(db, others, { title, body: preview, url: '/' }).catch(() => {})
   }
@@ -61,8 +67,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!ctx.todo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const activityId = req.nextUrl.searchParams.get('activityId') ?? ''
-  const { count } = await ctx.db.todoActivity.deleteMany({ where: { id: activityId, todoId: ctx.todo.id, userId: ctx.me, kind: 'COMMENT' } })
-  if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const where = { id: activityId, todoId: ctx.todo.id, userId: ctx.me, kind: 'COMMENT' }
+  const comment = await ctx.db.todoActivity.findFirst({ where, select: { attachments: true } })
+  if (!comment) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  await ctx.db.todoActivity.deleteMany({ where })
+  await deleteTodoFiles(attachmentsOf(comment.attachments))
   emitTenantEvent(ctx.session.user.tenantId, 'my-works')
   return NextResponse.json({ ok: true })
 }

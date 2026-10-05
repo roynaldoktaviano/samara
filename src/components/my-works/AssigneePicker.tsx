@@ -5,13 +5,28 @@ import { Check, Search, UserPlus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Avatar, AvatarStack, useWorks, userLabel } from './shared'
 
-/** Avatar stack that opens a searchable multi-select of every user. Read-only on a task someone else owns. */
+/** "Budi" / "Budi, Sari" / "Budi, Sari +2" — first names keep the cell narrow; the full list is in the title. */
+function NamesLabel({ ids }: { ids: string[] }) {
+  const { byId } = useWorks()
+  const first = (id: string) => userLabel(byId.get(id)).split(/[\s@]/)[0]
+  const label = ids.length === 1 ? userLabel(byId.get(ids[0]))
+    : `${ids.slice(0, 2).map(first).join(', ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}`
+  return <span className="text-sm truncate min-w-0">{label}</span>
+}
+
+/**
+ * Avatar stack that opens a searchable multi-select of every user. Read-only on a task someone
+ * else owns. Shows names next to the avatars unless `compact`.
+ */
 export default function AssigneePicker({ value, onChange, readOnly, size = 24, compact }: {
   value: string[]; onChange: (ids: string[]) => void; readOnly?: boolean; size?: number; compact?: boolean
 }) {
   const { users, byId, meId } = useWorks()
   const [q, setQ] = useState('')
-  if (readOnly) return value.length ? <AvatarStack ids={value} size={size} /> : <span className="text-muted-foreground text-sm">-</span>
+  const full = value.map(i => userLabel(byId.get(i))).join(', ')
+  if (readOnly) return value.length
+    ? <span title={full} className="flex items-center gap-1.5 min-w-0"><AvatarStack ids={value} size={size} max={2} /><NamesLabel ids={value} /></span>
+    : <span className="text-muted-foreground text-sm">-</span>
 
   const term = q.trim().toLowerCase()
   // Selected first, then me, then everyone else alphabetically (API order).
@@ -23,11 +38,13 @@ export default function AssigneePicker({ value, onChange, readOnly, size = 24, c
   return (
     <Popover onOpenChange={o => { if (!o) setQ('') }}>
       <PopoverTrigger asChild>
-        <button type="button" title={value.length ? value.map(i => userLabel(byId.get(i))).join(', ') : 'Assign'}
+        <button type="button" title={value.length ? full : 'Assign'}
           className={compact
             ? 'h-8 min-w-8 px-1.5 flex items-center justify-center rounded-md border hover:bg-muted text-muted-foreground'
-            : 'rounded-md px-1 py-0.5 -mx-1 hover:bg-muted flex items-center min-h-7'}>
-          {value.length ? <AvatarStack ids={value} size={size} /> : <UserPlus className="h-4 w-4 text-muted-foreground" />}
+            : 'rounded-md px-1 py-0.5 -mx-1 hover:bg-muted flex items-center gap-1.5 min-h-7 max-w-full min-w-0'}>
+          {value.length
+            ? compact ? <AvatarStack ids={value} size={size} /> : <><AvatarStack ids={value} size={size} max={2} /><NamesLabel ids={value} /></>
+            : <UserPlus className="h-4 w-4 text-muted-foreground" />}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-0" onClick={e => e.stopPropagation()}>

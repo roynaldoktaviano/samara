@@ -273,6 +273,8 @@ model TodoActivity {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   kind      String   // COMMENT | ESTIMATION
   body      String
+  // COMMENT only: files/images attached to the comment, same shape as Todo.attachments.
+  attachments Json   @default("[]")
   createdAt DateTime @default(now())
 
   @@index([todoId, createdAt])
