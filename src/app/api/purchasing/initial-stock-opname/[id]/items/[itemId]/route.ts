@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { OPNAME_ITEM_SELECT, parseOpnameItemForm } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
@@ -29,10 +30,10 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ ok: true })
 }
 
-// Edit a row from the Initial Opname popup — fixes the underlying catalog product's
-// basic fields (name/category/units). Qty is NOT changed here — it stays in the
+// Edit a row from the Initial Opname popup — same product form as Items & Pricing, so it
+// updates the underlying catalog product. Qty is NOT changed here — it stays in the
 // table and goes through the normal Simpan/Selesaikan PUT, which is what applies
-// stock deltas on a completed opname. The rest of the product stays in Items & Pricing.
+// stock deltas on a completed opname.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   const { id, itemId } = await params
   const session = await getServerSession(authOptions)
@@ -50,23 +51,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const row = await db.stockCountItem.findUnique({ where: { id: itemId } })
   if (!row || row.countId !== id) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
 
-  const { name, category, baseUnit, purchaseUnit } = await req.json()
-  if (!name?.trim()) return NextResponse.json({ error: 'Nama produk wajib diisi' }, { status: 400 })
-
+  const body = await req.json()
   if (row.itemId) {
-    if (!category?.trim() || !baseUnit?.trim() || !purchaseUnit?.trim()) {
-      return NextResponse.json({ error: 'Nama, kategori, purchase unit, dan base unit wajib diisi' }, { status: 400 })
-    }
-    await db.purchaseItem.update({
-      where: { id: row.itemId },
-      data: { name: name.trim(), category: category.trim(), baseUnit: baseUnit.trim(), purchaseUnit: purchaseUnit.trim(), updatedAt: new Date() },
-    })
+    const parsed = await parseOpnameItemForm(db, body, row.itemId)
+    if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    await db.purchaseItem.update({ where: { id: row.itemId }, data: { ...parsed.data, updatedAt: new Date() } })
+  } else if (!String(body.name ?? '').trim()) {
+    return NextResponse.json({ error: 'Nama produk wajib diisi' }, { status: 400 })
   }
 
   const updated = await db.stockCountItem.update({
     where: { id: itemId },
-    data: { itemName: name.trim() },
-    include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true } } },
+    data: { itemName: String(body.name).trim() },
+    include: { item: { select: OPNAME_ITEM_SELECT } },
   })
   return NextResponse.json(updated)
 }

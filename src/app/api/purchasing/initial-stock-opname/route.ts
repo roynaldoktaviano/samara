@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
 import { isWarehouseOnly } from '@/lib/purchasing/initialOpnameScope'
 
 // Temporary onboarding-only feature — see memory project-initial-stock-opname-temporary.
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
     include: {
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
-      items: { include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, category: true } } } },
+      items: { include: { item: { select: OPNAME_ITEM_SELECT } } },
     },
   })
 

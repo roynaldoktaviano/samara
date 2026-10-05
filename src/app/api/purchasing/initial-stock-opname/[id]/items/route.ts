@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { OPNAME_ITEM_SELECT, parseOpnameItemForm } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
@@ -59,38 +60,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const lot = await db.stockLot.findFirst({ where: { itemId: item.id, locationId: count.locationId } })
     const created = await db.stockCountItem.create({
       data: { id: crypto.randomUUID(), countId: id, itemId: item.id, itemName: item.name, systemQty: lot?.quantity ?? 0, countedQty: qty },
-      include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true } } },
+      include: { item: { select: OPNAME_ITEM_SELECT } },
     })
     return NextResponse.json(created, { status: 201 })
   }
 
-  // Brand new product, created on the fly — minimal fields only, rest (supplier,
-  // pricing, etc.) gets filled in later via Items & Pricing.
-  const { name, category, baseUnit, purchaseUnit } = body
-  if (!name?.trim() || !category?.trim() || !baseUnit?.trim() || !purchaseUnit?.trim()) {
-    return NextResponse.json({ error: 'Nama, kategori, purchase unit, dan base unit wajib diisi' }, { status: 400 })
-  }
+  // Brand new product, created on the fly with the same form as Items & Pricing.
+  // Older clients may omit the SKU — fall back to an INIT- one so it's still unique.
+  if (!String(body.sku ?? '').trim() && String(body.name ?? '').trim()) body.sku = await generateSku(db, body.name)
+  if (!body.type) body.type = await getDefaultTypeCode(db)
+  const parsed = await parseOpnameItemForm(db, body)
+  if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
-  const typeCode = await getDefaultTypeCode(db)
-  if (!typeCode) return NextResponse.json({ error: 'Belum ada Item Type aktif — buat dulu di menu Item Types' }, { status: 400 })
-
-  const sku = await generateSku(db, name)
   const item = await db.purchaseItem.create({
-    data: {
-      id: crypto.randomUUID(),
-      sku,
-      name: name.trim(),
-      type: typeCode,
-      category: category.trim(),
-      baseUnit: baseUnit.trim(),
-      purchaseUnit: purchaseUnit.trim(),
-      updatedAt: new Date(),
-    },
+    data: { id: crypto.randomUUID(), ...parsed.data, updatedAt: new Date() },
   })
 
   const created = await db.stockCountItem.create({
     data: { id: crypto.randomUUID(), countId: id, itemId: item.id, itemName: item.name, systemQty: 0, countedQty: qty },
-    include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true } } },
+    include: { item: { select: OPNAME_ITEM_SELECT } },
   })
   return NextResponse.json(created, { status: 201 })
 }

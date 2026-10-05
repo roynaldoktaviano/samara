@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
@@ -22,7 +23,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true } } },
+        include: { item: { select: OPNAME_ITEM_SELECT } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -69,7 +70,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, category: true, standardCost: true } } },
+        include: { item: { select: OPNAME_ITEM_SELECT } },
         orderBy: { itemName: 'asc' },
       },
     },
