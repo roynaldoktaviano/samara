@@ -2175,6 +2175,12 @@ model CashierSale {
   discountAmount      Float     @default(0)
   openedBy            String?
   closedAt            DateTime?
+  // Offline terminal sync: a discount that no longer validated when the queued sale reached the
+  // server is kept as the cashier applied it, but flagged here for review in POS Billing History.
+  needsReview         Boolean   @default(false)
+  reviewNote          String?
+  reviewedAt          DateTime?
+  reviewedBy          String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -2191,6 +2197,7 @@ model CashierSale {
   @@index([employeeId])
   @@index([status])
   @@index([createdAt])
+  @@index([needsReview])
 }
 
 model CashierSaleItem {

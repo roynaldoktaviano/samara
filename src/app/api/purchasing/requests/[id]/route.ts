@@ -9,6 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -246,6 +247,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!status || !valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
   if (status !== 'CONVERTED') {
+    // Force Verify (DRAFT → ON_PROCESS, skipping Warehouse's stock check) is Admin-only —
+    // Purchasing must wait for Warehouse to forward the PR.
+    if (status === 'ON_PROCESS') {
+      if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])) {
+        return NextResponse.json({ error: 'Only Admin can Force Verify a request' }, { status: 403 })
+      }
+      const current = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
+      if (current?.status !== 'DRAFT') {
+        return NextResponse.json({ error: 'Only a Draft request can be Force Verified' }, { status: 409 })
+      }
+    }
     const request = await db.purchaseRequest.update({
       where: { id },
       data: {
@@ -450,8 +462,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           createdPoIds.push(existingDraft.id)
           groupPoId = existingDraft.id
         } else {
-          const last = await tx.purchaseOrder.findFirst({ where: { poNumber: { startsWith: prefix } }, orderBy: { poNumber: 'desc' }, select: { poNumber: true } })
-          const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+          const seq = nextSeq((await tx.purchaseOrder.findMany({ where: { poNumber: { startsWith: prefix } }, select: { poNumber: true } })).map(r => r.poNumber))
           const poNumber = `${prefix}${String(seq).padStart(3, '0')}`
           const poId = crypto.randomUUID()
           await tx.purchaseOrder.create({

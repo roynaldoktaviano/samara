@@ -6,13 +6,13 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
 async function generateTrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const prefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
-  const last = await db.stockTransfer.findFirst({ where: { transferNumber: { startsWith: prefix } }, orderBy: { transferNumber: 'desc' }, select: { transferNumber: true } })
-  const seq = last ? (parseInt(last.transferNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const seq = nextSeq((await db.stockTransfer.findMany({ where: { transferNumber: { startsWith: prefix } }, select: { transferNumber: true } })).map(r => r.transferNumber))
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 

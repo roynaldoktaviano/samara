@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Receipt, X, Anchor } from 'lucide-react'
+import { Search, Receipt, X, Anchor, AlertTriangle, Check } from 'lucide-react'
 
 interface TripSummary {
   booking: { id: string; bookingCode: string; startDate: string; endDate: string; status: string; customer: { name: string }; yacht: { id: string; name: string } | null }
@@ -12,8 +12,13 @@ interface Sale {
   id: string; guestName: string | null; status: 'open' | 'closed'; payMethod: string | null
   total: number; discountId: string | null; discountName: string | null; discountAmount: number
   employeeName: string | null; complimentaryReason: string | null; closedAt: string | null; createdAt: string
+  needsReview: boolean; reviewNote: string | null; reviewedAt: string | null; reviewedBy: string | null
   items: SaleItem[]
   guest: { customer: { name: string } } | null
+}
+interface ReviewSale extends Omit<Sale, 'guest'> {
+  yacht: { name: string } | null
+  booking: { bookingCode: string } | null
 }
 interface TripDetail {
   booking: { id: string; bookingCode: string; startDate: string; endDate: string; status: string; customer: { name: string }; yacht: { id: string; name: string } | null }
@@ -29,6 +34,28 @@ export default function PosBillingHistoryPage() {
   const [search, setSearch] = useState('')
   const [detail, setDetail] = useState<TripDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [reviews, setReviews] = useState<ReviewSale[]>([])
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [marking, setMarking] = useState<string | null>(null)
+
+  const loadReviews = useCallback(async () => {
+    const res = await fetch('/api/pos/billing/review')
+    if (res.ok) setReviews(await res.json())
+  }, [])
+  useEffect(() => {
+    const t = setTimeout(loadReviews, 0)
+    return () => clearTimeout(t)
+  }, [loadReviews])
+
+  async function markReviewed(id: string) {
+    setMarking(id)
+    const res = await fetch('/api/pos/billing/review', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setMarking(null)
+    if (res.ok) {
+      setReviews(prev => prev.filter(r => r.id !== id))
+      setDetail(d => d ? { ...d, sales: d.sales.map(x => x.id === id ? { ...x, needsReview: false } : x) } : d)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -57,6 +84,39 @@ export default function PosBillingHistoryPage() {
         <h2 className="text-2xl font-bold tracking-tight">POS Billing History</h2>
         <p className="text-muted-foreground text-sm mt-1">Cashier sales grouped by trip</p>
       </div>
+
+      {reviews.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50">
+          <button onClick={() => setReviewOpen(o => !o)} className="w-full px-4 py-3 flex items-center justify-between text-left">
+            <span className="flex items-center gap-2 text-sm font-medium text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              {reviews.length} cashier sale{reviews.length !== 1 ? 's' : ''} need review — discount failed validation when the offline terminal synced
+            </span>
+            <span className="text-xs text-amber-700">{reviewOpen ? 'Hide' : 'Show'}</span>
+          </button>
+          {reviewOpen && (
+            <div className="border-t border-amber-200 divide-y divide-amber-200">
+              {reviews.map(r => (
+                <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-4 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {r.guestName ?? 'Guest'} · {r.yacht?.name ?? '—'}{r.booking ? ` · ${r.booking.bookingCode}` : ' · Walk-in'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {fmtDate(r.closedAt ?? r.createdAt)} · {r.payMethod ?? 'Open'} · Subtotal {fmtMoney(r.total)} · Discount {r.discountName ?? ''} −{fmtMoney(r.discountAmount)} · Charged {fmtMoney(r.total - r.discountAmount)}
+                    </p>
+                    {r.reviewNote && <p className="text-xs text-amber-800 mt-1">{r.reviewNote}</p>}
+                  </div>
+                  <button onClick={() => markReviewed(r.id)} disabled={marking === r.id}
+                    className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-md border bg-white text-xs font-medium hover:bg-muted disabled:opacity-50">
+                    <Check className="h-3.5 w-3.5" /> Mark reviewed
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="relative max-w-sm">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -129,8 +189,11 @@ export default function PosBillingHistoryPage() {
                         {sale.status === 'open' ? 'Open tab' : `Closed ${sale.closedAt ? fmtDate(sale.closedAt) : ''} · ${sale.payMethod}`}
                       </p>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sale.status === 'open' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                      {sale.status === 'open' ? 'Open' : 'Closed'}
+                    <span className="flex items-center gap-1.5">
+                      {sale.needsReview && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title={sale.reviewNote ?? undefined}>Needs review</span>}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sale.status === 'open' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {sale.status === 'open' ? 'Open' : 'Closed'}
+                      </span>
                     </span>
                   </div>
                   <div className="px-4 py-2 divide-y">

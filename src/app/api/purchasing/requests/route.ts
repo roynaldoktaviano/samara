@@ -11,6 +11,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { yachtCrewWhere } from '@/lib/purchasing/yachtScope'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -23,12 +24,7 @@ async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()
   const month = String(new Date().getMonth() + 1).padStart(2, '0')
   const prefix = `PR-${year}${month}-`
-  const last = await db.purchaseRequest.findFirst({
-    where: { prNumber: { startsWith: prefix } },
-    orderBy: { prNumber: 'desc' },
-    select: { prNumber: true },
-  })
-  const seq = last ? (parseInt(last.prNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const seq = nextSeq((await db.purchaseRequest.findMany({ where: { prNumber: { startsWith: prefix } }, select: { prNumber: true } })).map(r => r.prNumber))
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 
@@ -222,6 +218,15 @@ export async function POST(req: NextRequest) {
     include: { items: true },
   })
 
+  // Filed on someone else's behalf (e.g. crew for another crew member) — name the
+  // person who actually created it so the approver sees who's accountable for it.
+  const creatorEmployee = requestedByEmployeeId
+    ? await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true } })
+    : null
+  const onBehalfNote = requestedByEmployeeId && creatorEmployee?.id !== requestedByEmployeeId
+    ? ` (created by ${session.user.name ?? 'another user'})`
+    : ''
+
   if (approverEmployeeId && manager?.userId) {
     // Awaiting manager sign-off — Warehouse hears about this request only after it's
     // approved (see [id]/approval/route.ts), not now.
@@ -230,13 +235,13 @@ export async function POST(req: NextRequest) {
         userId: manager.userId,
         type: isUrgent ? 'PR_APPROVAL_URGENT' : 'PR_APPROVAL_NEEDED',
         title: isUrgent ? '🔴 Urgent request needs your approval' : 'Request needs your approval',
-        body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
+        body: `${requesterEmployee?.fullName ?? 'A request'}${onBehalfNote} — ${prNumber} is waiting for your approval.${isUrgent ? ` URGENT: ${urgentReason?.trim()}` : ''}`,
         requestId: request.id,
       },
     }).catch(() => {})
     sendPushToUser(db, manager.userId, {
       title: isUrgent ? '🔴 Urgent request needs your approval' : 'Request needs your approval',
-      body: `${requesterEmployee?.fullName ?? 'A request'} — ${prNumber} is waiting for your approval.`,
+      body: `${requesterEmployee?.fullName ?? 'A request'}${onBehalfNote} — ${prNumber} is waiting for your approval.`,
       url: '/',
     }).catch(() => {})
   } else if (allCustom) {

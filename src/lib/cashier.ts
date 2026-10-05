@@ -2,7 +2,25 @@ import type { PrismaClient } from '@prisma/client'
 import { effectiveConsumptionMode } from '@/lib/purchasing/consumptionMode'
 import { USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 
+/** A record id the cashier terminal generated itself (crypto.randomUUID) for idempotent offline sync. */
+export function isClientId(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(v)
+}
+
+/**
+ * When a queued terminal action really happened. Falls back to now for a missing/garbage value or
+ * one in the future (tablet clock ahead) — never trusted to backdate more than 60 days.
+ */
+export function clientTime(v: unknown): Date {
+  const now = Date.now()
+  const t = typeof v === 'string' ? Date.parse(v) : NaN
+  if (!Number.isFinite(t) || t > now + 5 * 60_000 || t < now - 60 * 24 * 3600_000) return new Date(now)
+  return new Date(Math.min(t, now))
+}
+
 export interface CashierCartItem {
+  /** Client-generated line id — lets the offline terminal's sync retry the same add safely. */
+  id?: string
   itemId: string | null
   packageId?: string | null
   recipeId?: string | null
@@ -115,7 +133,7 @@ export async function applyItemsToSale(
     const itemId = recipeId ? null : it.itemId || null
     await tx.cashierSaleItem.create({
       data: {
-        id: crypto.randomUUID(), saleId, itemId, packageId: it.packageId || null, recipeId,
+        id: isClientId(it.id) ? it.id : crypto.randomUUID(), saleId, itemId, packageId: it.packageId || null, recipeId,
         name: it.name, unit: it.unit, price: Number(it.price), qty, round,
       },
     })
@@ -164,4 +182,44 @@ export async function resolveDiscount(tx: Tx, discountId: string, yachtId: strin
   const raw = discount.type === 'PERCENT' ? subtotal * (discount.value / 100) : discount.value
   const discountAmount = Math.max(0, Math.min(raw, subtotal))
   return { ok: true, discountId: discount.id, discountName: discount.name, discountAmount }
+}
+
+/** The discount as the terminal saw it when the cashier applied it (from its cached menu). */
+export interface DiscountSnapshot { name: string; type: 'PERCENT' | 'FIXED'; value: number }
+
+function parseSnapshot(v: unknown): DiscountSnapshot | null {
+  if (!v || typeof v !== 'object') return null
+  const { name, type, value } = v as Record<string, unknown>
+  if (typeof name !== 'string' || (type !== 'PERCENT' && type !== 'FIXED') || typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+  return { name, type, value }
+}
+
+export type SaleDiscountResult =
+  | { ok: true; fields: { discountId: string | null; discountName: string | null; discountAmount: number; needsReview?: boolean; reviewNote?: string | null } }
+  | { ok: false; error: string }
+
+/**
+ * resolveDiscount, plus the offline-terminal rule: when the discount no longer validates (expired,
+ * deactivated, …) but the terminal sent the snapshot it applied, the sale keeps that discount and
+ * is flagged needsReview instead of being rejected — the guest already paid that amount.
+ */
+export async function resolveSaleDiscount(tx: Tx, discountId: unknown, snapshotRaw: unknown, yachtId: string, subtotal: number): Promise<SaleDiscountResult> {
+  if (!discountId || typeof discountId !== 'string') return { ok: true, fields: { discountId: null, discountName: null, discountAmount: 0 } }
+  const resolved = await resolveDiscount(tx, discountId, yachtId, subtotal)
+  if (resolved.ok) return { ok: true, fields: { discountId: resolved.discountId, discountName: resolved.discountName, discountAmount: resolved.discountAmount } }
+
+  const snapshot = parseSnapshot(snapshotRaw)
+  if (!snapshot) return { ok: false, error: resolved.error }
+  const raw = snapshot.type === 'PERCENT' ? subtotal * (snapshot.value / 100) : snapshot.value
+  const stillExists = await tx.posDiscount.findUnique({ where: { id: discountId }, select: { id: true } })
+  return {
+    ok: true,
+    fields: {
+      discountId: stillExists ? discountId : null,
+      discountName: snapshot.name,
+      discountAmount: Math.max(0, Math.min(raw, subtotal)),
+      needsReview: true,
+      reviewNote: `Discount "${snapshot.name}" was applied on the terminal but failed validation at sync: ${resolved.error}`,
+    },
+  }
 }

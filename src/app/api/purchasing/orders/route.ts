@@ -9,6 +9,7 @@ import { resolveWarehouseLocationId, warehouseOrderWhere } from '@/lib/purchasin
 import { resolveAssignedYachtId, yachtOrderWhere } from '@/lib/purchasing/yachtScope'
 
 import { roleMatches } from '@/lib/role-utils'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const CREATE_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -18,8 +19,7 @@ async function generatePoNumber(db: Awaited<ReturnType<typeof getDb>>, orderType
   // even though both share this table — helpful anywhere the two show up mixed together,
   // like Finance's payment/reimbursement lists.
   const prefix = `${orderType === 'SERVICE' ? 'SV' : 'PO'}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
-  const last = await db.purchaseOrder.findFirst({ where: { poNumber: { startsWith: prefix } }, orderBy: { poNumber: 'desc' }, select: { poNumber: true } })
-  const seq = last ? (parseInt(last.poNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const seq = nextSeq((await db.purchaseOrder.findMany({ where: { poNumber: { startsWith: prefix } }, select: { poNumber: true } })).map(r => r.poNumber))
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 

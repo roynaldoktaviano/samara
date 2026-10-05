@@ -2,6 +2,7 @@ import { getDb } from '@/lib/get-db'
 import { movingAverageCost } from '@/lib/valuation'
 import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 // receiveTransferLeg always owns its own $transaction (called with a full client, session-
 // or token-resolved — never from inside an existing transaction), unlike transitChain.ts's
@@ -57,8 +58,7 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
   }
 
   const trPrefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
-  const last = await db.stockTransfer.findFirst({ where: { transferNumber: { startsWith: trPrefix } }, orderBy: { transferNumber: 'desc' }, select: { transferNumber: true } })
-  const seq = last ? (parseInt(last.transferNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const seq = nextSeq((await db.stockTransfer.findMany({ where: { transferNumber: { startsWith: trPrefix } }, select: { transferNumber: true } })).map(r => r.transferNumber))
   const transferNumber = `${trPrefix}${String(seq).padStart(3, '0')}`
   await db.stockTransfer.create({
     data: {

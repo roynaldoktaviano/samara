@@ -3,9 +3,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { cashierSlug } from '@/lib/cashier-slug'
 import {
+  CashierAuthError, cacheKey, checkPinOffline, discardOp, enqueue, fetchCached, flushOutbox, hasOfflinePin, loadSession,
+  newId, readCache, readOutbox, rememberPin, retryOp, saveSession, subscribeOutbox, writeCache, type OutboxOp,
+} from '@/lib/cashier-offline'
+import {
   Anchor, Search, Plus, Minus, X, Check, Printer, Mail, Send, CreditCard,
   Banknote, Gift, Utensils, ClipboardList, ShoppingCart,
-  ArrowLeft, Delete, Loader2, ChevronDown, Trash2, CalendarDays, Clock, Power, Receipt,
+  ArrowLeft, Delete, Loader2, ChevronDown, Trash2, CalendarDays, Clock, Power, Receipt, CloudOff, RefreshCw, AlertTriangle,
   Wine, Beer, Coffee, CupSoda, Martini, Sandwich, CakeSlice, GlassWater, Soup, LayoutGrid,
 } from 'lucide-react'
 
@@ -34,6 +38,8 @@ interface Sale {
   closedAt: string | null; createdAt: string; items: SaleItem[]
   booking: { bookingCode: string } | null
   guest: { customer: { email: string | null } } | null
+  /** Has queued changes not yet on the server (offline) — set by overlaySales, never by the API. */
+  pending?: boolean
 }
 
 /** The amount actually charged after discount — sale.total stays the raw item subtotal. */
@@ -41,6 +47,10 @@ const chargedTotal = (sale: Pick<Sale, 'total' | 'discountAmount'>) => sale.tota
 
 function StaffTag() {
   return <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 6, background: `${GOLD_DARK}18`, color: GOLD_DARK, flexShrink: 0 }}>STAFF</span>
+}
+
+function PendingTag() {
+  return <span title="Saved on this tablet, not yet synced" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', padding: '2px 6px', borderRadius: 6, background: '#fef3c7', color: '#b45309', flexShrink: 0 }}>NOT SYNCED</span>
 }
 
 const PAY_METHODS: { key: string; icon: typeof Banknote }[] = [
@@ -136,9 +146,9 @@ function useIsCompact() {
 // wherever the UI previously printed a hardcoded "Samara" wordmark, so a white-label
 // tenant (e.g. Siloina) sees their own brand here too, not Samara's.
 function useBranding() {
-  const [branding, setBranding] = useState<Branding | null>(null)
+  const [branding, setBranding] = useState<Branding | null>(() => readCache<Branding | null>(cacheKey('branding'), null))
   useEffect(() => {
-    fetch('/api/cashier/branding').then(r => r.ok ? r.json() : null).then(setBranding).catch(() => {})
+    fetchCached<Branding | null>('/api/cashier/branding', cacheKey('branding'), null).then(r => { if (r.data) setBranding(r.data) }).catch(() => {})
   }, [])
   return branding
 }
@@ -161,7 +171,7 @@ function SignInScreen({ onSuccess, branding, vesselSlug }: { onSuccess: (v: Vess
   const [checking, setChecking] = useState(false)
 
   useEffect(() => {
-    fetch('/api/cashier/vessels').then(r => r.json()).then(d => {
+    fetchCached<Vessel[]>('/api/cashier/vessels', cacheKey('vessels'), []).then(({ data: d }) => {
       const all: Vessel[] = Array.isArray(d) ? d : []
       const locked = vesselSlug ? all.find(v => cashierSlug(v.name) === vesselSlug.toLowerCase()) : undefined
       if (locked) { setVessels([locked]); setSelected(locked) }
@@ -182,14 +192,24 @@ function SignInScreen({ onSuccess, branding, vesselSlug }: { onSuccess: (v: Vess
     if (next.length < selected.pinLength) return
     setChecking(true)
     try {
-      const res = await fetch('/api/cashier/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yachtId: selected.id, pin: next }) })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) { onSuccess(data); return }
+      let res: Response | null = null
+      try {
+        res = await fetch('/api/cashier/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yachtId: selected.id, pin: next }) })
+      } catch { /* offline — fall through to the PIN remembered from the last online login */ }
+      if (res) {
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) { await rememberPin(selected.id, next, data); onSuccess(data); return }
+        setShake(true)
+        setError(data.error ?? 'Wrong PIN')
+        setTimeout(() => { setPin(''); setShake(false) }, 700)
+        return
+      }
+      if (!hasOfflinePin(selected.id)) { setError('No connection — this terminal must be unlocked online once first'); setPin(''); return }
+      const offlineVessel = await checkPinOffline<Vessel>(selected.id, next)
+      if (offlineVessel) { onSuccess(offlineVessel); return }
       setShake(true)
-      setError(data.error ?? 'Wrong PIN')
+      setError('Wrong PIN')
       setTimeout(() => { setPin(''); setShake(false) }, 700)
-    } catch {
-      setError('No connection'); setPin('')
     } finally { setChecking(false) }
   }
 
@@ -283,9 +303,9 @@ function TripSelect({ vessel, onSelect, onBack, branding }: { vessel: Vessel; on
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/cashier/trips?yachtId=${vessel.id}`).then(r => r.json()).then(d => {
+    fetchCached<Trip[]>(`/api/cashier/trips?yachtId=${vessel.id}`, cacheKey('trips', vessel.id), []).then(({ data: d }) => {
       setTrips(Array.isArray(d) ? d : [])
-    }).finally(() => setLoading(false))
+    }).catch(() => setTrips(readCache<Trip[]>(cacheKey('trips', vessel.id), []))).finally(() => setLoading(false))
   }, [vessel.id])
 
   return (
@@ -334,7 +354,7 @@ function TripSelect({ vessel, onSelect, onBack, branding }: { vessel: Vessel; on
 }
 
 // ─── RECEIPT ──────────────────────────────────────────────────────────────────
-function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onDone: () => void }) {
+function ReceiptView({ sale, vessel, onDone, pending }: { sale: Sale; vessel: Vessel; onDone: () => void; pending: boolean }) {
   const [emailOpen, setEmailOpen] = useState(false)
   const [email, setEmail] = useState(sale.guest?.customer?.email ?? '')
   const [sending, setSending] = useState(false)
@@ -405,10 +425,11 @@ function ReceiptView({ sale, vessel, onDone }: { sale: Sale; vessel: Vessel; onD
 
         <div className="no-print" style={{ display: 'flex', gap: 8, marginBottom: emailOpen ? 12 : 0 }}>
           <button onClick={() => window.print()} style={{ ...S.btnGhost, flex: 1, justifyContent: 'center', padding: '11px 10px' }}><Printer size={14} /> Print</button>
-          <button onClick={() => setEmailOpen(o => !o)} style={{ ...S.btnGhost, flex: 1, justifyContent: 'center', padding: '11px 10px' }}><Mail size={14} /> Email</button>
+          <button onClick={() => setEmailOpen(o => !o)} disabled={pending} title={pending ? 'Available once this sale has synced' : undefined} style={{ ...S.btnGhost, flex: 1, justifyContent: 'center', padding: '11px 10px', opacity: pending ? 0.45 : 1, cursor: pending ? 'not-allowed' : 'pointer' }}><Mail size={14} /> Email</button>
         </div>
+        {pending && <div className="no-print" style={{ fontSize: 11.5, color: '#b45309', textAlign: 'center', marginTop: 8, marginBottom: 4 }}>Saved on this tablet — syncs when back in signal. Email receipt after it syncs.</div>}
 
-        {emailOpen && (
+        {emailOpen && !pending && (
           <div className="no-print" style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 6 }}>
               <input value={email} onChange={e => { setEmail(e.target.value); setEmailStatus('idle') }} placeholder="guest@email.com" style={{ ...S.input, fontSize: 13 }} />
@@ -599,6 +620,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 15, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestName ?? 'Guest'}</div>
                     {b.employeeId && <StaffTag />}
+                    {b.pending && <PendingTag />}
                   </div>
                   <div style={{ ...S.mono, fontSize: 20, fontWeight: 800, color: GOLD_DARK }}>{fmt(b.total)}</div>
                   <div style={{ fontSize: 11.5, color: '#8a8378' }}>{b.items.length} item{b.items.length !== 1 ? 's' : ''} · opened {new Date(b.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -619,7 +641,7 @@ function BillsPage({ sales, reload, setActiveSaleId, vessel, trip, staffList, se
                 {closedBills.map(b => (
                   <div key={b.id} style={{ ...S.card, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: '#7a7468', display: 'flex', alignItems: 'center', gap: 6 }}>{b.guestName ?? 'Guest'}{b.employeeId && <StaffTag />}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: '#7a7468', display: 'flex', alignItems: 'center', gap: 6 }}>{b.guestName ?? 'Guest'}{b.employeeId && <StaffTag />}{b.pending && <PendingTag />}</div>
                       <div style={{ fontSize: 11, color: '#b3ab9c', marginTop: 2 }}>{b.payMethod}</div>
                     </div>
                     <div style={{ ...S.mono, fontWeight: 700, fontSize: 15, color: '#8a8378' }}>{fmt(chargedTotal(b))}</div>
@@ -783,8 +805,133 @@ const PILL_TONES = [
 ]
 const pillTone = (id: string) => PILL_TONES[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0) % PILL_TONES.length]
 
+// ─── OFFLINE OVERLAY ──────────────────────────────────────────────────────────
+// Every sale action is queued in the outbox (src/lib/cashier-offline.ts) and shown right away by
+// replaying the queue on top of the last sales list the server sent — so the tablet looks the same
+// whether or not it currently has signal.
+type QueuedLine = CartLine & { id: string }
+interface MenuPayload { items?: MenuItem[]; packages?: PackageEntry[]; recipes?: RecipeEntry[]; categories?: PosCategoryLite[]; discounts?: DiscountEntry[] }
+
+const sumLines = (lines: { price: number; qty: number }[]) => lines.reduce((s, l) => s + Number(l.price) * Number(l.qty), 0)
+const withLineIds = (cart: CartLine[]): QueuedLine[] => cart.map(c => ({ ...c, id: newId() }))
+const toSaleItems = (lines: QueuedLine[], round: number): SaleItem[] =>
+  lines.map(l => ({ id: l.id, itemId: l.kind === 'item' ? l.itemId : null, packageId: l.packageId, name: l.name, unit: l.unit, price: l.price, qty: l.qty, round }))
+
+function applyOp(sales: Sale[], op: OutboxOp): Sale[] {
+  const b = op.body as {
+    locationId?: string; bookingId?: string | null; guestId?: string | null; guestName?: string | null
+    employeeId?: string | null; employeeName?: string | null; complimentaryReason?: string | null
+    items?: QueuedLine[]; payMethod?: string; closeImmediately?: boolean
+    discountId?: string | null; discount?: Pick<DiscountEntry, 'name' | 'type' | 'value'>
+  }
+  if (op.kind === 'create') {
+    // Already on the server (synced, then re-listed) — the queued create is a no-op there too.
+    if (sales.some(s => s.id === op.saleId)) return sales.map(s => s.id === op.saleId ? { ...s, pending: true } : s)
+    const lines = b.items ?? []
+    const closed = !!b.closeImmediately
+    return [{
+      id: op.saleId, yachtId: op.yachtId, locationId: b.locationId ?? '', bookingId: b.bookingId ?? null, guestId: b.guestId ?? null,
+      guestName: b.guestName ?? null, status: closed ? 'closed' : 'open', payMethod: closed ? (b.payMethod ?? null) : null,
+      total: sumLines(lines), discountId: null, discountName: null, discountAmount: 0,
+      employeeId: b.employeeId ?? null, employeeName: b.employeeName ?? null, complimentaryReason: b.complimentaryReason ?? null,
+      closedAt: closed ? op.at : null, createdAt: op.at, items: toSaleItems(lines, 1), booking: null, guest: null, pending: true,
+    }, ...sales]
+  }
+  return sales.map(s => {
+    if (s.id !== op.saleId) return s
+    if (op.kind === 'add_items') {
+      const lines = b.items ?? []
+      if (lines.some(l => s.items.some(i => i.id === l.id))) return { ...s, pending: true }
+      const round = s.items.reduce((m, i) => Math.max(m, i.round), 0) + 1
+      return { ...s, items: [...s.items, ...toSaleItems(lines, round)], total: s.total + sumLines(lines), pending: true }
+    }
+    if (s.status === 'closed') return { ...s, pending: true }
+    const d = b.discount
+    const discountAmount = d ? Math.max(0, Math.min(d.type === 'PERCENT' ? s.total * (d.value / 100) : d.value, s.total)) : 0
+    return {
+      ...s, status: 'closed' as const, payMethod: b.payMethod ?? null, closedAt: op.at,
+      discountId: b.discountId ?? null, discountName: d?.name ?? null, discountAmount,
+      ...(b.employeeId ? { employeeId: b.employeeId, employeeName: b.employeeName ?? null } : {}),
+      ...(b.payMethod === 'Complimentary' ? { complimentaryReason: b.complimentaryReason ?? null } : {}),
+      pending: true,
+    }
+  })
+}
+
+/** Stock the queued (not yet synced) sales will take, so offline "x left" counts stay honest. */
+function pendingUsage(ops: OutboxOp[]) {
+  const used = new Map<string, number>()
+  for (const op of ops) {
+    for (const l of ((op.body as { items?: QueuedLine[] }).items ?? [])) {
+      const key = l.kind === 'recipe' ? `recipe:${l.recipeId}` : l.kind === 'item' ? `item:${l.itemId}` : null
+      if (key) used.set(key, (used.get(key) ?? 0) + Number(l.qty))
+    }
+  }
+  return used
+}
+
+const OP_LABEL: Record<OutboxOp['kind'], string> = { create: 'New sale / tab', add_items: 'Add items', close: 'Settle tab' }
+
+/** Queue status + manual retry/discard for anything the server rejected. */
+function SyncPanel({ ops, sales, offline, syncing, onSync, onClose }: {
+  ops: OutboxOp[]; sales: Sale[]; offline: boolean; syncing: boolean; onSync: () => void; onClose: () => void
+}) {
+  const discard = (op: OutboxOp) => {
+    if (!window.confirm('Discard this entry? It will never reach the ERP.')) return
+    // Later entries of the same sale depend on this one — drop them too.
+    const idx = ops.findIndex(o => o.opId === op.opId)
+    ops.slice(idx).filter(o => o.saleId === op.saleId).forEach(o => discardOp(o.opId))
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,37,47,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '85vh', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 40px rgba(26,37,47,0.2)' }}>
+        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #f1ede2', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 17, color: INK }}>Sync queue</div>
+            <div style={{ fontSize: 12.5, color: '#8a8378', marginTop: 3 }}>
+              {offline ? 'No signal — entries are saved on this tablet and sync automatically.' : ops.length ? 'Sending to the ERP…' : 'Everything is synced.'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer' }}><X size={20} /></button>
+        </div>
+        <div style={{ padding: '10px 22px', overflowY: 'auto', flex: 1 }}>
+          {ops.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px 0', color: '#b3ab9c', fontSize: 13 }}>Nothing waiting to sync.</div>
+          ) : ops.map(op => {
+            const sale = sales.find(x => x.id === op.saleId)
+            return (
+              <div key={op.opId} style={{ padding: '10px 0', borderBottom: '1px solid #f1ede2' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13.5 }}>
+                  <span style={{ fontWeight: 600, color: INK }}>{OP_LABEL[op.kind]} · {sale?.guestName ?? 'Guest'}</span>
+                  <span style={{ ...S.mono, fontSize: 12, color: '#8a8378' }}>{new Date(op.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {op.error ? (
+                  <>
+                    <div style={{ fontSize: 12, color: '#dc6868', marginTop: 4, display: 'flex', gap: 5, alignItems: 'flex-start' }}><AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {op.error}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button onClick={() => { retryOp(op.opId); onSync() }} style={{ ...S.btnGhost, padding: '5px 12px', fontSize: 12 }}><RefreshCw size={12} /> Retry</button>
+                      <button onClick={() => discard(op)} style={{ ...S.btnGhost, padding: '5px 12px', fontSize: 12, color: '#dc6868' }}><Trash2 size={12} /> Discard</button>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#b45309', marginTop: 4 }}>Waiting to sync</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ padding: '14px 22px 18px', borderTop: '1px solid #f1ede2' }}>
+          <button onClick={onSync} disabled={syncing} style={{ ...S.goldBtn, width: '100%', padding: '11px 16px', borderRadius: 10, fontSize: 13.5, opacity: syncing ? 0.6 : 1 }}>
+            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync now
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── MAIN CASHIER APP ─────────────────────────────────────────────────────────
-function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel; trip: Trip | null; onBack: () => void; branding: Branding | null; locked: boolean }) {
+function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel: Vessel; trip: Trip | null; onBack: () => void; onLock: () => void; branding: Branding | null; locked: boolean }) {
   const isCompact = useIsCompact()
   const [cartOpen, setCartOpen]   = useState(false)
   const [section, setSection]     = useState('sales')
@@ -798,17 +945,18 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
   const [payMethod, setPayMethod] = useState('Cash')
   const [compStaff, setCompStaff] = useState<StaffMember | null>(null)
   const [compReason, setCompReason] = useState('')
-  const [sales, setSales]         = useState<Sale[]>([])
-  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [serverSales, setServerSales] = useState<Sale[]>(() => readCache<Sale[]>(cacheKey('sales', vessel.id), []))
+  const [ops, setOps]             = useState<OutboxOp[]>(() => readOutbox())
+  const [offline, setOffline]     = useState(false)
+  const [syncing, setSyncing]     = useState(false)
+  const [syncOpen, setSyncOpen]   = useState(false)
+  const [staffList, setStaffList] = useState<StaffMember[]>(() => readCache<StaffMember[]>(cacheKey('staff', vessel.id), []))
   const [activeSaleId, setActiveSaleId] = useState<string | null>(null)
   const [settleSaleId, setSettleSaleId] = useState<string | null>(null)
   const [receipt, setReceipt]     = useState<Sale | null>(null)
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-  const [packages, setPackages]   = useState<PackageEntry[]>([])
-  const [recipes, setRecipes]     = useState<RecipeEntry[]>([])
-  const [posCategories, setPosCategories] = useState<PosCategoryLite[]>([])
-  const [discounts, setDiscounts] = useState<DiscountEntry[]>([])
-  const [busy, setBusy]           = useState(false)
+  const [menu, setMenu]           = useState<MenuPayload | null>(() => readCache<MenuPayload | null>(cacheKey('menu', vessel.id), null))
+  // Every action is queued locally and returns instantly — nothing to wait on any more.
+  const busy = false
   const [now, setNow]             = useState(() => new Date())
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30_000); return () => clearInterval(t) }, [])
 
@@ -816,27 +964,75 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
   // onBack is a fresh closure each render — read it through a ref so the loaders stay stable.
   const onBackRef = useRef(onBack)
   useEffect(() => { onBackRef.current = onBack })
-  const authed = useCallback((r: Response) => { if (r.status === 401) onBackRef.current(); return r.json() }, [])
+  const onLoadError = useCallback((e: unknown) => { if (e instanceof CashierAuthError) onBackRef.current() }, [])
+
+  useEffect(() => subscribeOutbox(() => setOps(readOutbox())), [])
+  const vesselOps = useMemo(() => ops.filter(o => o.yachtId === vessel.id), [ops, vessel.id])
+  const sales = useMemo(() => vesselOps.reduce(applyOp, serverSales), [vesselOps, serverSales])
+
+  const usage = useMemo(() => pendingUsage(vesselOps), [vesselOps])
+  const menuItems = useMemo(() => (menu?.items ?? []).map(m => ({ ...m, stock: m.stock - (usage.get(`item:${m.id}`) ?? 0) })), [menu, usage])
+  const recipes   = useMemo(() => (menu?.recipes ?? []).map(r => ({ ...r, stock: r.stock - (usage.get(`recipe:${r.id}`) ?? 0) })), [menu, usage])
+  const packages      = useMemo(() => menu?.packages ?? [], [menu])
+  const posCategories = useMemo(() => menu?.categories ?? [], [menu])
+  const discounts     = useMemo(() => menu?.discounts ?? [], [menu])
 
   const loadMenu = useCallback(() => {
-    fetch(`/api/cashier/menu?yachtId=${vessel.id}`).then(authed).then(d => {
-      setMenuItems(Array.isArray(d.items) ? d.items : [])
-      setPackages(Array.isArray(d.packages) ? d.packages : [])
-      setRecipes(Array.isArray(d.recipes) ? d.recipes : [])
-      setPosCategories(Array.isArray(d.categories) ? d.categories : [])
-      setDiscounts(Array.isArray(d.discounts) ? d.discounts : [])
-    })
-  }, [vessel.id, authed])
+    fetchCached<MenuPayload | null>(`/api/cashier/menu?yachtId=${vessel.id}`, cacheKey('menu', vessel.id), null)
+      .then(({ data, fromCache }) => { if (data) setMenu(data); setOffline(fromCache) }).catch(onLoadError)
+  }, [vessel.id, onLoadError])
 
   const loadSales = useCallback(() => {
-    fetch(`/api/cashier/sales?yachtId=${vessel.id}`).then(authed).then(d => setSales(Array.isArray(d) ? d : []))
-  }, [vessel.id, authed])
+    fetchCached<Sale[]>(`/api/cashier/sales?yachtId=${vessel.id}`, cacheKey('sales', vessel.id), [])
+      .then(({ data, fromCache }) => { if (!fromCache && Array.isArray(data)) setServerSales(data); setOffline(fromCache) }).catch(onLoadError)
+  }, [vessel.id, onLoadError])
 
   const loadStaff = useCallback(() => {
-    fetch(`/api/cashier/staff?yachtId=${vessel.id}`).then(r => r.json()).then(d => setStaffList(Array.isArray(d) ? d : []))
+    fetchCached<StaffMember[]>(`/api/cashier/staff?yachtId=${vessel.id}`, cacheKey('staff', vessel.id), [])
+      .then(({ data }) => setStaffList(Array.isArray(data) ? data : [])).catch(() => {})
   }, [vessel.id])
 
-  useEffect(() => { loadMenu(); loadSales(); loadStaff() }, [loadMenu, loadSales, loadStaff])
+  // A synced sale replaces its offline copy straight away (and an open receipt picks up the
+  // server's booking code / guest email), before the next full list refresh.
+  const upsertSale = useCallback((sale: Sale) => {
+    setServerSales(prev => {
+      const next = prev.some(x => x.id === sale.id) ? prev.map(x => x.id === sale.id ? sale : x) : [sale, ...prev]
+      writeCache(cacheKey('sales', vessel.id), next)
+      return next
+    })
+    setReceipt(r => r && r.id === sale.id ? sale : r)
+  }, [vessel.id])
+
+  const sync = useCallback(async () => {
+    if (!readOutbox().some(o => o.yachtId === vessel.id && !o.error)) return
+    setSyncing(true)
+    try {
+      const r = await flushOutbox(vessel.id, sale => { if (sale && typeof sale === 'object' && 'id' in sale) upsertSale(sale as Sale) })
+      if (r.status === 'unauthorized') { onBackRef.current(); return }
+      setOffline(r.status === 'offline')
+      if (r.synced > 0) { loadSales(); loadMenu() }
+    } finally { setSyncing(false) }
+  }, [vessel.id, upsertSale, loadSales, loadMenu])
+
+  useEffect(() => {
+    loadMenu(); loadSales(); loadStaff()
+    const t = setTimeout(sync, 0) // push anything queued from a previous session
+    return () => clearTimeout(t)
+  }, [loadMenu, loadSales, loadStaff, sync])
+
+  // Keep trying while out of signal; the browser's 'online' event is a hint, not a guarantee at sea.
+  const offlineRef = useRef(offline)
+  useEffect(() => { offlineRef.current = offline }, [offline])
+  useEffect(() => {
+    const tick = () => {
+      if (readOutbox().some(o => o.yachtId === vessel.id && !o.error)) sync()
+      else if (offlineRef.current) { loadSales(); loadMenu() }
+    }
+    const t = setInterval(tick, 20_000)
+    const onOnline = () => { sync(); loadSales(); loadMenu(); loadStaff() }
+    window.addEventListener('online', onOnline)
+    return () => { clearInterval(t); window.removeEventListener('online', onOnline) }
+  }, [vessel.id, sync, loadSales, loadMenu, loadStaff])
 
   const catalog = useMemo<CatalogEntry[]>(() => [...recipes, ...menuItems, ...packages], [recipes, menuItems, packages])
   const categoryTabs = useMemo(() =>
@@ -890,94 +1086,68 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
   // Complimentary always needs a responsible staff member + reason — either the buyer themselves (if buying as staff) or a separately picked staff.
   const compReady = payMethod !== 'Complimentary' || !!(buyerType === 'staff' ? selectedStaff : compStaff) && !!compReason.trim()
 
-  const addToBill = async () => {
+  const addToBill = () => {
     if (!cart.length || !activeSaleId) return
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/cashier/sales/${activeSaleId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add_items', items: cart }),
-      })
-      if (res.ok) { clearCart(); setCartOpen(false); loadSales(); loadMenu() }
-    } finally { setBusy(false) }
+    enqueue({ yachtId: vessel.id, saleId: activeSaleId, kind: 'add_items', body: { items: withLineIds(cart) } })
+    clearCart(); setCartOpen(false); sync()
   }
 
-  const closeSale = async (sale: Sale, pm: string, discountId: string | null, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => {
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/cashier/sales/${sale.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'close', payMethod: pm, discountId, ...extra }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setActiveSaleId(null)
-        setSettleSaleId(null)
-        setCartOpen(false)
-        setReceipt(updated)
-        loadSales()
-      }
-    } finally { setBusy(false) }
+  const closeSale = (sale: Sale, pm: string, discountId: string | null, extra?: { employeeId: string; employeeName: string | null; complimentaryReason: string }) => {
+    // The discount as this tablet sees it rides along — if it no longer validates at sync time the
+    // server keeps it but flags the sale for review (POS Billing History) instead of rejecting it.
+    const d = discountId ? discounts.find(x => x.id === discountId) : undefined
+    const op = enqueue({
+      yachtId: vessel.id, saleId: sale.id, kind: 'close',
+      body: { payMethod: pm, discountId, discount: d ? { name: d.name, type: d.type, value: d.value } : undefined, ...extra },
+    })
+    setActiveSaleId(null)
+    setSettleSaleId(null)
+    setCartOpen(false)
+    setReceipt(applyOp([sale], op)[0])
+    sync()
   }
 
-  const openNewBill = async () => {
+  const openNewBill = () => {
     if (buyerType === 'staff' ? !selectedStaff : (!trip && !walkInName.trim())) return
-    setBusy(true)
-    try {
-      const res = await fetch('/api/cashier/sales', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yachtId: vessel.id, locationId: vessel.locationId, ...buyerFields() }),
-      })
-      if (res.ok) {
-        const sale = await res.json()
-        setSelectedGuest(null); setWalkInName(''); setSelectedStaff(null)
-        setActiveSaleId(sale.id)
-        loadSales()
-      }
-    } finally { setBusy(false) }
+    const saleId = newId()
+    enqueue({ yachtId: vessel.id, saleId, kind: 'create', body: { yachtId: vessel.id, locationId: vessel.locationId, ...buyerFields() } })
+    setSelectedGuest(null); setWalkInName(''); setSelectedStaff(null)
+    setActiveSaleId(saleId)
+    sync()
   }
 
   const createBillFor = async (guest: TripGuest | null, walkInLabel: string, employee?: StaffMember | null) => {
-    const res = await fetch('/api/cashier/sales', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    enqueue({
+      yachtId: vessel.id, saleId: newId(), kind: 'create',
+      body: {
         yachtId: vessel.id, locationId: vessel.locationId,
         bookingId: employee ? null : (guest?.bookingId ?? null),
         guestId: employee ? null : (guest?.id ?? null),
         guestName: employee ? employee.fullName : (guest ? guest.name : (walkInLabel.trim() || null)),
         employeeId: employee?.id ?? null, employeeName: employee?.fullName ?? null,
-      }),
+      },
     })
-    if (res.ok) loadSales()
-    return res.ok
+    sync()
+    return true
   }
 
-  const recordDirectSale = async () => {
+  const recordDirectSale = () => {
     if (!cart.length || !compReady) return
-    setBusy(true)
-    try {
-      const buyer = buyerFields()
-      const compFields = payMethod === 'Complimentary'
-        ? { employeeId: buyer.employeeId ?? compStaff?.id ?? null, employeeName: buyer.employeeName ?? compStaff?.fullName ?? null, complimentaryReason: compReason.trim() || null }
-        : {}
-      const res = await fetch('/api/cashier/sales', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          yachtId: vessel.id, locationId: vessel.locationId,
-          ...buyer, ...compFields, items: cart, payMethod, closeImmediately: true,
-        }),
-      })
-      if (res.ok) {
-        const sale = await res.json()
-        setReceipt(sale)
-        clearCart()
-        setCartOpen(false)
-        loadSales(); loadMenu()
-      }
-    } finally { setBusy(false) }
+    const buyer = buyerFields()
+    const compFields = payMethod === 'Complimentary'
+      ? { employeeId: buyer.employeeId ?? compStaff?.id ?? null, employeeName: buyer.employeeName ?? compStaff?.fullName ?? null, complimentaryReason: compReason.trim() || null }
+      : {}
+    const op = enqueue({
+      yachtId: vessel.id, saleId: newId(), kind: 'create',
+      body: { yachtId: vessel.id, locationId: vessel.locationId, ...buyer, ...compFields, items: withLineIds(cart), payMethod, closeImmediately: true },
+    })
+    setReceipt(applyOp([], op)[0])
+    clearCart()
+    setCartOpen(false)
+    sync()
   }
 
-  if (receipt) return <ReceiptView sale={receipt} vessel={vessel} onDone={() => setReceipt(null)} />
+  if (receipt) return <ReceiptView sale={receipt} vessel={vessel} onDone={() => setReceipt(null)} pending={vesselOps.some(o => o.saleId === receipt.id)} />
   if (settleSale) return <SettleScreen sale={settleSale} vessel={vessel} staffList={staffList} discounts={discounts} onBack={() => setSettleSaleId(null)} onConfirm={(pm, discountId, extra) => closeSale(settleSale, pm, discountId, extra)} busy={busy} />
 
   const itemCount = cart.reduce((s, i) => s + i.qty, 0)
@@ -1165,7 +1335,21 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
                 )
               })}
             </div>
-            <button onClick={onBack} style={{ ...pill, padding: '0 6px 0 14px', cursor: 'pointer', color: '#dc4c4c' }}>
+            {(() => {
+              const failed = vesselOps.filter(o => o.error).length
+              const waiting = vesselOps.length - failed
+              if (!failed && !waiting && !offline) return null
+              const tone = failed ? { bg: '#fdecec', fg: '#dc4c4c' } : { bg: '#fef3c7', fg: '#b45309' }
+              return (
+                <button onClick={() => setSyncOpen(true)} title="Sync queue" style={{ ...pill, padding: '0 14px 0 6px', cursor: 'pointer', color: tone.fg }}>
+                  <span style={{ ...pillIcon, background: tone.bg }}>
+                    {failed ? <AlertTriangle size={13} color={tone.fg} /> : syncing ? <Loader2 size={13} color={tone.fg} className="animate-spin" /> : offline ? <CloudOff size={13} color={tone.fg} /> : <RefreshCw size={13} color={tone.fg} />}
+                  </span>
+                  {failed ? `${failed} failed` : waiting ? `${waiting} unsynced` : 'Offline'}
+                </button>
+              )
+            })()}
+            <button onClick={onLock} style={{ ...pill, padding: '0 6px 0 14px', cursor: 'pointer', color: '#dc4c4c' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc4c4c' }} /> {locked ? 'Lock' : 'Change Vessel'}
               <span style={{ ...pillIcon, background: '#fdecec' }}><Power size={13} color="#dc4c4c" /></span>
             </button>
@@ -1255,7 +1439,7 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
 
           {section === 'bills' && (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <BillsPage sales={sales} reload={loadSales} setActiveSaleId={setActiveSaleId} vessel={vessel} trip={trip} staffList={staffList} setSection={setSection} settleBill={b => setSettleSaleId(b.id)} createBill={createBillFor} />
+              <BillsPage sales={sales} reload={() => { sync(); loadSales() }} setActiveSaleId={setActiveSaleId} vessel={vessel} trip={trip} staffList={staffList} setSection={setSection} settleBill={b => setSettleSaleId(b.id)} createBill={createBillFor} />
             </div>
           )}
         </div>
@@ -1263,6 +1447,8 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
         {/* ── RIGHT: order panel (desktop) ── */}
         {section === 'sales' && !isCompact && <div style={{ borderLeft: '1px solid #f1ede2', minHeight: 0 }}>{cartPanel}</div>}
       </div>
+
+      {syncOpen && <SyncPanel ops={vesselOps} sales={sales} offline={offline} syncing={syncing} onSync={sync} onClose={() => setSyncOpen(false)} />}
 
       {/* Compact: full-screen order drawer + floating cart bar */}
       {section === 'sales' && isCompact && cartOpen && <div style={{ position: 'fixed', inset: 0, zIndex: 50 }}>{cartPanel}</div>}
@@ -1287,11 +1473,43 @@ function CashierApp({ vessel, trip, onBack, branding, locked }: { vessel: Vessel
 /** vesselSlug comes from a per-vessel link (/cashier/samara1, or cashier.<domain>/samara1 via middleware). */
 export default function Cashier({ vesselSlug }: { vesselSlug?: string }) {
   const branding = useBranding()
+  const [ready, setReady]   = useState(false)
   const [vessel, setVessel] = useState<Vessel | null>(null)
   const [trip, setTrip]     = useState<Trip | null | undefined>(undefined) // undefined = not chosen yet
+  // Lock only covers the screen — the terminal stays signed in (cookie + offline queue), so it can
+  // be unlocked again with the PIN even without signal.
+  const [locked, setLocked] = useState(false)
 
-  if (!vessel) return <SignInScreen onSuccess={v => { setVessel(v); setTrip(undefined) }} branding={branding} vesselSlug={vesselSlug} />
-  if (trip === undefined) return <TripSelect vessel={vessel} onSelect={t => setTrip(t)} onBack={() => { fetch('/api/cashier/logout', { method: 'POST' }).catch(() => {}); setVessel(null) }} branding={branding} />
-  const signOut = () => { fetch('/api/cashier/logout', { method: 'POST' }).catch(() => {}); setVessel(null); setTrip(undefined) }
-  return <CashierApp vessel={vessel} trip={trip} onBack={signOut} branding={branding} locked={!!vesselSlug} />
+  // Resume where the terminal left off (reload, app restart, tablet woke up offline).
+  // Deferred a tick: localStorage only exists in the browser, and the server-rendered placeholder must match.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const saved = loadSession<Vessel, Trip>()
+      if (saved && (!vesselSlug || cashierSlug(saved.vessel.name) === vesselSlug.toLowerCase())) {
+        setVessel(saved.vessel)
+        setTrip(saved.tripChosen ? saved.trip : undefined)
+        setLocked(saved.locked)
+      }
+      setReady(true)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [vesselSlug])
+
+  useEffect(() => {
+    if (ready) saveSession(vessel ? { vessel, trip: trip ?? null, tripChosen: trip !== undefined, locked } : null)
+  }, [ready, vessel, trip, locked])
+
+  const signOut = () => { fetch('/api/cashier/logout', { method: 'POST' }).catch(() => {}); setVessel(null); setTrip(undefined); setLocked(false) }
+
+  if (!ready) return <div style={S.page} />
+  if (!vessel || locked) {
+    return <SignInScreen branding={branding} vesselSlug={vesselSlug} onSuccess={v => {
+      // Unlocking the same vessel keeps the running trip; a different vessel starts over.
+      if (!(vessel && v.id === vessel.id)) setTrip(undefined)
+      setVessel(v)
+      setLocked(false)
+    }} />
+  }
+  if (trip === undefined) return <TripSelect vessel={vessel} onSelect={t => setTrip(t)} onBack={signOut} branding={branding} />
+  return <CashierApp vessel={vessel} trip={trip} onBack={signOut} onLock={vesselSlug ? () => setLocked(true) : signOut} branding={branding} locked={!!vesselSlug} />
 }

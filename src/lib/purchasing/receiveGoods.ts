@@ -3,13 +3,13 @@ import { notifyByRole } from '@/lib/notify-purchasing'
 import { movingAverageCost } from '@/lib/valuation'
 import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
+import { nextSeq } from '@/lib/purchasing/docNumber'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
 export async function generateGrNumber(db: Db) {
   const prefix = `GR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
-  const last = await db.goodsReceipt.findFirst({ where: { grNumber: { startsWith: prefix } }, orderBy: { grNumber: 'desc' }, select: { grNumber: true } })
-  const seq = last ? (parseInt(last.grNumber.split('-').pop() ?? '0') || 0) + 1 : 1
+  const seq = nextSeq((await db.goodsReceipt.findMany({ where: { grNumber: { startsWith: prefix } }, select: { grNumber: true } })).map(r => r.grNumber))
   return `${prefix}${String(seq).padStart(3, '0')}`
 }
 

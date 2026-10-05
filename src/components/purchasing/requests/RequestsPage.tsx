@@ -1344,6 +1344,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="truncate min-w-0">
                       <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
+                      {r.requestedByEmployee && r.createdBy?.name && r.createdBy.name !== r.requestedByEmployee.fullName && <> · by {r.createdBy.name}</>}
                       {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
                     </span>
                     <span className="shrink-0 tabular-nums">

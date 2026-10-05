@@ -111,6 +111,8 @@ export default async function middleware(req: NextRequest) {
   const cashierHost = process.env.CASHIER_HOST || 'cashier.samarayachting.com'
   if (hostname === cashierHost) {
     if (pathname === '/api/cashier' || pathname.startsWith('/api/cashier/') || pathname.startsWith('/cashier/')) return NextResponse.next()
+    // The terminal's offline service worker (public/cashier-sw.js) — must not be read as a vessel slug.
+    if (pathname === '/cashier-sw.js') return NextResponse.next()
     const segs = pathname.split('/').filter(Boolean)
     if (segs.length !== 1 || pathname.startsWith('/api/') || segs[0] === 'cashier') return new NextResponse('Not found', { status: 404 })
     return NextResponse.rewrite(new URL(`/cashier/${segs[0]}`, req.url))
