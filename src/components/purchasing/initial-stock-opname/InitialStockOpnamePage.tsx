@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search } from 'lucide-react'
+import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import InventoryQuickAdd from './InventoryQuickAdd'
 
@@ -152,6 +152,86 @@ function AddItemModal({ opnameId, existingItemIds, onClose, onAdded }: {
   )
 }
 
+function EditItemModal({ opnameId, row, onClose, onSaved }: {
+  opnameId: string; row: OpnameItem; onClose: () => void; onSaved: (item: OpnameItem) => void
+}) {
+  const [name, setName] = useState(row.item?.name ?? row.itemName)
+  const [category, setCategory] = useState(row.item?.category ?? '')
+  const [baseUnit, setBaseUnit] = useState(row.item?.baseUnit ?? '')
+  const [purchaseUnit, setPurchaseUnit] = useState(row.item?.purchaseUnit ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit() {
+    setError('')
+    setSaving(true)
+    const res = await fetch(`/api/purchasing/initial-stock-opname/${opnameId}/items/${row.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, category, baseUnit, purchaseUnit }),
+    })
+    if (res.ok) {
+      onSaved(await res.json())
+      onClose()
+    } else {
+      const err = await res.json()
+      setError(err.error ?? 'Gagal menyimpan produk')
+    }
+    setSaving(false)
+  }
+
+  const canSubmit = row.item
+    ? !!(name.trim() && category.trim() && baseUnit.trim() && purchaseUnit.trim())
+    : !!name.trim()
+  const inputCls = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]'
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-6 border-b">
+          <div>
+            <h3 className="font-semibold text-lg">Edit Produk</h3>
+            {row.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{row.item.sku}</p>}
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Nama Produk *</label>
+            <input value={name} onChange={e => setName(e.target.value)} className={inputCls} />
+          </div>
+          {row.item && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Kategori *</label>
+                <input value={category} onChange={e => setCategory(e.target.value)} className={inputCls} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Purchase Unit *</label>
+                  <input value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)} placeholder="e.g. Dus" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Base Unit *</label>
+                  <input value={baseUnit} onChange={e => setBaseUnit(e.target.value)} placeholder="e.g. Pcs" className={inputCls} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Perubahan ini mengubah data produk di katalog (Items & Pricing). Stok diubah langsung di tabel.</p>
+            </>
+          )}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Batal</button>
+          <button onClick={submit} disabled={!canSubmit || saving}
+            className="px-4 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">
+            {saving ? 'Menyimpan...' : 'Simpan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function InitialStockOpnamePage() {
   const { data: session } = useSession()
   const currentUserId = (session?.user as { id?: string })?.id
@@ -165,6 +245,7 @@ export default function InitialStockOpnamePage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [addItemOpen, setAddItemOpen] = useState(false)
+  const [editRow, setEditRow] = useState<OpnameItem | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [createMode, setCreateMode] = useState<'STOCK' | 'INVENTORY'>('STOCK')
@@ -207,7 +288,9 @@ export default function InitialStockOpnamePage() {
 
   function openCreate() {
     setCreateMode('STOCK')
-    setCreateLocationId(eligibleLocations[0]?.id ?? '')
+    // No auto-pick: list order and the grouped dropdown order differ, so defaulting to
+    // eligibleLocations[0] could submit a location other than the one shown.
+    setCreateLocationId('')
     setCreateRooms([]); setCreateRoomId(''); setAddingRoom(false); setNewRoomName('')
     setCreateOpen(true)
   }
@@ -226,13 +309,8 @@ export default function InitialStockOpnamePage() {
   function switchCreateMode(mode: 'STOCK' | 'INVENTORY') {
     setCreateMode(mode)
     setAddingRoom(false); setNewRoomName('')
-    if (mode === 'STOCK') {
-      setCreateLocationId(eligibleLocations[0]?.id ?? '')
-    } else {
-      const locationId = locations[0]?.id ?? ''
-      setCreateLocationId(locationId)
-      loadRoomsForLocation(locationId)
-    }
+    setCreateLocationId('')
+    setCreateRooms([]); setCreateRoomId('')
   }
 
   function changeCreateLocation(locationId: string) {
@@ -437,7 +515,10 @@ export default function InitialStockOpnamePage() {
                     </td>
                     {!readOnly && (
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => removeItem(ci.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button onClick={() => setEditRow(ci)} title="Edit produk" className="text-muted-foreground hover:text-foreground"><Pencil className="h-4 w-4" /></button>
+                          <button onClick={() => removeItem(ci.id)} title="Hapus" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -453,6 +534,15 @@ export default function InitialStockOpnamePage() {
             existingItemIds={existingItemIds}
             onClose={() => setAddItemOpen(false)}
             onAdded={item => setDetail(d => d ? ({ ...d, items: [...(d.items ?? []), item] }) : null)}
+          />
+        )}
+        {editRow && (
+          <EditItemModal
+            opnameId={detail.id}
+            row={editRow}
+            onClose={() => setEditRow(null)}
+            // Keep the qty the user may have typed but not saved yet — the PATCH only touches product fields.
+            onSaved={updated => setDetail(d => d ? ({ ...d, items: d.items?.map(i => i.id === updated.id ? { ...updated, countedQty: i.countedQty } : i) }) : null)}
           />
         )}
       </div>
@@ -548,6 +638,7 @@ export default function InitialStockOpnamePage() {
                 ) : (
                   <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
                     value={createLocationId} onChange={e => changeCreateLocation(e.target.value)}>
+                    <option value="" disabled>— Pilih lokasi —</option>
                     {renderLocationOptions(createMode === 'STOCK' ? eligibleLocations : locations, { renderLabel: l => `${l.name} (${l.type})` })}
                   </select>
                 )}

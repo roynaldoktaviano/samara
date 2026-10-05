@@ -105,8 +105,10 @@ export default async function middleware(req: NextRequest) {
   // Cashier is served on its own subdomain (CASHIER_HOST, e.g. cashier.samarayachting.com) with
   // one clean link per vessel: "/" → vessel picker, "/samara1" → terminal locked to Samara I.
   // No ERP login here (PIN only) — only the cashier page + its API exist on this host.
-  const cashierHost = process.env.CASHIER_HOST
-  if (cashierHost && hostname === cashierHost) {
+  // Defaults to the production host so the subdomain works even if the env var is missing at build
+  // time (middleware env is inlined at build, so a server-side .env edit alone doesn't take effect).
+  const cashierHost = process.env.CASHIER_HOST || 'cashier.samarayachting.com'
+  if (hostname === cashierHost) {
     if (pathname === '/api/cashier' || pathname.startsWith('/api/cashier/') || pathname === '/cashier' || pathname.startsWith('/cashier/')) return NextResponse.next()
     const segs = pathname.split('/').filter(Boolean)
     if (segs.length > 1 || pathname.startsWith('/api/')) return new NextResponse('Not found', { status: 404 })

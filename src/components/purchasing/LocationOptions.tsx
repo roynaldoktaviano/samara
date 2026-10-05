@@ -34,7 +34,17 @@ export function renderLocationOptions<T extends LocationOptionLike>(
     return topLevel.filter(l => !excludeIds?.has(l.id)).map(l => <option key={l.id} value={l.id}>{renderLabel(l)}</option>)
   }
 
-  return topLevel.map(loc => {
+  // A child whose parent isn't in this list (e.g. filtered out by role/type, like
+  // "Bali Cold Storage" under a SITE parent for a Warehouse account) would otherwise
+  // never render — and a controlled <select> whose value has no matching option
+  // silently *displays* the first option while still submitting the hidden one.
+  const topLevelIds = new Set(topLevel.map(l => l.id))
+  const orphans = [...byParent.entries()]
+    .filter(([parentId]) => !topLevelIds.has(parentId))
+    .flatMap(([, children]) => children)
+    .filter(c => !excludeIds?.has(c.id))
+
+  const grouped = topLevel.map(loc => {
     const children = (byParent.get(loc.id) ?? []).filter(c => !excludeIds?.has(c.id))
     const parentVisible = !excludeIds?.has(loc.id)
 
@@ -48,4 +58,5 @@ export function renderLocationOptions<T extends LocationOptionLike>(
       </optgroup>
     )
   })
+  return [...grouped, ...orphans.map(l => <option key={l.id} value={l.id}>{renderLabel(l)}</option>)]
 }
