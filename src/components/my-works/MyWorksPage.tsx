@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, Search, Kanban, GanttChart, List, Filter, Trash2, ListTodo, CalendarDays } from 'lucide-react'
+import { Plus, X, Search, Kanban, GanttChart, List, Filter, Trash2, ListTodo, CalendarDays, Mail } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import ListView from './ListView'
 import KanbanView from './KanbanView'
@@ -11,6 +11,7 @@ import CalendarView from './CalendarView'
 import AttachmentsField from './AttachmentsField'
 import SubtasksField from './SubtasksField'
 import AssigneePicker from './AssigneePicker'
+import ActivityField from './ActivityField'
 import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment, type Subtask, type WorkUser, WorksContext, canProgressTask, isOwnTask, userLabel } from './shared'
 
 type ViewMode = 'kanban' | 'timeline' | 'list' | 'calendar'
@@ -43,6 +44,8 @@ export default function MyWorksPage() {
   const [priorityFilter, setPriorityFilter] = useState<Priority[]>([])
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [overdueOnly, setOverdueOnly] = useState(false)
+  // null until loaded — the toggle stays hidden rather than flashing the wrong state.
+  const [emailEnabled, setEmailEnabled] = useState<boolean | null>(null)
 
   // Modal: `editing` null + open = create
   const [modalOpen, setModalOpen] = useState(false)
@@ -74,6 +77,16 @@ export default function MyWorksPage() {
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    fetch('/api/my-works/email-prefs').then(r => r.ok ? r.json() : null).then(d => {
+      if (d) setEmailEnabled(d.emailEnabled)
+    }).catch(() => {})
+  }, [])
+  async function toggleEmail(on: boolean) {
+    setEmailEnabled(on)
+    const res = await fetch('/api/my-works/email-prefs', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emailEnabled: on }) }).catch(() => null)
+    if (!res?.ok) setEmailEnabled(!on)
+  }
   useEffect(() => {
     fetch('/api/my-works/users').then(r => r.ok ? r.json() : null).then(d => {
       if (d) setUsers(d.users ?? [])
@@ -126,7 +139,7 @@ export default function MyWorksPage() {
     setSaving(true); setFormError('')
     const ro = !!editing && !isOwnTask(editing, meId)
     const payload = ro
-      ? { status: form.status, attachments: form.attachments }
+      ? { status: form.status, attachments: form.attachments, startDate: form.startDate || null, dueDate: form.dueDate || null }
       : { ...form, startDate: form.startDate || null, dueDate: form.dueDate || null }
     const res = await fetch(editing ? `/api/my-works/${editing.id}` : '/api/my-works', {
       method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -284,6 +297,23 @@ export default function MyWorksPage() {
               )}
             </PopoverContent>
           </Popover>
+          {emailEnabled !== null && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button title="Email notifications" className={`h-9 w-9 flex items-center justify-center rounded-lg border hover:bg-muted ${emailEnabled ? '' : 'text-muted-foreground'}`}>
+                  <Mail className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 space-y-2">
+                <p className={labelCls}>Email notifications</p>
+                <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 mt-0.5 accent-amber-600" checked={emailEnabled} onChange={e => toggleEmail(e.target.checked)} />
+                  <span>Email me when someone assigns me a task, or completes a task I assigned</span>
+                </label>
+                <p className="text-xs text-muted-foreground">Bell and push notifications are always on.</p>
+              </PopoverContent>
+            </Popover>
+          )}
           <button onClick={() => openCreate()} className="h-9 flex items-center gap-1.5 bg-foreground hover:bg-foreground/90 text-background text-sm font-medium px-4 rounded-lg transition-colors whitespace-nowrap">
             <Plus className="h-4 w-4" />New Task
           </button>
@@ -321,7 +351,7 @@ export default function MyWorksPage() {
               {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
               {ro && (
                 <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  {canProgress ? 'You can update the status, add files and tick sub tasks. Other fields belong to the task owner.' : 'Only sub tasks are assigned to you — tick them from the List or Kanban view.'}
+                  {canProgress ? 'You can update the status, estimation dates, add files and tick sub tasks. Other fields belong to the task owner. Date changes are logged in Activity.' : 'Only sub tasks are assigned to you — tick them or change their dates from the List view.'}
                 </p>
               )}
               {/* Owner-only fields; the disabled fieldset makes them read-only on the Assigned board. */}
@@ -336,17 +366,18 @@ export default function MyWorksPage() {
                 <textarea rows={3} className={`w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none ${disabledCls}`}
                   value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
+              </fieldset>
+              {/* Estimation stays editable for assignees on the task. */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className={labelCls}>Start Date</label>
-                  <input type="date" className={`${inputCls} ${disabledCls}`} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                  <input type="date" disabled={!canProgress} className={`${inputCls} ${disabledCls}`} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelCls}>End Date</label>
-                  <input type="date" className={`${inputCls} ${disabledCls}`} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+                  <input type="date" disabled={!canProgress} className={`${inputCls} ${disabledCls}`} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
                 </div>
               </div>
-              </fieldset>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <label className={labelCls}>Status</label>
@@ -381,6 +412,10 @@ export default function MyWorksPage() {
                 <AttachmentsField value={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files }))}
                   uploadPrefix={uploadPrefix} onBusyChange={setUploadBusy}
                   lockedUrls={ro ? new Set((editing?.attachments ?? []).map(a => a.url)) : undefined} />
+              </div>}
+              {editing && <div className="space-y-1.5 border-t pt-4">
+                <label className={labelCls}>Activity</label>
+                <ActivityField todoId={editing.id} />
               </div>}
             </div>
             <div className="flex items-center gap-2 px-6 py-4 border-t bg-gray-50/80">

@@ -81,8 +81,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'approve') {
     const hrUsers = await db.user.findMany({ where: { role: { in: HR_FALLBACK as never[] } }, select: { id: true } })
     if (hrUsers.length) {
-      const title = 'Leave request needs your final approval'
-      const body = `${existing.employee.fullName}'s leave request was approved by the Cruise Director/Captain and now needs HR sign-off.`
+      const title = existing.type === 'WFH' ? 'WFH request needs your final approval' : 'Leave request needs your final approval'
+      const body = `${existing.employee.fullName}'s ${existing.type === 'WFH' ? 'WFH' : 'leave'} request was approved by the Cruise Director/Captain and now needs HR sign-off.`
       await db.notification.createMany({
         data: hrUsers.map(u => ({ id: crypto.randomUUID(), userId: u.id, type: 'LEAVE_APPROVAL_NEEDED', title, body })),
         skipDuplicates: true,
@@ -90,8 +90,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sendPushToUsers(db, hrUsers.map(u => u.id), { title, body }).catch(() => {})
     }
   } else if (existing.employee.userId) {
-    const title = 'Leave request rejected'
-    const body = `Your leave request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected.`
+    const title = existing.type === 'WFH' ? 'WFH request rejected' : 'Leave request rejected'
+    const body = `Your ${existing.type === 'WFH' ? 'WFH' : 'leave'} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected.`
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
   }

@@ -6,7 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
-const VALID_STATUSES = ['HADIR', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR']
+const VALID_STATUSES = ['HADIR', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR', 'WFH']
 
 const ymd = (d: Date) => d.toISOString().split('T')[0]
 

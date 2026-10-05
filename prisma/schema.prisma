@@ -120,6 +120,9 @@ model User {
   // (e.g. Otium's captain never gets notified about a delivery to another yacht).
   assignedYachtId                        String?
   assignedYacht                          Yacht?                            @relation(fields: [assignedYachtId], references: [id], onDelete: SetNull)
+  // My Works: true = no assign/completed emails (bell + push still arrive). Toggled in My Works.
+  taskEmailOptOut                        Boolean                           @default(false)
+  todoActivities                         TodoActivity[]
   createdAt                              DateTime                          @default(now())
   updatedAt                              DateTime                          @updatedAt
   bookings                               Booking[]                         @relation("SalespersonBookings")
@@ -255,8 +258,24 @@ model Todo {
   completedAt    DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  activities     TodoActivity[]
 
   @@index([userId, status])
+}
+
+// Activity section of a My Works task: free comments by the owner/assignees, plus an automatic
+// ESTIMATION entry whenever an assignee changes the task's or a sub task's dates.
+model TodoActivity {
+  id        String   @id @default(cuid())
+  todoId    String
+  todo      Todo     @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // COMMENT | ESTIMATION
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([todoId, createdAt])
 }
 
 model Customer {
@@ -3959,6 +3978,9 @@ model LeaveRequest {
   days       Int
   reason     String?
   status     LeaveRequestStatus @default(PENDING)
+  // LEAVE (cuti) deducts leaveBalance and syncs CUTI into Attendance Recap; WFH does
+  // neither deduction nor balance check, and syncs WFH instead.
+  type       LeaveRequestType   @default(LEAVE)
 
   // See the model comment above — true when a Cruise Director/Captain was resolved for
   // this employee's yacht at request time, meaning it must clear that stage
@@ -4107,6 +4129,11 @@ model BusinessTripReimbursement {
   @@index([requestedById])
 }
 
+enum LeaveRequestType {
+  LEAVE
+  WFH
+}
+
 enum AttendanceStatus {
   HADIR // present
   IZIN // permission / excused absence
@@ -4114,6 +4141,7 @@ enum AttendanceStatus {
   CUTI // approved leave — auto-set when a LeaveRequest is approved (see LeaveRequest.attendanceRecords)
   ALPHA // unauthorized absence
   LIBUR // scheduled day off (e.g. a public holiday falling on a weekday)
+  WFH // working from home — auto-set when a LeaveRequest of type WFH is approved; counts as a worked day for payroll
 }
 
 // A row only exists for a day HR (or an approved Leave Request) explicitly set — any

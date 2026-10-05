@@ -49,10 +49,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   })
 
   if (action === 'approve') {
-    await db.employee.update({
-      where: { id: existing.employeeId },
-      data: { leaveBalance: (existing.employee.leaveBalance ?? 0) - existing.days },
-    })
+    // WFH isn't time off — only actual leave draws down the balance.
+    if (existing.type === 'LEAVE') {
+      await db.employee.update({
+        where: { id: existing.employeeId },
+        data: { leaveBalance: (existing.employee.leaveBalance ?? 0) - existing.days },
+      })
+    }
 
     // Auto-reflect the approved leave in Attendance Recap — one CUTI row per day in
     // range, so HR never has to manually mirror an approved request into the grid. Office
@@ -68,16 +71,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const d = new Date(existing.startDate); d <= existing.endDate; d.setUTCDate(d.getUTCDate() + 1)) {
       if (isCrew || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) dates.push(new Date(d))
     }
+    const attendanceStatus = existing.type === 'WFH' ? 'WFH' : 'CUTI'
     await Promise.all(dates.map(date => db.attendanceRecord.upsert({
       where: { employeeId_date: { employeeId: existing.employeeId, date } },
-      create: { id: crypto.randomUUID(), employeeId: existing.employeeId, date, status: 'CUTI', leaveRequestId: existing.id, setById: session.user.id },
-      update: { status: 'CUTI', leaveRequestId: existing.id, setById: session.user.id },
+      create: { id: crypto.randomUUID(), employeeId: existing.employeeId, date, status: attendanceStatus, leaveRequestId: existing.id, setById: session.user.id },
+      update: { status: attendanceStatus, leaveRequestId: existing.id, setById: session.user.id },
     })))
   }
 
   if (existing.employee.userId) {
-    const title = action === 'approve' ? 'Leave request approved' : 'Leave request rejected'
-    const body = `Your leave request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was ${action === 'approve' ? 'approved' : 'rejected'}.`
+    const kind = existing.type === 'WFH' ? 'WFH' : 'Leave'
+    const title = `${kind} request ${action === 'approve' ? 'approved' : 'rejected'}`
+    const body = `Your ${kind === 'WFH' ? 'WFH' : 'leave'} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was ${action === 'approve' ? 'approved' : 'rejected'}.`
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
   }

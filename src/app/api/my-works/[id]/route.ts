@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { parseTodoInput, attachmentsOf, deleteTodoFiles, restrictToProgress, referencedAssignees, notifyNewAssignees } from '@/lib/todo'
+import { parseTodoInput, attachmentsOf, deleteTodoFiles, restrictToProgress, referencedAssignees, notifyNewAssignees, notifyTaskCompleted, logEstimationChanges } from '@/lib/todo'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // The owner can change anything; an assignee (on the task or one of its sub tasks) can only
@@ -52,6 +52,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if (isOwner && ('assigneeIds' in parsed.data || 'subtasks' in parsed.data)) {
     await notifyNewAssignees(db, session.user, existing, todo)
+  }
+  if (!isOwner) await logEstimationChanges(db, session.user, existing, todo)
+  if (existing.status !== 'DONE' && todo.status === 'DONE') {
+    await notifyTaskCompleted(db, session.user, todo)
   }
   // Owner and every assignee may have this task open — let their boards refresh.
   if (todo.assigneeIds.length || todo.subAssigneeIds.length || existing.assigneeIds.length || existing.subAssigneeIds.length) {

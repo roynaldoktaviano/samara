@@ -11,6 +11,7 @@ interface LeaveRequest {
   employee: EmployeeLite
   startDate: string; endDate: string; days: number
   reason: string | null
+  type: 'LEAVE' | 'WFH'
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
   requestedBy: { id: string; name: string | null } | null
   requestedAt: string
@@ -97,8 +98,8 @@ export default function LeaveRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<'All' | 'PENDING' | 'APPROVED' | 'REJECTED'>('All')
 
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState<{ employeeId: string; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
-    employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
+  const [form, setForm] = useState<{ type: 'LEAVE' | 'WFH'; employeeId: string; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
+    type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
   })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -139,9 +140,9 @@ export default function LeaveRequestsPage() {
     }
     return count
   })() : 0
-  const overBalance = selectedEmployee?.leaveBalance != null && days > selectedEmployee.leaveBalance
+  const overBalance = form.type === 'LEAVE' && selectedEmployee?.leaveBalance != null && days > selectedEmployee.leaveBalance
 
-  function openAdd() { setForm({ employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
 
   async function save() {
     if (!form.employeeId) { setFormError('Please select an employee'); return }
@@ -193,7 +194,7 @@ export default function LeaveRequestsPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">{selected.employee.fullName}</h2>
-                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber}</p>
+                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : 'Leave (Cuti)'}</span></p>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status]}`}>{statusLabel(selected)}</span>
             </div>
@@ -326,6 +327,7 @@ export default function LeaveRequestsPage() {
                 <thead className="bg-muted/50 text-xs text-muted-foreground">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium">Employee</th>
+                    <th className="text-left px-4 py-3 font-medium">Type</th>
                     <th className="text-left px-4 py-3 font-medium">Dates</th>
                     <th className="text-center px-4 py-3 font-medium">Days</th>
                     <th className="text-left px-4 py-3 font-medium">Trips Affected</th>
@@ -336,7 +338,7 @@ export default function LeaveRequestsPage() {
                 </thead>
                 <tbody className="divide-y">
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                    <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                       <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
                       No leave requests {statusFilter !== 'All' ? `with status "${statusFilter}"` : 'yet'}.
                     </td></tr>
@@ -346,6 +348,7 @@ export default function LeaveRequestsPage() {
                         <p className="font-medium">{r.employee.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                       </td>
+                      <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
                       <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
                       <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
                       <td className="px-4 py-3 text-xs">
@@ -378,7 +381,7 @@ export default function LeaveRequestsPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">New Leave Request</h3>
+                <h3 className="font-bold text-sm">{form.type === 'WFH' ? 'New WFH Request' : 'New Leave Request'}</h3>
               </div>
               <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                 <X className="h-4 w-4" />
@@ -386,6 +389,14 @@ export default function LeaveRequestsPage() {
             </div>
             <div className="px-6 py-5 space-y-4">
               {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
+                {(['LEAVE', 'WFH'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
+                    className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'}`}>
+                    {t === 'LEAVE' ? 'Leave (Cuti)' : 'Work From Home'}
+                  </button>
+                ))}
+              </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</label>
                 <EmployeeCombobox value={form.employeeId} options={employees} onChange={id => setForm(f => ({ ...f, employeeId: id }))} />
@@ -407,7 +418,7 @@ export default function LeaveRequestsPage() {
               </div>
               {days > 0 && (
                 <p className={`text-xs ${overBalance ? 'text-red-700 font-medium' : 'text-muted-foreground'}`}>
-                  {days} day{days !== 1 ? 's' : ''} of leave
+                  {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use leave balance' : 'of leave'}
                   {overBalance && ' — exceeds remaining balance'}
                 </p>
               )}
@@ -416,11 +427,11 @@ export default function LeaveRequestsPage() {
                 <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
                   value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={form.needsFreelance}
                   onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
                 Need a freelance replacement for the trips missed?
-              </label>
+              </label>}
               {form.needsFreelance && (
                 <FreelanceRecommendationsField value={form.freelanceRecommendations} onChange={v => setForm(f => ({ ...f, freelanceRecommendations: v }))} />
               )}
@@ -442,12 +453,15 @@ export default function LeaveRequestsPage() {
             <div className="px-6 py-5 space-y-3">
               <h3 className="font-bold text-sm flex items-center gap-2">
                 {decision.action === 'approve' ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                {decision.action === 'approve' ? 'Approve' : 'Reject'} leave request
+                {decision.action === 'approve' ? 'Approve' : 'Reject'} {decision.req.type === 'WFH' ? 'WFH' : 'leave'} request
               </h3>
               <p className="text-sm text-muted-foreground">
                 {decision.req.employee.fullName} — {decision.req.days} day{decision.req.days !== 1 ? 's' : ''} ({fmtDate(decision.req.startDate)} – {fmtDate(decision.req.endDate)})
               </p>
-              {decision.action === 'approve' && (
+              {decision.action === 'approve' && decision.req.type === 'WFH' && (
+                <p className="text-xs text-muted-foreground">Marked as WFH in Attendance Recap — leave balance is not affected.</p>
+              )}
+              {decision.action === 'approve' && decision.req.type !== 'WFH' && (
                 <p className="text-xs text-muted-foreground">Leave balance will go from {decision.req.employee.leaveBalance ?? 0} to {(decision.req.employee.leaveBalance ?? 0) - decision.req.days} days.</p>
               )}
               <textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}

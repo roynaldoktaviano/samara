@@ -14,10 +14,11 @@ interface AttendanceData {
   holidays: Record<string, HolidayInfo>
 }
 
-const STATUSES = ['HADIR', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR'] as const
+const STATUSES = ['HADIR', 'WFH', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR'] as const
 
 const STATUS_META: Record<string, { label: string; dot: string }> = {
   HADIR: { label: 'Present', dot: 'bg-emerald-500' },
+  WFH: { label: 'WFH', dot: 'bg-sky-500' },
   IZIN: { label: 'Permission', dot: 'bg-amber-500' },
   SAKIT: { label: 'Sick', dot: 'bg-blue-500' },
   CUTI: { label: 'Leave', dot: 'bg-purple-500' },
@@ -245,7 +246,7 @@ export default function AttendanceRecapPage() {
                               </div>
                               <textarea rows={2} placeholder="Note (optional)" value={cellNote} onChange={e => setCellNote(e.target.value)}
                                 className="w-full border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
-                              {rec.leaveRequestId && <p className="text-[10px] text-purple-600 mt-1">Set automatically from an approved leave request.</p>}
+                              {rec.leaveRequestId && <p className="text-[10px] text-purple-600 mt-1">Set automatically from an approved leave/WFH request.</p>}
                             </PopoverContent>
                           </Popover>
                         </td>

@@ -728,7 +728,7 @@ export default function Home() {
   const handleNotifClick = async (n: Notification) => {
     markOneRead(n.id)
     setNotifOpen(false)
-    if (n.type === 'TASK_ASSIGNED') {
+    if (n.type.startsWith('TASK_')) {
       setCurrentView('my-works')
     } else if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')

@@ -65,7 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const monthEnd = new Date(period.year, period.month, 0, 23, 59, 59, 999)
     const [nonHadirRecords, holidays] = await Promise.all([
       db.attendanceRecord.findMany({
-        where: { employeeId: { in: employees.map(e => e.id) }, status: { not: 'HADIR' }, date: { gte: monthStart, lte: monthEnd } },
+        where: { employeeId: { in: employees.map(e => e.id) }, status: { notIn: ['HADIR', 'WFH'] }, date: { gte: monthStart, lte: monthEnd } },
         select: { employeeId: true, date: true },
       }),
       db.nationalHoliday.findMany({ where: { date: { gte: monthStart, lte: monthEnd } }, select: { date: true, excludedLocationIds: true } }),

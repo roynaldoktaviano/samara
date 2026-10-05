@@ -54,6 +54,7 @@ interface QuotationApprovalItem {
 
 interface CrewLeaveApproval {
   id: string
+  type: 'LEAVE' | 'WFH'
   startDate: string; endDate: string; days: number
   reason: string | null
   needsFreelance: boolean
@@ -294,18 +295,18 @@ export default function MyApprovalsPage() {
               <div key={r.id} className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-sm">{r.employee.fullName}</p>
+                    <p className="font-semibold text-sm">{r.employee.fullName} <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></p>
                     <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0 text-right">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
                 </div>
                 {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
 
-                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                {r.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                   <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={draft.needsFreelance}
                     onChange={e => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? draft.freelanceRecommendations : [] } }))} />
                   Needs a freelance replacement for the trips missed?
-                </label>
+                </label>}
                 {draft.needsFreelance && (
                   <FreelanceRecommendationsField value={draft.freelanceRecommendations}
                     onChange={v => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: true, freelanceRecommendations: v } }))} />

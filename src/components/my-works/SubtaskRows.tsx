@@ -155,7 +155,7 @@ function SubtaskRow({ sub, depth, open, state, canTick, ro, onUpdate, onDelete }
       </td>
       <td className="px-3 py-2 border-l"><AssigneePicker value={sub.assigneeIds ?? []} readOnly={ro} size={22} onChange={assigneeIds => onUpdate({ assigneeIds })} /></td>
       <td className="px-3 py-2 border-l">
-        <RangeCell startDate={sub.startDate} dueDate={sub.dueDate} overdue={overdue} readOnly={ro} onSave={(startDate, dueDate) => onUpdate({ startDate, dueDate })} />
+        <RangeCell startDate={sub.startDate} dueDate={sub.dueDate} overdue={overdue} readOnly={ro && !canTick} onSave={(startDate, dueDate) => onUpdate({ startDate, dueDate })} />
       </td>
       <td className="px-3 py-2 border-l"><TypeCell value={sub.type} datalist={state.typesList} readOnly={ro} onSave={type => onUpdate({ type: type || null })} /></td>
       <td className="px-3 py-2 border-l"><PriorityPick value={sub.priority} readOnly={ro} onChange={priority => onUpdate({ priority })} /></td>

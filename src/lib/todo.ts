@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { sendPushToUser } from '@/lib/push'
 import { keyFromR2Url, deleteFromR2 } from '@/lib/r2'
+import { queueTaskEmail } from '@/lib/task-email'
 
 export const TODO_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const
 export const TODO_STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'] as const
@@ -178,10 +179,11 @@ export function referencedAssignees(data: Prisma.TodoUncheckedUpdateInput): stri
 }
 
 /**
- * An assignee (not the owner) may only update progress: the task's status and files if they're
- * on the task itself, and the done ticks of sub tasks they're on (or under one they're on).
- * Everything else in the body is ignored rather than rejected, so a stale client can't
- * accidentally overwrite the owner's edits. Attachments can only be added, never removed.
+ * An assignee (not the owner) may only update progress: the task's status, estimation dates and
+ * files if they're on the task itself, and the done ticks + dates of sub tasks they're on (or
+ * under one they're on). Everything else in the body is ignored rather than rejected, so a
+ * stale client can't accidentally overwrite the owner's edits. Attachments can only be added,
+ * never removed. Date changes are logged to the task's Activity — see logEstimationChanges.
  */
 export function restrictToProgress(
   body: Record<string, unknown>,
@@ -191,6 +193,8 @@ export function restrictToProgress(
   const onTask = existing.assigneeIds.includes(userId)
   const out: Record<string, unknown> = {}
   if (onTask && 'status' in body) out.status = body.status
+  if (onTask && 'startDate' in body) out.startDate = body.startDate
+  if (onTask && 'dueDate' in body) out.dueDate = body.dueDate
 
   if (onTask && Array.isArray(body.attachments)) {
     const have = attachmentsOf(existing.attachments)
@@ -200,11 +204,12 @@ export function restrictToProgress(
   }
 
   if (Array.isArray(body.subtasks)) {
-    const wanted = new Map(walk(body.subtasks as TodoSubtask[]).map(s => [s.id, s.done === true]))
+    const wanted = new Map(walk(body.subtasks as TodoSubtask[]).map(s => [s.id, s]))
     const apply = (subs: TodoSubtask[], allowed: boolean): TodoSubtask[] => subs.map(s => {
       const mine = allowed || (s.assigneeIds ?? []).includes(userId)
-      const done = mine && wanted.has(s.id) ? wanted.get(s.id)! : s.done
-      return { ...s, done, children: apply(s.children ?? [], mine) }
+      const w = mine ? wanted.get(s.id) : undefined
+      const progress = w ? { done: w.done === true, startDate: w.startDate ?? null, dueDate: w.dueDate ?? null } : {}
+      return { ...s, ...progress, children: apply(s.children ?? [], mine) }
     })
     out.subtasks = apply(subtasksOf(existing.subtasks), onTask)
   }
@@ -219,23 +224,87 @@ function newSubAssignments(before: TodoSubtask[], after: TodoSubtask[]): [string
   return out
 }
 
-/** In-app + push notification for everyone newly assigned to the task or one of its sub tasks. */
+type Actor = { id: string; name?: string | null; tenantId?: string }
+
+/** In-app + push notification (and a digest email, see task-email.ts) for everyone newly
+ * assigned to the task or one of its sub tasks. */
 export async function notifyNewAssignees(
   db: PrismaClient,
-  actor: { id: string; name?: string | null },
+  actor: Actor,
   before: { assigneeIds: string[]; subtasks: Prisma.JsonValue } | null,
-  after: { title: string; assigneeIds: string[]; subtasks: Prisma.JsonValue },
+  after: { id: string; title: string; assigneeIds: string[]; subtasks: Prisma.JsonValue },
 ) {
   const who = actor.name || 'Someone'
   const prevTask = new Set(before?.assigneeIds ?? [])
   const msgs: { userId: string; title: string; body: string }[] = []
   for (const uid of after.assigneeIds) {
-    if (uid !== actor.id && !prevTask.has(uid)) msgs.push({ userId: uid, title: `Task assigned to you: ${after.title}`, body: `${who} assigned you a task.` })
+    if (uid !== actor.id && !prevTask.has(uid)) {
+      msgs.push({ userId: uid, title: `Task assigned to you: ${after.title}`, body: `${who} assigned you a task.` })
+      queueTaskEmail(db, actor.tenantId, actor, uid, { kind: 'assigned', todoId: after.id, taskTitle: after.title })
+    }
   }
   for (const [uid, sub] of newSubAssignments(subtasksOf(before?.subtasks ?? []), subtasksOf(after.subtasks))) {
-    if (uid !== actor.id) msgs.push({ userId: uid, title: `Sub task assigned to you: ${sub}`, body: `${who} assigned you a sub task in "${after.title}".` })
+    if (uid !== actor.id) {
+      msgs.push({ userId: uid, title: `Sub task assigned to you: ${sub}`, body: `${who} assigned you a sub task in "${after.title}".` })
+      queueTaskEmail(db, actor.tenantId, actor, uid, { kind: 'assigned', todoId: after.id, taskTitle: after.title, subtask: sub })
+    }
   }
   if (!msgs.length) return
   await db.notification.createMany({ data: msgs.map(m => ({ ...m, type: 'TASK_ASSIGNED' })) }).catch(() => {})
   await Promise.all(msgs.map(m => sendPushToUser(db, m.userId, { title: m.title, body: m.body, url: '/' }).catch(() => {})))
 }
+
+/** An assignee moved the task to DONE — tell the owner (the one who assigned it). */
+export async function notifyTaskCompleted(db: PrismaClient, actor: Actor, todo: { id: string; title: string; userId: string }) {
+  if (todo.userId === actor.id) return
+  const title = `Task completed: ${todo.title}`
+  const body = `${actor.name || 'Someone'} marked your task as done.`
+  await db.notification.create({ data: { userId: todo.userId, type: 'TASK_COMPLETED', title, body } }).catch(() => {})
+  await sendPushToUser(db, todo.userId, { title, body, url: '/' }).catch(() => {})
+  queueTaskEmail(db, actor.tenantId, actor, todo.userId, { kind: 'completed', todoId: todo.id, taskTitle: todo.title })
+}
+
+// ── Activity ─────────────────────────────────────────────────────────────────
+
+const dayOf = (d: Date | string | null) => d ? (typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10)) : null
+const fmtLogDay = (k: string | null) => k
+  ? new Date(k + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+  : 'none'
+const fmtLogRange = (start: string | null, due: string | null) => `${fmtLogDay(start)} – ${fmtLogDay(due)}`
+
+/**
+ * An assignee changed estimation dates: write one ESTIMATION activity entry per changed task /
+ * sub task and ring the owner's bell once for the whole save.
+ */
+export async function logEstimationChanges(
+  db: PrismaClient,
+  actor: Actor,
+  before: { startDate: Date | null; dueDate: Date | null; subtasks: Prisma.JsonValue },
+  after: { id: string; userId: string; title: string; startDate: Date | null; dueDate: Date | null; subtasks: Prisma.JsonValue },
+) {
+  const entries: string[] = []
+  const [s0, d0, s1, d1] = [dayOf(before.startDate), dayOf(before.dueDate), dayOf(after.startDate), dayOf(after.dueDate)]
+  if (s0 !== s1 || d0 !== d1) entries.push(`changed the estimation: ${fmtLogRange(s0, d0)} → ${fmtLogRange(s1, d1)}`)
+  const prev = new Map(walk(subtasksOf(before.subtasks)).map(s => [s.id, s]))
+  for (const s of walk(subtasksOf(after.subtasks))) {
+    const p = prev.get(s.id)
+    if (p && (p.startDate !== s.startDate || p.dueDate !== s.dueDate)) {
+      entries.push(`changed the estimation of sub task "${s.title}": ${fmtLogRange(p.startDate, p.dueDate)} → ${fmtLogRange(s.startDate, s.dueDate)}`)
+    }
+  }
+  if (!entries.length) return
+  await db.todoActivity.createMany({ data: entries.map(body => ({ todoId: after.id, userId: actor.id, kind: 'ESTIMATION', body })) })
+  if (after.userId !== actor.id) {
+    await db.notification.create({
+      data: {
+        userId: after.userId, type: 'TASK_ESTIMATION_CHANGED',
+        title: `Estimation changed: ${after.title}`,
+        body: `${actor.name || 'Someone'} ${entries.length === 1 ? entries[0] : `changed ${entries.length} estimations`}.`,
+      },
+    }).catch(() => {})
+  }
+}
+
+/** Owner + everyone assigned to the task or one of its sub tasks. */
+export const taskParticipants = (t: { userId: string; assigneeIds: string[]; subAssigneeIds: string[] }) =>
+  [...new Set([t.userId, ...t.assigneeIds, ...t.subAssigneeIds])]

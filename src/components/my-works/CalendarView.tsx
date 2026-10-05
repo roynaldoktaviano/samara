@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, useWorks, isOwnTask, type Todo, type Subtask, type Priority } from './shared'
+import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, useWorks, canProgressTask, editableSubIds, type Todo, type Subtask, type Priority } from './shared'
 
 const DAY_MS = 86400000
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -203,8 +203,8 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                     const { done, overdue } = t
                     return (
                       <button key={t.id}
-                        // Dates of a task assigned to me belong to its owner — not draggable.
-                        draggable={isOwnTask(t.todo, meId)}
+                        // Assignees may move the dates of what they're on (logged to the task's Activity).
+                        draggable={t.sub ? editableSubIds(t.todo, meId).has(t.sub.id) : canProgressTask(t.todo, meId)}
                         onDragStart={e => {
                           e.dataTransfer.effectAllowed = 'move'
                           // Deferred: re-rendering the source synchronously in dragstart can cancel the drag in Chrome.

@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { employeeId, startDate, endDate, reason, needsFreelance, freelanceRecommendations } = await req.json()
+  const { employeeId, startDate, endDate, reason, needsFreelance, freelanceRecommendations, type: rawType } = await req.json()
+  const type: 'LEAVE' | 'WFH' = rawType === 'WFH' ? 'WFH' : 'LEAVE'
+  const label = type === 'WFH' ? 'WFH' : 'off'
 
   if (!employeeId) return NextResponse.json({ error: 'Please select an employee' }, { status: 400 })
   if (!startDate || !endDate) return NextResponse.json({ error: 'Please select a start and end date' }, { status: 400 })
@@ -103,8 +105,9 @@ export async function POST(req: NextRequest) {
   const days = countLeaveDays(start, end, !!yachtId)
 
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
-  // for this employee yet), in which case there's nothing to cap against.
-  if (employee.leaveBalance != null && days > employee.leaveBalance) {
+  // for this employee yet), in which case there's nothing to cap against. WFH never
+  // touches the balance, so it's never capped.
+  if (type === 'LEAVE' && employee.leaveBalance != null && days > employee.leaveBalance) {
     return NextResponse.json({ error: `${employee.fullName} only has ${employee.leaveBalance} day${employee.leaveBalance !== 1 ? 's' : ''} of leave remaining` }, { status: 400 })
   }
 
@@ -116,8 +119,9 @@ export async function POST(req: NextRequest) {
       endDate: end,
       days,
       reason: reason?.trim() || null,
-      needsFreelance: !!needsFreelance,
-      freelanceRecommendations: (needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
+      type,
+      needsFreelance: type === 'LEAVE' && !!needsFreelance,
+      freelanceRecommendations: (type === 'LEAVE' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
       requiresCrewApproval: !!crewApprover,
       requestedById: session.user.id,
     },
@@ -130,8 +134,8 @@ export async function POST(req: NextRequest) {
   if (crewApprover) {
     // Crew stage — only the resolved Cruise Director/Captain is notified; HR only hears
     // about it once that stage clears (see the crew-approval route).
-    const title = 'Crew leave request needs your approval'
-    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} off (${startDate} to ${endDate}).`
+    const title = type === 'WFH' ? 'Crew WFH request needs your approval' : 'Crew leave request needs your approval'
+    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     await db.notification.create({
       data: { userId: crewApprover.id, type: 'LEAVE_APPROVAL_NEEDED', title, body },
     }).catch(() => {})
@@ -140,8 +144,8 @@ export async function POST(req: NextRequest) {
     // Route to the employee's manager if that manager has an ERP login; otherwise fall
     // back to every HR/Admin/Super Admin so it never sits unseen — same pattern as
     // PurchaseRequest's manager-approval routing.
-    const title = 'Leave request needs your approval'
-    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} off (${startDate} to ${endDate}).`
+    const title = type === 'WFH' ? 'WFH request needs your approval' : 'Leave request needs your approval'
+    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     if (employee.manager?.userId) {
       await db.notification.create({
         data: { userId: employee.manager.userId, type: 'LEAVE_APPROVAL_NEEDED', title, body },

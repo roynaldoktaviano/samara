@@ -138,7 +138,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                           </td>
                           <td className="px-3 py-2 border-l"><AssigneePicker value={t.assigneeIds ?? []} readOnly={ro} onChange={assigneeIds => onPatch(t, { assigneeIds })} /></td>
                           <td className="px-3 py-2 border-l">
-                            <RangeCell startDate={t.startDate} dueDate={t.dueDate} overdue={overdue} readOnly={ro} onSave={(startDate, dueDate) => onPatch(t, { startDate, dueDate })} />
+                            <RangeCell startDate={t.startDate} dueDate={t.dueDate} overdue={overdue} readOnly={!canProgress} onSave={(startDate, dueDate) => onPatch(t, { startDate, dueDate })} />
                           </td>
                           <td className="px-3 py-2 border-l"><TypeCell value={t.type} datalist="my-works-list-types" readOnly={ro} onSave={type => onPatch(t, { type })} /></td>
                           <td className="px-3 py-2 border-l"><PriorityPick value={t.priority} required readOnly={ro} onChange={p => p && onPatch(t, { priority: p })} /></td>

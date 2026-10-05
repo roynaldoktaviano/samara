@@ -9,6 +9,7 @@ interface LeaveRequest {
   id: string
   startDate: string; endDate: string; days: number
   reason: string | null
+  type: 'LEAVE' | 'WFH'
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
   requestedAt: string
   decidedBy: { id: string; name: string | null } | null
@@ -51,8 +52,8 @@ export default function MyLeaveRequestsPage() {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
 
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState<{ startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
-    startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
+  const [form, setForm] = useState<{ type: 'LEAVE' | 'WFH'; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
+    type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
   })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -87,9 +88,9 @@ export default function MyLeaveRequestsPage() {
     }
     return count
   })() : 0
-  const overBalance = leaveBalance != null && days > leaveBalance
+  const overBalance = form.type === 'LEAVE' && leaveBalance != null && days > leaveBalance
 
-  function openAdd() { setForm({ startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
 
   async function save() {
     if (!form.startDate || !form.endDate) { setFormError('Please select a date range'); return }
@@ -153,7 +154,7 @@ export default function MyLeaveRequestsPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Leave Request</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Request time off and track your approval status
+            Request leave or WFH and track your approval status
             {leaveBalance != null && <> · <span className="font-medium text-foreground">{leaveBalance} day{leaveBalance !== 1 ? 's' : ''}</span> remaining</>}
           </p>
         </div>
@@ -166,6 +167,7 @@ export default function MyLeaveRequestsPage() {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
+              <th className="text-left px-4 py-3 font-medium">Type</th>
               <th className="text-left px-4 py-3 font-medium">Dates</th>
               <th className="text-center px-4 py-3 font-medium">Days</th>
               <th className="text-left px-4 py-3 font-medium">Trips Affected</th>
@@ -177,12 +179,13 @@ export default function MyLeaveRequestsPage() {
           </thead>
           <tbody className="divide-y">
             {requests.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+              <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                 <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                You haven&apos;t requested any leave yet.
+                You haven&apos;t requested any leave or WFH yet.
               </td></tr>
             ) : requests.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
                 <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
                 <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
                 <td className="px-4 py-3 text-xs">
@@ -235,7 +238,7 @@ export default function MyLeaveRequestsPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">Request Leave</h3>
+                <h3 className="font-bold text-sm">{form.type === 'WFH' ? 'Request WFH' : 'Request Leave'}</h3>
               </div>
               <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                 <X className="h-4 w-4" />
@@ -243,7 +246,15 @@ export default function MyLeaveRequestsPage() {
             </div>
             <div className="px-6 py-5 space-y-4">
               {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
-              {leaveBalance != null && (
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
+                {(['LEAVE', 'WFH'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
+                    className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'}`}>
+                    {t === 'LEAVE' ? 'Leave (Cuti)' : 'Work From Home'}
+                  </button>
+                ))}
+              </div>
+              {form.type === 'LEAVE' && leaveBalance != null && (
                 <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs">
                   <span className="text-muted-foreground">Leave Balance</span>
                   <span className="font-semibold text-amber-800">{leaveBalance} day{leaveBalance !== 1 ? 's' : ''} remaining</span>
@@ -263,7 +274,7 @@ export default function MyLeaveRequestsPage() {
               </div>
               {days > 0 && (
                 <p className={`text-xs ${overBalance ? 'text-red-700 font-medium' : 'text-muted-foreground'}`}>
-                  {days} day{days !== 1 ? 's' : ''} of leave
+                  {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use your leave balance' : 'of leave'}
                   {overBalance && ' — exceeds your remaining balance'}
                 </p>
               )}
@@ -272,11 +283,11 @@ export default function MyLeaveRequestsPage() {
                 <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
                   value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={form.needsFreelance}
                   onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
                 Need a freelance replacement for the trips I&apos;ll miss?
-              </label>
+              </label>}
               {form.needsFreelance && (
                 <FreelanceRecommendationsField value={form.freelanceRecommendations} onChange={v => setForm(f => ({ ...f, freelanceRecommendations: v }))} />
               )}

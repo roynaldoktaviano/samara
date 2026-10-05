@@ -125,6 +125,18 @@ export const canProgressTask = (t: Todo, meId: string) => isOwnTask(t, meId) || 
 /** Can the viewer tick this sub task? `inherited` = they own/are on the task or an ancestor sub task. */
 export const canTickSub = (s: Subtask, inherited: boolean, meId: string) => inherited || (s.assigneeIds ?? []).includes(meId)
 
+/** Sub tasks whose dates/ticks the viewer may change: owner = all; assignee = the ones they're on, or under one they're on. */
+export function editableSubIds(t: Todo, meId: string): Set<string> {
+  const out = new Set<string>()
+  const walk = (subs: Subtask[], inherited: boolean) => subs.forEach(s => {
+    const can = canTickSub(s, inherited, meId)
+    if (can) out.add(s.id)
+    walk(s.children ?? [], can)
+  })
+  walk(t.subtasks ?? [], canProgressTask(t, meId))
+  return out
+}
+
 export const userLabel = (u: WorkUser | undefined) => u ? (u.name || u.email) : 'Unknown user'
 const initials = (u: WorkUser | undefined) => userLabel(u).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('')
 const AVATAR_COLORS = ['bg-violet-500', 'bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500', 'bg-orange-500']
