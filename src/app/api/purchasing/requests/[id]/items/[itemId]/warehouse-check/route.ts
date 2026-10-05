@@ -82,24 +82,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: `Stok "${existingItem.itemName}" tidak cukup di lokasi ini (tersedia: ${available})` }, { status: 409 })
   }
 
-  const transferNumber = await createOrAppendTransfer(db, {
-    requestId: id,
-    prNumber: request.prNumber,
-    deliveryLocationId: request.deliveryLocationId,
-    fromLocationId,
-    items: [{ itemId: existingItem.itemId, itemName: existingItem.itemName, baseQty }],
+  // Claim the item (convertedAt) and create the transfer line atomically — a double
+  // click used to pass the convertedAt check twice and add the item to the transfer twice.
+  const result = await db.$transaction(async tx => {
+    const now = new Date()
+    const claimed = await tx.purchaseRequestItem.updateMany({
+      where: { id: itemId, convertedAt: null },
+      data: {
+        warehouseDecision: 'TRANSFER',
+        warehouseCheckedById: session.user.id,
+        warehouseCheckedAt: now,
+        warehouseCheckNote: note?.trim() || null,
+        convertedAt: now,
+      },
+    })
+    if (claimed.count === 0) return null
+    const transferNumber = await createOrAppendTransfer(tx, {
+      requestId: id,
+      prNumber: request.prNumber,
+      deliveryLocationId: request.deliveryLocationId!,
+      fromLocationId,
+      items: [{ itemId: existingItem.itemId, itemName: existingItem.itemName, baseQty }],
+    })
+    const item = await tx.purchaseRequestItem.findUniqueOrThrow({ where: { id: itemId } })
+    return { item, transferNumber }
   })
-
-  const item = await db.purchaseRequestItem.update({
-    where: { id: itemId },
-    data: {
-      warehouseDecision: 'TRANSFER',
-      warehouseCheckedById: session.user.id,
-      warehouseCheckedAt: new Date(),
-      warehouseCheckNote: note?.trim() || null,
-      convertedAt: new Date(),
-    },
-  })
+  if (!result) return NextResponse.json({ error: 'Item has already been resolved — its decision can no longer change' }, { status: 409 })
+  const { item, transferNumber } = result
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
   return NextResponse.json({ ...item, transferNumber })

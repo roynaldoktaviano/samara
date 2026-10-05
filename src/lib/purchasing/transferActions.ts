@@ -3,9 +3,10 @@ import { movingAverageCost } from '@/lib/valuation'
 import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 
-// This function always owns its own $transaction (called with a full client, session- or
-// token-resolved — never from inside an existing transaction), unlike transitChain.ts's
-// helpers which are composed into a caller's tx.
+// receiveTransferLeg always owns its own $transaction (called with a full client, session-
+// or token-resolved — never from inside an existing transaction), unlike transitChain.ts's
+// helpers which are composed into a caller's tx. createOrAppendTransfer only touches
+// stockTransfer, so it also accepts a caller's tx (PR convert runs it inside one).
 type Db = Awaited<ReturnType<typeof getDb>>
 
 /**
@@ -34,7 +35,7 @@ export function toBaseQty(
  * one-item-at-a-time physical stock check (PATCH .../items/[itemId]/warehouse-check).
  * Returns the transfer number (new or appended-to).
  */
-export async function createOrAppendTransfer(db: Db, params: {
+export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, params: {
   requestId: string
   prNumber: string
   deliveryLocationId: string

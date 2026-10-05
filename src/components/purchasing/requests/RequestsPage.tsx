@@ -232,6 +232,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   const [warehouseNote, setWarehouseNote] = useState<Record<string, string>>({})
   const [warehouseBusyItemId, setWarehouseBusyItemId] = useState<string | null>(null)
   const [warehouseForwarding, setWarehouseForwarding] = useState(false)
+  const [converting, setConverting] = useState(false)
   // Per-item Inventory Room/Category, required before converting an item into a PO when
   // the PR's delivery location is a ship (not needed for items fulfilled via transfer
   // instead — see convertToPO). Mirrors OrdersPage.tsx's own Room/Category pickers.
@@ -473,6 +474,9 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
         const next = { ...prev }
         for (const item of data!.items as RequestLine[]) {
           if (next[item.id!] !== undefined) continue
+          // Warehouse already said "not in stock" (or the item is settled) — must go to
+          // PO; a hidden transfer default here used to override that decision on convert.
+          if (item.warehouseDecision === 'PURCHASE' || item.convertedAt || item.verifyRejectedAt) { next[item.id!] = null; continue }
           const best = item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]
           next[item.id!] = best?.locationId ?? null
         }
@@ -526,6 +530,9 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     setTrip(detail.trip ?? null)
     setCart(detail.items.map(item => ({
       ...item,
+      // Saved lines carry `unit`, but submit() sends `itemUnit` — without this every
+      // line's unit got rewritten to the catalog base unit (or "pcs") on save.
+      itemUnit: item.unit || item.itemUnit || item.baseUnit || 'pcs',
       key: item.id,
       supplierSearch: '', supplierOpen: false, search: '', open: false,
     })))
@@ -534,7 +541,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   }
 
   async function convertToPO() {
-    if (!selected || !detail) return
+    if (!selected || !detail || converting) return
     const settleable = detail.items.filter(item => !item.verifyRejectedAt && !item.convertedAt)
     const missingSupplier = settleable.filter(item => !fulfillment[item.id!] && !item.supplierId)
     if (missingSupplier.length === settleable.length) {
@@ -545,7 +552,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     // which Inventory Room/Category it's destined for — same rule as creating a PO
     // directly, see OrdersPage.tsx.
     if (detail.deliveryLocation?.type === 'VESSEL') {
-      const poBound = settleable.filter(item => item.supplierId && !fulfillment[item.id!])
+      const poBound = settleable.filter(item => item.supplierId && !fulfillment[item.id!] && !item.sourceInventoryItemId)
       const missingRoom = poBound.filter(item => !roomAssignment[item.id!]?.roomId || !roomAssignment[item.id!]?.categoryId)
       if (missingRoom.length > 0) {
         alert(`Set a Room and Category first for: ${missingRoom.map(i => i.itemName).join(', ')}`)
@@ -561,11 +568,12 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     const roomAssignments = Object.entries(roomAssignment)
       .filter(([requestItemId]) => !fulfillment[requestItemId])
       .map(([requestItemId, a]) => ({ requestItemId, roomId: a.roomId, categoryId: a.categoryId }))
+    setConverting(true)
     const res = await fetch(`/api/purchasing/requests/${selected.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'CONVERTED', transferFulfillments, roomAssignments }),
-    })
+    }).finally(() => setConverting(false))
     const data = await res.json()
     if (!res.ok) { alert(data.error ?? 'Failed to convert to PO'); return }
     // data.status reflects what actually happened: CONVERTED only once every item cleared
@@ -1023,13 +1031,16 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
   // else once the PR is forwarded. See PATCH .../items/[itemId]/warehouse-check.
   async function warehouseCheckItem(item: RequestLine, decision: 'TRANSFER' | 'PURCHASE') {
     if (!detail || !item.id) return
-    if (decision === 'TRANSFER' && !warehouseFrom[item.id]) { toast.error('Pilih lokasi gudang dulu'); return }
+    // Same fallback the dropdown displays — the preselected most-stock warehouse counts
+    // as a choice even if the user never touched the dropdown.
+    const fromLocationId = warehouseFrom[item.id] ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+    if (decision === 'TRANSFER' && !fromLocationId) { toast.error('Pilih lokasi gudang dulu'); return }
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         decision,
-        fromLocationId: decision === 'TRANSFER' ? warehouseFrom[item.id] : undefined,
+        fromLocationId: decision === 'TRANSFER' ? fromLocationId : undefined,
         note: warehouseNote[item.id]?.trim() || undefined,
       }),
     })
@@ -1050,6 +1061,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
     const data = await res.json().catch(() => ({}))
     setWarehouseForwarding(false)
     if (!res.ok) { toast.error(data.error ?? 'Gagal meneruskan request'); return }
+    if (data.status) setSelected(s => s ? { ...s, status: data.status } : s)
     toast.success(data.remainingItems?.length ? 'Diteruskan ke Purchasing' : 'Request selesai — semua dari stok gudang')
     await fetchDetail(detail.id)
     load()
@@ -1465,10 +1477,12 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                         Force Verify
                       </button>
                     )}
-                    <button onClick={openEditRequest}
-                      className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
-                      Edit
-                    </button>
+                    {!detail?.items.some(it => it.convertedAt) && (
+                      <button onClick={openEditRequest}
+                        className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">
+                        Edit
+                      </button>
+                    )}
                     <button onClick={() => changeStatus(selected.id, 'REJECTED')}
                       className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                       Reject
@@ -1477,8 +1491,10 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                 )}
                 {canWarehouseCheck && (() => {
                   const catalogItems = detail?.items.filter(it => it.itemId) ?? []
-                  const undecided = catalogItems.filter(it => !it.convertedAt && !it.warehouseDecision)
-                  const remaining = (detail?.items ?? []).filter(it => !it.convertedAt)
+                  // Items Purchasing already rejected can't be checked (API 409s) and the
+                  // forward endpoint ignores them — don't let them block the button forever.
+                  const undecided = catalogItems.filter(it => !it.convertedAt && !it.warehouseDecision && !it.verifyRejectedAt)
+                  const remaining = (detail?.items ?? []).filter(it => !it.convertedAt && !it.verifyRejectedAt)
                   return (
                     <button onClick={warehouseForward} disabled={undecided.length > 0 || warehouseForwarding}
                       title={undecided.length > 0 ? `Belum dicek: ${undecided.map(it => it.itemName).join(', ')}` : undefined}
@@ -1487,10 +1503,14 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                     </button>
                   )
                 })()}
-                <button onClick={() => deleteReq(selected)}
-                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
-                  Delete
-                </button>
+                {/* Hidden once Warehouse has sent any item via Transfer — deleting the PR
+                    would orphan that Transfer (the API refuses it too). */}
+                {!detail?.items.some(it => it.convertedAt) && (
+                  <button onClick={() => deleteReq(selected)}
+                    className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                    Delete
+                  </button>
+                )}
               </>
             )}
             {selected.status === 'ON_PROCESS' && !isWarehouse && (
@@ -1505,10 +1525,10 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   const disabled = nothingLeft || missingSupplier.length === settleable.length
                   const partial = missingSupplier.length > 0 && missingSupplier.length < settleable.length
                   return (
-                    <button onClick={convertToPO} disabled={disabled}
+                    <button onClick={convertToPO} disabled={disabled || converting}
                       title={nothingLeft ? 'Every item is already converted or rejected' : disabled ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : partial ? `Will convert the ready items now; still needs a supplier: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
                       className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
-                      <ShoppingCart className="h-4 w-4" /> {partial ? 'Convert Ready Items' : 'Convert to PO'}
+                      <ShoppingCart className="h-4 w-4" /> {converting ? 'Converting...' : partial ? 'Convert Ready Items' : 'Convert to PO'}
                     </button>
                   )
                 })()}
